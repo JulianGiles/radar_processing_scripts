@@ -173,7 +173,7 @@ colors_prabhakar = np.array([[0.00, 1.00, 1.00],
                              [0.58, 0.44, 0.86]])
 
 cmap_prabhakar = mpl.colors.ListedColormap(colors_prabhakar)
-mpl.cm.register_cmap("miub", cmap=cmap_prabhakar)
+mpl.cm.register_cmap("miub2", cmap=cmap_prabhakar)
 
 visdict14 = dict(ZH=dict(ticks=np.arange(-10,55,5),
                          contours=[0, 5, 10, 15, 20, 25, 30, 35],
@@ -401,10 +401,8 @@ def phase_offset(phioff, rng=3000.):
 
     Return
     ------
-    start_range : xarray.DataArray
-        DataArray with start range values
-    off : xarray.DataArray
-        DataArray with phase offset values
+    xarray.Dataset
+        Dataset with variables PHIDP_OFFSET, start_range and stop_range
     """
     range_step = np.diff(phioff.range)[0]
     nprec = int(rng / range_step)

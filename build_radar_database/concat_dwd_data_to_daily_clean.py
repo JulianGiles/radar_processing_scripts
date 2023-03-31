@@ -41,15 +41,19 @@ for mom in moments:
     llmom = sorted(glob.glob(path+"/ras*_"+mom+"_*hd5"))
     
     # # there is a bug with the current implementation of xradar. Re check this in future releases
-    # # Looks like now it works with a temporary fix in the files
+    # # Looks like now it works with a temporary fix in the files:
+        # For wradlib 1.19:
+        # Go to your environment site packages xradar and change in io/backends/odim.py (line 751)
+        
+        # if ~ds.time.isnull().all():
+        #   ds = ds.pipe(util.ipol_time)
+
     vardict[mom] = wrl.io.open_odim_mfdataset(llmom)
     
     # if coord elevation has dimension time, reduce using median
     if "time" in vardict[mom]["elevation"].dims:
         vardict[mom]["elevation"] = vardict[mom]["elevation"].median("time")
     
-    # the old method seems to still work fine
-    # vardict[mom] = wrl.io.open_odim(llmom, loader="h5py", chunks={})[0].data
     
 # create an empty radar volume and put the previous data inside
 vol = wrl.io.RadarVolume()
@@ -83,17 +87,6 @@ name = ll[0].split("_")
 name[2]="allmoms"
 dtree.load().to_netcdf("_".join(name))
   
-# make a list of valid timesteps (those with dbzh > 5 in at least 1% of the bins)  
-valid = (vardict["dbzh"]["DBZH"][:]>5).sum(dim=("azimuth", "range")).compute() > vardict["dbzh"]["DBZH"][0].count().compute()*0.01
-valid = valid.time.where(valid, drop=True)
-
-# save the list as a txt file named true if there is any value, otherwise false
-if len(valid)>0:
-    np.savetxt(path+"true.txt", valid.values.astype(str), fmt="%s")
-else:
-    np.savetxt(path+"false.txt", valid.values.astype(str), fmt="%s")
-
-
 
 # # to load the datatree
 # vol_reload = dttree.open_datatree("_".join(name))

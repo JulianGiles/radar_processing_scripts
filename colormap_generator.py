@@ -4,7 +4,7 @@
 
 import matplotlib as mpl
 import matplotlib.colors as colors
-from colormaps import datad
+from .colormaps import datad
 
 cmap_d = dict()
 
