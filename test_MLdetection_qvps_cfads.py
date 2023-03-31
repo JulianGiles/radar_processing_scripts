@@ -138,7 +138,7 @@ qvp["TEMP"].plot(x="time", y="height")
 # Plot DBZH QVP vs TEMP for checking
 qvp.DBZH.plot(x="time", y="TEMP", yincrease=False)
 
-#%% Compute CFADs from QVPs
+#%% Compute CFADs from QVPs (UNFINISHED)
 
 refvar = "TEMP" # reference variable to compute CFADs
 
@@ -398,10 +398,8 @@ plt.title("DBZH")
 ds_qvp_ra.height_ml_new_gia.loc[{"time":"2017-07-25"}].plot(x="time", c="magenta")
 ds_qvp_ra.height_ml_bottom_new_gia.loc[{"time":"2017-07-25"}].plot(x="time", c="teal")
 
-plt.contour(ds_qvp_ra["time"], ds_qvp_ra["z"], ds_qvp_ra["min_entropy"]) # ME QUEDE ACA, INTENTANDO HACER HATCHES
-ds_qvp_ra["min_entropy"].loc[{"time":"2017-07-25"}].plot.contour(x="time", levels=[0.8], hat="X")
+ds_qvp_ra["min_entropy"].loc[{"time":"2017-07-25"}].plot.contourf(x="time", levels=[0.8,1], hatches=["", "X"], colors="none", add_colorbar=False)
 
-ds_qvp_ra["min_entropy"].loc[{"time":"2017-07-25"}].plot.contour(x="time", levels=[0.8])
 
 
 # PPI
@@ -425,4 +423,6 @@ plt.title("min entropy on 2017-07-25 T04")
 
 
 
-# end tests
+#%% CFADs
+
+
