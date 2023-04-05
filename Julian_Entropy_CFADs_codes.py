@@ -621,7 +621,6 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', cb_mode=True, qq=0.2,
     Plot of 2-dimensional distribution
     """
     
-    
     import matplotlib
     from matplotlib import pyplot as plt
     from mpl_toolkits.axes_grid1 import make_axes_locatable

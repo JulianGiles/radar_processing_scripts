@@ -236,9 +236,14 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
     ds2 = ml_height_top_new(ds2, dim=dim, drop=False)
 
     # step 6
-    med_mlh_bot = ds2.mlh_bottom.rolling(time=xwin, min_periods=xwin//2, center=True).median(skipna=True)     #min_periods=xwin//2
-    med_mlh_top = ds2.mlh_top.rolling(time=xwin, min_periods=xwin//2, center=True).median(skipna=True)        # min_periods=xwin//2
-
+    while xwin >1: # try: in case there are few timesteps reduce xwin until it is possible to compute
+        try:
+            med_mlh_bot = ds2.mlh_bottom.rolling(time=xwin, min_periods=xwin//2, center=True).median(skipna=True)     #min_periods=xwin//2
+            med_mlh_top = ds2.mlh_top.rolling(time=xwin, min_periods=xwin//2, center=True).median(skipna=True)        # min_periods=xwin//2
+            break
+        except ValueError:
+            xwin-=2
+            
     # step 7 (step 5 again)
     above = (1 + fmlh) * med_mlh_top
     below = (1 - fmlh) * med_mlh_bot
@@ -434,7 +439,7 @@ ds = ds.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data
 
 #################################### CFADs
 
-def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', cb_mode=True, qq=0.2, cmap='turbo', colsteps=10, mini=0, fsize=13, fcolor='black', mincounts=500, cblim=[0,26], N=False):
+def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', cb_mode=True, qq=0.2, cmap='turbo', colsteps=10, mini=0, fsize=13, fcolor='black', mincounts=500, cblim=[0,26], N=False, cborientation="horizontal"):
     """
     Plots the 2-dimensional distribution of two Parameters
     # Input:
@@ -445,10 +450,12 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', cb_mode=True, qq=0.2,
     binsy = [start, stop, step]
     mode = 'rel_all', 'abs' or 'rel_y'
             rel_all : Relative Dist. to all pixels
-            rel_y   : Relative Dist. to all pixels
-                      to y-axis.
+            rel_y   : Relative Dist. to y-axis.
             abs     : Absolute Dist.
-    qq = parentile [0-1]
+    qq = percentile [0-1]. Calculates the qq and 1-qq percentiles.
+    mincounts: minimum sample number to plot
+    N: plot sample size
+    cborientation: orientation of the colorbar, "horizontal" or "vertical"
     
     # Output
     # ------
@@ -458,13 +465,35 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', cb_mode=True, qq=0.2,
     
     import matplotlib
     from matplotlib import pyplot as plt
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
     import numpy as np
+    import xarray
+
+    # Flatten the arrays
+    if type(PX) == xr.core.dataarray.DataArray:
+        PX = PX.values.flatten()
+    elif type(PX) == np.ndarray:
+        PX = PX.flatten()
+    else:
+        raise TypeError("PX should be xarray.core.dataarray.DataArray or numpy.ndarray")
+
+    if type(PY) == xr.core.dataarray.DataArray:
+        PY = PY.values.flatten()
+    elif type(PY) == np.ndarray:
+        PY = PY.flatten()
+    else:
+        raise TypeError("PY should be xarray.core.dataarray.DataArray or numpy.ndarray")
+
 
     matplotlib.rc('axes',edgecolor='black')
 
     # discret cmap
-    cmap = plt.cm.get_cmap(cmap, colsteps)
-    
+    cmap = plt.cm.get_cmap(cmap, colsteps+1).copy()
+    colors = list(cmap(np.arange(colsteps+1)))
+    cmap = matplotlib.colors.ListedColormap(colors[:-1], "cfad")
+    # set over-color to last color of list
+    cmap.set_over(colors[-1])
+
     # Defin bins arange
     bins_px = np.arange(binsx[0], binsx[1], binsx[2])
     bins_py = np.arange(binsy[0], binsy[1], binsy[2])
@@ -532,24 +561,6 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', cb_mode=True, qq=0.2,
     ax.plot(var_qq1, bins_py, color='red', linestyle='-.', lw=2)
     ax.plot(var_qq2, bins_py, color='red', linestyle='-.', lw=2)
 
-
-
-
-    if cb_mode==True:
-        #cax = plt.axes([0.055, -0.01, 0.93, 0.01]) #Left,bottom, length, width
-        cax = plt.axes([0.11, 0.27, 0.85, 0.01]) #Left, bottom, length, width
-
-
-        cb=plt.colorbar(img, cax=cax, pad=0.001, ticks=np.linspace(cblim[0],cblim[1], colsteps+1),extend ='max',orientation="horizontal" )
-
-        if mode=='abs':
-            cb.ax.set_title('#', color=fcolor)
-        if mode!='abs':
-            cb.ax.set_title('%', color=fcolor)    
-        cb.ax.tick_params(labelsize=fsize, color=fcolor) 
-        cbar_yticks = plt.getp(cb.ax.axes, 'yticklabels')
-        plt.setp(cbar_yticks, color=fcolor)
-    
     ax.grid(color=fcolor, linestyle='-.', lw=0.5, alpha=0.9)
 
     ax.xaxis.label.set_color(fcolor)
@@ -567,23 +578,27 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', cb_mode=True, qq=0.2,
         xticks[0].label1.set_visible(False)
         xticks[-1].label1.set_visible(False)
 
-        if cb_mode==True:
-            #cax = plt.axes([0.055, -0.01, 0.93, 0.01]) #Left,bottom, length, width
-            cax = plt.axes([0.11, 0.27, 0.85, 0.01]) #Left, bottom, length, width
+    if cb_mode==True:
+        '''
+        if cborientation=="horizontal":
+            cax = plt.axes([0.15, -0.05, 0.70, 0.03]) #Left, bottom, length, width
+        if cborientation=="vertical":
+            cax = plt.axes([0.95, 0.15, 0.03, 0.70]) #Left, bottom, length, width
+        '''
 
-            cb=plt.colorbar(img, cax=cax, pad=0.001, ticks=np.linspace(cblim[0],cblim[1], colsteps+1),extend ='max',orientation="horizontal" )
+        cb=plt.colorbar(img, cax=None, pad=0.05, ticks=np.linspace(cblim[0],cblim[1], colsteps+1), extend = "max", orientation=cborientation)
 
-            if mode=='abs':
-                cb.ax.set_title('#', color=fcolor)
-            if mode!='abs':
-                cb.ax.set_title('%', color=fcolor, fontsize=30)    
-            cb.ax.tick_params(labelsize=fsize, color=fcolor) 
-            cbar_yticks = plt.getp(cb.ax.axes, 'yticklabels')
-            plt.setp(cbar_yticks, color=fcolor)
+        if mode=='abs':
+            cb.ax.set_title('#', color=fcolor)
+        if mode!='abs':
+            cb.ax.set_title('%', color=fcolor, fontsize=fsize)
+        cb.ax.tick_params(labelsize=fsize, color=fcolor)
+        cbar_yticks = plt.getp(cb.ax.axes, 'yticklabels')
+        plt.setp(cbar_yticks, color=fcolor)
 
 
         
-        return ax2  
+    return img
 
 
 

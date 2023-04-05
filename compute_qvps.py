@@ -45,11 +45,11 @@ except ModuleNotFoundError:
 
 # paths to files to load
 # 07 is the scan number for 12 degree elevation
-path = "/home/jgiles/dwd/pulled_from_detect/*/*/*/pro/vol5minng01/07/*allmoms*"
+path = "/automount/ftp/jgiles/pulled_from_detect/*/*/*/tur/vol5minng01/07/*allmoms*"
 files = sorted(glob.glob(path))
 
 # where to save the qvps
-savedir = "/home/jgiles/dwd/qvps/"
+savedir = "/automount/ftp/jgiles/qvps/"
 
 
 for ff in files:
@@ -63,8 +63,17 @@ for ff in files:
     # load data, convert to dataset, georeference
     swp = dttree.open_datatree(ff)["sweep_7"].to_dataset() 
 
-    swp = swp.pipe(wrl.georef.georeference_dataset)
-    
+    try: # this might fail because of the issue with the time dimension that some files have
+        swp = swp.pipe(wrl.georef.georeference_dataset)
+    except ValueError:
+        print("!!!! Issue with dimensions in the coordinates of the contenated files, fixing and taking note")
+        for coord in ["latitude", "longitude", "altitude", "elevation"]:
+            if "time" in swp[coord].dims:
+                swp.coords[coord] = swp.coords[coord].median("time")
+        swp = swp.pipe(wrl.georef.georeference_dataset)
+        with open("/home/jgiles/dwd/qvps/dates_to_recompute.txt", 'a') as file:
+            file.write(savepath.rsplit(os.sep, 5)[1]+"\n")
+
     ################## Before entropy calculation we need to use the melting layer detection algorithm 
     ds = swp
     interpolation_method_ML = "linear"
@@ -270,7 +279,7 @@ for ff in files:
     # Create a list of xarray datasets with sounding data to then concatenate
     print("Getting temperature from sounding data")
     soundings = list()
-    break_day = False # flag for stopping trying for this day and continuing with next if the next step fails
+    break_day = False # flag for stop trying for this day and continuing with next if the next step fails
     for tt in dttimes:
         if break_day:
             break
@@ -294,6 +303,11 @@ for ff in files:
                 stemp = stemp[idx]
                 sheight = sheight[idx]
                 
+                # check that height is monotonically increasing and remove non compliant values
+                valid = np.concatenate([np.array([True]), np.sign(np.diff(sheight))>0]) # we assume the first value is valid
+                stemp = stemp[valid]
+                sheight = sheight[valid]
+                
                 stemp_da = xr.DataArray(data=stemp, dims=["height"],
                                         coords=dict(height=(["height"], sheight),       
                                                    ),
@@ -305,14 +319,30 @@ for ff in files:
                 soundings.append(stemp_da)
                 
                 break
+            except ValueError:
+                print("No sounding data for "+str(tt)+". Attempting to fill with adjacent values")
+                # create an array of nan to be later filled with adjacent values (if there are any)
+                stemp_da = xr.DataArray(data=np.full(200, np.nan), dims=["height"],
+                                        coords=dict(height=(["height"], np.arange(0,20000,100)),       
+                                                   ),
+                                        attrs=dict(description="Temperature.",
+                                                   units="degC",
+                                                  ),
+                                       )
+                
+                soundings.append(stemp_da)
+                break
+
             except Exception as e:
-                if str(e) == "HTTPError" and nt<ntries:
+                if "Service Unavailable" in str(e) and nt<ntries:
                     print(".. Attempt "+str(nt+1)+" failed, retrying")
                     continue
-                if str(e) == "HTTPError" and nt>=ntries:
+                elif "Service Unavailable" in str(e) and nt>=ntries:
                     print(".. All attempts failed, skipping this day of data")
                     break_day = True
-                    continue 
+                    continue                     
+                else:
+                    raise(e)
                     
     if break_day:
         # if this step failed, continue with next day of data
@@ -323,7 +353,7 @@ for ff in files:
     try: # this might fail because of the issue with the time dimension in elevations that some files have
         temperatures = xr.concat(soundings, timedim)
     except ValueError:
-        print("!!!! ERROR: issue with time dimension in the contenated files, ignoring date")
+        print("!!!! ERROR: some issue when concatenating sounding data, ignoring date")
         with open("/home/jgiles/dwd/qvps/dates_to_recompute.txt", 'a') as file:
             file.write(savepath.rsplit(os.sep, 5)[1]+"\n")
         continue
@@ -336,6 +366,10 @@ for ff in files:
     # Fix Temperature below first measurement and above last one
     itemp_da = itemp_da.bfill(dim="height")
     itemp_da = itemp_da.ffill(dim="height")
+    
+    # Attempt to fill any missing timestep with adjacent data
+    itemp_da = itemp_da.ffill(dim="time")
+    itemp_da = itemp_da.bfill(dim="time")
     
     # Interpolate to dataset height and time, then add to dataset
     def merge_radar_profile(rds, cds):

@@ -44,9 +44,10 @@ for mom in moments:
     # # Looks like now it works with a temporary fix in the files
     vardict[mom] = wrl.io.open_odim_mfdataset(llmom)
     
-    # if coord elevation has dimension time, reduce using median
-    if "time" in vardict[mom]["elevation"].dims:
-        vardict[mom]["elevation"] = vardict[mom]["elevation"].median("time")
+    # if some coord has dimension time, reduce using median
+    for coord in ["latitude", "longitude", "altitude", "elevation"]:
+        if "time" in vardict[mom][coord].dims:
+            vardict[mom].coords[coord] = vardict[mom].coords[coord].median("time")
     
     # the old method seems to still work fine
     # vardict[mom] = wrl.io.open_odim(llmom, loader="h5py", chunks={})[0].data

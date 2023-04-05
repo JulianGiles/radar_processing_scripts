@@ -25,8 +25,18 @@ from xhistogram.xarray import histogram
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
+try:
+    from Scripts.python.radar_processing_scripts import utils
+    from Scripts.python.radar_processing_scripts import radarmet
+except ModuleNotFoundError:
+    import utils
+    import radarmet
+
+
 import warnings
 warnings.filterwarnings('ignore')
+
+
 
 # paths to files to load
 path = "/home/jgiles/dwd/pulled_from_detect/2017/2017-07/2017-07-2*/pro/vol5minng01/07/*allmoms*"
@@ -423,6 +433,123 @@ plt.title("min entropy on 2017-07-25 T04")
 
 
 
-#%% CFADs
+#%% TESTS
+
+path_qvps = "/home/jgiles/dwd/qvps/*/*/2017-11-1*/pro/vol5minng01/07/*allmoms*"
+files = sorted(glob.glob(path_qvps))
+
+qvps = xr.open_mfdataset(files)
+
+
+qvps0 = xr.open_mfdataset(files[0:5])
+qvps1 = xr.open_mfdataset(files[5:])
+
+
+qvps2 = xr.open_mfdataset(files[3])
+qvps2.where(qvps2.time.notnull(), drop=True)
+
+
+np.sign(qvps.z.diff("z"))
+
+qvps.loc[{"time": "2016-04-27"}]["DBZH"].plot(x="time", vmin=0, cmap="plasma")
+qvps.loc[{"time": "2016-04-27"}]["min_entropy"].plot(x="time", cmap="plasma")
+qvps.loc[{"time": "2016-04-27"}]["min_entropy"].plot(x="time", vmin=0.8, cmap="plasma")
+
+
+#%% CFADs Load and compute
+# This part should be run after having the QVPs computed (compute_qvps.py)
+
+#### Open QVP files
+path_qvps = "/home/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/*allmoms*"
+files = sorted(glob.glob(path_qvps))
+
+# there are slight differences in z coord sometimes so we have to align all datasets
+# since the time coord has variable length, que cannot use join="override" so we define a function to copy
+# the z coord from the first dataset into the rest with preprocessing
+# There is also some time values missing, ignore those
+first_file = xr.open_mfdataset(files[0]) # use override due to slight differences in z dimension
+first_file_z = first_file.z.copy()
+def fix_z_and_time(ds):
+    ds.coords["z"] = first_file_z
+    ds = ds.where(ds["time"].notnull(), drop=True)
+    return ds
+    
+qvps = xr.open_mfdataset(files, preprocess=fix_z_and_time)
+
+#### Filters
+# Filter only stratiform events (min entropy >= 0.8)
+with ProgressBar():
+    qvps_strat = qvps.where(qvps["min_entropy"]>=0.8, drop=True).compute()
+# Filter relevant values
+qvps_strat_fil = qvps_strat.where((qvps_strat["TH"] > 0 )&(qvps_strat["KDP_ML_corrected"] > 0.01)&(qvps_strat["RHOHV"] > 0.7)&(qvps_strat["ZDR"] > -1))
+
+#### General statistics
+values_sfc = qvps_strat_fil.isel({"z": 2})
+values_snow = qvps_strat_fil.sel({"z": qvps_strat_fil["height_ml_new_gia"]}, method="nearest")
+values_rain = qvps_strat_fil.sel({"z": qvps_strat_fil["height_ml_bottom_new_gia"]}, method="nearest")
+    
+#### ML statistics
+# select values inside the ML
+qvps_ML = qvps_strat_fil.where( (qvps_strat_fil["z"] < qvps_strat_fil["height_ml_new_gia"]) & \
+                               (qvps_strat_fil["z"] > qvps_strat_fil["height_ml_bottom_new_gia"]), drop=True)
+
+values_ML_max = qvps_ML.max(dim="z")
+values_ML_min = qvps_ML.min(dim="z")
+values_ML_mean = qvps_ML.mean(dim="z")
+ML_height = qvps_ML["height_ml_new_gia"] - qvps_ML["height_ml_bottom_new_gia"]
+
+# Silke style
+# select timesteps with detected ML
+gradient_silke = qvps_strat_fil.where(qvps_strat_fil["height_ml_new_gia"] > qvps_strat_fil["height_ml_bottom_new_gia"], drop=True)
+gradient_silke_ML = gradient_silke.sel({"z": gradient_silke["height_ml_new_gia"]}, method="nearest")
+gradient_silke_ML_plus_2km = gradient_silke.sel({"z": gradient_silke_ML["z"]+2000}, method="nearest")
+gradient_final = (gradient_silke_ML_plus_2km - gradient_silke_ML)/2
+beta = gradient_final["TH"] #### TH OR DBZH??
+
+
+#### DGL statistics
+# select values in the DGL 
+qvps_DGL = qvps_strat_fil.where((qvps_strat_fil["TEMP"] >= -20)&(qvps_strat_fil["TEMP"] <= -10), drop=True)    
+
+values_DGL_max = qvps_DGL.max(dim="z")
+values_DGL_min = qvps_DGL.min(dim="z")
+values_DGL_mean = qvps_DGL.mean(dim="z")
+
+
+#%% CFADs Plot
+
+# top temp limit
+ytlim=-20
+
+# Temp bins
+tb=1# degress C
+
+# Min counts per Temp layer
+mincounts=200
+
+#Colorbar limits and step
+cblim=[0,10]
+colsteps=10
+
+
+# Plot horizontally
+vars_to_plot = {"DBZH": [0, 51, 1], 
+                "ZDR": [-1, 3.1, 0.1],
+                "KDP_ML_corrected": [0, 0.51, 0.01],
+                "RHOHV": [0.9, 1.01, 0.01]}
+
+
+fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+for nn, vv in enumerate(vars_to_plot.keys()):
+    utils.hist2d(ax[nn], qvps_strat_fil[vv], qvps_strat_fil["TEMP"], binsx=vars_to_plot[vv], binsy=[-20,15,tb],
+           mode='rel_y', qq=0.2, cb_mode=(nn+1)/len(vars_to_plot), cmap="plasma", colsteps=colsteps,  fsize=10, mincounts=mincounts, 
+           cblim=cblim, N=(nn+1)/len(vars_to_plot), cborientation="vertical")
+    ax[nn].set_ylim(15,ytlim)
+    ax[nn].set_xlabel(vv, fontsize=10)
+
+ax[0].set_ylabel('Temperature [°C]', fontsize=10, color='black')
+
+
 
 
