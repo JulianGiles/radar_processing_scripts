@@ -44,12 +44,16 @@ for mom in moments:
     # # Looks like now it works with a temporary fix in the files
     vardict[mom] = wrl.io.open_odim_mfdataset(llmom)
     
+    # It may happen that some time value is missing, fix that using info in rtime
+    if vardict[mom]["time"].isnull().any():
+        vardict[mom].coords["time"] = vardict[mom].rtime.min(dim="azimuth", skipna=True).compute()    
+        
     # if some coord has dimension time, reduce using median
     for coord in ["latitude", "longitude", "altitude", "elevation"]:
         if "time" in vardict[mom][coord].dims:
             vardict[mom].coords[coord] = vardict[mom].coords[coord].median("time")
     
-    # the old method seems to still work fine
+    # the old method seems to still work fine (however, not recommended to use)
     # vardict[mom] = wrl.io.open_odim(llmom, loader="h5py", chunks={})[0].data
     
 # create an empty radar volume and put the previous data inside

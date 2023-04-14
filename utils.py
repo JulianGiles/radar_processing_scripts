@@ -439,7 +439,9 @@ ds = ds.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data
 
 #################################### CFADs
 
-def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', cb_mode=True, qq=0.2, cmap='turbo', colsteps=10, mini=0, fsize=13, fcolor='black', mincounts=500, cblim=[0,26], N=False, cborientation="horizontal"):
+def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', cb_mode=True, qq=0.2, cmap='turbo',
+           colsteps=10, mini=0, fsize=13, fcolor='black', mincounts=500, cblim=[0,26], N=False,
+           cborientation="horizontal", shading='gouraud', **kwargs):
     """
     Plots the 2-dimensional distribution of two Parameters
     # Input:
@@ -449,13 +451,15 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', cb_mode=True, qq=0.2,
     binsx = [start, stop, step]
     binsy = [start, stop, step]
     mode = 'rel_all', 'abs' or 'rel_y'
-            rel_all : Relative Dist. to all pixels
+            rel_all : Relative Dist. to all pixels (this is not working ATM)
             rel_y   : Relative Dist. to y-axis.
             abs     : Absolute Dist.
     qq = percentile [0-1]. Calculates the qq and 1-qq percentiles.
     mincounts: minimum sample number to plot
     N: plot sample size
     cborientation: orientation of the colorbar, "horizontal" or "vertical"
+    shading: shading argeument for matplotlib pcolormesh. Should be 'nearest' (no interpolation) or 'gouraud' (interpolated).
+    kwargs: additional arguments for matplotlib pcolormesh
     
     # Output
     # ------
@@ -501,7 +505,7 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', cb_mode=True, qq=0.2,
     # Hist 2d
     H, xe, ye = np.histogram2d(PX, PY, bins = (bins_px, bins_py))
     
-    # Calc mean x and y
+    # Calc mean x and y (for plotting with center-based index)
     mx =0.5*(xe[0:-1]+xe[1:len(xe)])
     my =0.5*(ye[0:-1]+ye[1:len(ye)])
     
@@ -513,13 +517,19 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', cb_mode=True, qq=0.2,
     var_qq2 = []
     var_count = []
 
-    for i in bins_py:
-        var_med.append(np.nanmedian(PX[(PY>i)&(PY<=i+binsy[2])]))
-        var_mean.append(np.nanmean(PX[(PY>i)&(PY<=i+binsy[2])]))
+    for i in bins_py[:-1]:
+        # Improved: get the subset of values in the range of bins_px and the specific range of bins_py
+        # otherwise it will consider outliers that are not considered in histogram2d
+        PX_sub = PX[(PX>bins_px[0])&(PX<bins_px[-1])&(PY>i)&(PY<=i+binsy[2])]
 
-        var_qq1.append(np.nanquantile(PX[(PY>i)&(PY<=i+binsy[2])], qq))
-        var_qq2.append(np.nanquantile(PX[(PY>i)&(PY<=i+binsy[2])], 1-qq))
-        var_count.append(len(PX[(PY>i)&(PY<=i+binsy[2])]))
+        # for every bin in Y dimension, calculate statistics of values in X
+        var_med.append(np.nanmedian(PX_sub))
+        var_mean.append(np.nanmean(PX_sub))
+
+        var_qq1.append(np.nanquantile(PX_sub, qq))
+        var_qq2.append(np.nanquantile(PX_sub, 1-qq))
+        #var_count.append(len(PX[(PY>i)&(PY<=i+binsy[2])])) # this is counting all values per Y bin, including nans
+        var_count.append(np.isfinite(PX_sub).sum()) # improved, counting only valid values (not nan, not inf)
     
     var_med = np.array(var_med)
     var_mean = np.array(var_mean)
@@ -543,10 +553,10 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', cb_mode=True, qq=0.2,
     elif mode=='rel_y':
         allsum = np.nansum(H, axis=0)
         allsum[allsum<mincounts]=np.nan
-        relHa = (H/allsum).T
+        relHa = (H/allsum).T # transpose so the y axis is temperature
         
     elif mode=='abs':
-        relHa = H
+        relHa = H.T
     else:
         print('Wrong mode parameter used! Please use mode="rel_all", mode="abs" or mode="rel_y"!')
     
@@ -555,11 +565,11 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', cb_mode=True, qq=0.2,
     RES[RES<mini]=np.nan
 
     
-    img = ax.pcolormesh(mx, my ,RES , cmap=cmap, vmin=cblim[0], vmax=cblim[1], shading="gouraud")
-    ax.plot(var_mean, bins_py, color='red', lw=2)
+    img = ax.pcolormesh(mx, my ,RES , cmap=cmap, vmin=cblim[0], vmax=cblim[1], shading=shading, **kwargs) #, shading="gouraud"
+    ax.plot(var_mean, my, color='red', lw=2)
 
-    ax.plot(var_qq1, bins_py, color='red', linestyle='-.', lw=2)
-    ax.plot(var_qq2, bins_py, color='red', linestyle='-.', lw=2)
+    ax.plot(var_qq1, my, color='red', linestyle='-.', lw=2)
+    ax.plot(var_qq2, my, color='red', linestyle='-.', lw=2)
 
     ax.grid(color=fcolor, linestyle='-.', lw=0.5, alpha=0.9)
 
@@ -568,7 +578,7 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', cb_mode=True, qq=0.2,
     
     if N==True:
         ax2 = ax.twiny()
-        ax2.plot(var_count, bins_py, color='cornflowerblue', linestyle='-', lw=2)
+        ax2.plot(var_count, my, color='cornflowerblue', linestyle='-', lw=2)
         #ax2.set_xlim(0,2500)
         ax2.xaxis.label.set_color('cornflowerblue')
         ax2.yaxis.label.set_color('cornflowerblue')

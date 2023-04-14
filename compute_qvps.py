@@ -45,12 +45,26 @@ except ModuleNotFoundError:
 
 # paths to files to load
 # 07 is the scan number for 12 degree elevation
+# path = "/home/jgiles/dwd/pulled_from_detect/*/*/2017-01-11/pro/vol5minng01/07/*allmoms*"
 path = "/automount/ftp/jgiles/pulled_from_detect/*/*/*/tur/vol5minng01/07/*allmoms*"
 files = sorted(glob.glob(path))
 
 # where to save the qvps
-savedir = "/automount/ftp/jgiles/qvps/"
+# savedir = "/home/jgiles/dwd/qvps/"
+savedir = "/automount/ftp/jgiles/qvps2/"
 
+# download sounding data?
+download_sounding = True
+
+# Code for Sounding data (http://weather.uwyo.edu/upperair/sounding.html)
+rs_id = 10868 # Close to radar site. 10393 Lindenberg close to PRO, 10868 Munich close to Turkheim
+
+# add sounding data (TEMP) to QVP?
+add_sounding_to_qvp = True
+
+# save raw sounding data?
+save_raw_sounding = True
+sounding_savepath = "/automount/ags/jgiles/soundings_wyoming/"
 
 for ff in files:
     # check if the file already exists before starting
@@ -99,22 +113,22 @@ for ff in files:
     phi_fix = phi_fix.where(phi_fix.range >= start_range + fix_range).fillna(off_fix) - off
     
     # smooth and mask
-    window = 11
-    window2 = None
-    phi_median = phi_fix.pipe(radarmet.xr_rolling, window, window2=window2, method='median', skipna=True, min_periods=3)
-    phi_masked = phi_median.where((ds[X_RHOHV] >= 0.95) & (ds[X_ZH] >= 0.)) 
+    window = 17 # window along range   <----------- this value is quite important for the quality of KDP, since phidp is very noisy
+    window2 = None # window along azimuth
+    phi_median = phi_fix.pipe(radarmet.xr_rolling, window, window2=window2, method='median', skipna=True, min_periods=window//2)
+    phi_masked = phi_median.where((ds[X_RHOHV] >= 0.95) & (ds[X_ZH] >= 0.))
     
     # dr = phi_masked.range.diff('range').median('range').values / 1000.
     # print("range res [km]:", dr)
     
     # derive KDP from PHIDP (convolution method)
-    winlen = 5 # windowlen 
-    min_periods = 3 # min number of vaid bins
-    kdp = radarmet.kdp_from_phidp(phi_masked, winlen, min_periods=3)
+    winlen = 17 # windowlen 
+    # min_periods = 7 # min number of vaid bins
+    kdp = radarmet.kdp_from_phidp(phi_masked, winlen, min_periods=winlen//2)
     kdp1 = kdp.interpolate_na(dim='range')
     
     # derive PHIDP from KDP (convolution method)
-    winlen = 5 
+    winlen = 17
     phidp = radarmet.phidp_from_kdp(kdp1, winlen)
     
     # assign new variables to dataset
@@ -181,12 +195,12 @@ for ff in files:
     new_cut_above_min_ML_filter = new_cut_above_min_ML[X_RHOHV].where((new_cut_above_min_ML[X_RHOHV]>=0.97)&(new_cut_above_min_ML[X_RHOHV]<=1))            
     
     
-    ######### ML TOP Giagrande refinement
+    ######### ML TOP Giangrande refinement
     
     notnull = new_cut_below_min_ML_filter.notnull() # this replaces nan for False and the rest for True
     first_valid_height_after_ml = notnull.where(notnull).idxmax(dim=hdim) # get the first True value, i.e. first valid value
     
-    ######### ML BOTTOM Giagrande refinement
+    ######### ML BOTTOM Giangrande refinement
     # For this one, we need to flip the coordinate so that it is actually selecting the last valid index
     notnull = new_cut_above_min_ML_filter.notnull() # this replaces nan for False and the rest for True
     last_valid_height = notnull.where(notnull).isel({hdim:slice(None, None, -1)}).idxmax(dim=hdim) # get the first True value, i.e. first valid value (flipped)
@@ -218,7 +232,7 @@ for ff in files:
     # print("range res [km]:", dr)
     # winlen in gates
     # TODO: window length in m
-    winlen = 5
+    winlen = 17
     min_periods = 3
     kdp_ml = radarmet.kdp_from_phidp(phi2, winlen, min_periods=3)
     
@@ -256,133 +270,156 @@ for ff in files:
     ds_qvp_ra = ds_qvp_ra.assign({"min_entropy": min_trst_strati_qvp})
     
     
-    #### Add temperature profile from sounding
-    startdt0 = datetime.datetime.utcfromtimestamp(int(swp.time[0].values)/1e9).date()
-    enddt0 = datetime.datetime.utcfromtimestamp(int(swp.time[-1].values)/1e9).date() + datetime.timedelta(hours=24)
-    
-    # transform the dates to datetimes
-    startdt = datetime.datetime.fromordinal(startdt0.toordinal())
-    enddt = datetime.datetime.fromordinal(enddt0.toordinal())
-    
-    def date_range_list(start_date, end_date):
-        # Return list of datetime.date objects (inclusive) between start_date and end_date (inclusive).
-        date_list = []
-        curr_date = start_date
-        while curr_date <= end_date:
-            date_list.append(curr_date)
-            curr_date += datetime.timedelta(hours=12)
-        return date_list
-    
-    dttimes = date_range_list(startdt, enddt)
-    
-    
-    # Create a list of xarray datasets with sounding data to then concatenate
-    print("Getting temperature from sounding data")
-    soundings = list()
-    break_day = False # flag for stop trying for this day and continuing with next if the next step fails
-    for tt in dttimes:
-        if break_day:
-            break
-        # getting the sounding data may fail, so we try ntries times until we get it
-        ntries = 100
-        for nt in range(ntries):
+    #### Download temperature profile from sounding
+    if download_sounding:
+        startdt0 = datetime.datetime.utcfromtimestamp(int(swp.time[0].values)/1e9).date()
+        enddt0 = datetime.datetime.utcfromtimestamp(int(swp.time[-1].values)/1e9).date() + datetime.timedelta(hours=24)
+        
+        # transform the dates to datetimes
+        startdt = datetime.datetime.fromordinal(startdt0.toordinal())
+        enddt = datetime.datetime.fromordinal(enddt0.toordinal())
+        
+        def date_range_list(start_date, end_date):
+            # Return list of datetime.date objects (inclusive) between start_date and end_date (inclusive).
+            date_list = []
+            curr_date = start_date
+            while curr_date <= end_date:
+                date_list.append(curr_date)
+                curr_date += datetime.timedelta(hours=12)
+            return date_list
+        
+        dttimes = date_range_list(startdt, enddt)
+        
+        
+        # Create a list of xarray datasets with sounding data to then concatenate
+        print("Getting temperature from sounding data")
+        soundings = list()
+        break_day = False # flag for stop trying for this day and continuing with next if the next step fails
+        for tt in dttimes:
             if break_day:
                 break
-            try:
-                # Load Sounding data (http://weather.uwyo.edu/upperair/sounding.html)
-                rs_id = 10393 # Close to radar site
-                rs_data, rs_meta = wrl.io.get_radiosonde(rs_id, tt, cols=(0,1,2))
-                
-                #rs_array = np.array( list( map(list, rs_data) ) )
-            
-                # Extract temperature and height
-                stemp = rs_data['TEMP']
-                sheight = rs_data['HGHT']
-                # remove nans
-                idx = np.isfinite(stemp)
-                stemp = stemp[idx]
-                sheight = sheight[idx]
-                
-                # check that height is monotonically increasing and remove non compliant values
-                valid = np.concatenate([np.array([True]), np.sign(np.diff(sheight))>0]) # we assume the first value is valid
-                stemp = stemp[valid]
-                sheight = sheight[valid]
-                
-                stemp_da = xr.DataArray(data=stemp, dims=["height"],
-                                        coords=dict(height=(["height"], sheight),       
-                                                   ),
-                                        attrs=dict(description="Temperature.",
-                                                   units="degC",
-                                                  ),
-                                       )
-                
-                soundings.append(stemp_da)
-                
-                break
-            except ValueError:
-                print("No sounding data for "+str(tt)+". Attempting to fill with adjacent values")
-                # create an array of nan to be later filled with adjacent values (if there are any)
-                stemp_da = xr.DataArray(data=np.full(200, np.nan), dims=["height"],
-                                        coords=dict(height=(["height"], np.arange(0,20000,100)),       
-                                                   ),
-                                        attrs=dict(description="Temperature.",
-                                                   units="degC",
-                                                  ),
-                                       )
-                
-                soundings.append(stemp_da)
-                break
-
-            except Exception as e:
-                if "Service Unavailable" in str(e) and nt<ntries:
-                    print(".. Attempt "+str(nt+1)+" failed, retrying")
-                    continue
-                elif "Service Unavailable" in str(e) and nt>=ntries:
-                    print(".. All attempts failed, skipping this day of data")
-                    break_day = True
-                    continue                     
-                else:
-                    raise(e)
+            # getting the sounding data may fail, so we try ntries times until we get it
+            ntries = 100
+            for nt in range(ntries):
+                if break_day:
+                    break
+                try:
+                    # Load Sounding data (http://weather.uwyo.edu/upperair/sounding.html)
+                    # rs_id = 10393 # Close to radar site
+                    rs_data, rs_meta = wrl.io.get_radiosonde(rs_id, tt, cols=(0,1,2))
                     
-    if break_day:
-        # if this step failed, continue with next day of data
-        continue
+                    #rs_array = np.array( list( map(list, rs_data) ) )
                 
-    # Create time dimension and concatenate
-    timedim = xr.DataArray( pd.to_datetime(dttimes), [("time", pd.to_datetime(dttimes))] )
-    try: # this might fail because of the issue with the time dimension in elevations that some files have
-        temperatures = xr.concat(soundings, timedim)
-    except ValueError:
-        print("!!!! ERROR: some issue when concatenating sounding data, ignoring date")
-        with open("/home/jgiles/dwd/qvps/dates_to_recompute.txt", 'a') as file:
-            file.write(savepath.rsplit(os.sep, 5)[1]+"\n")
-        continue
+                    # Extract temperature and height
+                    stemp = rs_data['TEMP']
+                    sheight = rs_data['HGHT']
+                    # remove nans
+                    idx = np.isfinite(stemp)
+                    stemp = stemp[idx]
+                    sheight = sheight[idx]
+                    
+                    # check that height is monotonically increasing and remove non compliant values
+                    valid = np.concatenate([np.array([True]), np.sign(np.diff(sheight))>0]) # we assume the first value is valid
+                    stemp = stemp[valid]
+                    sheight = sheight[valid]
+                    
+                    stemp_da = xr.DataArray(data=stemp, dims=["height"],
+                                            coords=dict(height=(["height"], sheight),       
+                                                       ),
+                                            attrs=dict(description="Temperature.",
+                                                       units="degC",
+                                                      ),
+                                           )
+                    
+                    soundings.append(stemp_da)
+                    
+                    
+                    if save_raw_sounding:
+                        spres = rs_data['PRES']
+                        spres = spres[idx] # remove nans
+                        spres = spres[valid] # check monotony and remove weird values
+                        
+                        sounding_raw = xr.Dataset(data_vars=dict(
+                                                    TEMP=(["HGHT"], stemp),
+                                                    PRES=(["HGHT"], spres),
+                                                    ),
+                                                coords=dict(HGHT=(["HGHT"], sheight),       
+                                                           ),
+                                                attrs=rs_meta,
+                                               )
+                        # fix attrs not admitted by nc standard
+                        sounding_raw.attrs["Observation time"] = str(sounding_raw.attrs["Observation time"])
+                        sounding_raw.attrs["quantity"] = [varname+" "+sounding_raw.attrs["quantity"][varname] for varname in sounding_raw.attrs["quantity"].keys()]
+                        
+                        # make dir and save
+                        os.makedirs(sounding_savepath+str(rs_id)+"/"+str(tt.year)+"/", exist_ok=True)
+                        sounding_raw.to_netcdf(sounding_savepath+str(rs_id)+"/"+str(tt.year)+"/"+str(tt.date())+"T"+str(tt.hour)+".nc")
+                    
+                    break
+                except ValueError:
+                    print("No sounding data for "+str(tt)+". Attempting to fill with adjacent values")
+                    # create an array of nan to be later filled with adjacent values (if there are any)
+                    stemp_da = xr.DataArray(data=np.full(200, np.nan), dims=["height"],
+                                            coords=dict(height=(["height"], np.arange(0,20000,100)),       
+                                                       ),
+                                            attrs=dict(description="Temperature.",
+                                                       units="degC",
+                                                      ),
+                                           )
+                    
+                    soundings.append(stemp_da)
+                    break
     
-    # Interpolate to higher resolution
-    hmax = 20000.
-    ht = np.arange(0., hmax)
-    itemp_da = temperatures.interpolate_na("height").interp({"height": ht})
-    
-    # Fix Temperature below first measurement and above last one
-    itemp_da = itemp_da.bfill(dim="height")
-    itemp_da = itemp_da.ffill(dim="height")
-    
-    # Attempt to fill any missing timestep with adjacent data
-    itemp_da = itemp_da.ffill(dim="time")
-    itemp_da = itemp_da.bfill(dim="time")
-    
-    # Interpolate to dataset height and time, then add to dataset
-    def merge_radar_profile(rds, cds):
-        # cds = cds.interp({'height': rds.z}, method='linear')
-        cds = cds.interp({'height': rds.z}, method='linear')
-        cds = cds.interp({"time": rds.time}, method="linear")
-        rds = rds.assign({"TEMP": cds})
-        return rds
-    
-    ds_qvp_ra = ds_qvp_ra.pipe(merge_radar_profile, itemp_da)
-    
-    ds_qvp_ra.coords["TEMP"] = ds_qvp_ra["TEMP"] # move TEMP from variable to coordinate
-    
+                except Exception as e:
+                    if "Service Unavailable" in str(e) and nt<ntries:
+                        print(".. Attempt "+str(nt+1)+" failed, retrying")
+                        continue
+                    elif "Service Unavailable" in str(e) and nt>=ntries:
+                        print(".. All attempts failed, skipping this day of data")
+                        break_day = True
+                        continue                     
+                    else:
+                        raise(e)
+                        
+        if break_day:
+            # if this step failed, continue with next day of data
+            continue
+                    
+        # Create time dimension and concatenate
+        timedim = xr.DataArray( pd.to_datetime(dttimes), [("time", pd.to_datetime(dttimes))] )
+        try: # this might fail because of the issue with the time dimension in elevations that some files have
+            temperatures = xr.concat(soundings, timedim)
+            
+            # Interpolate to higher resolution
+            hmax = 20000.
+            ht = np.arange(0., hmax)
+            itemp_da = temperatures.interpolate_na("height").interp({"height": ht})
+            
+            # Fix Temperature below first measurement and above last one
+            itemp_da = itemp_da.bfill(dim="height")
+            itemp_da = itemp_da.ffill(dim="height")
+            
+            # Attempt to fill any missing timestep with adjacent data
+            itemp_da = itemp_da.ffill(dim="time")
+            itemp_da = itemp_da.bfill(dim="time")
+            
+            # Interpolate to dataset height and time, then add to dataset
+            def merge_radar_profile(rds, cds):
+                # cds = cds.interp({'height': rds.z}, method='linear')
+                cds = cds.interp({'height': rds.z}, method='linear')
+                cds = cds.interp({"time": rds.time}, method="linear")
+                rds = rds.assign({"TEMP": cds})
+                return rds
+            
+            ds_qvp_ra = ds_qvp_ra.pipe(merge_radar_profile, itemp_da)
+            
+            ds_qvp_ra.coords["TEMP"] = ds_qvp_ra["TEMP"] # move TEMP from variable to coordinate
+
+        except ValueError:
+            print("!!!! ERROR: some issue when concatenating sounding data, ignoring date")
+            with open("/home/jgiles/dwd/qvps/dates_to_recompute.txt", 'a') as file:
+                file.write(savepath.rsplit(os.sep, 5)[1]+"\n")
+            
     #### Save dataset
     print("Saving file")
     
