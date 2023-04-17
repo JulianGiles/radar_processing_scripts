@@ -1,2 +1,5 @@
 
 iris_to_nc/iris-test-daily-compressed.nc
+__pycache__/utils.cpython-311.pyc
+iris_to_nc/.ipynb_checkpoints/loading_converting_IRIS_-checkpoint.ipynb
+iris_to_nc/.ipynb_checkpoints/single_iris_hub_wrl_1.10.0-checkpoint.ipynb

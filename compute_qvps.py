@@ -240,7 +240,7 @@ for ff in files:
     ds = ds.assign({"KDP_ML_corrected": (["time", "azimuth", "range"], kdp_ml.values, ds_qvp_ra3.KDP.attrs)})
     
     #### Optional filtering:
-    ds["KDP_ML_corrected"] = ds.KDP_ML_corrected.where((ds.KDP_ML_corrected >= 0.01) & (ds.KDP_ML_corrected <= 3)) 
+    ds["KDP_ML_corrected"] = ds.KDP_ML_corrected.where((ds.KDP_ML_corrected >= 0.0) & (ds.KDP_ML_corrected <= 3)) 
     
     ds = ds.assign_coords({'height': ds.z})
     
@@ -369,7 +369,10 @@ for ff in files:
                     
                     soundings.append(stemp_da)
                     break
-    
+                
+                except TimeoutError:
+                    print(".. Attempt "+str(nt+1)+" failed, retrying")
+                    continue
                 except Exception as e:
                     if "Service Unavailable" in str(e) and nt<ntries:
                         print(".. Attempt "+str(nt+1)+" failed, retrying")

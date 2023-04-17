@@ -439,7 +439,7 @@ ds = ds.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data
 
 #################################### CFADs
 
-def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', cb_mode=True, qq=0.2, cmap='turbo',
+def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_range=True, cb_mode=True, qq=0.2, cmap='turbo',
            colsteps=10, mini=0, fsize=13, fcolor='black', mincounts=500, cblim=[0,26], N=False,
            cborientation="horizontal", shading='gouraud', **kwargs):
     """
@@ -454,9 +454,12 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', cb_mode=True, qq=0.2,
             rel_all : Relative Dist. to all pixels (this is not working ATM)
             rel_y   : Relative Dist. to y-axis.
             abs     : Absolute Dist.
+    whole_range: use the whole range of values in the x coordinate? if False, only values inside the limits of binsx will be considered
+                in the calculations and the counting of valid values; which can lead to different results depending how the bin ranges are defined.
+    cb_mode : plot colorbar?
     qq = percentile [0-1]. Calculates the qq and 1-qq percentiles.
     mincounts: minimum sample number to plot
-    N: plot sample size
+    N: plot sample size?
     cborientation: orientation of the colorbar, "horizontal" or "vertical"
     shading: shading argeument for matplotlib pcolormesh. Should be 'nearest' (no interpolation) or 'gouraud' (interpolated).
     kwargs: additional arguments for matplotlib pcolormesh
@@ -475,16 +478,16 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', cb_mode=True, qq=0.2,
 
     # Flatten the arrays
     if type(PX) == xr.core.dataarray.DataArray:
-        PX = PX.values.flatten()
+        PX_flat = PX.values.flatten()
     elif type(PX) == np.ndarray:
-        PX = PX.flatten()
+        PX_flat = PX.flatten()
     else:
         raise TypeError("PX should be xarray.core.dataarray.DataArray or numpy.ndarray")
 
     if type(PY) == xr.core.dataarray.DataArray:
-        PY = PY.values.flatten()
+        PY_flat = PY.values.flatten()
     elif type(PY) == np.ndarray:
-        PY = PY.flatten()
+        PY_flat = PY.flatten()
     else:
         raise TypeError("PY should be xarray.core.dataarray.DataArray or numpy.ndarray")
 
@@ -498,12 +501,12 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', cb_mode=True, qq=0.2,
     # set over-color to last color of list
     cmap.set_over(colors[-1])
 
-    # Defin bins arange
+    # Define bins arange
     bins_px = np.arange(binsx[0], binsx[1], binsx[2])
     bins_py = np.arange(binsy[0], binsy[1], binsy[2])
     
     # Hist 2d
-    H, xe, ye = np.histogram2d(PX, PY, bins = (bins_px, bins_py))
+    H, xe, ye = np.histogram2d(PX_flat, PY_flat, bins = (bins_px, bins_py))
     
     # Calc mean x and y (for plotting with center-based index)
     mx =0.5*(xe[0:-1]+xe[1:len(xe)])
@@ -520,7 +523,7 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', cb_mode=True, qq=0.2,
     for i in bins_py[:-1]:
         # Improved: get the subset of values in the range of bins_px and the specific range of bins_py
         # otherwise it will consider outliers that are not considered in histogram2d
-        PX_sub = PX[(PX>bins_px[0])&(PX<bins_px[-1])&(PY>i)&(PY<=i+binsy[2])]
+        PX_sub = PX_flat[(PX_flat>bins_px[0])&(PX_flat<bins_px[-1])&(PY_flat>i)&(PY_flat<=i+binsy[2])]
 
         # for every bin in Y dimension, calculate statistics of values in X
         var_med.append(np.nanmedian(PX_sub))
@@ -528,7 +531,7 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', cb_mode=True, qq=0.2,
 
         var_qq1.append(np.nanquantile(PX_sub, qq))
         var_qq2.append(np.nanquantile(PX_sub, 1-qq))
-        #var_count.append(len(PX[(PY>i)&(PY<=i+binsy[2])])) # this is counting all values per Y bin, including nans
+        #var_count.append(len(PX_flat[(PY_flat>i)&(PY_flat<=i+binsy[2])])) # this is counting all values per Y bin, including nans
         var_count.append(np.isfinite(PX_sub).sum()) # improved, counting only valid values (not nan, not inf)
     
     var_med = np.array(var_med)

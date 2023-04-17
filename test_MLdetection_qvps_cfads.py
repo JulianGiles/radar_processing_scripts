@@ -584,7 +584,7 @@ qvps.loc[{"time": "2016-04-27"}]["min_entropy"].plot(x="time", vmin=0.8, cmap="p
 # This part should be run after having the QVPs computed (compute_qvps.py)
 
 #### Open QVP files
-path_qvps = "/home/jgiles/dwd/qvps/*/*/*/tur/vol5minng01/07/*allmoms*"
+path_qvps = "/home/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/*allmoms*"
 files = sorted(glob.glob(path_qvps))
 
 # there are slight differences in z coord sometimes so we have to align all datasets
@@ -605,7 +605,7 @@ qvps = xr.open_mfdataset(files, preprocess=fix_z_and_time)
 with ProgressBar():
     qvps_strat = qvps.where(qvps["min_entropy"]>=0.8, drop=True).compute()
 # Filter relevant values
-qvps_strat_fil = qvps_strat.where((qvps_strat["TH"] > 0 )&(qvps_strat["KDP_ML_corrected"] > 0.01)&(qvps_strat["RHOHV"] > 0.7)&(qvps_strat["ZDR"] > -1))
+qvps_strat_fil = qvps_strat.where((qvps_strat["TH"] > 0 )&(qvps_strat["KDP_ML_corrected"] > 0.0)&(qvps_strat["RHOHV"] > 0.7)&(qvps_strat["ZDR"] > -1))
 
 #### General statistics
 values_sfc = qvps_strat_fil.isel({"z": 2})
@@ -675,5 +675,22 @@ for nn, vv in enumerate(vars_to_plot.keys()):
 ax[0].set_ylabel('Temperature [°C]', fontsize=10, color='black')
 
 
+
+
+
+
+
+vcs = []
+fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+for nn, vv in enumerate(vars_to_plot.keys()):
+    img, vc = utils.hist2d(ax[nn], qvps_strat_fil[vv], qvps_strat_fil["TEMP"], binsx=vars_to_plot[vv], binsy=[-20,15,tb],
+           mode='rel_y', qq=0.2, cb_mode=(nn+1)/len(vars_to_plot), cmap="plasma", colsteps=colsteps,  fsize=10, mincounts=mincounts, 
+           cblim=cblim, N=True, cborientation="vertical", shading="nearest")
+    ax[nn].set_ylim(15,ytlim)
+    ax[nn].set_xlabel(vv, fontsize=10)
+    vcs.append(vcs)
+
+ax[0].set_ylabel('Temperature [°C]', fontsize=10, color='black')
 
 
