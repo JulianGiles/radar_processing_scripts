@@ -45,13 +45,13 @@ except ModuleNotFoundError:
 
 # paths to files to load
 # 07 is the scan number for 12 degree elevation
-# path = "/home/jgiles/dwd/pulled_from_detect/*/*/2017-01-11/pro/vol5minng01/07/*allmoms*"
+# path = "/home/jgiles/dwd/pulled_from_detect/*/*/2017-04-12/pro/vol5minng01/07/*allmoms*"
 path = "/automount/ftp/jgiles/pulled_from_detect/*/*/*/tur/vol5minng01/07/*allmoms*"
 files = sorted(glob.glob(path))
 
 # where to save the qvps
-# savedir = "/home/jgiles/dwd/qvps/"
-savedir = "/automount/ftp/jgiles/qvps2/"
+savedir = "/home/jgiles/dwd/qvps/"
+# savedir = "/automount/ftp/jgiles/qvps2/"
 
 # download sounding data?
 download_sounding = True
@@ -113,7 +113,7 @@ for ff in files:
     phi_fix = phi_fix.where(phi_fix.range >= start_range + fix_range).fillna(off_fix) - off
     
     # smooth and mask
-    window = 17 # window along range   <----------- this value is quite important for the quality of KDP, since phidp is very noisy
+    window = 7 # window along range   <----------- this value is quite important for the quality of KDP, since phidp is very noisy
     window2 = None # window along azimuth
     phi_median = phi_fix.pipe(radarmet.xr_rolling, window, window2=window2, method='median', skipna=True, min_periods=window//2)
     phi_masked = phi_median.where((ds[X_RHOHV] >= 0.95) & (ds[X_ZH] >= 0.))
@@ -122,13 +122,13 @@ for ff in files:
     # print("range res [km]:", dr)
     
     # derive KDP from PHIDP (convolution method)
-    winlen = 17 # windowlen 
+    winlen = 7 # windowlen 
     # min_periods = 7 # min number of vaid bins
     kdp = radarmet.kdp_from_phidp(phi_masked, winlen, min_periods=winlen//2)
     kdp1 = kdp.interpolate_na(dim='range')
     
     # derive PHIDP from KDP (convolution method)
-    winlen = 17
+    winlen = 7
     phidp = radarmet.phidp_from_kdp(kdp1, winlen)
     
     # assign new variables to dataset

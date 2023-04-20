@@ -377,6 +377,10 @@ ds_qvp_ra = ds_qvp_ra.assign({"min_entropy": min_trst_strati_qvp})
 # Better colormaps
 from Scripts.python.radar_processing_scripts import colormap_generator
 
+
+
+timesel = "2019-06-12"
+
 mom = "KDP"
 visdict14 = radarmet.visdict14
 norm = radarmet.get_discrete_norm(visdict14[mom]["ticks"])
@@ -385,22 +389,22 @@ norm = radarmet.get_discrete_norm(visdict14[mom]["ticks"])
 cmap = visdict14[mom]["cmap"]
 
 # QVP with ML heights
-ds_qvp_ra["KDP"].loc[{"time":"2017-07-25"}].plot(x="time", cmap=cmap, norm=norm, extend="both")
-ds_qvp_ra.height_ml.loc[{"time":"2017-07-25"}].plot(x="time", c="red")
-ds_qvp_ra.height_ml_bottom.loc[{"time":"2017-07-25"}].plot(x="time", c="blue")
+ds_qvp_ra["KDP"].loc[{"time":timesel}].plot(x="time", cmap=cmap, norm=norm, extend="both")
+ds_qvp_ra.height_ml.loc[{"time":timesel}].plot(x="time", c="red")
+ds_qvp_ra.height_ml_bottom.loc[{"time":timesel}].plot(x="time", c="blue")
 plt.title("original KDP")
 
 # ds_qvp_ra.height_ml_new_gia.loc[{"time":"2017-07-25"}].plot(x="time", c="magenta")
 # ds_qvp_ra.height_ml_bottom_new_gia.loc[{"time":"2017-07-25"}].plot(x="time", c="teal")
 
-ds_qvp_ra["KDP_CONV"].loc[{"time":"2017-07-25"}].plot(x="time", cmap=cmap, norm=norm, extend="both")
-ds_qvp_ra.height_ml.loc[{"time":"2017-07-25"}].plot(x="time", c="red")
-ds_qvp_ra.height_ml_bottom.loc[{"time":"2017-07-25"}].plot(x="time", c="blue")
+ds_qvp_ra["KDP_CONV"].loc[{"time":timesel}].plot(x="time", cmap=cmap, norm=norm, extend="both")
+ds_qvp_ra.height_ml.loc[{"time":timesel}].plot(x="time", c="red")
+ds_qvp_ra.height_ml_bottom.loc[{"time":timesel}].plot(x="time", c="blue")
 plt.title("KDP from PHIDP")
 
-ds_qvp_ra["KDP_ML_corrected"].loc[{"time":"2017-07-25"}].plot(x="time", cmap=cmap, norm=norm, extend="both")
-ds_qvp_ra.height_ml.loc[{"time":"2017-07-25"}].plot(x="time", c="red")
-ds_qvp_ra.height_ml_bottom.loc[{"time":"2017-07-25"}].plot(x="time", c="blue")
+ds_qvp_ra["KDP_ML_corrected"].loc[{"time":timesel}].plot(x="time", cmap=cmap, norm=norm, extend="both")
+ds_qvp_ra.height_ml.loc[{"time":timesel}].plot(x="time", c="red")
+ds_qvp_ra.height_ml_bottom.loc[{"time":timesel}].plot(x="time", c="blue")
 plt.title("KDP from PHIDP, ML corrected")
 
 
@@ -413,15 +417,15 @@ norm = radarmet.get_discrete_norm(visdict14[mom]["ticks"])
 cmap = visdict14[mom]["cmap"]
 
 # QVP with ML heights
-ds_qvp_ra["UPHIDP"].loc[{"time":"2017-07-25"}].plot(x="time", cmap=cmap, norm=norm, extend="both")
-ds_qvp_ra.height_ml.loc[{"time":"2017-07-25"}].plot(x="time", c="red")
-ds_qvp_ra.height_ml_bottom.loc[{"time":"2017-07-25"}].plot(x="time", c="blue")
+ds_qvp_ra["UPHIDP"].loc[{"time":timesel}].plot(x="time", cmap=cmap, norm=norm, extend="both")
+ds_qvp_ra.height_ml.loc[{"time":timesel}].plot(x="time", c="red")
+ds_qvp_ra.height_ml_bottom.loc[{"time":timesel}].plot(x="time", c="blue")
 plt.title("original PHIDP")
 
 # QVP with ML heights
-ds_qvp_ra["UPHIDP_OC"].loc[{"time":"2017-07-25"}].plot(x="time", cmap=cmap, norm=norm, extend="both")
-ds_qvp_ra.height_ml.loc[{"time":"2017-07-25"}].plot(x="time", c="red")
-ds_qvp_ra.height_ml_bottom.loc[{"time":"2017-07-25"}].plot(x="time", c="blue")
+ds_qvp_ra["UPHIDP_OC"].loc[{"time":timesel}].plot(x="time", cmap=cmap, norm=norm, extend="both")
+ds_qvp_ra.height_ml.loc[{"time":timesel}].plot(x="time", c="red")
+ds_qvp_ra.height_ml_bottom.loc[{"time":timesel}].plot(x="time", c="blue")
 plt.title("UPHIDP OC")
 
 
@@ -434,9 +438,9 @@ cmap = visdict14[mom]["cmap"]
 
 
 # QVP with ML heights
-ds_qvp_ra["DBZH"].loc[{"time":"2017-07-25"}].plot(x="time", cmap=cmap, norm=norm, extend="both")
-ds_qvp_ra.height_ml.loc[{"time":"2017-07-25"}].plot(x="time", c="red")
-ds_qvp_ra.height_ml_bottom.loc[{"time":"2017-07-25"}].plot(x="time", c="blue")
+ds_qvp_ra["DBZH"].loc[{"time":timesel}].plot(x="time", cmap=cmap, norm=norm, extend="both")
+ds_qvp_ra.height_ml.loc[{"time":timesel}].plot(x="time", c="red")
+ds_qvp_ra.height_ml_bottom.loc[{"time":timesel}].plot(x="time", c="blue")
 plt.title("DBZH")
 
 
@@ -449,36 +453,43 @@ cmap = mpl.cm.get_cmap("HomeyerRainbow")
 # cmap = get_discrete_cmap(visdict14["DBZH"]["ticks"], 'HomeyerRainbow')
 # cmap = visdict14[mom]["cmap"]
 
-ds_qvp_ra["DBZH"].loc[{"time":"2017-07-25"}].plot(x="time", cmap=cmap, norm=norm, extend="both")
+ds_qvp_ra["DBZH"].loc[{"time":timesel}].plot(x="time", cmap=cmap, norm=norm, extend="both")
 plt.title("DBZH")
-ds_qvp_ra.height_ml_new_gia.loc[{"time":"2017-07-25"}].plot(x="time", c="magenta")
-ds_qvp_ra.height_ml_bottom_new_gia.loc[{"time":"2017-07-25"}].plot(x="time", c="teal")
+ds_qvp_ra.height_ml_new_gia.loc[{"time":timesel}].plot(x="time", c="magenta")
+ds_qvp_ra.height_ml_bottom_new_gia.loc[{"time":timesel}].plot(x="time", c="teal")
 
-ds_qvp_ra["min_entropy"].loc[{"time":"2017-07-25"}].plot.contourf(x="time", levels=[0.8,1], hatches=["", "X"], colors="none", add_colorbar=False)
+ds_qvp_ra["min_entropy"].loc[{"time":timesel}].plot.contourf(x="time", levels=[0.8,1], hatches=["", "X"], colors="none", add_colorbar=False)
 
 
 
 # PPI
+
+timesel = "2017-10-28 16"
+timeind = 0
+
 mom = "KDP"
 visdict14 = radarmet.visdict14
 norm = radarmet.get_discrete_norm(visdict14[mom]["ticks"])
 cmap = visdict14[mom]["cmap"] #mpl.cm.get_cmap("HomeyerRainbow")
 
-pm = ds["KDP"].loc[{"time":"2017-07-25 T04"}][0].wradlib.plot(norm=norm, cmap=cmap, extend="both")
+pm = ds["KDP"].loc[{"time":timesel}][timeind].wradlib.plot(norm=norm, cmap=cmap, extend="both")
 plt.colorbar(pm, extend="both")
 plt.title("original KDP")
+plt.text(10000, 30100, timesel+"H"+str(timeind*5)+"M") # add date and time
 plt.ylim(-30000, 30000)
 plt.xlim(-30000, 30000)
 
-pm = ds["KDP_CONV"].loc[{"time":"2017-07-25 T04"}][0].wradlib.plot(norm=norm, cmap=cmap, extend="both")
+pm = ds["KDP_CONV"].loc[{"time":timesel}][timeind].wradlib.plot(norm=norm, cmap=cmap, extend="both")
 plt.colorbar(pm, extend="both")
 plt.title("KDP from PHIDP")
+plt.text(10000, 30100, timesel+"H"+str(timeind*5)+"M") # add date and time
 plt.ylim(-30000, 30000)
 plt.xlim(-30000, 30000)
 
-pm = ds["KDP_ML_corrected"].loc[{"time":"2017-07-25 T04"}][0].wradlib.plot(norm=norm, cmap=cmap, extend="both")
+pm = ds["KDP_ML_corrected"].loc[{"time":timesel}][timeind].wradlib.plot(norm=norm, cmap=cmap, extend="both")
 plt.colorbar(pm, extend="both")
 plt.title("KDP from PHIDP, ML corrected")
+plt.text(10000, 30100, timesel+"H"+str(timeind*5)+"M") # add date and time
 plt.ylim(-30000, 30000)
 plt.xlim(-30000, 30000)
 
@@ -488,43 +499,128 @@ visdict14 = radarmet.visdict14
 norm = radarmet.get_discrete_norm(visdict14[mom]["ticks"])
 cmap = visdict14[mom]["cmap"] #mpl.cm.get_cmap("HomeyerRainbow")
 
-pm = ds["DBZH"].loc[{"time":"2017-07-25 T04"}][0].wradlib.plot(norm=norm, cmap=cmap, extend="both")
+pm = ds["DBZH"].loc[{"time":timesel}][timeind].wradlib.plot(norm=norm, cmap=cmap, extend="both")
 plt.colorbar(pm, extend="both")
 plt.title("DBZH")
+plt.text(10000, 30100, timesel+"H"+str(timeind*5)+"M") # add date and time
 plt.ylim(-30000, 30000)
 plt.xlim(-30000, 30000)
+
+
+mom = "TH"
+visdict14 = radarmet.visdict14
+norm = radarmet.get_discrete_norm(visdict14[mom]["ticks"])
+cmap = visdict14[mom]["cmap"] #mpl.cm.get_cmap("HomeyerRainbow")
+
+pm = ds["TH"].loc[{"time":timesel}][timeind].wradlib.plot(norm=norm, cmap=cmap, extend="both")
+plt.colorbar(pm, extend="both")
+plt.title("TH")
+plt.text(10000, 30100, timesel+"H"+str(timeind*5)+"M") # add date and time
+plt.ylim(-30000, 30000)
+plt.xlim(-30000, 30000)
+
 
 
 mom = "PHI"
 visdict14 = radarmet.visdict14
 norm = radarmet.get_discrete_norm(visdict14[mom]["ticks"])
-cmap = visdict14[mom]["cmap"] #mpl.cm.get_cmap("HomeyerRainbow")
+cmap = mpl.cm.get_cmap("seismic") #visdict14[mom]["cmap"] #mpl.cm.get_cmap("HomeyerRainbow") # mpl.cm.get_cmap("seismic")
 
-pm = ds["UPHIDP"].loc[{"time":"2017-07-25 T04"}][0].wradlib.plot(norm=norm, cmap=cmap, extend="both")
+pm = ds["UPHIDP"].loc[{"time":timesel}][timeind].wradlib.plot( cmap=cmap, extend="both")
 plt.colorbar(pm, extend="both")
 plt.title("UPHIDP")
+plt.text(10000, 30100, timesel+"H"+str(timeind*5)+"M") # add date and time
 plt.ylim(-30000, 30000)
 plt.xlim(-30000, 30000)
 
-pm = ds["UPHIDP_OC"].loc[{"time":"2017-07-25 T04"}][0].wradlib.plot(norm=norm, cmap=cmap, extend="both")
+pm = ds["UPHIDP_OC"].loc[{"time":timesel}][timeind].wradlib.plot(norm=norm, cmap=cmap, extend="both")
 plt.colorbar(pm, extend="both")
 plt.title("UPHIDP OC")
+plt.text(10000, 30100, timesel+"H"+str(timeind*5)+"M") # add date and time
 plt.ylim(-30000, 30000)
 plt.xlim(-30000, 30000)
 
-pm = ds["UPHIDP_OC"].loc[{"time":"2017-07-25 T04"}][0].wradlib.plot(norm=norm, cmap=cmap, extend="both")
+pm = ds["UPHIDP_OC"].loc[{"time":timesel}][timeind].wradlib.plot(norm=norm, cmap=cmap, extend="both")
 plt.colorbar(pm, extend="both")
 plt.title("UPHIDP OC")
+plt.text(10000, 30100, timesel+"H"+str(timeind*5)+"M") # add date and time
+plt.ylim(-30000, 30000)
+plt.xlim(-30000, 30000)
+
+
+
+mom = "RHOHV"
+visdict14 = radarmet.visdict14
+norm = radarmet.get_discrete_norm(visdict14[mom]["ticks"])
+cmap = visdict14[mom]["cmap"] #mpl.cm.get_cmap("HomeyerRainbow")
+
+pm = ds["RHOHV"].loc[{"time":timesel}][timeind].wradlib.plot(norm=norm, cmap=cmap, extend="both")
+plt.colorbar(pm, extend="both")
+plt.title("RHOHV")
+plt.text(10000, 30100, timesel+"H"+str(timeind*5)+"M") # add date and time
+plt.ylim(-30000, 30000)
+plt.xlim(-30000, 30000)
+
+
+
+mom = "ZDR"
+visdict14 = radarmet.visdict14
+norm = radarmet.get_discrete_norm(visdict14[mom]["ticks"])
+cmap = visdict14[mom]["cmap"] #mpl.cm.get_cmap("HomeyerRainbow")
+
+pm = ds["ZDR"].loc[{"time":timesel}][timeind].wradlib.plot(norm=norm, cmap=cmap, extend="both")
+plt.colorbar(pm, extend="both")
+plt.title("ZDR")
+plt.text(10000, 30100, timesel+"H"+str(timeind*5)+"M") # add date and time
+plt.ylim(-30000, 30000)
+plt.xlim(-30000, 30000)
+
+
+
+
+# testing RHOHV noise correction
+corr, hist, std, rn = utils.calculate_noise_level(ds["DBZH"], ds["RHOHV"], noise=(-40, -20, 1), rho_bins=(0.9, 1.1, 0.005), snr_bins=(5., 30., .1))
+
+corr, hist, std, rn = utils.calculate_noise_level(ds["DBZH"], ds["RHOHV"], noise=(-40, -20, 1), rho_bins=(0.9, 1.1, 0.005), snr_bins=(5., 30., .1))
+rhohvcorr = corr[np.argmin(std)][1]
+stn = corr[np.argmin(std)][0]
+
+
+pm = rhohvcorr.loc[{"time":timesel}][timeind].wradlib.plot(norm=norm, cmap=cmap, extend="both")
+plt.colorbar(pm, extend="both")
+plt.title("RHOHV corrected")
+plt.ylim(-30000, 30000)
+plt.xlim(-30000, 30000)
+
+pm = stn.loc[{"time":timesel}][timeind].wradlib.plot( extend="both")
+plt.colorbar(pm, extend="both")
+plt.title("RHOHV signal to noise")
+plt.ylim(-30000, 30000)
+plt.xlim(-30000, 30000)
+
+pm = rhohvcorr.where(stn.loc[{"time":timesel}][timeind]>10).loc[{"time":timesel}][timeind].wradlib.plot(norm=norm, cmap=cmap, extend="both")
+plt.colorbar(pm, extend="both")
+plt.title("RHOHV corrected")
+plt.ylim(-30000, 30000)
+plt.xlim(-30000, 30000)
+
+
+overone = rhohvcorr.loc[{"time":timesel}][timeind]>1
+pm = overone.wradlib.plot( extend="both")
+plt.colorbar(pm, extend="both")
+plt.title("RHOHV corrected")
 plt.ylim(-30000, 30000)
 plt.xlim(-30000, 30000)
 
 
 
 # line plots
-ds["KDP_CONV"].loc[{"time":"2017-07-25 T04"}][0, 200,].plot(xlim=(0,20000), marker="o")
-ds["UPHIDP"].loc[{"time":"2017-07-25 T04"}][0, 200,].plot(xlim=(0,20000), ylim=(10,40), marker="o")
-ds["UPHIDP_OC"].loc[{"time":"2017-07-25 T04"}][0, 200,].plot(xlim=(0,20000), ylim=(-10,10), marker="o")
-ds["DBZH"].loc[{"time":"2017-07-25 T04"}][0, 200,].plot(xlim=(0,20000), ylim=(0,40), marker="o")
+azind = 250 # azimuth index to plot
+
+ds["KDP_CONV"].loc[{"time":timesel}][timeind, azind,].plot(xlim=(0,20000), marker="o")
+ds["UPHIDP"].loc[{"time":timesel}][timeind, azind,].plot(xlim=(0,20000), ylim=(0,100), marker="o")
+ds["UPHIDP_OC"].loc[{"time":timesel}][timeind, azind,].plot(xlim=(0,20000), ylim=(-5,5), marker="o")
+ds["DBZH"].loc[{"time":timesel}][timeind, azind,].plot(xlim=(0,20000), ylim=(0,40), marker="o")
 
 
 
@@ -585,17 +681,24 @@ qvps.loc[{"time": "2016-04-27"}]["min_entropy"].plot(x="time", vmin=0.8, cmap="p
 
 #### Open QVP files
 path_qvps = "/home/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/*allmoms*"
+path_qvps = "/automount/ftp/jgiles/qvps2/*/*/*/tur/vol5minng01/07/*allmoms*"
+
 files = sorted(glob.glob(path_qvps))
 
 # there are slight differences in z coord sometimes so we have to align all datasets
 # since the time coord has variable length, que cannot use join="override" so we define a function to copy
 # the z coord from the first dataset into the rest with preprocessing
 # There is also some time values missing, ignore those
+# Some files do not have TEMP data, fill with nan
 first_file = xr.open_mfdataset(files[0]) # use override due to slight differences in z dimension
 first_file_z = first_file.z.copy()
+first_file_TEMP = first_file["TEMP"][0].compute()*np.nan
 def fix_z_and_time(ds):
     ds.coords["z"] = first_file_z
     ds = ds.where(ds["time"].notnull(), drop=True)
+    if "TEMP" not in ds.coords:
+        ds.coords["TEMP"] = xr.full_like( ds["DBZH"], np.nan ).compute()
+        
     return ds
     
 qvps = xr.open_mfdataset(files, preprocess=fix_z_and_time)
@@ -666,31 +769,15 @@ vars_to_plot = {"DBZH": [0, 51, 1],
 fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
 
 for nn, vv in enumerate(vars_to_plot.keys()):
-    utils.hist2d(ax[nn], qvps_strat_fil[vv], qvps_strat_fil["TEMP"], binsx=vars_to_plot[vv], binsy=[-20,15,tb],
-           mode='rel_y', qq=0.2, cb_mode=(nn+1)/len(vars_to_plot), cmap="plasma", colsteps=colsteps,  fsize=10, mincounts=mincounts, 
-           cblim=cblim, N=(nn+1)/len(vars_to_plot), cborientation="vertical", shading="nearest")
+    utils.hist2d(ax[nn], qvps_strat_fil[vv], qvps_strat_fil["TEMP"], whole_x_range=True, 
+                 binsx=vars_to_plot[vv], binsy=[-20,15,tb], mode='rel_y', qq=0.2,
+                 cb_mode=(nn+1)/len(vars_to_plot), cmap="plasma", colsteps=colsteps, 
+                 fsize=10, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
+                 cborientation="vertical", shading="nearest")
     ax[nn].set_ylim(15,ytlim)
     ax[nn].set_xlabel(vv, fontsize=10)
 
 ax[0].set_ylabel('Temperature [°C]', fontsize=10, color='black')
 
-
-
-
-
-
-
-vcs = []
-fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
-
-for nn, vv in enumerate(vars_to_plot.keys()):
-    img, vc = utils.hist2d(ax[nn], qvps_strat_fil[vv], qvps_strat_fil["TEMP"], binsx=vars_to_plot[vv], binsy=[-20,15,tb],
-           mode='rel_y', qq=0.2, cb_mode=(nn+1)/len(vars_to_plot), cmap="plasma", colsteps=colsteps,  fsize=10, mincounts=mincounts, 
-           cblim=cblim, N=True, cborientation="vertical", shading="nearest")
-    ax[nn].set_ylim(15,ytlim)
-    ax[nn].set_xlabel(vv, fontsize=10)
-    vcs.append(vcs)
-
-ax[0].set_ylabel('Temperature [°C]', fontsize=10, color='black')
 
 

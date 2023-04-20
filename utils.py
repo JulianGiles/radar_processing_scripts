@@ -439,7 +439,7 @@ ds = ds.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data
 
 #################################### CFADs
 
-def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_range=True, cb_mode=True, qq=0.2, cmap='turbo',
+def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, cb_mode=True, qq=0.2, cmap='turbo',
            colsteps=10, mini=0, fsize=13, fcolor='black', mincounts=500, cblim=[0,26], N=False,
            cborientation="horizontal", shading='gouraud', **kwargs):
     """
@@ -454,7 +454,7 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_range=True, cb_
             rel_all : Relative Dist. to all pixels (this is not working ATM)
             rel_y   : Relative Dist. to y-axis.
             abs     : Absolute Dist.
-    whole_range: use the whole range of values in the x coordinate? if False, only values inside the limits of binsx will be considered
+    whole_x_range: use the whole range of values in the x coordinate? if False, only values inside the limits of binsx will be considered
                 in the calculations and the counting of valid values; which can lead to different results depending how the bin ranges are defined.
     cb_mode : plot colorbar?
     qq = percentile [0-1]. Calculates the qq and 1-qq percentiles.
@@ -506,7 +506,16 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_range=True, cb_
     bins_py = np.arange(binsy[0], binsy[1], binsy[2])
     
     # Hist 2d
-    H, xe, ye = np.histogram2d(PX_flat, PY_flat, bins = (bins_px, bins_py))
+    if whole_x_range:
+        # to consider the whole range of values in x, we extend the bins array by adding bins to -inf and inf
+        # at the edges and computing the histogram with those bins into account. Then, we discard the extreme values
+        bins_px_ext = np.append(np.append(bins_px[::-1], -np.inf)[::-1], np.inf).copy()
+        H_ext, xe_ext, ye = np.histogram2d(PX_flat, PY_flat, bins = (bins_px_ext, bins_py))
+        H = H_ext[1:-1,:]
+        xe = xe_ext[1:-1]
+    else:
+        H, xe, ye = np.histogram2d(PX_flat, PY_flat, bins = (bins_px, bins_py))
+        H_ext = H # this is for the counting part of the overall sum
     
     # Calc mean x and y (for plotting with center-based index)
     mx =0.5*(xe[0:-1]+xe[1:len(xe)])
@@ -521,9 +530,12 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_range=True, cb_
     var_count = []
 
     for i in bins_py[:-1]:
-        # Improved: get the subset of values in the range of bins_px and the specific range of bins_py
-        # otherwise it will consider outliers that are not considered in histogram2d
-        PX_sub = PX_flat[(PX_flat>bins_px[0])&(PX_flat<bins_px[-1])&(PY_flat>i)&(PY_flat<=i+binsy[2])]
+        if whole_x_range:
+            PX_sub = PX_flat[(PY_flat>i)&(PY_flat<=i+binsy[2])]
+        else:
+            # Improved: get the subset of values in the range of bins_px and the specific range of bins_py
+            # otherwise it will consider outliers that are not considered in histogram2d
+            PX_sub = PX_flat[(PX_flat>bins_px[0])&(PX_flat<bins_px[-1])&(PY_flat>i)&(PY_flat<=i+binsy[2])]
 
         # for every bin in Y dimension, calculate statistics of values in X
         var_med.append(np.nanmedian(PX_sub))
@@ -550,11 +562,11 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_range=True, cb_
     
     # overall sum for relative distribution
     if mode=='rel_all':
-        allsum = np.nansum(H)
+        allsum = np.nansum(H_ext)
         allsum[allsum<mincounts]=np.nan
         relHa = H.T/allsum
     elif mode=='rel_y':
-        allsum = np.nansum(H, axis=0)
+        allsum = np.nansum(H_ext, axis=0)
         allsum[allsum<mincounts]=np.nan
         relHa = (H/allsum).T # transpose so the y axis is temperature
         
@@ -973,3 +985,71 @@ ax[2,1].set_position([box6.x0, box6.y0 + box6.height * 0.9, box6.width* 1.15, bo
 
 
 '''
+
+
+
+######################## NOISE CORRECTION RHOHV
+## From Veli
+
+from xhistogram.xarray import histogram
+import wradlib as wrl
+import dask
+from dask.diagnostics import ProgressBar
+import xradar
+
+
+def noise_correction(ds, noise_level):
+    """Calculate SNR, apply to RHOHV
+    """
+    # noise calculations
+    snrh = ds.DBZH - 20 * np.log10(ds.range * 0.001) - noise_level - 0.033 * ds.range / 1000
+    snrh = snrh.where(snrh >= 0).fillna(0)
+    # attrs = wrl.io.xarray.moments_mapping['SNRH']
+    attrs = xradar.model.sweep_vars_mapping['SNRH'] # moved to xradar since wradlib 1.19
+    attrs.pop('gamic', None)
+    snrh = snrh.assign_attrs(attrs)
+    rho = ds.RHOHV * (1. + 1. / 10. ** (snrh * 0.1))
+    rho = rho.assign_attrs(ds.RHOHV.attrs) 
+    ds = ds.assign({'SNRH': snrh, 'RHOHV_NC': rho})
+    ds = ds.assign_coords({'NOISE_LEVEL': noise_level})
+    return ds
+
+
+def noise_correction2(dbz, rho, noise_level):
+    """
+    Calculate SNR, apply to RHOHV
+    Formula from Ryzhkov book page 187/203
+    """
+    # noise calculations
+    snrh = dbz - 20 * np.log10(dbz.range * 0.001) - noise_level - 0.033 * dbz.range / 1000
+    snrh = snrh.where(snrh >= 0).fillna(0)
+    # attrs = wrl.io.xarray.moments_mapping['SNRH']
+    attrs = xradar.model.sweep_vars_mapping['SNRH'] # moved to xradar since wradlib 1.19
+    attrs.pop('gamic', None)
+    snrh = snrh.assign_attrs(attrs)
+    snrh.name = "SNR"
+    rho_nc = rho * (1. + 1. / 10. ** (snrh * 0.1))
+    rho_nc = rho_nc.assign_attrs(rho.attrs) 
+    rho_nc.name = "RHO"
+    return snrh, rho_nc
+
+def calculate_noise_level(dbz, rho, noise=(-40, -20, 1), rho_bins=(0.9, 1.1, 0.005), snr_bins=(5., 30., .1)):
+    """
+    This functions calculates the noise levels and noise corrections for RHOHV, for a range of noise values.
+    It returns a list of signal-to-noise and corrected rhohv arrays, as well as histograms involed in the calculations,
+    a list of standard deviations for every result and the noise value with the minimum std.
+    The final noise correction should be chosen based on the rn value (minumum std)
+    """
+    noise = np.arange(*noise)
+    rho_bins = np.arange(*rho_bins)
+    snr_bins = np.arange(*snr_bins)
+    corr = [noise_correction2(dbz, rho, n) for n in noise]
+    #with ProgressBar():
+    #    corr = dask.compute(*corr)
+    hist = [dask.delayed(histogram)(rho0, snr0, bins=[rho_bins, snr_bins], block_size=rho.time.size) for snr0, rho0 in corr]
+    #hist = [histogram(rho0, snr0, bins=[rho_bins, snr_bins], block_size=rho.time.size) for snr0, rho0 in corr]
+    with ProgressBar():
+        hist = dask.compute(*hist)
+    std = [np.std(r.idxmax('RHO_bin')).values for r in hist]
+    rn = noise[np.argmin(std)]
+    return corr, hist, std, rn
