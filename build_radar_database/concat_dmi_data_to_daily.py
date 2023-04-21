@@ -71,28 +71,28 @@ fpath = []
 for f in htypath:
     print(".", end="")
     # Read metadata
-    m = wrl.io.read_iris(f, loaddata=False, keep_old_sweep_data=True)
+    m = xd.io.backends.iris.IrisRawFile(f, loaddata=False)
     # Extract info
     fname = os.path.basename(f).split(".")[0]
     radarid_ = fname[0:3]
     dtimestr = fname[3:]
     dtime_ = dt.datetime.strptime(dtimestr, "%y%m%d%H%M%S")
-    taskname_ = m["product_hdr"]["product_configuration"]["task_name"].strip()
-    nbins_ = m["nbins"]
-    rlastbin_ = m["ingest_header"]["task_configuration"]["task_range_info"]["range_last_bin"]/100
-    binlength_ = m["ingest_header"]["task_configuration"]["task_range_info"]["step_output_bins"]/100
-    horbeamwidth_ = round(m["ingest_header"]["task_configuration"]["task_misc_info"]["horizontal_beam_width"], 2)
+    taskname_ = m.product_hdr["product_configuration"]["task_name"].strip()
+    nbins_ = m.nbins
+    rlastbin_ = m.ingest_header["task_configuration"]["task_range_info"]["range_last_bin"]/100
+    binlength_ = m.ingest_header["task_configuration"]["task_range_info"]["step_output_bins"]/100
+    horbeamwidth_ = round(m.ingest_header["task_configuration"]["task_misc_info"]["horizontal_beam_width"], 2)
     for i in range(10):
         try:
-            nrays_expected_ = m["data"][i]["ingest_data_hdrs"]["DB_DBZ"]["number_rays_file_expected"]
-            nrays_written_ = m["data"][i]["ingest_data_hdrs"]["DB_DBZ"]["number_rays_file_written"]    
-            elevation_ = round(m["data"][i]["ingest_data_hdrs"]["DB_DBZ"]["fixed_angle"], 2)
+            nrays_expected_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["number_rays_file_expected"]
+            nrays_written_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["number_rays_file_written"]    
+            elevation_ = round(m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["fixed_angle"], 2)
             break
         except KeyError:
             try:
-                nrays_expected_ = m["data"][i]["ingest_data_hdrs"]["DB_DBZ2"]["number_rays_file_expected"]
-                nrays_written_ = m["data"][i]["ingest_data_hdrs"]["DB_DBZ2"]["number_rays_file_written"]    
-                elevation_ = round(m["data"][i]["ingest_data_hdrs"]["DB_DBZ2"]["fixed_angle"], 2)
+                nrays_expected_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["number_rays_file_expected"]
+                nrays_written_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["number_rays_file_written"]    
+                elevation_ = round(m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["fixed_angle"], 2)
                 break
             except KeyError:
                 continue
@@ -171,10 +171,14 @@ def read_single(f):
     ds = ds.rename_vars(time="rtime")
     ds = ds.assign_coords(time=ds.rtime.min())
     ds["time"].encoding = ds["rtime"].encoding # copy also the encoding
+    # fix time dtype to prevent uint16 overflow
+    ds["time"].encoding["dtype"] = np.int64
+    ds["rtime"].encoding["dtype"] = np.int64
     return ds
 
 # @dask.delayed # We ditch dask to use multiprocessing below
 def process_single(f, num, dest, scheme="unpacked", sdict={}):
+    print(".", end="")
     ds = read_single(f)
     moments = [k for k,v in ds.variables.items() if v.ndim == 2]
     if "unpacked" in scheme:
@@ -184,9 +188,27 @@ def process_single(f, num, dest, scheme="unpacked", sdict={}):
         new_enc = {k: dwd_enc[k] for k in moments if k in dwd_enc}
     
     shape = ds[moments[0]].shape
-    enc_new = dict(chunksizes=(1, ) + shape[1:])
+    #print(shape)
+    enc_new = dict(chunksizes=shape)
     enc_new.update(sdict) 
     [new_enc[k].update(enc_new) for k in new_enc]
+    
+    # set _FillValue according IRIS
+    for mom in moments:
+        if mom in ["DB_HCLASS2"]:
+            continue
+        # we can be smart an set "0" unconditionally 
+        # as this is what IRIS No-Data value is
+        new_enc[mom]["_FillValue"] = new_enc[mom]["dtype"].type(0)
+        minval = new_enc[mom]["dtype"].type(0) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
+        maxval = new_enc[mom]["dtype"].type(65535) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
+        if mom == "PHIDP":
+            # special handling for phase
+            ds[mom] = ds[mom].where(ds[mom] > np.nanmin(ds[mom])).where(ds[mom] <= (maxval+180))
+            ds[mom] = ds[mom].where(ds[mom] <= 180, ds[mom] - 360)
+        else:
+            ds[mom] = ds[mom].where(ds[mom] > minval).where(ds[mom] <= maxval)
+        
     dest = f"{dest}{num:03d}.nc"
     ds.to_netcdf(dest, engine=engine, encoding=new_enc)
     return dest
@@ -225,8 +247,7 @@ enc_new= dict(chunksizes=(1, ) + shape[1:])
 
 drop = ['szip', 'zstd', 'bzip2', 'blosc', 'coordinates']
 enc = {k: {key: v.encoding[key] for key in v.encoding if key not in drop} for k, v in dsr.data_vars.items() if k in moments}
-[enc[k].update(enc_new) for k in moments if k not in ["DB_HCLASS2"]]
-del enc["DB_HCLASS2"]["chunksizes"]
+[enc[k].update(enc_new) for k in moments]
 encoding = {k: enc[k] for k in moments}
 # print(encoding)
 
