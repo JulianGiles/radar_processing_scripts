@@ -51,7 +51,8 @@ dwd_enc["DBTV"] = dwd_enc["TV"]
 #%% Get files
 
 # Get all files for one day
-htypath = sorted(glob.glob("/automount/ags/jgiles/turkey_test/acq/OLDDATA/uza/RADAR/2017/07/27/HTY/RAW/*"))
+htypath = sorted(glob.glob("/home/jgiles/turkey_test/acq/OLDDATA/uza/RADAR/2017/05/08/ANK/RAW/*"))
+# htypath = sorted(glob.glob("/home/jgiles/turkey_test/acq/OLDDATA/uza/RADAR/2017/07/27/HTY/RAW/*"))
 
 # Create a dataframe to store the metadata of all files and then select it more easily
 
@@ -127,7 +128,7 @@ df = pd.DataFrame(OrderedDict(
 
 
 # Let's open one scanning mode and one elevation (this will take some minutes to load)
-mode = 'VOL_A'
+mode = "SURVEILLAN_A" #'SURVEILLAN_A' "VOL_A"
 elev = 0.
 
 # Use the dataframe to get the paths that correspond to our selection
@@ -163,9 +164,14 @@ engine = "h5netcdf"
 #     ds.to_netcdf(dest, engine=engine, encoding=new_enc)
 #     return dest
 
+# extract the angle information for the first of the files, so we reindex accordingly all the files
+dsini = xr.open_dataset(paths[0], engine="iris", group="sweep_0", reindex_angle=False, mask_and_scale=False)
+angle_params = xd.util.extract_angle_parameters(dsini)
+reindex = {k: v for k,v in angle_params.items() if k in ["start_angle", "stop_angle", "angle_res", "direction"]}
+
 # revamped functions
 def read_single(f):
-    reindex = dict(start_angle=-0.5, stop_angle=360, angle_res=1., direction=1)
+    # reindex = dict(start_angle=-0.5, stop_angle=360, angle_res=1., direction=1) # we moved this outside
     ds = xr.open_dataset(f, engine="iris", group="sweep_0", reindex_angle=reindex) # not sure if sweep_0 is the name for all cases
     ds = ds.set_coords("sweep_mode")
     ds = ds.rename_vars(time="rtime")
@@ -193,29 +199,63 @@ def process_single(f, num, dest, scheme="unpacked", sdict={}):
     enc_new.update(sdict) 
     [new_enc[k].update(enc_new) for k in new_enc]
     
-    # set _FillValue according IRIS
-    for mom in moments:
-        if mom in ["DB_HCLASS2"]:
-            continue
-        # we can be smart an set "0" unconditionally 
-        # as this is what IRIS No-Data value is
-        new_enc[mom]["_FillValue"] = new_enc[mom]["dtype"].type(0)
-        minval = new_enc[mom]["dtype"].type(0) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
-        maxval = new_enc[mom]["dtype"].type(65535) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
-        if mom == "PHIDP":
-            # special handling for phase
-            ds[mom] = ds[mom].where(ds[mom] > np.nanmin(ds[mom])).where(ds[mom] <= (maxval+180))
-            ds[mom] = ds[mom].where(ds[mom] <= 180, ds[mom] - 360)
-        else:
-            ds[mom] = ds[mom].where(ds[mom] > minval).where(ds[mom] <= maxval)
+    # # set _FillValue according IRIS (OLD VERSION)
+    # for mom in moments:
+    #     if mom in ["DB_HCLASS2"]:
+    #         continue
+    #     # we can be smart an set "0" unconditionally 
+    #     # as this is what IRIS No-Data value is
+    #     new_enc[mom]["_FillValue"] = new_enc[mom]["dtype"].type(0)
+    #     minval = new_enc[mom]["dtype"].type(0) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
+    #     maxval = new_enc[mom]["dtype"].type(65535) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
+    #     if mom == "PHIDP":
+    #         # special handling for phase
+    #         ds[mom] = ds[mom].where(ds[mom] > np.nanmin(ds[mom])).where(ds[mom] <= (maxval+180))
+    #         ds[mom] = ds[mom].where(ds[mom] <= 180, ds[mom] - 360)
+    #     else:
+    #         ds[mom] = ds[mom].where(ds[mom] > minval).where(ds[mom] <= maxval)
         
+    if "unpacked" not in scheme:
+        # set _FillValue according IRIS
+        for mom in moments:
+            if mom in ["DB_HCLASS2"]:
+                continue
+        
+            # this is normally already set, but anyway, use DWD fillvalue
+            # but: 65535 is reserved in the IRIS software for areas not scanned
+            new_enc[mom]["_FillValue"] = new_enc[mom]["dtype"].type(65535)
+        
+            # here is our only assumption: at least one IRIS "zero" value is in the data
+            iris_minval = np.nanmin(ds[mom])
+        
+            # DWD minval/maxval in Iris-space
+            # zero is OK for all cases
+            # 65534 is safe for most cases
+            minval = new_enc[mom]["dtype"].type(0) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
+            maxval = new_enc[mom]["dtype"].type(65534) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
+        
+            # TODO: add a check to see if minval >= iris_minval, if not raise an exception or warning
+        
+            # set IRIS NoData to NaN
+            ds[mom] = ds[mom].where(ds[mom] > iris_minval)
+        
+            # special treatment of PHIDP
+            if mom == "PHIDP":
+                # [0, 360] -> [-180, 180]
+                ds[mom] -= 180
+        
+            # clip values to DWD, set out-of-bound values to minval/maxval 
+            ds[mom] = ds[mom].where((ds[mom] > minval) | np.isnan(ds[mom]), minval)
+            ds[mom] = ds[mom].where((ds[mom] < maxval) | np.isnan(ds[mom]), maxval)     
+        
+    
     dest = f"{dest}{num:03d}.nc"
     ds.to_netcdf(dest, engine=engine, encoding=new_enc)
     return dest
 
 #%%time  convert files in subfolder
 
-dest = "/home/jgiles/turkey_test/test6_"
+dest = "/home/jgiles/turkey_test/testank_"
 results = []
 # # fill dask compute pipeline
 # for i, f in tqdm(enumerate(paths)):
@@ -260,8 +300,8 @@ dsr.to_netcdf(f"{dest}-iris-test-compressed-{engine}.nc", engine=engine, encodin
 
 #%% TEST Load the daily file
 
-dsrunpckd = xr.open_dataset(f"/home/jgiles/turkey_test/test4_-iris-test-compressed-{engine}.nc")
-dsrpckd = xr.open_dataset(f"/home/jgiles/turkey_test/test5_-iris-test-compressed-{engine}.nc")
+dsrunpckd = xr.open_dataset(f"/home/jgiles/turkey_test/test1_-iris-test-compressed-{engine}.nc")
+dsrpckd = xr.open_dataset(f"/home/jgiles/turkey_test/testank_-iris-test-compressed-{engine}.nc")
 
 
 # test plots
@@ -272,10 +312,114 @@ np.testing.assert_allclose(dsrunpckd.DBZH.values, dsrpckd.DBZH.values)
 
 
 import matplotlib.pyplot as plt
-vv = "DBTH"
+vv = "KDP"
 tt = 0
-dsrunpckd[vv][tt, 250, 0:100].plot(label="unpacked")
+# dsrunpckd[vv][tt, 250, 0:100].plot(label="unpacked")
 dsrpckd[vv][tt, 250, 0:100].plot(label="packed", ls="--")
 plt.legend()
 plt.suptitle(vv)
+
+
+# plot interactively
+import plotly.express as px
+
+# this example does not work for polar coords
+def plot_2d_data(ds, var, dim1, dim2):
+    data = ds[var]  # Extract the data from the xarray Dataset
+    dims = (ds[dim1], ds[dim2])  # Extract the dimensions to plot along
+    fig = px.imshow(data, animation_frame='time', x=dims[1], y=dims[0], color_continuous_scale='Viridis')
+    fig.update_layout(title=f"2D Plot of {var} along {dim1} and {dim2}")
+    return fig
+
+fig = plot_2d_data(dsrpckd.loc[{"time": "2017-05-08 00"}].pipe(wrl.georef.georeference_dataset), vv, 'azimuth', 'range')
+# fig.show()
+fig.write_html("/home/jgiles/turkey_test/images/first_test.html")
+
+
+
+# this example work for polar coords! use Barpolar instead of imshow (but very slow to load the html file later)
+# for some reason is not working, the data is not showing
+# https://stackoverflow.com/questions/64918776/is-there-a-plotly-equivalent-to-matplotlib-pcolormesh
+import plotly.graph_objs as go
+import plotly.express as px
+
+ds_to_plot = dsrpckd[vv].loc[{"time": "2017-05-08 00"}][0]
+
+azgrid, rgrid = np.meshgrid(ds_to_plot["azimuth"].values, ds_to_plot["range"].values)
+azgrid = azgrid.ravel()
+rgrid = rgrid.ravel()
+
+hovertemplate = ('my range: %{r}<br>'
+                 'my azimuth: %{theta}<br>'
+                 'my value: %{customdata[0]:.2f}<br>'
+                 '<extra></extra>')
+
+fig = go.Figure(
+    go.Barpolar(
+        r=rgrid,
+        theta=azgrid,
+        customdata=np.vstack((ds_to_plot.values)),
+        hovertemplate=hovertemplate,
+        marker=dict(
+            colorscale=px.colors.diverging.BrBG,
+            showscale=True,
+            color=ds_to_plot.values,
+        )
+    )
+)
+
+fig.update_layout(
+    title='My Plot',
+    polar=dict(
+        angularaxis=dict(tickvals=np.arange(0, 360, 10),
+                         direction='clockwise'),
+        radialaxis_tickvals=[],
+    )
+)
+# fig.show()
+fig.write_html("/home/jgiles/turkey_test/images/second_test.html")
+
+
+
+# try with hvplot
+
+# PPI
+import hvplot.xarray # noqa
+import hvplot
+
+ds_to_plot = dsrpckd[vv].loc[{"time": "2017-05-08"}].pipe(wrl.georef.georeference_dataset)
+
+
+hvplot.extension('matplotlib')
+
+visdict14 = radarmet.visdict14
+norm = radarmet.get_discrete_norm(visdict14[vv]["ticks"])
+ticks = visdict14[vv]["ticks"]
+cmap = visdict14[vv]["cmap"] #mpl.cm.get_cmap("HomeyerRainbow")
+
+# re do the colormap because the function does not get the extremes correctly
+cmap2 = mpl.colors.ListedColormap([cc for cc in cmap.colors[1:-1]])
+cmap2.set_over(cmap.colors[-1])
+cmap2.set_under(cmap.colors[0])
+
+fig = ds_to_plot.hvplot(x="x", y="y",groupby="time", kind="quadmesh", colorbar=True).opts(colorbar_opts={
+                                                                                            # 'background_fill_alpha':0.1,
+                                                                                            # 'bar_line_width':2,
+                                                                                            # 'label_standoff':8,
+                                                                                            # 'major_label_text_font_size':2,
+                                                                                            # 'major_label_overrides':clabs,
+                                                                                            'ticks': ticks,
+                                                                                            },
+                                                                                            clim =(ticks[0], ticks[-1]),
+                                                                                            cmap=cmap2,
+                                                                                            cbar_extend= "both",
+                                                                                            # norm=norm
+                                                                                            title=vv
+
+                                                                                            )
+hvplot.save(fig, "/home/jgiles/turkey_test/images/third_test.html")
+
+
+
+
 
