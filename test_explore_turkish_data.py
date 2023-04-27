@@ -228,7 +228,7 @@ hvplot.save(fig, "/home/jgiles/turkey_test/images/fourth_test.html")
 
 
 #### with bokeh extension
-# this is quite close but not there yet, I still have to make the colorbar better.
+# this is quite close but not there yet, the colorbar is still not normalized according to the ticks
 
 hvplot.extension('bokeh')
 ds_to_plot = dsrpckd[vv].loc[{"time": "2017-05-08 00"}].pipe(wrl.georef.georeference_dataset)
