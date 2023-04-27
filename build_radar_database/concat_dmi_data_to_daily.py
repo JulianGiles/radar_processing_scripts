@@ -175,7 +175,7 @@ for elev in allelevs:
         #%% Reading functions
         
         # get sweep number
-        sweepnr = df["sweep_number"].loc[df["elevation"]==elev].loc[df["taskname"]==mode].unique()[0]
+        sweepnr = str( df["sweep_number"].loc[df["elevation"]==elev].loc[df["taskname"]==mode].unique()[0]-1 )
         
         # extract the angle information for the first of the files, so we reindex accordingly all the files
         dsini = xr.open_dataset(paths[0], engine="iris", group="sweep_"+sweepnr, reindex_angle=False, mask_and_scale=False)
