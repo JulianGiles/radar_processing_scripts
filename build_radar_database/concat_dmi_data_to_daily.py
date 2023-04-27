@@ -39,7 +39,7 @@ from functools import partial
 # destpath = sys.argv[1]
 
 # For testing
-htypath = sorted(glob.glob("/home/jgiles/turkey_test/¨acq/OLDDATA/uza/RADAR/2017/05/08/ANK/RAW/*"))
+htypath = sorted(glob.glob("/home/jgiles/turkey_test/acq/OLDDATA/uza/RADAR/2017/05/08/ANK/RAW/*"))
 dest = "/home/jgiles/turkey_test/temp/"
 
 # create dest if it does not exist
