@@ -35,13 +35,13 @@ from functools import partial
 
 
 #%% Set paths
-# htypath = sorted(glob.glob(sys.argv[1]+"/*"))
-# destpath = sys.argv[1]
+htypath = sorted(glob.glob(sys.argv[1]+"/*"))
+dest = sys.argv[2]
 
 # For testing
-htypath = sorted(glob.glob("/home/jgiles/turkey_test/acq/OLDDATA/uza/RADAR/2017/05/08/ANK/RAW/*"))
-htypath = sorted(glob.glob("/home/jgiles/turkey_test/acq/OLDDATA/uza/RADAR/2017/07/27/HTY/RAW/*"))
-dest = "/home/jgiles/turkey_test/temp/"
+# htypath = sorted(glob.glob("/home/jgiles/turkey_test/acq/OLDDATA/uza/RADAR/2017/05/08/ANK/RAW/*"))
+# htypath = sorted(glob.glob("/home/jgiles/turkey_test/acq/OLDDATA/uza/RADAR/2017/07/27/HTY/RAW/*"))
+# dest = "/home/jgiles/turkey_test/temp/"
 
 # create dest if it does not exist
 if not os.path.exists(dest):
@@ -215,7 +215,7 @@ for elev in allelevs:
             if "unpacked" not in scheme:
                 # set _FillValue according IRIS
                 for mom in moments:
-                    if mom in ["DB_HCLASS2"]:
+                    if mom in ["DB_HCLASS2", "DB_HCLASS"]:
                         continue
                 
                     # this is normally already set, but anyway, use DWD fillvalue
