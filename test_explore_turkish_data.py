@@ -5,8 +5,56 @@ Created on Thu Apr 27 09:43:10 2023
 
 @author: jgiles
 """
+# NEEDS WRADLIB 1.19 !! (OR GREATER?)
 
-#%% TEST Load the daily file
+import wradlib as wrl
+import numpy as np
+import sys
+import glob
+import xarray as xr
+import os
+import datetime as dt
+import pandas as pd
+from tqdm.notebook import trange, tqdm
+
+import warnings
+warnings.filterwarnings('ignore')
+import xradar as xd
+import datatree as dttree
+
+import netCDF4
+import packaging
+
+import time
+start_time = time.time()
+
+import os
+os.chdir('/home/jgiles/')
+
+try:
+    from Scripts.python.radar_processing_scripts import utils
+    from Scripts.python.radar_processing_scripts import radarmet
+except ModuleNotFoundError:
+    import utils
+    import radarmet
+
+
+# Plotting libs
+import plotly.graph_objs as go
+import plotly.express as px
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import hvplot.xarray # noqa
+import hvplot
+import panel as pn
+import holoviews as hv
+from bokeh.models.tickers import FixedTicker
+
+
+#%% Load the daily file
+# Set Engine
+# engine = "netcdf4"
+engine = "h5netcdf"
 
 dsrunpckd = xr.open_dataset(f"/home/jgiles/turkey_test/test1_-iris-test-compressed-{engine}.nc")
 dsrpckd = xr.open_dataset(f"/home/jgiles/turkey_test/testank_-iris-test-compressed-{engine}.nc")
@@ -18,20 +66,20 @@ dsrpckd.rtime[0].plot(label="pckd")
 
 np.testing.assert_allclose(dsrunpckd.DBZH.values, dsrpckd.DBZH.values)
 
+#%% PLOT simple
 
-import matplotlib.pyplot as plt
-vv = "KDP"
-tt = 0
+vv = "KDP" # which moment to plor
+tt = 0 # which timestep to plot
+
+
 # dsrunpckd[vv][tt, 250, 0:100].plot(label="unpacked")
 dsrpckd[vv][tt, 250, 0:100].plot(label="packed", ls="--")
 plt.legend()
 plt.suptitle(vv)
 
+#%% PLOT interactively with plotly
 
-# plot interactively
-import plotly.express as px
-
-# this example does not work for polar coords
+#### this example does not work for polar coords
 def plot_2d_data(ds, var, dim1, dim2):
     data = ds[var]  # Extract the data from the xarray Dataset
     dims = (ds[dim1], ds[dim2])  # Extract the dimensions to plot along
@@ -45,12 +93,10 @@ fig.write_html("/home/jgiles/turkey_test/images/first_test.html")
 
 
 
-# this example work for polar coords! use Barpolar instead of imshow (but very slow to load the html file later)
+#### this example should work for polar coords. use Barpolar instead of imshow (but very slow to load the html file later)
 # for some reason is not working, the data is not showing
 # https://stackoverflow.com/questions/64918776/is-there-a-plotly-equivalent-to-matplotlib-pcolormesh
 # https://github.com/plotly/plotly.py/issues/2024
-import plotly.graph_objs as go
-import plotly.express as px
 
 ds_to_plot = dsrpckd[vv].loc[{"time": "2017-05-08 00"}][0]
 
@@ -89,19 +135,14 @@ fig.update_layout(
 fig.write_html("/home/jgiles/turkey_test/images/second_test.html")
 
 
+#%% PLOT interactively with hvplot
 
-# try with hvplot
-
-# PPI
-import hvplot.xarray # noqa
-import hvplot
-import panel as pn
-import holoviews as hv
+#### PPIs
 
 
-ds_to_plot = dsrpckd[vv].loc[{"time": "2017-05-08 04"}].pipe(wrl.georef.georeference_dataset)
+ds_to_plot = dsrpckd[vv].loc[{"time": "2017-05-08 00"}].pipe(wrl.georef.georeference_dataset)
 
-
+#### with matplotlib extension
 hvplot.extension('matplotlib')
 # set the widget on the bottom https://github.com/holoviz/hvplot/issues/519
 hv.output(widget_location='bottom') 
@@ -135,7 +176,7 @@ fig = ds_to_plot.hvplot(x="x", y="y",groupby="time", kind="quadmesh", colorbar=T
 hvplot.save(fig, "/home/jgiles/turkey_test/images/third_test.html")
 
 
-# Multi-variables PPIs at the same time
+#### Multi-variables PPIs at the same time
 # there is an issue that I cannot pass the norm argument to the plotting function to correctly plot the colorbars
 # I raised an issue here: https://github.com/holoviz/hvplot/issues/1061
 
@@ -186,9 +227,8 @@ hvplot.save(fig, "/home/jgiles/turkey_test/images/fourth_test.html")
 
 
 
-# try with bokeh
+#### with bokeh extension
 # this is quite close but not there yet, I still have to make the colorbar better.
-from bokeh.models.tickers import FixedTicker
 
 hvplot.extension('bokeh')
 ds_to_plot = dsrpckd[vv].loc[{"time": "2017-05-08 00"}].pipe(wrl.georef.georeference_dataset)
@@ -202,7 +242,7 @@ cmap = visdict14[vv]["cmap"] #mpl.cm.get_cmap("HomeyerRainbow")
 ticker = FixedTicker(ticks=visdict14[vv]["ticks"])
 
 
-# re do the colormap because the function does not get the extremes correctly
+# re do the colormap because the function does not get the extremes correctly (this does nothing for the pointy ends here)
 cmap2 = mpl.colors.ListedColormap([cc for cc in cmap.colors[1:-1]])
 cmap2.set_over(cmap.colors[-1])
 cmap2.set_under(cmap.colors[0])
@@ -224,7 +264,7 @@ hvplot.save(fig, "/home/jgiles/turkey_test/images/fifth_test.html")
 
 
 
-# Multi variable lines along an azimuth
+#### Multi variable lines along an azimuth (works but extremely slow)
 hvplot.extension('bokeh')
 # set the widget on the bottom https://github.com/holoviz/hvplot/issues/519
 hv.output(widget_location='bottom') 
