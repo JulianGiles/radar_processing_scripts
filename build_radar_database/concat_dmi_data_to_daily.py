@@ -82,7 +82,7 @@ horbeamwidth = []
 fpath = []
 
 for f in htypath:
-    print(".", end="")
+    # print(".", end="")
     # Read metadata
     m = xd.io.backends.iris.IrisRawFile(f, loaddata=False)
     # Extract info
@@ -164,6 +164,8 @@ for elev in allelevs:
         if len(paths) == 0:
             continue
         
+        print("processing "+elev+" "+mode)
+        
         #%% Reading functions
         
         
@@ -242,6 +244,12 @@ for elev in allelevs:
         
         #%%time  convert files in subfolder
         
+        # delete all partial files in the folder, if any
+        to_remove = glob.glob(dest+"part_*")
+        # delete each file in the list
+        for file_path in to_remove:
+            os.remove(file_path)
+        
         # dest = "/home/jgiles/turkey_test/testank_"
         results = []
             
@@ -276,6 +284,14 @@ for elev in allelevs:
         dsr.to_netcdf(f"{dest}{mode}-allmoms-{elev}-{year}{month}{day}-{loc}-{engine}.nc", engine=engine, encoding=encoding)
         
         
-        
+        # delete all partial files in the folder, if any
+        to_remove = glob.glob(dest+"part_*")
+        # delete each file in the list
+        for file_path in to_remove:
+            os.remove(file_path)
+
+#%% print how much time did it take
+total_time = time.time() - start_time
+print(f"Script took {total_time/60:.2f} minutes to run.")
 
 
