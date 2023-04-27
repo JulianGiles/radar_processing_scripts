@@ -40,6 +40,7 @@ from functools import partial
 
 # For testing
 htypath = sorted(glob.glob("/home/jgiles/turkey_test/acq/OLDDATA/uza/RADAR/2017/05/08/ANK/RAW/*"))
+htypath = sorted(glob.glob("/home/jgiles/turkey_test/acq/OLDDATA/uza/RADAR/2017/07/27/HTY/RAW/*"))
 dest = "/home/jgiles/turkey_test/temp/"
 
 # create dest if it does not exist
@@ -80,6 +81,7 @@ rlastbin = []
 binlength = []
 horbeamwidth = []
 fpath = []
+sweep_number = []
 
 for f in htypath:
     # print(".", end="")
@@ -100,12 +102,14 @@ for f in htypath:
             nrays_expected_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["number_rays_file_expected"]
             nrays_written_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["number_rays_file_written"]    
             elevation_ = round(m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["fixed_angle"], 2)
+            sweep_number_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["sweep_number"]
             break
         except KeyError:
             try:
                 nrays_expected_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["number_rays_file_expected"]
                 nrays_written_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["number_rays_file_written"]    
                 elevation_ = round(m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["fixed_angle"], 2)
+                sweep_number_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["sweep_number"]
                 break
             except KeyError:
                 continue
@@ -121,6 +125,7 @@ for f in htypath:
     #nrays_written.append(nrays_written_)
     fpath.append(f)
     horbeamwidth.append(horbeamwidth_)   
+    sweep_number.append(sweep_number_)
 
 # put attributes in a dataframe
 from collections import OrderedDict
@@ -135,7 +140,8 @@ df = pd.DataFrame(OrderedDict(
                    "rlastbin": rlastbin,
                    "binlength": binlength,
                    "horbeamwidth": horbeamwidth,
-                   "fpath": fpath                   
+                   "fpath": fpath,
+                    "sweep_number": sweep_number              
                   }))
 
 
@@ -164,20 +170,22 @@ for elev in allelevs:
         if len(paths) == 0:
             continue
         
-        print("processing "+elev+" "+mode)
+        print("processing "+str(elev)+" "+mode)
         
         #%% Reading functions
         
+        # get sweep number
+        sweepnr = df["sweep_number"].loc[df["elevation"]==elev].loc[df["taskname"]==mode].unique()[0]
         
         # extract the angle information for the first of the files, so we reindex accordingly all the files
-        dsini = xr.open_dataset(paths[0], engine="iris", group="sweep_0", reindex_angle=False, mask_and_scale=False)
+        dsini = xr.open_dataset(paths[0], engine="iris", group="sweep_"+sweepnr, reindex_angle=False, mask_and_scale=False)
         angle_params = xd.util.extract_angle_parameters(dsini)
         reindex = {k: v for k,v in angle_params.items() if k in ["start_angle", "stop_angle", "angle_res", "direction"]}
         
         # revamped functions
         def read_single(f):
             # reindex = dict(start_angle=-0.5, stop_angle=360, angle_res=1., direction=1) # we moved this outside
-            ds = xr.open_dataset(f, engine="iris", group="sweep_0", reindex_angle=reindex) # not sure if sweep_0 is the name for all cases
+            ds = xr.open_dataset(f, engine="iris", group="sweep_"+sweepnr, reindex_angle=reindex) # not sure if sweep_0 is the name for all cases
             ds = ds.set_coords("sweep_mode")
             ds = ds.rename_vars(time="rtime")
             ds = ds.assign_coords(time=ds.rtime.min())
@@ -189,7 +197,7 @@ for elev in allelevs:
         
         # @dask.delayed # We ditch dask to use multiprocessing below
         def process_single(f, num, dest, scheme="unpacked", sdict={}):
-            print(".", end="")
+            # print(".", end="")
             ds = read_single(f)
             moments = [k for k,v in ds.variables.items() if v.ndim == 2]
             if "unpacked" in scheme:
