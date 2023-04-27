@@ -29,11 +29,6 @@ import packaging
 import time
 start_time = time.time()
 
-
-from multiprocessing import Pool
-from functools import partial
-
-
 #%% Get encoding from a DWD file
 dwd = xr.open_dataset("/automount/ags/jgiles/turkey_test/ras07-vol5minng01_sweeph5onem_allmoms_00-2017072700005800-pro-10392-hd5", group="sweep_0")
 # display(dwd)
@@ -44,6 +39,14 @@ dwd_enc["PHIDP"] = dwd_enc["UPHIDP"]
 dwd_enc["DBTH"] = dwd_enc["TH"]
 dwd_enc["DBTV"] = dwd_enc["TV"]
 
+#%% Import and set Dask stuff
+
+# import dask
+# from dask.distributed import Client
+# # not sure if this is needed
+# # client = Client(n_workers=8)
+# # client
+# from dask.diagnostics import ProgressBar
 
 #%% Get files
 
@@ -124,10 +127,6 @@ df = pd.DataFrame(OrderedDict(
                   }))
 
 
-# extract all possible elevations and tasknames
-allelevs = df["elevation"].unique()
-alltasknames = df["taskname"].unique()
-
 # Let's open one scanning mode and one elevation (this will take some minutes to load)
 mode = "SURVEILLAN_A" #'SURVEILLAN_A' "VOL_A"
 elev = 0.
@@ -144,6 +143,26 @@ engine = "h5netcdf"
 
 #%% Reading functions
 
+# # original
+# def read_single(f):
+#     reindex = dict(start_angle=-0.5, stop_angle=360, angle_res=1., direction=1)
+#     ds = xr.open_dataset(f, engine="iris", group="sweep_0", reindex_angle=reindex)
+#     ds = ds.set_coords("sweep_mode")
+#     ds = ds.rename_vars(time="rtime")
+#     ds = ds.assign_coords(time=ds.rtime.min())
+#     return ds
+
+# @dask.delayed
+# def process_single(f, num, dest):
+#     ds = read_single(f)
+#     moments = [k for k,v in ds.variables.items() if v.ndim == 2]
+#     new_enc = {k: dwd_enc[k] for k in moments if k in dwd_enc}
+#     shape = ds[moments[0]].shape
+#     enc_new = dict(chunksizes=(1, ) + shape[1:])
+#     [new_enc[k].update(enc_new) for k in new_enc]
+#     dest = f"{dest}{num:03d}.nc"
+#     ds.to_netcdf(dest, engine=engine, encoding=new_enc)
+#     return dest
 
 # extract the angle information for the first of the files, so we reindex accordingly all the files
 dsini = xr.open_dataset(paths[0], engine="iris", group="sweep_0", reindex_angle=False, mask_and_scale=False)
@@ -179,7 +198,23 @@ def process_single(f, num, dest, scheme="unpacked", sdict={}):
     enc_new = dict(chunksizes=shape)
     enc_new.update(sdict) 
     [new_enc[k].update(enc_new) for k in new_enc]
-            
+    
+    # # set _FillValue according IRIS (OLD VERSION)
+    # for mom in moments:
+    #     if mom in ["DB_HCLASS2"]:
+    #         continue
+    #     # we can be smart an set "0" unconditionally 
+    #     # as this is what IRIS No-Data value is
+    #     new_enc[mom]["_FillValue"] = new_enc[mom]["dtype"].type(0)
+    #     minval = new_enc[mom]["dtype"].type(0) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
+    #     maxval = new_enc[mom]["dtype"].type(65535) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
+    #     if mom == "PHIDP":
+    #         # special handling for phase
+    #         ds[mom] = ds[mom].where(ds[mom] > np.nanmin(ds[mom])).where(ds[mom] <= (maxval+180))
+    #         ds[mom] = ds[mom].where(ds[mom] <= 180, ds[mom] - 360)
+    #     else:
+    #         ds[mom] = ds[mom].where(ds[mom] > minval).where(ds[mom] <= maxval)
+        
     if "unpacked" not in scheme:
         # set _FillValue according IRIS
         for mom in moments:
@@ -222,7 +257,19 @@ def process_single(f, num, dest, scheme="unpacked", sdict={}):
 
 dest = "/home/jgiles/turkey_test/testank_"
 results = []
+# # fill dask compute pipeline
+# for i, f in tqdm(enumerate(paths)):
+#     # results.append(client.compute(process_single(f, i, dest))) # some workers fail for some reason
+#     results.append(process_single(f, i, dest).compute()) # this way takes about 5 min to process all paths
+# # compute pipeline
+# # this returns, if all results are computed
+# for res in results:
+#     print(res.result())    
     
+# other way, much faster (about 1 min)
+from multiprocessing import Pool
+from functools import partial
+
 process_single_partial = partial(process_single, dest=dest, scheme="packed")
 with Pool() as P:
     results = P.starmap( process_single_partial, [(f, i) for i, f in enumerate(paths)] )
