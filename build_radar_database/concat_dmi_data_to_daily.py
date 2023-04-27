@@ -34,6 +34,21 @@ from multiprocessing import Pool
 from functools import partial
 
 
+#%% Set paths
+# htypath = sorted(glob.glob(sys.argv[1]+"/*"))
+# destpath = sys.argv[1]
+
+# For testing
+htypath = sorted(glob.glob("/home/jgiles/turkey_test/¨acq/OLDDATA/uza/RADAR/2017/05/08/ANK/RAW/*"))
+dest = "/home/jgiles/turkey_test/temp/"
+
+# create dest if it does not exist
+if not os.path.exists(dest):
+      
+    # if the demo_folder directory is not present 
+    # then create it.
+    os.makedirs(dest)
+
 #%% Get encoding from a DWD file
 dwd = xr.open_dataset("/automount/ags/jgiles/turkey_test/ras07-vol5minng01_sweeph5onem_allmoms_00-2017072700005800-pro-10392-hd5", group="sweep_0")
 # display(dwd)
@@ -48,7 +63,7 @@ dwd_enc["DBTV"] = dwd_enc["TV"]
 #%% Get files
 
 # Get all files for one day
-htypath = sorted(glob.glob("/home/jgiles/turkey_test/acq/OLDDATA/uza/RADAR/2017/05/08/ANK/RAW/*"))
+# htypath = sorted(glob.glob("/home/jgiles/turkey_test/acq/OLDDATA/uza/RADAR/2017/05/08/ANK/RAW/*"))
 # htypath = sorted(glob.glob("/home/jgiles/turkey_test/acq/OLDDATA/uza/RADAR/2017/07/27/HTY/RAW/*"))
 
 # Create a dataframe to store the metadata of all files and then select it more easily
@@ -132,124 +147,135 @@ alltasknames = df["taskname"].unique()
 mode = "SURVEILLAN_A" #'SURVEILLAN_A' "VOL_A"
 elev = 0.
 
-# Use the dataframe to get the paths that correspond to our selection
-paths = df["fpath"].loc[df["elevation"]==elev].loc[df["taskname"]==mode]
-
-paths = sorted(list(paths))
-# print(len(paths))
-
 # Set Engine
 # engine = "netcdf4"
 engine = "h5netcdf"
 
-#%% Reading functions
-
-
-# extract the angle information for the first of the files, so we reindex accordingly all the files
-dsini = xr.open_dataset(paths[0], engine="iris", group="sweep_0", reindex_angle=False, mask_and_scale=False)
-angle_params = xd.util.extract_angle_parameters(dsini)
-reindex = {k: v for k,v in angle_params.items() if k in ["start_angle", "stop_angle", "angle_res", "direction"]}
-
-# revamped functions
-def read_single(f):
-    # reindex = dict(start_angle=-0.5, stop_angle=360, angle_res=1., direction=1) # we moved this outside
-    ds = xr.open_dataset(f, engine="iris", group="sweep_0", reindex_angle=reindex) # not sure if sweep_0 is the name for all cases
-    ds = ds.set_coords("sweep_mode")
-    ds = ds.rename_vars(time="rtime")
-    ds = ds.assign_coords(time=ds.rtime.min())
-    ds["time"].encoding = ds["rtime"].encoding # copy also the encoding
-    # fix time dtype to prevent uint16 overflow
-    ds["time"].encoding["dtype"] = np.int64
-    ds["rtime"].encoding["dtype"] = np.int64
-    return ds
-
-# @dask.delayed # We ditch dask to use multiprocessing below
-def process_single(f, num, dest, scheme="unpacked", sdict={}):
-    print(".", end="")
-    ds = read_single(f)
-    moments = [k for k,v in ds.variables.items() if v.ndim == 2]
-    if "unpacked" in scheme:
-        valid = ["dtype", "_FillValue"]
-        new_enc = {k: {key: val for key, val in ds[k].encoding.items() if key in valid} for k in moments}
-    else: 
-        new_enc = {k: dwd_enc[k] for k in moments if k in dwd_enc}
+#%% Here starts the processing for each elev/taskname combo
+for elev in allelevs:
+    for mode in alltasknames:
+        
+        # Use the dataframe to get the paths that correspond to our selection
+        paths = df["fpath"].loc[df["elevation"]==elev].loc[df["taskname"]==mode]
+        
+        paths = sorted(list(paths))
+        # print(len(paths))
     
-    shape = ds[moments[0]].shape
-    #print(shape)
-    enc_new = dict(chunksizes=shape)
-    enc_new.update(sdict) 
-    [new_enc[k].update(enc_new) for k in new_enc]
+        if len(paths) == 0:
+            continue
+        
+        #%% Reading functions
+        
+        
+        # extract the angle information for the first of the files, so we reindex accordingly all the files
+        dsini = xr.open_dataset(paths[0], engine="iris", group="sweep_0", reindex_angle=False, mask_and_scale=False)
+        angle_params = xd.util.extract_angle_parameters(dsini)
+        reindex = {k: v for k,v in angle_params.items() if k in ["start_angle", "stop_angle", "angle_res", "direction"]}
+        
+        # revamped functions
+        def read_single(f):
+            # reindex = dict(start_angle=-0.5, stop_angle=360, angle_res=1., direction=1) # we moved this outside
+            ds = xr.open_dataset(f, engine="iris", group="sweep_0", reindex_angle=reindex) # not sure if sweep_0 is the name for all cases
+            ds = ds.set_coords("sweep_mode")
+            ds = ds.rename_vars(time="rtime")
+            ds = ds.assign_coords(time=ds.rtime.min())
+            ds["time"].encoding = ds["rtime"].encoding # copy also the encoding
+            # fix time dtype to prevent uint16 overflow
+            ds["time"].encoding["dtype"] = np.int64
+            ds["rtime"].encoding["dtype"] = np.int64
+            return ds
+        
+        # @dask.delayed # We ditch dask to use multiprocessing below
+        def process_single(f, num, dest, scheme="unpacked", sdict={}):
+            print(".", end="")
+            ds = read_single(f)
+            moments = [k for k,v in ds.variables.items() if v.ndim == 2]
+            if "unpacked" in scheme:
+                valid = ["dtype", "_FillValue"]
+                new_enc = {k: {key: val for key, val in ds[k].encoding.items() if key in valid} for k in moments}
+            else: 
+                new_enc = {k: dwd_enc[k] for k in moments if k in dwd_enc}
             
-    if "unpacked" not in scheme:
-        # set _FillValue according IRIS
-        for mom in moments:
-            if mom in ["DB_HCLASS2"]:
-                continue
+            shape = ds[moments[0]].shape
+            #print(shape)
+            enc_new = dict(chunksizes=shape)
+            enc_new.update(sdict) 
+            [new_enc[k].update(enc_new) for k in new_enc]
+                    
+            if "unpacked" not in scheme:
+                # set _FillValue according IRIS
+                for mom in moments:
+                    if mom in ["DB_HCLASS2"]:
+                        continue
+                
+                    # this is normally already set, but anyway, use DWD fillvalue
+                    # but: 65535 is reserved in the IRIS software for areas not scanned
+                    new_enc[mom]["_FillValue"] = new_enc[mom]["dtype"].type(65535)
+                
+                    # here is our only assumption: at least one IRIS "zero" value is in the data
+                    iris_minval = np.nanmin(ds[mom])
+                
+                    # DWD minval/maxval in Iris-space
+                    # zero is OK for all cases
+                    # 65534 is safe for most cases
+                    minval = new_enc[mom]["dtype"].type(0) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
+                    maxval = new_enc[mom]["dtype"].type(65534) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
+                
+                    # TODO: add a check to see if minval >= iris_minval, if not raise an exception or warning
+                
+                    # set IRIS NoData to NaN
+                    ds[mom] = ds[mom].where(ds[mom] > iris_minval)
+                
+                    # special treatment of PHIDP
+                    if mom == "PHIDP":
+                        # [0, 360] -> [-180, 180]
+                        ds[mom] -= 180
+                
+                    # clip values to DWD, set out-of-bound values to minval/maxval 
+                    ds[mom] = ds[mom].where((ds[mom] > minval) | np.isnan(ds[mom]), minval)
+                    ds[mom] = ds[mom].where((ds[mom] < maxval) | np.isnan(ds[mom]), maxval)     
+                
+            
+            dest = f"{dest}part_{num:03d}.nc"
+            ds.to_netcdf(dest, engine=engine, encoding=new_enc)
+            return dest
         
-            # this is normally already set, but anyway, use DWD fillvalue
-            # but: 65535 is reserved in the IRIS software for areas not scanned
-            new_enc[mom]["_FillValue"] = new_enc[mom]["dtype"].type(65535)
+        #%%time  convert files in subfolder
         
-            # here is our only assumption: at least one IRIS "zero" value is in the data
-            iris_minval = np.nanmin(ds[mom])
+        # dest = "/home/jgiles/turkey_test/testank_"
+        results = []
+            
+        process_single_partial = partial(process_single, dest=dest, scheme="packed")
+        with Pool() as P:
+            results = P.starmap( process_single_partial, [(f, i) for i, f in enumerate(paths)] )
+            
         
-            # DWD minval/maxval in Iris-space
-            # zero is OK for all cases
-            # 65534 is safe for most cases
-            minval = new_enc[mom]["dtype"].type(0) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
-            maxval = new_enc[mom]["dtype"].type(65534) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
+        #%%time Reload converted files
+        dsr = xr.open_mfdataset(f"{dest}part_*", concat_dim="time", combine="nested", engine=engine)
+        # display(dsr)
         
-            # TODO: add a check to see if minval >= iris_minval, if not raise an exception or warning
+        #%% Fix encoding before writing to single file
         
-            # set IRIS NoData to NaN
-            ds[mom] = ds[mom].where(ds[mom] > iris_minval)
+        moments = [k for k,v in dsr.variables.items() if v.ndim == 3]
+        shape = dsr[moments[0]].shape
+        enc_new= dict(chunksizes=(1, ) + shape[1:])
         
-            # special treatment of PHIDP
-            if mom == "PHIDP":
-                # [0, 360] -> [-180, 180]
-                ds[mom] -= 180
+        drop = ['szip', 'zstd', 'bzip2', 'blosc', 'coordinates']
+        enc = {k: {key: v.encoding[key] for key in v.encoding if key not in drop} for k, v in dsr.data_vars.items() if k in moments}
+        [enc[k].update(enc_new) for k in moments]
+        encoding = {k: enc[k] for k in moments}
+        # print(encoding)
         
-            # clip values to DWD, set out-of-bound values to minval/maxval 
-            ds[mom] = ds[mom].where((ds[mom] > minval) | np.isnan(ds[mom]), minval)
-            ds[mom] = ds[mom].where((ds[mom] < maxval) | np.isnan(ds[mom]), maxval)     
         
-    
-    dest = f"{dest}{num:03d}.nc"
-    ds.to_netcdf(dest, engine=engine, encoding=new_enc)
-    return dest
-
-#%%time  convert files in subfolder
-
-dest = "/home/jgiles/turkey_test/testank_"
-results = []
-    
-process_single_partial = partial(process_single, dest=dest, scheme="packed")
-with Pool() as P:
-    results = P.starmap( process_single_partial, [(f, i) for i, f in enumerate(paths)] )
-    
-
-#%%time Reload converted files
-dsr = xr.open_mfdataset(f"{dest}*", concat_dim="time", combine="nested", engine=engine)
-# display(dsr)
-
-#%% Fix encoding before writing to single file
-
-moments = [k for k,v in dsr.variables.items() if v.ndim == 3]
-shape = dsr[moments[0]].shape
-enc_new= dict(chunksizes=(1, ) + shape[1:])
-
-drop = ['szip', 'zstd', 'bzip2', 'blosc', 'coordinates']
-enc = {k: {key: v.encoding[key] for key in v.encoding if key not in drop} for k, v in dsr.data_vars.items() if k in moments}
-[enc[k].update(enc_new) for k in moments]
-encoding = {k: enc[k] for k in moments}
-# print(encoding)
-
-
-#%% Write to single daily file
-
-dsr.to_netcdf(f"{dest}-iris-test-compressed-{engine}.nc", engine=engine, encoding=encoding)
-
-
-
+        #%% Write to single daily file
+        year=htypath[0].split("/")[-6]
+        month=htypath[0].split("/")[-5]
+        day=htypath[0].split("/")[-4]
+        loc=htypath[0].split("/")[-3]
+        
+        dsr.to_netcdf(f"{dest}{mode}-allmoms-{elev}-{year}{month}{day}-{loc}-{engine}.nc", engine=engine, encoding=encoding)
+        
+        
+        
 
 
