@@ -229,6 +229,7 @@ hvplot.save(fig, "/home/jgiles/turkey_test/images/fourth_test.html")
 
 #### with bokeh extension
 # this is quite close but not there yet, the colorbar is still not normalized according to the ticks
+# It could be improved with something like this: https://discourse.holoviz.org/t/custom-discrete-colormaps/2183/2
 
 hvplot.extension('bokeh')
 ds_to_plot = dsrpckd[vv].loc[{"time": "2017-05-08 00"}].pipe(wrl.georef.georeference_dataset)
