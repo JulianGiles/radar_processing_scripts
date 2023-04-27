@@ -56,15 +56,15 @@ from bokeh.models.tickers import FixedTicker
 # engine = "netcdf4"
 engine = "h5netcdf"
 
-dsrunpckd = xr.open_dataset(f"/home/jgiles/turkey_test/test1_-iris-test-compressed-{engine}.nc")
+# dsrunpckd = xr.open_dataset(f"/home/jgiles/turkey_test/test1_-iris-test-compressed-{engine}.nc")
 dsrpckd = xr.open_dataset(f"/home/jgiles/turkey_test/testank_-iris-test-compressed-{engine}.nc")
 
 
 # test plots
-dsrunpckd.rtime[0].plot(label="unpckd")
+# dsrunpckd.rtime[0].plot(label="unpckd")
 dsrpckd.rtime[0].plot(label="pckd")
 
-np.testing.assert_allclose(dsrunpckd.DBZH.values, dsrpckd.DBZH.values)
+# np.testing.assert_allclose(dsrunpckd.DBZH.values, dsrpckd.DBZH.values)
 
 #%% PLOT simple
 
