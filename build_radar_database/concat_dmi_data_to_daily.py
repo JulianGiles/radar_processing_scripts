@@ -56,9 +56,11 @@ dwd = xr.open_dataset("/automount/ags/jgiles/turkey_test/ras07-vol5minng01_sweep
 
 drop = ["szip", "zstd", "source", "chunksizes", "bzip2", "blosc", "shuffle", "fletcher32", "original_shape", "coordinates", "contiguous"]
 dwd_enc = {k: {key: v.encoding[key] for key in v.encoding if key not in drop} for k, v in dwd.data_vars.items() if v.ndim == 3}
-dwd_enc["PHIDP"] = dwd_enc["UPHIDP"]
-dwd_enc["DBTH"] = dwd_enc["TH"]
-dwd_enc["DBTV"] = dwd_enc["TV"]
+dwd_enc["PHIDP"] = dwd_enc["UPHIDP"].copy()
+dwd_enc["DBTH"] = dwd_enc["TH"].copy()
+dwd_enc["DBTV"] = dwd_enc["TV"].copy()
+dwd_enc["DB_DBZC2"] = dwd_enc["DBZH"].copy()
+dwd_enc["DB_ZDRC2"] = dwd_enc["ZDR"].copy()
 
 
 #%% Get files
@@ -178,7 +180,7 @@ for elev in allelevs:
         sweepnr = str( df["sweep_number"].loc[df["elevation"]==elev].loc[df["taskname"]==mode].unique()[0]-1 )
         
         # extract the angle information for the first of the files, so we reindex accordingly all the files
-        dsini = xr.open_dataset(paths[0], engine="iris", group="sweep_"+sweepnr, reindex_angle=False, mask_and_scale=False)
+        dsini = xr.open_dataset(paths[0], engine="iris", group="sweep_"+sweepnr, reindex_angle=False, mask_and_scale=False) # if this fails with KeyError try changing: engine=xd.io.iris.IrisBackendEntrypoint
         angle_params = xd.util.extract_angle_parameters(dsini)
         reindex = {k: v for k,v in angle_params.items() if k in ["start_angle", "stop_angle", "angle_res", "direction"]}
         
