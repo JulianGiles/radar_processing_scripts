@@ -11,7 +11,7 @@ path=/automount/realpep/upload/turkey-data/
 location=ANK # which location to extract
 transfer=true # transfer to JSC? (deletes from local storage). If true, it will check if the files exist in JSC before doing anything, otherwise it will check locally
 jsc_folder=giles1@judac.fz-juelich.de:/p/largedata2/detectdata/projects/A04/radar_data/dmi/
-overwrite=true # what to do in case files are already found, if true then decompress and concat again and overwrite, if false skip this date
+overwrite=false # what to do in case files are already found, if true then decompress and concat again and overwrite, if false skip this date
 
 for file in ${path}2*/${location}/*${location}*.tar.gz; do
     if [ -f "$file" ]; then
@@ -59,7 +59,15 @@ for file in ${path}2*/${location}/*${location}*.tar.gz; do
 
             # Unpack file
             echo "Unpacking ${file}"
-            tar -xf "$file" -C "$midpath"temp --skip-old-files --strip-components=9
+            tar -xf "$file" -C "$midpath"temp --skip-old-files
+
+            # in case the files are inside a folder structure, pull them up to the temp folder
+            # (originally I used the --strip-components in the tar command but not always there is a tree folder structure inside
+            if [ -d "$midpath"temp/acq ]; then
+                # The folder exists, do something
+                mv "$midpath"temp/acq/*/*/*/*/*/*/*/*/* "$midpath"temp
+            fi
+
 
         fi
 

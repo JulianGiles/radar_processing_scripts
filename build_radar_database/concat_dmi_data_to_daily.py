@@ -35,7 +35,7 @@ from functools import partial
 
 
 #%% Set paths
-htypath = sorted(glob.glob(sys.argv[1]+"/*"))
+htypath = sorted(glob.glob(sys.argv[1]+"/*.RAW*"))
 dest = sys.argv[2]
 
 # For testing
