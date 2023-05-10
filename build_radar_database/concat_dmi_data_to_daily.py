@@ -180,14 +180,14 @@ for elev in allelevs:
         sweepnr = str( df["sweep_number"].loc[df["elevation"]==elev].loc[df["taskname"]==mode].unique()[0]-1 )
         
         # extract the angle information for the first of the files, so we reindex accordingly all the files
-        dsini = xr.open_dataset(paths[0], engine="iris", group="sweep_"+sweepnr, reindex_angle=False, mask_and_scale=False) # if this fails with KeyError try changing: engine=xd.io.iris.IrisBackendEntrypoint
+        dsini = xr.open_dataset(paths[0], engine=xd.io.iris.IrisBackendEntrypoint, group="sweep_"+sweepnr, reindex_angle=False, mask_and_scale=False) # if this fails with KeyError try changing: engine=xd.io.iris.IrisBackendEntrypoint
         angle_params = xd.util.extract_angle_parameters(dsini)
         reindex = {k: v for k,v in angle_params.items() if k in ["start_angle", "stop_angle", "angle_res", "direction"]}
         
         # revamped functions
         def read_single(f):
             # reindex = dict(start_angle=-0.5, stop_angle=360, angle_res=1., direction=1) # we moved this outside
-            ds = xr.open_dataset(f, engine="iris", group="sweep_"+sweepnr, reindex_angle=reindex) # not sure if sweep_0 is the name for all cases
+            ds = xr.open_dataset(f, engine=xd.io.iris.IrisBackendEntrypoint, group="sweep_"+sweepnr, reindex_angle=reindex) # not sure if sweep_0 is the name for all cases
             ds = ds.set_coords("sweep_mode")
             ds = ds.rename_vars(time="rtime")
             ds = ds.assign_coords(time=ds.rtime.min())
