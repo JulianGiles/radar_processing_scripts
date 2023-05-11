@@ -19,7 +19,7 @@ import pandas as pd
 from tqdm.notebook import trange, tqdm
 
 import warnings
-warnings.filterwarnings('ignore')
+# warnings.filterwarnings('ignore')
 import xradar as xd
 import datatree as dttree
 
@@ -284,6 +284,9 @@ for elev in allelevs:
         encoding = {k: enc[k] for k in moments}
         # print(encoding)
         
+        #%% check that the object has 360 azimuths
+        if len(dsr.azimuth) != 360:
+            warnings.warn("The resulting array do not have 360 azimuth values")
         
         #%% Write to single daily file
         year=htypath[0].split("/")[-6]
