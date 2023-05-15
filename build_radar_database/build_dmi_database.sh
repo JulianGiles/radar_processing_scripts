@@ -72,6 +72,19 @@ for file in ${path}2*/${location}/*${location}*.tar.gz; do
         fi
 
 
+        # check that something was actually extracted and that the tar file was not empty
+        if [ "$(ls -A $tempdir)" ]; then
+            # if not empty, do nothing
+            nothing=()
+        else
+            # if empty, report and continue
+            echo "tar file is empty"
+            rm -r "$tempdir"
+            continue
+
+        fi
+
+
         ## PROCESSING TO DAILY FILES
         if $concat_to_daily && $extract ; then
 
