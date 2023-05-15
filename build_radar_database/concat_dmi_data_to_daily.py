@@ -93,6 +93,9 @@ for f in htypath:
     except ValueError:
         # some files may be empty, ignore them
         continue
+    except EOFError:
+        # some files may be corrupt, ignore them
+        continue
     # Extract info
     fname = os.path.basename(f).split(".")[0]
     radarid_ = fname[0:3]
