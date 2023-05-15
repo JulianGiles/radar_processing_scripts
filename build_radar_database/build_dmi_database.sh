@@ -101,17 +101,21 @@ for file in ${path}2*/${location}/*${location}*.tar.gz; do
             wait
 
             # move the final files and delete temporary folders
-            for concatfile in "${midpath}/concat/"*allmoms*; do
-                # Extract the values of mode and elev from the filename
-                mode=$(basename "$concatfile" | cut -d'-' -f1)
-                elev=$(basename "$concatfile" | cut -d'-' -f3)
+            if [ "$(ls -A ${midpath}/concat/)" ]; then
+                # first, check that files were actually created
 
-                # Create the directories for mode and elev, if they don't exist
-                mkdir -p "$midpath/$mode/$elev"
+                for concatfile in "${midpath}/concat/"*allmoms*; do
+                    # Extract the values of mode and elev from the filename
+                    mode=$(basename "$concatfile" | cut -d'-' -f1)
+                    elev=$(basename "$concatfile" | cut -d'-' -f3)
 
-                # Move the file to the appropriate directory
-                mv "$concatfile" "$midpath/$mode/$elev/"
-            done
+                    # Create the directories for mode and elev, if they don't exist
+                    mkdir -p "$midpath/$mode/$elev"
+
+                    # Move the file to the appropriate directory
+                    mv "$concatfile" "$midpath/$mode/$elev/"
+                done
+            fi
 
             rm -r "$tempdir"
             rm -r "${midpath}/concat/"
