@@ -184,10 +184,45 @@ for elev in allelevs:
         angle_params = xd.util.extract_angle_parameters(dsini)
         reindex = {k: v for k,v in angle_params.items() if k in ["start_angle", "stop_angle", "angle_res", "direction"]}
         
+        # the reindex is not working correctly due to the high noise in azimuth values giving erroneous angle_res
+        # and due to files having differently aligned angles ([0,..,359] or [1,...,360])
+        # we fix this manually then in the read_single function
+        # possible azimuth dims:
+        az0 = np.arange(0,360,1)
+        az05 = np.arange(0.5,360,1)
+        az1 = np.arange(1,361,1)
+        possazims = np.array([az0, az05, az1])
+
+        
         # revamped functions
         def read_single(f):
             # reindex = dict(start_angle=-0.5, stop_angle=360, angle_res=1., direction=1) # we moved this outside
-            ds = xr.open_dataset(f, engine=xd.io.iris.IrisBackendEntrypoint, group="sweep_"+sweepnr, reindex_angle=reindex) # not sure if sweep_0 is the name for all cases
+            
+            # ds = xr.open_dataset(f, engine=xd.io.iris.IrisBackendEntrypoint, group="sweep_"+sweepnr, reindex_angle=reindex) # simple method if we did not had the issue
+            
+            # we open the file without reindex_angle
+            ds = xr.open_dataset(f, engine=xd.io.iris.IrisBackendEntrypoint, group="sweep_"+sweepnr)
+            
+            # we get the differences to each of the possible azimuth arrays defined above and we choose the one with the 
+            # smaller total absolute error
+            tae0 = np.nansum( np.abs(ds["azimuth"].data - az0) )
+            tae05 = np.nansum( np.abs(ds["azimuth"].data - az05) )
+            tae1 = np.nansum( np.abs(ds["azimuth"].data - az1) )
+            tae = np.array([tae0, tae05, tae1])
+            
+            # change the coord 
+            azattrs = ds.coords["azimuth"].attrs.copy() # copy the attrs otherwise they are lost
+            ds.coords["azimuth"] = possazims[tae.argmin()]
+            ds.coords["azimuth"].attrs = azattrs
+            
+            
+            # in case the most suitable azimuth coord is [1,...,360] we need to align it to be concatenable to [0,...,359]
+            if 360 in ds["azimuth"]:
+                ds = ds.roll({"azimuth":1}, roll_coords=True)
+                ds.coords["azimuth"] = az0
+                ds.coords["azimuth"].attrs = azattrs
+
+
             ds = ds.set_coords("sweep_mode")
             ds = ds.rename_vars(time="rtime")
             ds = ds.assign_coords(time=ds.rtime.min())
