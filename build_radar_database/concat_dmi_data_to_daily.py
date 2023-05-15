@@ -216,17 +216,32 @@ for elev in allelevs:
             # we open the file without reindex_angle
             ds = xr.open_dataset(f, engine=xd.io.iris.IrisBackendEntrypoint, group="sweep_"+sweepnr)
             
-            # we get the differences to each of the possible azimuth arrays defined above and we choose the one with the 
-            # smaller total absolute error
-            tae0 = np.nansum( np.abs(ds["azimuth"].data - az0) )
-            tae05 = np.nansum( np.abs(ds["azimuth"].data - az05) )
-            tae1 = np.nansum( np.abs(ds["azimuth"].data - az1) )
-            tae = np.array([tae0, tae05, tae1])
+            try:
+                # we get the differences to each of the possible azimuth arrays defined above and we choose the one with the 
+                # smaller total absolute error
+                tae0 = np.nansum( np.abs(ds["azimuth"].data - az0) )
+                tae05 = np.nansum( np.abs(ds["azimuth"].data - az05) )
+                tae1 = np.nansum( np.abs(ds["azimuth"].data - az1) )
+                tae = np.array([tae0, tae05, tae1])
             
-            # change the coord 
-            azattrs = ds.coords["azimuth"].attrs.copy() # copy the attrs otherwise they are lost
-            ds.coords["azimuth"] = possazims[tae.argmin()]
-            ds.coords["azimuth"].attrs = azattrs
+                # change the coord 
+                azattrs = ds.coords["azimuth"].attrs.copy() # copy the attrs otherwise they are lost
+                ds.coords["azimuth"] = possazims[tae.argmin()]
+                ds.coords["azimuth"].attrs = azattrs
+                
+            except ValueError: # if the previous fail due to extra rays or whatever
+                # then just use reindex_angle but with some tweaks
+                angle_params = xd.util.extract_angle_parameters(ds)
+                uniquecounts = np.unique( np.abs((ds.azimuth - np.trunc(ds.azimuth) )).round(1) , return_counts=True) # counts of decimals positions rounded to 1 decimal
+                if 0.25 < uniquecounts[0][ uniquecounts[1].argmax() ] < 0.75:
+                    # if the most common decimals are .5 then align to .5 array
+                    ds = xd.util._reindex_angle(ds, az05, 0.5)
+                else: 
+                    # if not, we align to .0
+                    if angle_params["min_angle"].round() == 1. and angle_params["max_angle"].round() == 360. :
+                        ds = xd.util._reindex_angle(ds, az1, 0.5)
+                    else:
+                        ds = xd.util._reindex_angle(ds, az0, 0.5)
             
             
             # in case the most suitable azimuth coord is [1,...,360] we need to align it to be concatenable to [0,...,359]
