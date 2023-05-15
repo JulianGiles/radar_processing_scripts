@@ -88,7 +88,11 @@ sweep_number = []
 for f in htypath:
     # print(".", end="")
     # Read metadata
-    m = xd.io.backends.iris.IrisRawFile(f, loaddata=False)
+    try:
+        m = xd.io.backends.iris.IrisRawFile(f, loaddata=False)
+    except ValueError:
+        # some files may be empty, ignore them
+        continue
     # Extract info
     fname = os.path.basename(f).split(".")[0]
     radarid_ = fname[0:3]
