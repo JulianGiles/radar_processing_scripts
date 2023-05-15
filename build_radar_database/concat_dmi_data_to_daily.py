@@ -92,9 +92,11 @@ for f in htypath:
         m = xd.io.backends.iris.IrisRawFile(f, loaddata=False)
     except ValueError:
         # some files may be empty, ignore them
+        print("ignoring empty file: "+f)
         continue
     except EOFError:
         # some files may be corrupt, ignore them
+        print("ignoring corrupt file: "+f)
         continue
     # Extract info
     fname = os.path.basename(f).split(".")[0]
