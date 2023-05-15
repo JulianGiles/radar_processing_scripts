@@ -68,19 +68,17 @@ for file in ${path}2*/${location}/*${location}*.tar.gz; do
                 mv "$midpath"temp/acq/*/*/*/*/*/*/*/*/* "$midpath"temp
             fi
 
+            # check that something was actually extracted and that the tar file was not empty
+            if [ "$(ls -A $tempdir)" ]; then
+                # if not empty, do nothing
+                nothing=()
+            else
+                # if empty, report and continue
+                echo "tar file is empty"
+                rm -r "$tempdir"
+                continue
 
-        fi
-
-
-        # check that something was actually extracted and that the tar file was not empty
-        if [ "$(ls -A $tempdir)" ]; then
-            # if not empty, do nothing
-            nothing=()
-        else
-            # if empty, report and continue
-            echo "tar file is empty"
-            rm -r "$tempdir"
-            continue
+            fi
 
         fi
 
