@@ -98,6 +98,10 @@ for f in htypath:
         # some files may be corrupt, ignore them
         print("ignoring corrupt file: "+f)
         continue
+    except OSError:
+        # some files give NULL value error, ignore them
+        print("ignoring NULL file: "+f)
+        continue
     # Extract info
     fname = os.path.basename(f).split(".")[0]
     radarid_ = fname[0:3]
