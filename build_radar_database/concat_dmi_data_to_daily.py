@@ -220,6 +220,7 @@ for elev in allelevs:
             
             # we open the file without reindex_angle
             ds = xr.open_dataset(f, engine=xd.io.iris.IrisBackendEntrypoint, group="sweep_"+sweepnr)
+            azattrs = ds.coords["azimuth"].attrs.copy() # copy the attrs otherwise they may be lost later
             
             try:
                 # we get the differences to each of the possible azimuth arrays defined above and we choose the one with the 
@@ -230,7 +231,6 @@ for elev in allelevs:
                 tae = np.array([tae0, tae05, tae1])
             
                 # change the coord 
-                azattrs = ds.coords["azimuth"].attrs.copy() # copy the attrs otherwise they are lost
                 ds.coords["azimuth"] = possazims[tae.argmin()]
                 ds.coords["azimuth"].attrs = azattrs
                 
