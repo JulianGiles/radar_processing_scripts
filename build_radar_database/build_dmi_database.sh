@@ -38,7 +38,7 @@ for file in ${path}2*/${location}/*${location}*.tar.gz; do
             check_path="$midpath"
         fi
 
-        if rsync $check_path/*/*/*allmoms* 1> /dev/null 2>&1 && [ $overwrite = "false" ] ; then
+        if rsync -q --list-only $check_path/*/*/*allmoms* 1> /dev/null 2>&1 && [ $overwrite = "false" ] ; then
             # if file exist and overwrite==false do nothing
             nothing=()
         else

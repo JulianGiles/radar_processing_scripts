@@ -263,7 +263,7 @@ for elev in allelevs:
             # fix time dtype to prevent uint16 overflow
             ds["time"].encoding["dtype"] = np.int64
             ds["rtime"].encoding["dtype"] = np.int64
-            return ds
+            return ds.dropna("azimuth", how="all")
         
         # @dask.delayed # We ditch dask to use multiprocessing below
         def process_single(f, num, dest, scheme="unpacked", sdict={}):
