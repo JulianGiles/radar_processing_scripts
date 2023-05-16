@@ -271,58 +271,61 @@ for elev in allelevs:
         
         # @dask.delayed # We ditch dask to use multiprocessing below
         def process_single(f, num, dest, scheme="unpacked", sdict={}):
-            # print(".", end="")
-            ds = read_single(f)
-            moments = [k for k,v in ds.variables.items() if v.ndim == 2]
-            if "unpacked" in scheme:
-                valid = ["dtype", "_FillValue"]
-                new_enc = {k: {key: val for key, val in ds[k].encoding.items() if key in valid} for k in moments}
-            else: 
-                new_enc = {k: dwd_enc[k] for k in moments if k in dwd_enc}
-            
-            shape = ds[moments[0]].shape
-            #print(shape)
-            enc_new = dict(chunksizes=shape)
-            enc_new.update(sdict) 
-            [new_enc[k].update(enc_new) for k in new_enc]
+            try:
+                # print(".", end="")
+                ds = read_single(f)
+                moments = [k for k,v in ds.variables.items() if v.ndim == 2]
+                if "unpacked" in scheme:
+                    valid = ["dtype", "_FillValue"]
+                    new_enc = {k: {key: val for key, val in ds[k].encoding.items() if key in valid} for k in moments}
+                else: 
+                    new_enc = {k: dwd_enc[k] for k in moments if k in dwd_enc}
+                
+                shape = ds[moments[0]].shape
+                #print(shape)
+                enc_new = dict(chunksizes=shape)
+                enc_new.update(sdict) 
+                [new_enc[k].update(enc_new) for k in new_enc]
+                        
+                if "unpacked" not in scheme:
+                    # set _FillValue according IRIS
+                    for mom in moments:
+                        if mom in ["DB_HCLASS2", "DB_HCLASS"]:
+                            continue
                     
-            if "unpacked" not in scheme:
-                # set _FillValue according IRIS
-                for mom in moments:
-                    if mom in ["DB_HCLASS2", "DB_HCLASS"]:
-                        continue
+                        # this is normally already set, but anyway, use DWD fillvalue
+                        # but: 65535 is reserved in the IRIS software for areas not scanned
+                        new_enc[mom]["_FillValue"] = new_enc[mom]["dtype"].type(65535)
+                    
+                        # here is our only assumption: at least one IRIS "zero" value is in the data
+                        iris_minval = np.nanmin(ds[mom])
+                    
+                        # DWD minval/maxval in Iris-space
+                        # zero is OK for all cases
+                        # 65534 is safe for most cases
+                        minval = new_enc[mom]["dtype"].type(0) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
+                        maxval = new_enc[mom]["dtype"].type(65534) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
+                    
+                        # TODO: add a check to see if minval >= iris_minval, if not raise an exception or warning
+                    
+                        # set IRIS NoData to NaN
+                        ds[mom] = ds[mom].where(ds[mom] > iris_minval)
+                    
+                        # special treatment of PHIDP
+                        if mom == "PHIDP":
+                            # [0, 360] -> [-180, 180]
+                            ds[mom] -= 180
+                    
+                        # clip values to DWD, set out-of-bound values to minval/maxval 
+                        ds[mom] = ds[mom].where((ds[mom] > minval) | np.isnan(ds[mom]), minval)
+                        ds[mom] = ds[mom].where((ds[mom] < maxval) | np.isnan(ds[mom]), maxval)     
+                    
                 
-                    # this is normally already set, but anyway, use DWD fillvalue
-                    # but: 65535 is reserved in the IRIS software for areas not scanned
-                    new_enc[mom]["_FillValue"] = new_enc[mom]["dtype"].type(65535)
-                
-                    # here is our only assumption: at least one IRIS "zero" value is in the data
-                    iris_minval = np.nanmin(ds[mom])
-                
-                    # DWD minval/maxval in Iris-space
-                    # zero is OK for all cases
-                    # 65534 is safe for most cases
-                    minval = new_enc[mom]["dtype"].type(0) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
-                    maxval = new_enc[mom]["dtype"].type(65534) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
-                
-                    # TODO: add a check to see if minval >= iris_minval, if not raise an exception or warning
-                
-                    # set IRIS NoData to NaN
-                    ds[mom] = ds[mom].where(ds[mom] > iris_minval)
-                
-                    # special treatment of PHIDP
-                    if mom == "PHIDP":
-                        # [0, 360] -> [-180, 180]
-                        ds[mom] -= 180
-                
-                    # clip values to DWD, set out-of-bound values to minval/maxval 
-                    ds[mom] = ds[mom].where((ds[mom] > minval) | np.isnan(ds[mom]), minval)
-                    ds[mom] = ds[mom].where((ds[mom] < maxval) | np.isnan(ds[mom]), maxval)     
-                
-            
-            dest = f"{dest}part_{num:03d}.nc"
-            ds.to_netcdf(dest, engine=engine, encoding=new_enc)
-            return dest
+                dest = f"{dest}part_{num:03d}.nc"
+                ds.to_netcdf(dest, engine=engine, encoding=new_enc)
+                return dest
+            except:
+                print("something went wrong, ignoring file "+f)
         
         #%%time  convert files in subfolder
         
