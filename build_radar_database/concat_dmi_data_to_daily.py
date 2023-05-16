@@ -377,6 +377,10 @@ for elev in allelevs:
         # delete each file in the list
         for file_path in to_remove:
             os.remove(file_path)
+            
+        # close dsr
+        dsr.close()
+        del(dsr)
 
 #%% print how much time did it take
 total_time = time.time() - start_time
