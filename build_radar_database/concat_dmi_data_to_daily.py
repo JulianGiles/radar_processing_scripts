@@ -63,6 +63,8 @@ dwd_enc["DB_DBZC2"] = dwd_enc["DBZH"].copy()
 dwd_enc["DB_ZDRC2"] = dwd_enc["ZDR"].copy()
 dwd_enc["DB_DBTE16"] = dwd_enc["DBTH"].copy()
 dwd_enc["DB_DBZE16"] = dwd_enc["DBZH"].copy()
+dwd_enc["DB_DBTE8"] = dwd_enc["DBTH"].copy()
+dwd_enc["DB_DBZE8"] = dwd_enc["DBZH"].copy()
 
 
 #%% Get files
