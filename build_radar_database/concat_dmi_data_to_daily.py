@@ -361,7 +361,7 @@ for elev in allelevs:
         
         #%% check that the object has 360 azimuths
         if len(dsr.azimuth) != 360:
-            print("The resulting array has "+len(dsr.azimuth)+" azimuth values instead of 360")
+            print("The resulting array has "+str(len(dsr.azimuth))+" azimuth values instead of 360")
         
         #%% Write to single daily file
         year=htypath[0].split("/")[-6]
