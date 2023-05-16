@@ -61,6 +61,8 @@ dwd_enc["DBTH"] = dwd_enc["TH"].copy()
 dwd_enc["DBTV"] = dwd_enc["TV"].copy()
 dwd_enc["DB_DBZC2"] = dwd_enc["DBZH"].copy()
 dwd_enc["DB_ZDRC2"] = dwd_enc["ZDR"].copy()
+dwd_enc["DB_DBTE16"] = dwd_enc["DBTH"].copy()
+dwd_enc["DB_DBZE16"] = dwd_enc["DBZH"].copy()
 
 
 #%% Get files
@@ -354,7 +356,7 @@ for elev in allelevs:
         
         #%% check that the object has 360 azimuths
         if len(dsr.azimuth) != 360:
-            print("The resulting array does not have 360 azimuth values")
+            print("The resulting array has "+len(dsr.azimuth)+" azimuth values instead of 360")
         
         #%% Write to single daily file
         year=htypath[0].split("/")[-6]
