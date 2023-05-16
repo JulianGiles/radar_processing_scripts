@@ -194,8 +194,13 @@ for elev in allelevs:
         
         # extract the angle information for the first of the files, so we reindex accordingly all the files
         dsini = xr.open_dataset(paths[0], engine=xd.io.iris.IrisBackendEntrypoint, group="sweep_"+sweepnr, reindex_angle=False, mask_and_scale=False) # if this fails with KeyError try changing: engine=xd.io.iris.IrisBackendEntrypoint
-        angle_params = xd.util.extract_angle_parameters(dsini)
-        reindex = {k: v for k,v in angle_params.items() if k in ["start_angle", "stop_angle", "angle_res", "direction"]}
+        try:
+            angle_params = xd.util.extract_angle_parameters(dsini)
+            reindex = {k: v for k,v in angle_params.items() if k in ["start_angle", "stop_angle", "angle_res", "direction"]}
+        except:
+            # if angles could not be extracted is because something is wrong with the data, then ignore
+            print("ignoring because of incorrect dims: "+str(dsini.dims))
+            continue
         
         # the reindex is not working correctly due to the high noise in azimuth values giving erroneous angle_res
         # and due to files having differently aligned angles ([0,..,359] or [1,...,360])
