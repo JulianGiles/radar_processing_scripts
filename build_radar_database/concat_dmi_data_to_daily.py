@@ -65,6 +65,10 @@ dwd_enc["DB_DBTE16"] = dwd_enc["DBTH"].copy()
 dwd_enc["DB_DBZE16"] = dwd_enc["DBZH"].copy()
 dwd_enc["DB_DBTE8"] = dwd_enc["DBTH"].copy()
 dwd_enc["DB_DBZE8"] = dwd_enc["DBZH"].copy()
+dwd_enc["DB_DBTV16"] = dwd_enc["DBTV"].copy()
+dwd_enc["DB_DBZV16"] = dwd_enc["DBZH"].copy()
+dwd_enc["DB_DBTV8"] = dwd_enc["DBTV"].copy()
+dwd_enc["DB_DBZV8"] = dwd_enc["DBZH"].copy()
 
 
 #%% Get files
@@ -206,127 +210,209 @@ for elev in allelevs:
             print("ignoring because of incorrect dims: "+str(dsini.dims))
             continue
         
-        # the reindex is not working correctly due to the high noise in azimuth values giving erroneous angle_res
-        # and due to files having differently aligned angles ([0,..,359] or [1,...,360])
-        # we fix this manually then in the read_single function
-        # possible azimuth dims:
-        az0 = np.arange(0,360,1)
-        az05 = np.arange(0.5,360,1)
-        az1 = np.arange(1,361,1)
-        possazims = np.array([az0, az05, az1])
-
         
-        # revamped functions
-        def read_single(f):
-            # reindex = dict(start_angle=-0.5, stop_angle=360, angle_res=1., direction=1) # we moved this outside
-            
-            # ds = xr.open_dataset(f, engine=xd.io.iris.IrisBackendEntrypoint, group="sweep_"+sweepnr, reindex_angle=reindex) # simple method if we did not had the issue
-            
-            # we open the file without reindex_angle
-            ds = xr.open_dataset(f, engine=xd.io.iris.IrisBackendEntrypoint, group="sweep_"+sweepnr)
-            azattrs = ds.coords["azimuth"].attrs.copy() # copy the attrs otherwise they may be lost later
-            
-            try:
-                # we get the differences to each of the possible azimuth arrays defined above and we choose the one with the 
-                # smaller total absolute error
-                tae0 = np.nansum( np.abs(ds["azimuth"].data - az0) )
-                tae05 = np.nansum( np.abs(ds["azimuth"].data - az05) )
-                tae1 = np.nansum( np.abs(ds["azimuth"].data - az1) )
-                tae = np.array([tae0, tae05, tae1])
-            
-                # change the coord 
-                ds.coords["azimuth"] = possazims[tae.argmin()]
-                ds.coords["azimuth"].attrs = azattrs
+        if "RHI" in mode:
+            # make different functions for RHIs
+            def read_single(f):
+                # reindex = dict(start_angle=-0.5, stop_angle=360, angle_res=1., direction=1) # we moved this outside
                 
-            except ValueError: # if the previous fail due to extra rays or whatever
-                # then just use reindex_angle but with some tweaks
-                angle_params = xd.util.extract_angle_parameters(ds)
-                uniquecounts = np.unique( np.abs((ds.azimuth - np.trunc(ds.azimuth) )).round(1) , return_counts=True) # counts of decimals positions rounded to 1 decimal
-                if 0.25 < uniquecounts[0][ uniquecounts[1].argmax() ] < 0.75:
-                    # if the most common decimals are .5 then align to .5 array
-                    ds = xd.util._reindex_angle(ds, az05, 0.5)
-                else: 
-                    # if not, we align to .0
-                    if angle_params["min_angle"].round() == 1. and angle_params["max_angle"].round() == 360. :
-                        ds = xd.util._reindex_angle(ds, az1, 0.5)
-                    else:
-                        ds = xd.util._reindex_angle(ds, az0, 0.5)
+                ds = xr.open_dataset(f, engine=xd.io.iris.IrisBackendEntrypoint, group="sweep_"+sweepnr) 
+                # if we put reindex inside the open_dataset I get an error because azimuth is not a dim, thus do it manually
+                ds = xd.util.reindex_angle(ds, start_angle=reindex["start_angle"], stop_angle=reindex["stop_angle"],
+                                           angle_res=reindex["angle_res"], direction=reindex["direction"],
+                                           method="nearest", tolerance=None)
+    
+                ds = ds.set_coords("sweep_mode")
+                ds = ds.rename_vars(time="rtime")
+                ds = ds.assign_coords(time=ds.rtime.min())
+                ds["time"].encoding = ds["rtime"].encoding # copy also the encoding
+                # fix time dtype to prevent uint16 overflow
+                ds["time"].encoding["dtype"] = np.int64
+                ds["rtime"].encoding["dtype"] = np.int64
+                return ds
             
-            
-            # in case the most suitable azimuth coord is [1,...,360] we need to align it to be concatenable to [0,...,359]
-            if 360 in ds["azimuth"]:
-                ds = ds.roll({"azimuth":1}, roll_coords=True)
-                ds.coords["azimuth"] = az0
-                ds.coords["azimuth"].attrs = azattrs
-
-
-            ds = ds.set_coords("sweep_mode")
-            ds = ds.rename_vars(time="rtime")
-            ds = ds.assign_coords(time=ds.rtime.min())
-            ds["time"].encoding = ds["rtime"].encoding # copy also the encoding
-            # fix time dtype to prevent uint16 overflow
-            ds["time"].encoding["dtype"] = np.int64
-            ds["rtime"].encoding["dtype"] = np.int64
-            return ds.dropna("azimuth", how="all")
-        
-        # @dask.delayed # We ditch dask to use multiprocessing below
-        def process_single(f, num, dest, scheme="unpacked", sdict={}):
-            try:
-                # print(".", end="")
-                ds = read_single(f)
-                moments = [k for k,v in ds.variables.items() if v.ndim == 2]
-                if "unpacked" in scheme:
-                    valid = ["dtype", "_FillValue"]
-                    new_enc = {k: {key: val for key, val in ds[k].encoding.items() if key in valid} for k in moments}
-                else: 
-                    new_enc = {k: dwd_enc[k] for k in moments if k in dwd_enc}
-                
-                shape = ds[moments[0]].shape
-                #print(shape)
-                enc_new = dict(chunksizes=shape)
-                enc_new.update(sdict) 
-                [new_enc[k].update(enc_new) for k in new_enc]
+            # @dask.delayed # We ditch dask to use multiprocessing below
+            def process_single(f, num, dest, scheme="unpacked", sdict={}):
+                try:
+                    # print(".", end="")
+                    ds = read_single(f)
+                    moments = [k for k,v in ds.variables.items() if v.ndim == 2]
+                    if "unpacked" in scheme:
+                        valid = ["dtype", "_FillValue"]
+                        new_enc = {k: {key: val for key, val in ds[k].encoding.items() if key in valid} for k in moments}
+                    else: 
+                        new_enc = {k: dwd_enc[k] for k in moments if k in dwd_enc}
+                    
+                    shape = ds[moments[0]].shape
+                    #print(shape)
+                    enc_new = dict(chunksizes=shape)
+                    enc_new.update(sdict) 
+                    [new_enc[k].update(enc_new) for k in new_enc]
+                            
+                    if "unpacked" not in scheme:
+                        # set _FillValue according IRIS
+                        for mom in moments:
+                            if mom in ["DB_HCLASS2", "DB_HCLASS"]:
+                                continue
                         
-                if "unpacked" not in scheme:
-                    # set _FillValue according IRIS
-                    for mom in moments:
-                        if mom in ["DB_HCLASS2", "DB_HCLASS"]:
-                            continue
+                            # this is normally already set, but anyway, use DWD fillvalue
+                            # but: 65535 is reserved in the IRIS software for areas not scanned
+                            new_enc[mom]["_FillValue"] = new_enc[mom]["dtype"].type(65535)
+                        
+                            # here is our only assumption: at least one IRIS "zero" value is in the data
+                            iris_minval = np.nanmin(ds[mom])
+                        
+                            # DWD minval/maxval in Iris-space
+                            # zero is OK for all cases
+                            # 65534 is safe for most cases
+                            minval = new_enc[mom]["dtype"].type(0) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
+                            maxval = new_enc[mom]["dtype"].type(65534) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
+                        
+                            # TODO: add a check to see if minval >= iris_minval, if not raise an exception or warning
+                        
+                            # set IRIS NoData to NaN
+                            ds[mom] = ds[mom].where(ds[mom] > iris_minval)
+                        
+                            # special treatment of PHIDP
+                            if mom == "PHIDP":
+                                # [0, 360] -> [-180, 180]
+                                ds[mom] -= 180
+                        
+                            # clip values to DWD, set out-of-bound values to minval/maxval 
+                            ds[mom] = ds[mom].where((ds[mom] > minval) | np.isnan(ds[mom]), minval)
+                            ds[mom] = ds[mom].where((ds[mom] < maxval) | np.isnan(ds[mom]), maxval)     
+                        
                     
-                        # this is normally already set, but anyway, use DWD fillvalue
-                        # but: 65535 is reserved in the IRIS software for areas not scanned
-                        new_enc[mom]["_FillValue"] = new_enc[mom]["dtype"].type(65535)
-                    
-                        # here is our only assumption: at least one IRIS "zero" value is in the data
-                        iris_minval = np.nanmin(ds[mom])
-                    
-                        # DWD minval/maxval in Iris-space
-                        # zero is OK for all cases
-                        # 65534 is safe for most cases
-                        minval = new_enc[mom]["dtype"].type(0) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
-                        maxval = new_enc[mom]["dtype"].type(65534) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
-                    
-                        # TODO: add a check to see if minval >= iris_minval, if not raise an exception or warning
-                    
-                        # set IRIS NoData to NaN
-                        ds[mom] = ds[mom].where(ds[mom] > iris_minval)
-                    
-                        # special treatment of PHIDP
-                        if mom == "PHIDP":
-                            # [0, 360] -> [-180, 180]
-                            ds[mom] -= 180
-                    
-                        # clip values to DWD, set out-of-bound values to minval/maxval 
-                        ds[mom] = ds[mom].where((ds[mom] > minval) | np.isnan(ds[mom]), minval)
-                        ds[mom] = ds[mom].where((ds[mom] < maxval) | np.isnan(ds[mom]), maxval)     
-                    
+                    dest = f"{dest}part_{num:03d}.nc"
+                    ds.to_netcdf(dest, engine=engine, encoding=new_enc)
+                    return dest
+                except:
+                    print("something went wrong, ignoring file "+f)
+            
+            
+        else: # if not RHI
+            
+            # the reindex is not working correctly due to the high noise in azimuth values giving erroneous angle_res
+            # and due to files having differently aligned angles ([0,..,359] or [1,...,360])
+            # we fix this manually then in the read_single function
+            # possible azimuth dims:
+            az0 = np.arange(0,360,1)
+            az05 = np.arange(0.5,360,1)
+            az1 = np.arange(1,361,1)
+            possazims = np.array([az0, az05, az1])
+    
+            
+            # revamped functions
+            def read_single(f):
+                # reindex = dict(start_angle=-0.5, stop_angle=360, angle_res=1., direction=1) # we moved this outside
                 
-                dest = f"{dest}part_{num:03d}.nc"
-                ds.to_netcdf(dest, engine=engine, encoding=new_enc)
-                return dest
-            except:
-                print("something went wrong, ignoring file "+f)
-        
+                # ds = xr.open_dataset(f, engine=xd.io.iris.IrisBackendEntrypoint, group="sweep_"+sweepnr, reindex_angle=reindex) # simple method if we did not had the issue
+                
+                # we open the file without reindex_angle
+                ds = xr.open_dataset(f, engine=xd.io.iris.IrisBackendEntrypoint, group="sweep_"+sweepnr)
+                azattrs = ds.coords["azimuth"].attrs.copy() # copy the attrs otherwise they may be lost later
+                
+                try:
+                    # we get the differences to each of the possible azimuth arrays defined above and we choose the one with the 
+                    # smaller total absolute error
+                    tae0 = np.nansum( np.abs(ds["azimuth"].data - az0) )
+                    tae05 = np.nansum( np.abs(ds["azimuth"].data - az05) )
+                    tae1 = np.nansum( np.abs(ds["azimuth"].data - az1) )
+                    tae = np.array([tae0, tae05, tae1])
+                
+                    # change the coord 
+                    ds.coords["azimuth"] = possazims[tae.argmin()]
+                    ds.coords["azimuth"].attrs = azattrs
+                    
+                except ValueError: # if the previous fail due to extra rays or whatever
+                    # then just use reindex_angle but with some tweaks
+                    angle_params = xd.util.extract_angle_parameters(ds)
+                    uniquecounts = np.unique( np.abs((ds.azimuth - np.trunc(ds.azimuth) )).round(1) , return_counts=True) # counts of decimals positions rounded to 1 decimal
+                    if 0.25 < uniquecounts[0][ uniquecounts[1].argmax() ] < 0.75:
+                        # if the most common decimals are .5 then align to .5 array
+                        ds = xd.util._reindex_angle(ds, az05, 0.5)
+                    else: 
+                        # if not, we align to .0
+                        if angle_params["min_angle"].round() == 1. and angle_params["max_angle"].round() == 360. :
+                            ds = xd.util._reindex_angle(ds, az1, 0.5)
+                        else:
+                            ds = xd.util._reindex_angle(ds, az0, 0.5)
+                
+                
+                # in case the most suitable azimuth coord is [1,...,360] we need to align it to be concatenable to [0,...,359]
+                if 360 in ds["azimuth"]:
+                    ds = ds.roll({"azimuth":1}, roll_coords=True)
+                    ds.coords["azimuth"] = az0
+                    ds.coords["azimuth"].attrs = azattrs
+    
+    
+                ds = ds.set_coords("sweep_mode")
+                ds = ds.rename_vars(time="rtime")
+                ds = ds.assign_coords(time=ds.rtime.min())
+                ds["time"].encoding = ds["rtime"].encoding # copy also the encoding
+                # fix time dtype to prevent uint16 overflow
+                ds["time"].encoding["dtype"] = np.int64
+                ds["rtime"].encoding["dtype"] = np.int64
+                return ds.dropna("azimuth", how="all")
+            
+            # @dask.delayed # We ditch dask to use multiprocessing below
+            def process_single(f, num, dest, scheme="unpacked", sdict={}):
+                try:
+                    # print(".", end="")
+                    ds = read_single(f)
+                    moments = [k for k,v in ds.variables.items() if v.ndim == 2]
+                    if "unpacked" in scheme:
+                        valid = ["dtype", "_FillValue"]
+                        new_enc = {k: {key: val for key, val in ds[k].encoding.items() if key in valid} for k in moments}
+                    else: 
+                        new_enc = {k: dwd_enc[k] for k in moments if k in dwd_enc}
+                    
+                    shape = ds[moments[0]].shape
+                    #print(shape)
+                    enc_new = dict(chunksizes=shape)
+                    enc_new.update(sdict) 
+                    [new_enc[k].update(enc_new) for k in new_enc]
+                            
+                    if "unpacked" not in scheme:
+                        # set _FillValue according IRIS
+                        for mom in moments:
+                            if mom in ["DB_HCLASS2", "DB_HCLASS"]:
+                                continue
+                        
+                            # this is normally already set, but anyway, use DWD fillvalue
+                            # but: 65535 is reserved in the IRIS software for areas not scanned
+                            new_enc[mom]["_FillValue"] = new_enc[mom]["dtype"].type(65535)
+                        
+                            # here is our only assumption: at least one IRIS "zero" value is in the data
+                            iris_minval = np.nanmin(ds[mom])
+                        
+                            # DWD minval/maxval in Iris-space
+                            # zero is OK for all cases
+                            # 65534 is safe for most cases
+                            minval = new_enc[mom]["dtype"].type(0) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
+                            maxval = new_enc[mom]["dtype"].type(65534) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
+                        
+                            # TODO: add a check to see if minval >= iris_minval, if not raise an exception or warning
+                        
+                            # set IRIS NoData to NaN
+                            ds[mom] = ds[mom].where(ds[mom] > iris_minval)
+                        
+                            # special treatment of PHIDP
+                            if mom == "PHIDP":
+                                # [0, 360] -> [-180, 180]
+                                ds[mom] -= 180
+                        
+                            # clip values to DWD, set out-of-bound values to minval/maxval 
+                            ds[mom] = ds[mom].where((ds[mom] > minval) | np.isnan(ds[mom]), minval)
+                            ds[mom] = ds[mom].where((ds[mom] < maxval) | np.isnan(ds[mom]), maxval)     
+                        
+                    
+                    dest = f"{dest}part_{num:03d}.nc"
+                    ds.to_netcdf(dest, engine=engine, encoding=new_enc)
+                    return dest
+                except:
+                    print("something went wrong, ignoring file "+f)
+            
         #%%time  convert files in subfolder
         
         # delete all partial files in the folder, if any
