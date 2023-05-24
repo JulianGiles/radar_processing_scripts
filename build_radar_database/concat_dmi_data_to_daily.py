@@ -450,12 +450,10 @@ for elev in allelevs:
             print("The resulting array has "+str(len(dsr.azimuth))+" azimuth values instead of 360")
         
         #%% Write to single daily file
-        year=htypath[0].split("/")[-6]
-        month=htypath[0].split("/")[-5]
-        day=htypath[0].split("/")[-4]
+        date=htypath[0].split("/")[-4]
         loc=htypath[0].split("/")[-3]
         
-        dsr.to_netcdf(f"{dest}{mode}-allmoms-{elev}-{year}{month}{day}-{loc}-{engine}.nc", engine=engine, encoding=encoding)
+        dsr.to_netcdf(f"{dest}{mode}-allmoms-{elev}-{date}-{loc}-{engine}.nc", engine=engine, encoding=encoding)
         
         
         # delete all partial files in the folder, if any
