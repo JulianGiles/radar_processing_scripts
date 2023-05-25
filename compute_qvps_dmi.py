@@ -47,7 +47,7 @@ except ModuleNotFoundError:
 # paths to files to load
 # 07 is the scan number for 12 degree elevation
 # path = "/home/jgiles/dwd/pulled_from_detect/*/*/2017-04-12/pro/vol5minng01/07/*allmoms*"
-path = "/automount/realpep/upload/jgiles/dmi/pulled_from_detect_ank/*/*/*/ANK/*/12.0/*allmoms*"
+path = "/automount/realpep/upload/jgiles/dmi/pulled_from_detect_ank/*/*/*/ANK/*/13.9/*allmoms*"
 files = sorted(glob.glob(path))
 
 # where to save the qvps
@@ -119,7 +119,7 @@ for ff in files:
     phi_fix = phi_fix.where(phi_fix.range >= start_range + fix_range).fillna(off_fix) - off
     
     # smooth and mask
-    window = 7 # window along range   <----------- this value is quite important for the quality of KDP, since phidp is very noisy
+    window = 11 # window along range   <----------- this value is quite important for the quality of KDP, since phidp is very noisy
     window2 = None # window along azimuth
     phi_median = phi_fix.pipe(radarmet.xr_rolling, window, window2=window2, method='median', skipna=True, min_periods=window//2)
     phi_masked = phi_median.where((ds[X_RHOHV] >= 0.95) & (ds[X_ZH] >= 0.))
@@ -128,13 +128,13 @@ for ff in files:
     # print("range res [km]:", dr)
     
     # derive KDP from PHIDP (convolution method)
-    winlen = 7 # windowlen 
+    winlen = 31 # windowlen 
     # min_periods = 7 # min number of vaid bins
     kdp = radarmet.kdp_from_phidp(phi_masked, winlen, min_periods=winlen//2)
     kdp1 = kdp.interpolate_na(dim='range')
     
     # derive PHIDP from KDP (convolution method)
-    winlen = 7
+    winlen = 31
     phidp = radarmet.phidp_from_kdp(kdp1, winlen)
     
     # assign new variables to dataset
@@ -163,12 +163,12 @@ for ff in files:
     moments={X_ZH: (10., 60.), X_RHOHV: (0.65, 1.), X_PHIDP+"_OC": (-20, 360)}
     dim = 'z'
     thres = 0.02 # gradient values over thres are kept. Lower is more permissive
-    xwin = 9 # value for the time median smoothing
-    ywin = 1 # value for the height mean smoothing (1 for Cband)
+    xwin = 5 # value for the time median smoothing
+    ywin = 5 # value for the height mean smoothing (1 for Cband)
     fmlh = 0.3
      
     ml_qvp = utils.melting_layer_qvp_X_new(ds_qvp_ra2, moments=moments, 
-             dim=dim, thres=thres, xwin=xwin, ywin=ywin, fmlh=fmlh, all_data=True, clowres=True)
+             dim=dim, thres=thres, xwin=xwin, ywin=ywin, fmlh=fmlh, all_data=True, clowres=False)
     
     
     
@@ -238,7 +238,7 @@ for ff in files:
     # print("range res [km]:", dr)
     # winlen in gates
     # TODO: window length in m
-    winlen = 17
+    winlen = 31
     min_periods = 3
     kdp_ml = radarmet.kdp_from_phidp(phi2, winlen, min_periods=3)
     
