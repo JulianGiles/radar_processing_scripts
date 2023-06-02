@@ -184,17 +184,33 @@ for dsname in data_timesel.keys():
     else:
         data_monthly[dsname] = data_timesel[dsname][vars_to_keep[dsname]]
     
+# TSMP gives wierd results if passing to monthly, so we go directly to yearly and then trends
+data_monthly["TSMP_yearly"] = data_timesel["TSMP"][vars_to_keep[dsname]].resample({"time": "YS"}).sum().compute()
+
+    
 # Get trends
 for dsname in data_monthly.keys():
     print("Calculating trends on "+dsname)
     trends[dsname] = data_monthly[dsname].polyfit(dim='time', deg=1, skipna=True).compute()
 
 
+# Repeat for yearly resolution
+data_yearly = dict() 
+trends_yearly = dict()
+
+for dsname in data_timesel.keys():
+    data_yearly[dsname] = data_timesel[dsname][vars_to_keep[dsname]].resample({"time": "YS"}).mean().compute()
+
+# Get trends
+for dsname in data_yearly.keys():
+    print("Calculating trends on "+dsname)
+    trends_yearly[dsname] = data_yearly[dsname].polyfit(dim='time', deg=1, skipna=True).compute()
+
 #%% PLOT
 
 # Plot map of trends (remember that the coefficient is in units per nanosecond)
 def plot_trend(ds, proj=ccrs.PlateCarree(central_longitude=0.0), unit_label="1/year", title="",
-               lonlat_limits=None, vlims=[None, None], **kwrgs):
+               lonlat_limits=None, vlims=[None, None], cmap="RdBu", gridlines=True, **kwrgs):
     '''
     ds : DataArray of polyfit_coefficients
     lonlat_limits : [lonmin, lonmax, latmin, latmax]
@@ -203,15 +219,15 @@ def plot_trend(ds, proj=ccrs.PlateCarree(central_longitude=0.0), unit_label="1/y
         
     f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
 
-    plot = (ds[0]*nanosec_to_year).plot(ax=ax1, cmap='RdBu', levels = 21,
+    plot = (ds[0]*nanosec_to_year).plot(ax=ax1, cmap=cmap, levels = 21,
                                         vmin=vlims[0], vmax=vlims[1],
                                     cbar_kwargs={'label': unit_label, 'shrink':0.88}, **kwrgs)
-    plot.axes.coastlines()
-    plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"})
-    plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.7) #countries
+    plot.axes.coastlines(alpha=0.7)
+    plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=gridlines)
+    plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
     # set extent of map
     if lonlat_limits is not None:
-        ax1.set_extent([lonlat_limits[0], lonlat_limits[1], lonlat_limits[2], lonlat_limits[3]], crs=proj)
+        ax1.set_extent([lonlat_limits[0], lonlat_limits[1], lonlat_limits[2], lonlat_limits[3]], crs=ccrs.PlateCarree(central_longitude=0.0))
         
     # Set title
     plt.title(title)
@@ -235,14 +251,14 @@ unitss = ["1/year", "cm/year", "mm/year", "mm/year", "mm/year", "mm/year", "mm/y
 varss = ["twsan", "lwe_thickness", "ewh", "precipitation", "TOT_PREC", "TWSA with snow", "TWS"]
 vlimss =  [ [None, None], [-1, 1], [-5,5], [-20, 20], [-20, 20], [-10, 10], [-5, 5] ]
 
-select = 5
+select = 2
 dsname = dsnames[select]
 units = unitss[select]
 var = varss[select]
 vlims = vlimss[select]
 
 title = str(start_date)[0:10]+" to "+str(end_date)[0:10]+" "+var+" trend "+dsname
-plot_trend(trends[dsname][var+"_polyfit_coefficients"], unit_label=units, 
+plot_trend(trends_yearly[dsname][var+"_polyfit_coefficients"], unit_label=units, 
            title=title, lonlat_limits=lonlat_limits, vlims=vlims)
 
 
@@ -253,7 +269,7 @@ f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
 
 plot = plt.pcolormesh(data["Springer-Rean-grid"]["LONGXY"],
                       data["Springer-Rean-grid"]["LATIXY"],
-                      trends[dsname][var+"_polyfit_coefficients"][0]*nanosec_to_year,
+                      trends_yearly[dsname][var+"_polyfit_coefficients"][0]*nanosec_to_year,
                       axes=ax1, vmin=vlims[0], vmax=vlims[1], cmap="RdBu")
 
 plot.axes.coastlines()
@@ -266,6 +282,185 @@ if lonlat_limits is not None:
 # Set title
 plt.title(title)
 plt.colorbar(levels=21)
+
+
+#%% PLOT OVER GERMANY AND TURKEY with radar sites
+
+cmap="BrBG"
+namescolor="tomato"
+
+# TURKEY GRACE with radars
+# Set the limits
+
+lon_limits = [25, 45] # [25, 45] [5,16]
+lat_limits = [35.5, 42.5] # [35.5, 42.5] [47, 56]
+lonlat_limits = lon_limits + lat_limits
+
+select = 2
+dsname = dsnames[select]
+units = unitss[select]
+var = varss[select]
+vlims = vlimss[select]
+
+title = str(start_date)[0:10]+" to "+str(end_date)[0:10]+" "+var+" trend "+dsname
+plot_trend(trends_yearly[dsname][var+"_polyfit_coefficients"], unit_label=units, 
+           title=title, lonlat_limits=lonlat_limits, vlims=vlims, cmap=cmap, gridlines=False,
+           proj=ccrs.Mercator(), transform=ccrs.PlateCarree(central_longitude=0.0))
+
+# load radar sites of Turkey
+radar_range = 18000 # in points in the plot (18000 = 350 km survallience, 8500=250 km volume task)
+turk_radars = pd.read_csv("/home/jgiles/Scripts/python/turkish_radars.csv")
+selected_radars = ["Hatay", "Gaziantep", "Afyonkarahisar", "Sivas", "Ankara"]
+single_pol = ["Trabzon", "Samsun"]
+
+
+# Plot turkish radar sites
+pc=ccrs.PlateCarree(central_longitude=0.0)
+plot_radar_sites = True
+if plot_radar_sites:
+    for sr in selected_radars: # plot selected radar ranges
+        g= plt.scatter(turk_radars[turk_radars["Name"]==sr]["Longitude"].values,
+                    turk_radars[turk_radars["Name"]==sr]["Latitude"].values,
+                    transform=pc, color='black', marker='o', s= radar_range, alpha=0.1)
+        g.set_facecolor('none')
+    for sr in selected_radars: # plot selected radar locations
+        plt.scatter(turk_radars[turk_radars["Name"]==sr]["Longitude"].values,
+                    turk_radars[turk_radars["Name"]==sr]["Latitude"].values,
+                    transform=pc, color='red', marker='x')
+        name = sr
+        if turk_radars[turk_radars["Name"]==sr]["Ins. Year"].values > 2018: # plot selected radar names
+            name+=str(turk_radars[turk_radars["Name"]==sr]["Ins. Year"].values)
+        if sr in single_pol:
+            name+='(S)'
+        plt.text(turk_radars[turk_radars["Name"]==sr]["Longitude"].values+0.2,
+                 turk_radars[turk_radars["Name"]==sr]["Latitude"].values,
+                 name, c=namescolor, transform=pc)
+    for sr in turk_radars["Name"].to_list():
+        if sr not in selected_radars:
+            plt.scatter(turk_radars[turk_radars["Name"]==sr]["Longitude"].values,
+                        turk_radars[turk_radars["Name"]==sr]["Latitude"].values,
+                        transform=pc, color='blue', marker='x')
+            
+
+# GERMANY GRACE with radars
+# Set the limits
+
+lon_limits = [5,16] # [25, 45] [5,16]
+lat_limits = [47, 56] # [35.5, 42.5] [47, 56]
+lonlat_limits = lon_limits + lat_limits
+
+select = 2
+dsname = dsnames[select]
+units = unitss[select]
+var = varss[select]
+vlims = vlimss[select]
+
+title = str(start_date)[0:10]+" to "+str(end_date)[0:10]+" "+var+" trend "+dsname
+plot_trend(trends_yearly[dsname][var+"_polyfit_coefficients"], unit_label=units, 
+           title=title, lonlat_limits=lonlat_limits, vlims=vlims, cmap=cmap, gridlines=False,
+           proj=ccrs.Mercator(), transform=ccrs.PlateCarree(central_longitude=0.0))
+
+# load radar sites of Germany
+radar_range = 5000 # in points in the plot (18000 = 350 km survallience, 8500=250 km volume task)
+ger_radars = pd.read_csv("/home/jgiles/Scripts/python/german_radars.csv")
+selected_radars = ["PRO", "TUR", "UMD"]
+single_pol = []
+
+
+# Plot german radar sites
+pc=ccrs.PlateCarree(central_longitude=0.0)
+plot_radar_sites = True
+if plot_radar_sites:
+    for sr in selected_radars: # plot selected radar ranges
+        g= plt.scatter(ger_radars[ger_radars["Name"]==sr]["Longitude"].values,
+                    ger_radars[ger_radars["Name"]==sr]["Latitude"].values,
+                    transform=pc, color='black', marker='o', s= radar_range, alpha=0.1)
+        g.set_facecolor('none')
+    for sr in selected_radars: # plot selected radar locations
+        plt.scatter(ger_radars[ger_radars["Name"]==sr]["Longitude"].values,
+                    ger_radars[ger_radars["Name"]==sr]["Latitude"].values,
+                    transform=pc, color='red', marker='x')
+        name = sr
+        if ger_radars[ger_radars["Name"]==sr]["Ins. Year"].values > 2018: # plot selected radar names
+            name+=str(ger_radars[ger_radars["Name"]==sr]["Ins. Year"].values)
+        if sr in single_pol:
+            name+='(S)'
+        plt.text(ger_radars[ger_radars["Name"]==sr]["Longitude"].values+0.2,
+                 ger_radars[ger_radars["Name"]==sr]["Latitude"].values,
+                 name, c=namescolor, transform=pc)
+    for sr in ger_radars["Name"].to_list():
+        if sr not in selected_radars:
+            plt.scatter(ger_radars[ger_radars["Name"]==sr]["Longitude"].values,
+                        ger_radars[ger_radars["Name"]==sr]["Latitude"].values,
+                        transform=pc, color='blue', marker='x')
+
+
+
+# TURKEY IMERG and TSMP
+# Set the limits
+
+lon_limits = [25, 45] # [25, 45] [5,16]
+lat_limits = [35.5, 42.5] # [35.5, 42.5] [47, 56]
+lonlat_limits = lon_limits + lat_limits
+
+select = 3 # select IMERG
+dsname = dsnames[select]
+units = unitss[select]
+var = varss[select]
+vlims = vlimss[select]
+
+title = str(start_date)[0:10]+" to "+str(end_date)[0:10]+" "+var+" trend "+dsname
+plot_trend(trends_yearly[dsname][var+"_polyfit_coefficients"]*12, unit_label=units, # I think I have to multiply by 12 to get yearly trends, otherwise the values are too small
+           title=title, lonlat_limits=lonlat_limits, vlims=vlims, cmap=cmap, gridlines=False,
+            proj=ccrs.Mercator(), transform=ccrs.PlateCarree(central_longitude=0.0)
+           )
+
+
+select = 4 # select TSMP
+dsname = dsnames[select]
+units = unitss[select]
+var = varss[select]
+vlims = vlimss[select]
+
+title = str(start_date)[0:10]+" to "+str(end_date)[0:10]+" "+var+" trend "+dsname
+plot_trend(trends_yearly[dsname][var+"_polyfit_coefficients"]*8*365, unit_label=units, # I think I have to multiply by 8 and 365 to get yearly trends, otherwise the values are too small
+           title=title, lonlat_limits=lonlat_limits, vlims=vlims, cmap=cmap, gridlines=False,
+            proj=ccrs.Mercator(), transform=rp
+           )
+
+
+
+# GERMANY IMERG and TSMP
+# Set the limits
+
+lon_limits = [5,16] # [25, 45] [5,16]
+lat_limits = [47, 56] # [35.5, 42.5] [47, 56]
+lonlat_limits = lon_limits + lat_limits
+
+select = 3 # select IMERG
+dsname = dsnames[select]
+units = unitss[select]
+var = varss[select]
+vlims = vlimss[select]
+
+title = str(start_date)[0:10]+" to "+str(end_date)[0:10]+" "+var+" trend "+dsname
+plot_trend(trends_yearly[dsname][var+"_polyfit_coefficients"]*12, unit_label=units, # I think I have to multiply by 12 to get yearly trends, otherwise the values are too small
+           title=title, lonlat_limits=lonlat_limits, vlims=vlims, cmap=cmap, gridlines=False,
+            proj=ccrs.Mercator(), transform=ccrs.PlateCarree(central_longitude=0.0)
+           )
+
+
+select = 4 # select TSMP
+dsname = dsnames[select]
+units = unitss[select]
+var = varss[select]
+vlims = vlimss[select]
+
+title = str(start_date)[0:10]+" to "+str(end_date)[0:10]+" "+var+" trend "+dsname
+plot_trend(trends_yearly[dsname][var+"_polyfit_coefficients"]*8*365, unit_label=units, # I think I have to multiply by 8 and 365 to get yearly trends, otherwise the values are too small
+           title=title, lonlat_limits=lonlat_limits, vlims=vlims, cmap=cmap, gridlines=False,
+            proj=ccrs.Mercator(), transform=rp
+           )
 
 
 #%% OLD CODE FROM HERE ON

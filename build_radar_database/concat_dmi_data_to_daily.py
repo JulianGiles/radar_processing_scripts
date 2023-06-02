@@ -430,7 +430,11 @@ for elev in allelevs:
             
         
         #%%time Reload converted files
-        dsr = xr.open_mfdataset(f"{dest}part_*", concat_dim="time", combine="nested", engine=engine)
+        try:
+            dsr = xr.open_mfdataset(f"{dest}part_*", concat_dim="time", combine="nested", engine=engine)
+        except OSError:
+            print("!!! no files to open, ignoring !!!")
+            continue
         # display(dsr)
         
         #%% Fix encoding before writing to single file

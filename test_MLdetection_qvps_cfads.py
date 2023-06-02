@@ -681,7 +681,7 @@ qvps.loc[{"time": "2016-04-27"}]["min_entropy"].plot(x="time", vmin=0.8, cmap="p
 
 #### Open QVP files
 path_qvps = "/home/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/*allmoms*"
-path_qvps = "/automount/ftp/jgiles/qvps2/*/*/*/tur/vol5minng01/07/*allmoms*"
+# path_qvps = "/automount/ftp/jgiles/qvps2/*/*/*/tur/vol5minng01/07/*allmoms*"
 
 files = sorted(glob.glob(path_qvps))
 
@@ -769,15 +769,21 @@ vars_to_plot = {"DBZH": [0, 51, 1],
 fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
 
 for nn, vv in enumerate(vars_to_plot.keys()):
+
     utils.hist2d(ax[nn], qvps_strat_fil[vv], qvps_strat_fil["TEMP"], whole_x_range=True, 
                  binsx=vars_to_plot[vv], binsy=[-20,15,tb], mode='rel_y', qq=0.2,
                  cb_mode=(nn+1)/len(vars_to_plot), cmap="plasma", colsteps=colsteps, 
-                 fsize=10, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
+                 fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
                  cborientation="vertical", shading="nearest")
     ax[nn].set_ylim(15,ytlim)
     ax[nn].set_xlabel(vv, fontsize=10)
+    
+    ax[nn].tick_params(labelsize=15) #change font size of ticks
+    plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
 
-ax[0].set_ylabel('Temperature [°C]', fontsize=10, color='black')
+
+
+ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
 
 
 

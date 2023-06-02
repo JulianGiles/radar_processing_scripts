@@ -47,7 +47,7 @@ except ModuleNotFoundError:
 # paths to files to load
 # 07 is the scan number for 12 degree elevation
 # path = "/home/jgiles/dwd/pulled_from_detect/*/*/2017-04-12/pro/vol5minng01/07/*allmoms*"
-path = "/automount/realpep/upload/jgiles/dmi/pulled_from_detect_ank/*/*/*/ANK/*/13.9/*allmoms*"
+path = "/automount/realpep/upload/jgiles/dmi/pulled_from_detect_ank/*/*/*/ANK/*/14.0/*allmoms*"
 files = sorted(glob.glob(path))
 
 # where to save the qvps
