@@ -41,6 +41,7 @@ dest = sys.argv[2]
 # For testing
 # htypath = sorted(glob.glob("/home/jgiles/turkey_test/acq/OLDDATA/uza/RADAR/2017/05/08/ANK/RAW/*"))
 # htypath = sorted(glob.glob("/home/jgiles/turkey_test/acq/OLDDATA/uza/RADAR/2017/07/27/HTY/RAW/*"))
+# htypath = sorted(glob.glob("/home/jgiles/turkey_test/AFY_20190502/*"))
 # dest = "/home/jgiles/turkey_test/temp/"
 
 # create dest if it does not exist
@@ -56,6 +57,8 @@ dwd = xr.open_dataset("/automount/ags/jgiles/turkey_test/ras07-vol5minng01_sweep
 
 drop = ["szip", "zstd", "source", "chunksizes", "bzip2", "blosc", "shuffle", "fletcher32", "original_shape", "coordinates", "contiguous"]
 dwd_enc = {k: {key: v.encoding[key] for key in v.encoding if key not in drop} for k, v in dwd.data_vars.items() if v.ndim == 3}
+
+# manually add missing encodings
 dwd_enc["PHIDP"] = dwd_enc["UPHIDP"].copy()
 dwd_enc["DBTH"] = dwd_enc["TH"].copy()
 dwd_enc["DBTV"] = dwd_enc["TV"].copy()
@@ -69,6 +72,14 @@ dwd_enc["DB_DBTV16"] = dwd_enc["DBTV"].copy()
 dwd_enc["DB_DBZV16"] = dwd_enc["DBZH"].copy()
 dwd_enc["DB_DBTV8"] = dwd_enc["DBTV"].copy()
 dwd_enc["DB_DBZV8"] = dwd_enc["DBZH"].copy()
+
+dwd_enc["DB_SNR8"] = dwd_enc["DBZH"].copy()
+dwd_enc["DB_SNR8"]["_FillValue"] = 255
+dwd_enc["DB_SNR8"]["scale_factor"] = 0.5
+dwd_enc["DB_SNR8"]["add_offset"] = -31.5
+
+
+
 
 
 #%% Get files
@@ -254,21 +265,35 @@ for elev in allelevs:
                         for mom in moments:
                             if mom in ["DB_HCLASS2", "DB_HCLASS"]:
                                 continue
-                        
-                            # this is normally already set, but anyway, use DWD fillvalue
-                            # but: 65535 is reserved in the IRIS software for areas not scanned
-                            new_enc[mom]["_FillValue"] = new_enc[mom]["dtype"].type(65535)
-                        
+                                                
                             # here is our only assumption: at least one IRIS "zero" value is in the data
                             iris_minval = np.nanmin(ds[mom])
                         
-                            # DWD minval/maxval in Iris-space
-                            # zero is OK for all cases
-                            # 65534 is safe for most cases
-                            minval = new_enc[mom]["dtype"].type(0) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
-                            maxval = new_enc[mom]["dtype"].type(65534) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
+                            if mom in ["DB_SNR8", "DB_SNR16"]:
+                                # these moments need special treatment
+
+                                # this is normally already set, but anyway, use DWD fillvalue
+                                # but: 255 is reserved in the IRIS software for areas not scanned
+                                new_enc[mom]["_FillValue"] = new_enc[mom]["dtype"].type(255)
+
+                                # DWD minval/maxval in Iris-space
+                                minval = new_enc[mom]["dtype"].type(0) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
+                                maxval = new_enc[mom]["dtype"].type(254) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
+                                
+                            else:
+                                # this is normally already set, but anyway, use DWD fillvalue
+                                # but: 65535 is reserved in the IRIS software for areas not scanned
+                                new_enc[mom]["_FillValue"] = new_enc[mom]["dtype"].type(65535)
+
+                                # DWD minval/maxval in Iris-space
+                                # zero is OK for all cases
+                                # 65534 is safe for most cases
+                                minval = new_enc[mom]["dtype"].type(0) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
+                                maxval = new_enc[mom]["dtype"].type(65534) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
                         
-                            # TODO: add a check to see if minval >= iris_minval, if not raise an exception or warning
+                            # check that minval >= iris_minval
+                            if minval < iris_minval:
+                                print("! WARNING: there are "+mom+" values below the IRIS minimum encoded value !")
                         
                             # set IRIS NoData to NaN
                             ds[mom] = ds[mom].where(ds[mom] > iris_minval)
