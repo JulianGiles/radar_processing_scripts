@@ -682,17 +682,20 @@ qvps.loc[{"time": "2016-04-27"}]["min_entropy"].plot(x="time", vmin=0.8, cmap="p
 #### Open QVP files
 path_qvps = "/home/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/*allmoms*"
 # path_qvps = "/automount/ftp/jgiles/qvps2/*/*/*/tur/vol5minng01/07/*allmoms*"
+path_qvps = "/home/jgiles/dmi/qvps/*/*/*/ANK/*/*/*allmoms*"
 
 files = sorted(glob.glob(path_qvps))
 
-# there are slight differences in z coord sometimes so we have to align all datasets
-# since the time coord has variable length, que cannot use join="override" so we define a function to copy
+TH = "DBTH" # set TH name
+
+
+# there are slight differences (noise) in z coord sometimes so we have to align all datasets
+# since the time coord has variable length, we cannot use join="override" so we define a function to copy
 # the z coord from the first dataset into the rest with preprocessing
-# There is also some time values missing, ignore those
+# There are also some time values missing, ignore those
 # Some files do not have TEMP data, fill with nan
-first_file = xr.open_mfdataset(files[0]) # use override due to slight differences in z dimension
+first_file = xr.open_mfdataset(files[0]) 
 first_file_z = first_file.z.copy()
-first_file_TEMP = first_file["TEMP"][0].compute()*np.nan
 def fix_z_and_time(ds):
     ds.coords["z"] = first_file_z
     ds = ds.where(ds["time"].notnull(), drop=True)
@@ -701,14 +704,19 @@ def fix_z_and_time(ds):
         
     return ds
     
-qvps = xr.open_mfdataset(files, preprocess=fix_z_and_time)
+try:
+    qvps = xr.open_mfdataset(files, preprocess=fix_z_and_time)
+except: 
+    # if the above fails, just combine everything and fill the holes with nan (Turkish case)
+    qvps = xr.open_mfdataset(files, combine="nested", concat_dim="time")
+
 
 #### Filters
 # Filter only stratiform events (min entropy >= 0.8)
 with ProgressBar():
     qvps_strat = qvps.where(qvps["min_entropy"]>=0.8, drop=True).compute()
 # Filter relevant values
-qvps_strat_fil = qvps_strat.where((qvps_strat["TH"] > 0 )&(qvps_strat["KDP_ML_corrected"] > 0.0)&(qvps_strat["RHOHV"] > 0.7)&(qvps_strat["ZDR"] > -1))
+qvps_strat_fil = qvps_strat.where((qvps_strat[TH] > 0 )&(qvps_strat["KDP_ML_corrected"] > 0.0)&(qvps_strat["RHOHV"] > 0.7)&(qvps_strat["ZDR"] > -1))
 
 #### General statistics
 values_sfc = qvps_strat_fil.isel({"z": 2})
@@ -731,7 +739,7 @@ gradient_silke = qvps_strat_fil.where(qvps_strat_fil["height_ml_new_gia"] > qvps
 gradient_silke_ML = gradient_silke.sel({"z": gradient_silke["height_ml_new_gia"]}, method="nearest")
 gradient_silke_ML_plus_2km = gradient_silke.sel({"z": gradient_silke_ML["z"]+2000}, method="nearest")
 gradient_final = (gradient_silke_ML_plus_2km - gradient_silke_ML)/2
-beta = gradient_final["TH"] #### TH OR DBZH??
+beta = gradient_final[TH] #### TH OR DBZH??
 
 
 #### DGL statistics
