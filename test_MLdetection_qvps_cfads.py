@@ -686,7 +686,7 @@ path_qvps = "/home/jgiles/dmi/qvps/*/*/*/ANK/*/*/*allmoms*"
 
 files = sorted(glob.glob(path_qvps))
 
-TH = "DBTH" # set TH name
+TH = "DBZH" # set TH name, or set DBZH if TH not available, like in some turkish radars
 
 
 # there are slight differences (noise) in z coord sometimes so we have to align all datasets
