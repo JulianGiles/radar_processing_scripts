@@ -91,7 +91,7 @@ for ff in files:
             if "time" in swp[coord].dims:
                 swp.coords[coord] = swp.coords[coord].median("time")
         swp = swp.pipe(wrl.georef.georeference_dataset)
-        with open("/home/jgiles/dwd/qvps/dates_to_recompute.txt", 'a') as file:
+        with open(savedir+"dates_to_recompute.txt", 'a') as file:
             file.write(savepath.rsplit(os.sep, 5)[1]+"\n")
 
     ################## Before entropy calculation we need to use the melting layer detection algorithm 
