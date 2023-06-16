@@ -75,7 +75,7 @@ sounding_savepath = "/automount/ags/jgiles/soundings_wyoming/"
 
 for ff in files:
     # check if the file already exists before starting
-    savepath = savedir + ff.rsplit(os.sep, 1)[0].split(os.sep,7)[-1] + "/" + "qvp_"+ff.rsplit(os.sep, 1)[-1]
+    savepath = savedir + ff.rsplit(os.sep, 1)[0].split(os.sep,6)[-1] + "/" + "qvp_"+ff.rsplit(os.sep, 1)[-1]
     if os.path.exists(savepath):
         continue
 
