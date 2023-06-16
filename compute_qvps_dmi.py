@@ -48,6 +48,7 @@ except ModuleNotFoundError:
 # 07 is the scan number for 12 degree elevation
 # path = "/home/jgiles/dwd/pulled_from_detect/*/*/2017-04-12/pro/vol5minng01/07/*allmoms*"
 path = "/automount/realpep/upload/jgiles/dmi/pulled_from_detect_ank/*/*/*/ANK/*/14.0/*allmoms*"
+path = "/automount/realpep/upload/jgiles/dmi/*/*/*/HTY/*/10.0/*allmoms*"
 files = sorted(glob.glob(path))
 
 # where to save the qvps
@@ -56,7 +57,7 @@ savedir = "/home/jgiles/dmi/qvps/"
 
 # Use ERA5 temperature profile? If so, it does not use sounding data
 era5_temp = True
-era5_dir = "/automount/ags/jgiles/ERA5/hourly/ank/pressure_level_vars/"
+era5_dir = "/automount/ags/jgiles/ERA5/hourly/hty/pressure_level_vars/"
 
 # download sounding data?
 download_sounding = False
@@ -102,6 +103,15 @@ for ff in files:
     X_RHOHV = "RHOHV"
     X_PHIDP = "PHIDP" # "PHIDP"
     X_TH = "DBZH" # if we do not have TH
+    
+    # check that the variables exist in ds
+    xvars = [X_ZH, X_RHOHV, X_PHIDP, X_TH]
+    xvars_check = [xvar in ds.data_vars for xvar in xvars ]
+    if not all( [xvar in ds.data_vars for xvar in xvars ] ):
+        print( "!! Necessary variables are not in this dataset: "+ 
+              " ".join([xvar for nvar,xvar in enumerate(xvars) if not xvars_check[nvar]]) +
+              ". Skipping date")
+        continue
     
     ######### Processing PHIDP
     #### fix PHIDP
