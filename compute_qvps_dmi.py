@@ -48,7 +48,7 @@ except ModuleNotFoundError:
 # 07 is the scan number for 12 degree elevation
 # path = "/home/jgiles/dwd/pulled_from_detect/*/*/2017-04-12/pro/vol5minng01/07/*allmoms*"
 path = "/automount/realpep/upload/jgiles/dmi/pulled_from_detect_ank/*/*/*/ANK/*/14.0/*allmoms*"
-path = "/automount/realpep/upload/jgiles/dmi/*/*/*/HTY/*/10.0/*allmoms*"
+path = "/automount/realpep/upload/jgiles/dmi/*/*/*/HTY/*/12.0/*allmoms*"
 files = sorted(glob.glob(path))
 
 # where to save the qvps
@@ -86,13 +86,13 @@ for ff in files:
     try: # this might fail because of the issue with the time dimension that some files have
         swp = swp.pipe(wrl.georef.georeference_dataset)
     except ValueError:
-        print("!!!! Issue with dimensions in the coordinates of the contenated files, fixing and taking note")
+        print("!!!! Issue with dimensions in the coordinates of the contenated files, fixing by taking time azimuth")
         for coord in ["latitude", "longitude", "altitude", "elevation"]:
             if "time" in swp[coord].dims:
                 swp.coords[coord] = swp.coords[coord].median("time")
         swp = swp.pipe(wrl.georef.georeference_dataset)
-        with open(savedir+"dates_to_recompute.txt", 'a') as file:
-            file.write(savepath.rsplit(os.sep, 5)[1]+"\n")
+        # with open(savedir+"dates_to_recompute.txt", 'a') as file:
+        #     file.write(savepath.rsplit(os.sep, 5)[1]+"\n")
 
     ################## Before entropy calculation we need to use the melting layer detection algorithm 
     ds = swp
@@ -455,7 +455,7 @@ for ff in files:
         era5_g = xr.open_mfdataset(reversed(glob.glob(era5_dir+"geopotential/*"+str(startdt.year)+"*")), concat_dim="lvl", combine="nested")
         
         # add altitude coord to temperature data
-        earth_r = 6378137
+        earth_r = wrl.georef.projection.get_earth_radius(swp.latitude.values)
         gravity = 9.80665
         
         era5_t.coords["height"] = (earth_r*(era5_g.z/gravity)/(earth_r - era5_g.z/gravity)).compute()
