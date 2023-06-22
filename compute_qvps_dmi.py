@@ -434,6 +434,7 @@ for ff in files:
             ds_qvp_ra = ds_qvp_ra.pipe(merge_radar_profile, itemp_da)
             
             ds_qvp_ra.coords["TEMP"] = ds_qvp_ra["TEMP"] # move TEMP from variable to coordinate
+            ds_qvp_ra.coords["TEMP"].attrs["source"] = "Soundings Wyoming ID: "+str(rs_id) # add source info
 
         except ValueError:
             print("!!!! ERROR: some issue when concatenating sounding data, ignoring date")
@@ -503,7 +504,7 @@ for ff in files:
             ds_qvp_ra.coords["TEMP"] = ds_qvp_ra["TEMP"] # move TEMP from variable to coordinate
 
         except ValueError:
-            print("!!!! ERROR: some issue when concatenating sounding data, ignoring date")
+            print("!!!! ERROR: some issue when concatenating ERA5 data, ignoring date")
             with open(savedir+"/dates_to_recompute.txt", 'a') as file:
                 file.write(savepath.rsplit(os.sep, 5)[1]+"\n")
         

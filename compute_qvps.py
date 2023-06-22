@@ -29,6 +29,7 @@ from dask.diagnostics import ProgressBar
 from xhistogram.xarray import histogram
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+from multiprocessing import Pool
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -53,8 +54,13 @@ files = sorted(glob.glob(path))
 savedir = "/home/jgiles/dwd/qvps/"
 # savedir = "/automount/ftp/jgiles/qvps2/"
 
+# Use ERA5 temperature profile? If so, it does not use sounding data
+era5_temp = True
+era5_dir = "/automount/ags/jgiles/ERA5/hourly/tur/pressure_level_vars/"
+
 # download sounding data?
-download_sounding = True
+download_sounding = False
+if era5_temp: download_sounding = False
 
 # Code for Sounding data (http://weather.uwyo.edu/upperair/sounding.html)
 rs_id = 10868 # Close to radar site. 10393 Lindenberg close to PRO, 10868 Munich close to Turkheim
@@ -417,12 +423,80 @@ for ff in files:
             ds_qvp_ra = ds_qvp_ra.pipe(merge_radar_profile, itemp_da)
             
             ds_qvp_ra.coords["TEMP"] = ds_qvp_ra["TEMP"] # move TEMP from variable to coordinate
+            ds_qvp_ra.coords["TEMP"].attrs["source"] = "Soundings Wyoming ID: "+str(rs_id) # add source info
 
         except ValueError:
             print("!!!! ERROR: some issue when concatenating sounding data, ignoring date")
             with open("/home/jgiles/dwd/qvps/dates_to_recompute.txt", 'a') as file:
                 file.write(savepath.rsplit(os.sep, 5)[1]+"\n")
+
+    #### Use temperature from ERA5
+    if era5_temp:
+        # get times of the radar files
+        startdt0 = datetime.datetime.utcfromtimestamp(int(swp.time[0].values)/1e9).date()
+        enddt0 = datetime.datetime.utcfromtimestamp(int(swp.time[-1].values)/1e9).date() + datetime.timedelta(hours=24)
+        
+        # transform the dates to datetimes
+        startdt = datetime.datetime.fromordinal(startdt0.toordinal())
+        enddt = datetime.datetime.fromordinal(enddt0.toordinal())
+        
+        # open ERA5 files
+        era5_t = xr.open_mfdataset(reversed(glob.glob(era5_dir+"temperature/*"+str(startdt.year)+"*")), concat_dim="lvl", combine="nested")
+        era5_g = xr.open_mfdataset(reversed(glob.glob(era5_dir+"geopotential/*"+str(startdt.year)+"*")), concat_dim="lvl", combine="nested")
+        
+        # add altitude coord to temperature data
+        earth_r = wrl.georef.projection.get_earth_radius(swp.latitude.values)
+        gravity = 9.80665
+        
+        era5_t.coords["height"] = (earth_r*(era5_g.z/gravity)/(earth_r - era5_g.z/gravity)).compute()
+        
+        # Create time dimension and concatenate
+        try: # this might fail because of the issue with the time dimension in elevations that some files have
+            dtslice0 = startdt.strftime('%Y-%m-%d %H')
+            dtslice1 = enddt.strftime('%Y-%m-%d %H')
+            temperatures = era5_t["t"].loc[{"time":slice(dtslice0, dtslice1)}].isel({"latitude":0, "longitude":0})
             
+            # Interpolate to higher resolution
+            hmax = 20000.
+            ht = np.arange(0., hmax)
+            
+            def interp_to_ht(ds):
+                ds = ds.swap_dims({"lvl":"height"})
+                return ds.interp({"height": ht})
+            
+            results = []
+            
+            with Pool() as P:
+                results = P.map( interp_to_ht, [temperatures[:,tt] for tt in range(len(temperatures.time)) ] )
+            
+            itemp_da = xr.concat(results, "time")
+            
+            # Fix Temperature below first measurement and above last one
+            itemp_da = itemp_da.bfill(dim="height")
+            itemp_da = itemp_da.ffill(dim="height")
+            
+            # Attempt to fill any missing timestep with adjacent data
+            itemp_da = itemp_da.ffill(dim="time")
+            itemp_da = itemp_da.bfill(dim="time")
+            
+            # Interpolate to dataset height and time, then add to dataset
+            def merge_radar_profile(rds, cds):
+                # cds = cds.interp({'height': rds.z}, method='linear')
+                cds = cds.interp({'height': rds.z}, method='linear')
+                cds = cds.interp({"time": rds.time}, method="linear")
+                rds = rds.assign({"TEMP": cds})
+                rds.TEMP.attrs["source"]="ERA5"
+                return rds
+            
+            ds_qvp_ra = ds_qvp_ra.pipe(merge_radar_profile, itemp_da)
+            
+            ds_qvp_ra.coords["TEMP"] = ds_qvp_ra["TEMP"] # move TEMP from variable to coordinate
+
+        except ValueError:
+            print("!!!! ERROR: some issue when concatenating ERA5 data, ignoring date")
+            with open(savedir+"/dates_to_recompute.txt", 'a') as file:
+                file.write(savepath.rsplit(os.sep, 5)[1]+"\n")
+                    
     #### Save dataset
     print("Saving file")
     
