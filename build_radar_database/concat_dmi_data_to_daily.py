@@ -104,6 +104,45 @@ horbeamwidth = []
 fpath = []
 sweep_number = []
 
+
+# TEST: checking the moment names to see if they are 1- or 2-byte
+# taskname={}
+# for f in htypath:
+#     try:
+#         m = xd.io.backends.iris.IrisRawFile(f, loaddata=False)
+#     except ValueError:
+#         # some files may be empty, ignore them
+#         print("ignoring empty file: "+f)
+#         continue
+#     except EOFError:
+#         # some files may be corrupt, ignore them
+#         print("ignoring corrupt file: "+f)
+#         continue
+#     except OSError:
+#         # some files give NULL value error, ignore them
+#         print("ignoring NULL file: "+f)
+#         continue
+#     taskname_ = m.product_hdr["product_configuration"]["task_name"].strip()
+#     for i in range(10):
+#         try:
+#             elevation_ = round(m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["fixed_angle"], 2)
+#             mom_keys = m.data[i]["ingest_data_hdrs"].keys()
+#             break
+#         except KeyError:
+#             try:
+#                 elevation_ = round(m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["fixed_angle"], 2)
+#                 mom_keys = m.data[i]["ingest_data_hdrs"].keys()
+#                 break
+#             except KeyError:
+#                 continue
+#     if taskname_ not in taskname.keys():
+#         taskname[taskname_] = {"elevs":[], "moms":[]}
+#     if elevation_ not in taskname[taskname_]["elevs"]:
+#         taskname[taskname_]["elevs"].append(elevation_)
+#     if mom_keys not in taskname[taskname_]["moms"]:
+#         taskname[taskname_]["moms"].append(mom_keys)
+
+
 for f in htypath:
     # print(".", end="")
     # Read metadata
@@ -379,6 +418,17 @@ for elev in allelevs:
                 # fix time dtype to prevent uint16 overflow
                 ds["time"].encoding["dtype"] = np.int64
                 ds["rtime"].encoding["dtype"] = np.int64
+                
+                # Fixes
+                # It may happen that some time value is missing, fix that using info in rtime
+                if ds["time"].isnull().any():
+                    ds.coords["time"] = ds.rtime.min(dim="azimuth", skipna=True).compute()    
+                    
+                # if some coord has dimension time, reduce using median
+                for coord in ["latitude", "longitude", "altitude", "elevation"]:
+                    if "time" in ds[coord].dims:
+                        ds.coords[coord] = ds.coords[coord].median("time")
+
                 return ds.dropna("azimuth", how="all")
             
             # @dask.delayed # We ditch dask to use multiprocessing below
