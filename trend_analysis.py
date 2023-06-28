@@ -37,6 +37,14 @@ import warnings
 # warnings.filterwarnings("ignore", category=FutureWarning)
 
 proj = ccrs.PlateCarree(central_longitude=0.0)
+
+# Set rotated pole
+# Euro-CORDEX rotated pole coordinates RotPole (198.0; 39.25) 
+rp = ccrs.RotatedPole(pole_longitude=198.0,
+                      pole_latitude=39.25,
+                      globe=ccrs.Globe(semimajor_axis=6370000,
+                                       semiminor_axis=6370000))
+
 #%% Load data
 
 # Put everything on a single dictionary
@@ -91,8 +99,13 @@ data["GRACE-ITSG"].coords["time"] = datetimes
 
 #### IMERG (GLOBAL MONTHLY)
 print("Loading IMERG...")
-data["IMERG"] = xr.open_mfdataset('/automount/ags/jgiles/IMERG/global_monthly/3B-MO.MS.MRG.3IMERG.*.V06B.HDF5.nc4')\
-                .transpose('time', 'lat', 'lon', ...) * 24*30 # convert to mm/month (approx)
+def preprocess_imerg(ds):
+    # function to transform to accumulated monthly values
+    days_in_month = [31,28,31,30,31,30,31,31,30,31,30,31]
+    ds["precipitation"] = ds["precipitation"]*days_in_month[ds.time.values[0].month-1]*24
+    return ds
+data["IMERG"] = xr.open_mfdataset('/automount/ags/jgiles/IMERG/global_monthly/3B-MO.MS.MRG.3IMERG.*.V06B.HDF5.nc4', preprocess=preprocess_imerg)\
+                .transpose('time', 'lat', 'lon', ...) # * 24*30 # convert to mm/month (approx)
 
 
 #### ERA5 (GLOBAL MONTHLY)
@@ -117,7 +130,7 @@ data["TSMP"] = xr.open_mfdataset('/automount/ags/jgiles/TSMP/rcsm_TSMP-ERA5-eval
 
 data["TSMP"] = data["TSMP"].assign( xr.open_mfdataset('/automount/ags/jgiles/TSMP/rcsm_TSMP-ERA5-eval_IBG3/o.data_v01/*/*WT*',
                              chunks={"time":1000}) )
-data["TSMP"]["time"] = data["TSMP"].get_index("time").shift(-1.5, "H")
+data["TSMP"]["time"] = data["TSMP"].get_index("time").shift(-1.5, "H") # shift the values forward to the start of the interval
 
 
 data["TSMP-Ben"] = xr.open_mfdataset('/automount/ags/jgiles/4BenCharlotte/TSMP/twsa_tsmp_europe_era5_1990_2021.nc')
@@ -461,6 +474,182 @@ plot_trend(trends_yearly[dsname][var+"_polyfit_coefficients"]*8*365, unit_label=
            title=title, lonlat_limits=lonlat_limits, vlims=vlims, cmap=cmap, gridlines=False,
             proj=ccrs.Mercator(), transform=rp
            )
+
+
+
+#%% MEAN VALUES AND DIFFERENCES
+
+# get a common period
+start_date = str(data["IMERG"].time[7].to_numpy())
+end_date = str(data["IMERG"].time[-10].to_numpy())
+
+# accumulate to yearly values
+data_yearlysum = {}
+data_yearlysum["IMERG"] = data["IMERG"].loc[{"time": slice(start_date, end_date)}]["precipitation"].resample({"time": "YS"}).sum().compute()
+data_yearlysum["TSMP"] = data["TSMP"]["TOT_PREC"].loc[{"time": slice(start_date, end_date)}].resample({"time": "YS"}).sum().compute()
+
+# Transform the TSMP data from rotated pole grid to rectiliniar. We will need this for the differences.
+# We use CDO because I cannot find a better way.
+# Thus, we save the TSMP dataset to nc, transform with CDO and reload
+data_yearlysum["TSMP"].to_netcdf("/automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_"+start_date.split("-")[0]+"-"+end_date.split("-")[0]+".nc")
+import subprocess
+bash_code="""
+cdo remapbil,/automount/ags/jgiles/IMERG/global_monthly/griddes.txt /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020.nc /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_IMERGrotated0.nc
+cdo sellonlatbox,-46.40,67.22,21.14,73.24 /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_IMERGrotated0.nc /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_IMERGrotated.nc
+"""
+result = subprocess.run(bash_code, shell=True, check=True, capture_output=True, text=True)
+print(result.stdout)
+
+data_TSMP_rot = xr.open_dataset("/automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_IMERGrotated.nc")["TOT_PREC"]
+
+#%% Plot one year
+isel=0
+proj=ccrs.Mercator()
+country="Turkey"
+lonlat_limits_country = {"Turkey": [25, 45, 35.5, 42.5],
+                         "Germany": [5, 16, 47, 56]}
+
+
+for isel in np.arange(0,20):
+    cmap="Greens"
+    nlevs = 11
+    vlims = [0,2000]
+    
+    # Plot TSMP
+    f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
+    plot = data_yearlysum["TSMP"][isel].plot(cmap=cmap, vmin=vlims[0], vmax=vlims[1], levels=nlevs, 
+                                             subplot_kws={"projection":proj}, transform=rp, 
+                                             cbar_kwargs={'label': "mm", 'shrink':0.88})
+    plot.axes.coastlines(alpha=0.7)
+    plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
+    plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
+    if len(country)>0: # focus on country domain
+        ax1.set_extent([lonlat_limits_country[country][0], 
+                        lonlat_limits_country[country][1], 
+                        lonlat_limits_country[country][2], 
+                        lonlat_limits_country[country][3]])        
+    getyear = str(data_yearlysum["TSMP"][isel].time.values).split("-")[0]
+    plt.title("TSMP TOT_PREC "+getyear)
+    dest = "/home/jgiles/sciebo/Images/TSMP_IMERG_comparison/"+getyear+"/"+country+"/"
+    if not os.path.exists(dest):
+        os.makedirs(dest)
+    plt.savefig(dest+"TSMP_TOT_PREC_yearsum_"+getyear+"_"+country+".png",  bbox_inches='tight')
+    plt.close(f) # so the figure is not displayed in Spyder
+    
+    # Plot IMERG
+    # Get lon lat limits from TSMP
+    lonlat_limits = [data_yearlysum["TSMP"][isel].lon.min(),
+                     data_yearlysum["TSMP"][isel].lon.max(),
+                     data_yearlysum["TSMP"][isel].lat.min(),
+                     data_yearlysum["TSMP"][isel].lat.max()]
+    
+    f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
+    plot = data_yearlysum["IMERG"][isel].loc[{"lon":slice(lonlat_limits[0], lonlat_limits[1]),
+                                              "lat":slice(lonlat_limits[2], lonlat_limits[3])}].plot(cmap=cmap, vmin=vlims[0], vmax=vlims[1], levels=nlevs, 
+                                             subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
+                                             cbar_kwargs={'label': "mm", 'shrink':0.88})
+    # ax1.set_extent([float(a) for a in lonlat_limits])
+    plot.axes.coastlines(alpha=0.7)
+    plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
+    plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
+    if len(country)>0: # focus on country domain
+        ax1.set_extent([lonlat_limits_country[country][0], 
+                        lonlat_limits_country[country][1], 
+                        lonlat_limits_country[country][2], 
+                        lonlat_limits_country[country][3]])        
+    getyear = str(data_yearlysum["IMERG"][isel].time.values).split("-")[0]
+    plt.title("IMERG precipitation "+getyear)
+    dest = "/home/jgiles/sciebo/Images/TSMP_IMERG_comparison/"+getyear+"/"+country+"/"
+    if not os.path.exists(dest):
+        os.makedirs(dest)
+    plt.savefig(dest+"/IMERG_precipitation_yearsum_"+getyear+"_"+country+".png",  bbox_inches='tight')
+    plt.close(f) # so the figure is not displayed in Spyder
+    
+    
+    # Plot difference TSMP-IMERG
+    # subtract the fields
+    diff = data_TSMP_rot[isel] - data_yearlysum["IMERG"][isel].loc[{"lon":slice(lonlat_limits[0], lonlat_limits[1]),
+                                              "lat":slice(lonlat_limits[2], lonlat_limits[3])}]
+    
+    # Plot diff
+    cmap="BrBG"
+    nlevs = 21
+    vlims = [-1000,1000]
+    
+    f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
+    plot = diff.plot(cmap=cmap, vmin=vlims[0], vmax=vlims[1], levels=nlevs, 
+                                             subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
+                                            cbar_kwargs={'label': "mm", 'shrink':0.88})
+    plot.axes.coastlines(alpha=0.7)
+    plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
+    plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
+    if len(country)>0: # focus on country domain
+        ax1.set_extent([lonlat_limits_country[country][0], 
+                        lonlat_limits_country[country][1], 
+                        lonlat_limits_country[country][2], 
+                        lonlat_limits_country[country][3]])        
+    getyear = str( data_TSMP_rot[isel].time.values).split("-")[0]
+    plt.title("TSMP TOT_PREC - IMERG precipitation "+getyear)
+    dest = "/home/jgiles/sciebo/Images/TSMP_IMERG_comparison/"+getyear+"/"+country+"/"
+    if not os.path.exists(dest):
+        os.makedirs(dest)
+    plt.savefig(dest+"/diff_TSMP-IMERG_precipitation_yearsum_"+getyear+"_"+country+".png",  bbox_inches='tight')
+    plt.close(f) # so the figure is not displayed in Spyder
+    
+    
+    # Plot diff in % of IMERG
+    cmap="BrBG"
+    nlevs = 21
+    vlims = [-50,50]
+    
+    diff2 = diff/data_yearlysum["IMERG"][isel].loc[{"lon":slice(lonlat_limits[0], lonlat_limits[1]),
+                                              "lat":slice(lonlat_limits[2], lonlat_limits[3])}]*100
+    
+    f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
+    plot = diff2.plot(cmap=cmap, vmin=vlims[0], vmax=vlims[1], levels=nlevs, 
+                                             subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
+                                            cbar_kwargs={'label': "%", 'shrink':0.88})
+    plot.axes.coastlines(alpha=0.7)
+    plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
+    plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
+    if len(country)>0: # focus on country domain
+        ax1.set_extent([lonlat_limits_country[country][0], 
+                        lonlat_limits_country[country][1], 
+                        lonlat_limits_country[country][2], 
+                        lonlat_limits_country[country][3]])        
+    getyear = str( data_TSMP_rot[isel].time.values).split("-")[0]
+    plt.title("TSMP TOT_PREC - IMERG precipitation "+getyear)
+    dest = "/home/jgiles/sciebo/Images/TSMP_IMERG_comparison/"+getyear+"/"+country+"/"
+    if not os.path.exists(dest):
+        os.makedirs(dest)
+    plt.savefig(dest+"/diff_TSMP-IMERG_precipitation_yearsum_"+getyear+"_"+country+"_%.png",  bbox_inches='tight')
+    plt.close(f) # so the figure is not displayed in Spyder
+        
+
+#%% INTERANNUAL VARIABILITY
+country="Turkey"
+lonlat_limits_country = {"Turkey": [25, 45, 35.5, 42.5],
+                         "Germany": [5, 16, 47, 56]}
+
+d1 = data_TSMP_rot.loc[{"lon":slice(lonlat_limits_country[country][0],
+                                             lonlat_limits_country[country][1]),
+                                 "lat":slice(lonlat_limits_country[country][2],
+                                             lonlat_limits_country[country][3])}].mean(["lon","lat"])
+
+d2 = data_yearlysum["IMERG"].loc[{"lon":slice(lonlat_limits_country[country][0],
+                                             lonlat_limits_country[country][1]),
+                                 "lat":slice(lonlat_limits_country[country][2],
+                                             lonlat_limits_country[country][3])}].mean(["lon","lat"])
+
+plt.plot(d1.time, d1, label="TSMP")
+plt.plot(d1.time, d2, label="IMERG")
+plt.legend()
+plt.title("Annual precip "+country+" [mm]")
+
+plt.plot(d1.time, d1-d1.mean(), label="TSMP")
+plt.plot(d1.time, d2-d2.mean(), label="IMERG")
+plt.legend()
+plt.title("Annual precip anomaly "+country+" [mm]")
 
 
 #%% OLD CODE FROM HERE ON

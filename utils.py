@@ -1053,3 +1053,125 @@ def calculate_noise_level(dbz, rho, noise=(-40, -20, 1), rho_bins=(0.9, 1.1, 0.0
     std = [np.std(r.idxmax('RHO_bin')).values for r in hist]
     rn = noise[np.argmin(std)]
     return corr, hist, std, rn
+
+
+#### 
+# Calibration of ZDR with light-rain consistency
+from matplotlib import pyplot as plt
+
+def zhzdr_lr_consistency(ZH, ZDR, RHO, TMP, rhohv_th=0.99, tmp_th=5):
+    """
+    ZH-ZDR Consistency in light rain
+    AR p.155-156
+    
+    """
+    zdr_zh_20 = np.nanmedian(ZDR[(ZH>=19)&(ZH<21)&(RHO>rhohv_th)&(TMP>tmp_th)])
+    zdr_zh_22 = np.nanmedian(ZDR[(ZH>=21)&(ZH<23)&(RHO>rhohv_th)&(TMP>tmp_th)])
+    zdr_zh_24 = np.nanmedian(ZDR[(ZH>=23)&(ZH<25)&(RHO>rhohv_th)&(TMP>tmp_th)])
+    zdr_zh_26 = np.nanmedian(ZDR[(ZH>=25)&(ZH<27)&(RHO>rhohv_th)&(TMP>tmp_th)])
+    zdr_zh_28 = np.nanmedian(ZDR[(ZH>=27)&(ZH<29)&(RHO>rhohv_th)&(TMP>tmp_th)])
+    zdr_zh_30 = np.nanmedian(ZDR[(ZH>=29)&(ZH<31)&(RHO>rhohv_th)&(TMP>tmp_th)])
+
+    zdroffset = np.nansum([zdr_zh_20-.23, zdr_zh_22-.27, zdr_zh_24-.33, zdr_zh_26-.40, zdr_zh_28-.48, zdr_zh_30-.56])/6.
+    
+    
+    mask = (RHO>rhohv_th)&(TMP>tmp_th)
+    plt.figure(figsize=(8,3))
+    plt.subplot(1,2,1)
+    hist_2d(ZH[mask], ZDR[mask], bins1=np.arange(0,40,1), bins2=np.arange(-1,3,.1))
+    plt.plot([20,22,24,26,28,30],[.23, .27, .33, .40, .48, .56], color='black')
+    plt.title('Non-calibrated $Z_{DR}$')
+    plt.xlabel(r'$Z_H$', fontsize=15)
+    plt.ylabel(r'$Z_{DR}$', fontsize=15)
+    plt.grid(which='both', color='black', linestyle=':', alpha=0.5)
+    
+    plt.subplot(1,2,2)
+    hist_2d(ZH[mask], ZDR[mask]-zdroffset, bins1=np.arange(0,40,1), bins2=np.arange(-1,3,.1))
+    plt.plot([20,22,24,26,28,30],[.23, .27, .33, .40, .48, .56], color='black')
+    plt.title('Calibrated $Z_{DR}$')
+    plt.xlabel(r'$Z_H$', fontsize=15)
+    plt.ylabel(r'$Z_{DR}$', fontsize=15)
+    plt.grid(which='both', color='black', linestyle=':', alpha=0.5)
+    plt.legend(title=r'$\Delta Z_{DR}$: '+str(np.round(zdroffset,3))+'dB')
+
+    plt.tight_layout()
+    plt.show()
+    
+    return zdroffset
+
+
+def hist_2d(A,B, bins1=35, bins2=35, mini=1, maxi=None, cmap='jet', colsteps=30, alpha=1, mode='absolute', fsize=15, colbar=True):
+    """ 
+    # Histogram 2d Quicklooks
+    # ------------------------
+    
+    Plotting 2d Histogramm of two varibles
+    
+    # Input
+    # -----
+    
+    A,B          ::: Variables
+    bins1, bins2 ::: x, y bins
+    mini, maxi   ::: min and max 
+    cmap         ::: colormap
+    colsteps     ::: number of cmap steps
+    alpha        ::: transperency
+    fsize        ::: fontsize
+    mode         ::: hist mode
+    
+    
+    # Output
+    # ------
+    
+    2D Histogramm Plot
+    
+    
+    ::: Hist mode:::
+    absolute ::: absolute numbers
+    relative ::: relative numbers
+    relative_with_y ::: relative numbers of y levels
+        
+    """
+    from matplotlib.colors import LogNorm
+
+    # discret cmap
+    cmap = plt.cm.get_cmap(cmap, colsteps)
+    
+    # mask array
+    m=~np.isnan(A) & ~np.isnan(B)
+    
+    if mode=='absolute':
+        
+        plt.hist2d(A[m], B[m], bins=(bins1, bins2), cmap=cmap, norm=LogNorm( vmin=mini, vmax=maxi), alpha=alpha)
+        if colbar==True:
+          cb = plt.colorbar(shrink=1, pad=0.01)
+          cb.set_label('number of samples', fontsize=fsize)
+          cb.ax.tick_params(labelsize=fsize) 
+        plt.xticks(fontsize=fsize)
+        plt.yticks(fontsize=fsize)
+    
+    if mode=='relative':
+        H, xe, ye = np.histogram2d(A[m], B[m], bins=(bins1, bins2)) 
+        xm = (xe[0:-1]+ xe[1:len(xe)])/2
+        ym = (ye[0:-1]+ ye[1:len(ye)])/2
+        nsum = np.nansum(H)
+        plt.pcolormesh(xm, ym, 100*(H.T/nsum),  cmap=cmap, norm=LogNorm( vmin=mini, vmax=maxi), alpha=alpha)
+        if colbar==True:
+          cb = plt.colorbar(shrink=1, pad=0.01)
+          cb.set_label('%', fontsize=fsize)
+          cb.ax.tick_params(labelsize=fsize)
+        plt.xticks(fontsize=fsize)
+        plt.yticks(fontsize=fsize)
+        
+    if mode=='relative_with_y': 
+        H, xe, ye = np.histogram2d(A[m], B[m], bins=(bins1, bins2)) 
+        xm = (xe[0:-1]+ xe[1:len(xe)])/2
+        ym = (ye[0:-1]+ ye[1:len(ye)])/2
+        nsum = np.nansum(H, axis=0)
+        plt.pcolormesh(xm, ym, 100*(H/nsum).T,  cmap=cmap, norm=LogNorm( vmin=mini, vmax=maxi), alpha=alpha)
+        if colbar==True:
+          cb = plt.colorbar(shrink=1, pad=0.01)
+          cb.set_label('%', fontsize=fsize)
+          cb.ax.tick_params(labelsize=fsize)
+        plt.xticks(fontsize=fsize)
+        plt.yticks(fontsize=fsize)
