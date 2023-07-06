@@ -28,6 +28,7 @@ from scipy import signal
 import gc
 from dask.diagnostics import ProgressBar
 import cordex as cx
+import wradlib as wrl
 
 import warnings
 #ignore by message
@@ -108,13 +109,33 @@ data["IMERG"] = xr.open_mfdataset('/automount/ags/jgiles/IMERG/global_monthly/3B
                 .transpose('time', 'lat', 'lon', ...) # * 24*30 # convert to mm/month (approx)
 
 
+#### IMERG (Europe, half-hourly)
+def preprocess_imerg_europe(ds):
+    # I dont remember exactly the names of the variables, check again
+    ds["precipitationCal"] = ds["precipitationCal"]*0.5 # values come in mm/h but the timestep is 30 min, so we have to divide by 2
+    ds["precipitationUncal"] = ds["precipitationUncal"]*0.5 # values come in mm/h but the timestep is 30 min, so we have to divide by 2
+    return ds
+data["IMERG_europe"] = xr.open_mfdataset('/automount/ags/jgiles/IMERG/europe/concat_files/*.nc4').transpose('time', 'lat', 'lon', ...)
+
+
 #### ERA5 (GLOBAL MONTHLY)
+## volumetric soil water level
 print("Loading ERA5...")
 data["ERA5"] = xr.open_mfdataset('/automount/ags/jgiles/ERA5/monthly_averaged/single_level_vars/volumetric_soil*/volumetric_*')
 data["ERA5"] = data["ERA5"].assign_coords(longitude=(((data["ERA5"].longitude + 180) % 360) - 180)).sortby('longitude')
 data["ERA5"]['swvl_total'] = data["ERA5"]['swvl1']*0.07 + data["ERA5"]['swvl2']*0.21 + \
                             data["ERA5"]['swvl3']*0.72 + data["ERA5"]['swvl4']*1.89
 
+## precipitation
+def preprocess_era5_totprec(ds):
+    # function to transform to accumulated monthly values
+    days_in_month = [31,28,31,30,31,30,31,31,30,31,30,31]
+    ds["tp"] = ds["tp"]*days_in_month[pd.Timestamp(ds.time.values[0]).month-1]*1000
+    return ds
+data["ERA5"] = xr.open_mfdataset('/automount/ags/jgiles/ERA5/monthly_averaged/single_level_vars/total_precipitation/total_precipitation_*', 
+                                 preprocess=preprocess_era5_totprec)
+data["ERA5"] = data["ERA5"].assign_coords(longitude=(((data["ERA5"].longitude + 180) % 360) - 180)).sortby('longitude')
+data["ERA5"] = data["ERA5"].isel(latitude=slice(None, None, -1))
 
 #### TSMP
 # The timestamps of accumulated P are located at the center of the corresponding interval (1:30, 4:30, ...)
@@ -128,12 +149,15 @@ def preprocess_tsmp(ds): # discard the first timestep of every monthly file (dis
 data["TSMP"] = xr.open_mfdataset('/automount/ags/jgiles/TSMP/rcsm_TSMP-ERA5-eval_IBG3/o.data_v01/*/*TOT_PREC*',
                              preprocess=preprocess_tsmp, chunks={"time":1000})
 
-data["TSMP"] = data["TSMP"].assign( xr.open_mfdataset('/automount/ags/jgiles/TSMP/rcsm_TSMP-ERA5-eval_IBG3/o.data_v01/*/*WT*',
-                             chunks={"time":1000}) )
+# data["TSMP"] = data["TSMP"].assign( xr.open_mfdataset('/automount/ags/jgiles/TSMP/rcsm_TSMP-ERA5-eval_IBG3/o.data_v01/*/*WT*',
+#                              chunks={"time":1000}) )
 data["TSMP"]["time"] = data["TSMP"].get_index("time").shift(-1.5, "H") # shift the values forward to the start of the interval
 
 
 data["TSMP-Ben"] = xr.open_mfdataset('/automount/ags/jgiles/4BenCharlotte/TSMP/twsa_tsmp_europe_era5_1990_2021.nc')
+
+#### RADKLIM
+data["RADKLIM"] = xr.open_mfdataset("/automount/ags/jgiles/RADKLIM/*/*.nc")
 
 
 #### TWS reanalysis (Anne Springer)
@@ -487,25 +511,61 @@ end_date = str(data["IMERG"].time[-10].to_numpy())
 data_yearlysum = {}
 data_yearlysum["IMERG"] = data["IMERG"].loc[{"time": slice(start_date, end_date)}]["precipitation"].resample({"time": "YS"}).sum().compute()
 data_yearlysum["TSMP"] = data["TSMP"]["TOT_PREC"].loc[{"time": slice(start_date, end_date)}].resample({"time": "YS"}).sum().compute()
+data_yearlysum["ERA5"] = data["ERA5"]["tp"].loc[{"time": slice(start_date, end_date)}].resample({"time": "YS"}).sum().compute()
+data_yearlysum["RADKLIM"] = data["RADKLIM"]["RR"].loc[{"time": slice(start_date, end_date)}].resample({"time": "YS"}).sum().compute()
+
 
 # Transform the TSMP data from rotated pole grid to rectiliniar. We will need this for the differences.
 # We use CDO because I cannot find a better way.
-# Thus, we save the TSMP dataset to nc, transform with CDO and reload
-data_yearlysum["TSMP"].to_netcdf("/automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_"+start_date.split("-")[0]+"-"+end_date.split("-")[0]+".nc")
+# Thus, we add the rotated pole info, we save the TSMP dataset to nc, transform with CDO and reload
+tsmp_rotpole = data["TSMP"].rotated_pole.loc[{"time": slice(start_date, end_date)}].resample({"time":"YS"}).first()
+tsmp_to_nc = xr.merge([data_yearlysum["TSMP"], tsmp_rotpole])
+tsmp_to_nc.to_netcdf("/automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_"+start_date.split("-")[0]+"-"+end_date.split("-")[0]+".nc")
 import subprocess
 bash_code="""
-cdo remapbil,/automount/ags/jgiles/IMERG/global_monthly/griddes.txt /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020.nc /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_IMERGrotated0.nc
+cdo gencon,/automount/ags/jgiles/IMERG/global_monthly/griddes.txt -setgrid,/automount/ags/jgiles/TSMP/griddes_mod.txt /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020.nc weights_to_IMERG.nc
+cdo remap,/automount/ags/jgiles/IMERG/global_monthly/griddes.txt,weights_to_IMERG.nc /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020.nc /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_IMERGrotated0.nc
 cdo sellonlatbox,-46.40,67.22,21.14,73.24 /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_IMERGrotated0.nc /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_IMERGrotated.nc
+
+cdo gencon,/automount/ags/jgiles/ERA5/griddes.txt -setgrid,/automount/ags/jgiles/TSMP/griddes_mod.txt /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020.nc weights_to_ERA5.nc
+cdo remap,/automount/ags/jgiles/ERA5/griddes.txt,weights_to_ERA5.nc /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020.nc /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_ERA5rotated0.nc
+cdo sellonlatbox,-46.40,67.22,21.14,73.24 /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_ERA5rotated0.nc /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_ERA5rotated.nc
+
 """
 result = subprocess.run(bash_code, shell=True, check=True, capture_output=True, text=True)
 print(result.stdout)
 
 data_TSMP_rot = xr.open_dataset("/automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_IMERGrotated.nc")["TOT_PREC"]
+data_TSMP_rot_ERA5 = xr.open_dataset("/automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_ERA5rotated.nc")["TOT_PREC"].isel(latitude=slice(None, None, -1))
+
+
+# Transform the RADKLIM data from rotated  (same logic as before)
+
+radklim_crs = data["RADKLIM"].crs.loc[{"time": slice(start_date, end_date)}].resample({"time":"YS"}).first()
+radklim_to_nc = xr.merge([data_yearlysum["RADKLIM"], radklim_crs])
+radklim_to_nc.to_netcdf("/automount/ags/jgiles/RADKLIM/postprocessed/RADKLIM_RR_yearlysum_"+start_date.split("-")[0]+"-"+end_date.split("-")[0]+".nc")
+import subprocess
+bash_code="""
+cdo gencon,/automount/ags/jgiles/IMERG/global_monthly/griddes.txt -setgrid,/automount/ags/jgiles/RADKLIM/postprocessed/griddes_mod.txt /automount/ags/jgiles/RADKLIM/postprocessed/RADKLIM_RR_yearlysum_2001-2020.nc /automount/ags/jgiles/RADKLIM/postprocessed/weights_to_IMERG.nc
+cdo remap,/automount/ags/jgiles/IMERG/global_monthly/griddes.txt,/automount/ags/jgiles/RADKLIM/postprocessed/weights_to_IMERG.nc /automount/ags/jgiles/RADKLIM/postprocessed/RADKLIM_RR_yearlysum_2001-2020.nc /automount/ags/jgiles/RADKLIM/postprocessed/RADKLIM_RR_yearlysum_2001-2020_IMERGrotated0.nc
+cdo sellonlatbox,-46.40,67.22,21.14,73.24 /automount/ags/jgiles/RADKLIM/postprocessed/RADKLIM_RR_yearlysum_2001-2020_IMERGrotated0.nc /automount/ags/jgiles/RADKLIM/postprocessed/RADKLIM_RR_yearlysum_2001-2020_IMERGrotated.nc
+
+cdo gencon,/automount/ags/jgiles/ERA5/griddes.txt -setgrid,/automount/ags/jgiles/RADKLIM/postprocessed/griddes_mod.txt /automount/ags/jgiles/RADKLIM/postprocessed/RADKLIM_RR_yearlysum_2001-2020.nc /automount/ags/jgiles/RADKLIM/postprocessed/weights_to_ERA5.nc
+cdo remap,/automount/ags/jgiles/ERA5/griddes.txt,/automount/ags/jgiles/RADKLIM/postprocessed/weights_to_ERA5.nc /automount/ags/jgiles/RADKLIM/postprocessed/RADKLIM_RR_yearlysum_2001-2020.nc /automount/ags/jgiles/RADKLIM/postprocessed/RADKLIM_RR_yearlysum_2001-2020_ERA5rotated0.nc
+cdo sellonlatbox,-46.40,67.22,21.14,73.24 /automount/ags/jgiles/RADKLIM/postprocessed/RADKLIM_RR_yearlysum_2001-2020_ERA5rotated0.nc /automount/ags/jgiles/RADKLIM/postprocessed/RADKLIM_RR_yearlysum_2001-2020_ERA5rotated.nc
+
+"""
+result = subprocess.run(bash_code, shell=True, check=True, capture_output=True, text=True)
+print(result.stdout)
+
+data_RADKLIM_rot = xr.open_dataset("/automount/ags/jgiles/RADKLIM/postprocessed/RADKLIM_RR_yearlysum_2001-2020_IMERGrotated.nc")["RR"]
+data_RADKLIM_rot = data_RADKLIM_rot.where(data_RADKLIM_rot>0)
+data_RADKLIM_rot_ERA5 = xr.open_dataset("/automount/ags/jgiles/RADKLIM/postprocessed/RADKLIM_RR_yearlysum_2001-2020_ERA5rotated.nc")["RR"].isel(latitude=slice(None, None, -1))
 
 #%% Plot one year
 isel=0
 proj=ccrs.Mercator()
-country="Turkey"
+country="Germany"
 lonlat_limits_country = {"Turkey": [25, 45, 35.5, 42.5],
                          "Germany": [5, 16, 47, 56]}
 
@@ -565,6 +625,65 @@ for isel in np.arange(0,20):
     plt.savefig(dest+"/IMERG_precipitation_yearsum_"+getyear+"_"+country+".png",  bbox_inches='tight')
     plt.close(f) # so the figure is not displayed in Spyder
     
+    # Plot ERA5
+    # Get lon lat limits from TSMP
+    lonlat_limits = [data_yearlysum["TSMP"][isel].lon.min(),
+                     data_yearlysum["TSMP"][isel].lon.max(),
+                     data_yearlysum["TSMP"][isel].lat.min(),
+                     data_yearlysum["TSMP"][isel].lat.max()]
+    
+    f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
+    plot = (data_yearlysum["ERA5"][isel]).loc[{"longitude":slice(lonlat_limits[0], lonlat_limits[1]),
+                                              "latitude":slice(lonlat_limits[2], lonlat_limits[3])}].plot(cmap=cmap, vmin=vlims[0], vmax=vlims[1], levels=nlevs, 
+                                              subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
+                                              cbar_kwargs={'label': "mm", 'shrink':0.88})
+    # ax1.set_extent([float(a) for a in lonlat_limits])
+    plot.axes.coastlines(alpha=0.7)
+    plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
+    plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
+    if len(country)>0: # focus on country domain
+        ax1.set_extent([lonlat_limits_country[country][0], 
+                        lonlat_limits_country[country][1], 
+                        lonlat_limits_country[country][2], 
+                        lonlat_limits_country[country][3]])        
+    getyear = str(data_yearlysum["ERA5"][isel].time.values).split("-")[0]
+    plt.title("ERA5 total precipitation "+getyear)
+    dest = "/home/jgiles/sciebo/Images/TSMP_IMERG_comparison/"+getyear+"/"+country+"/"
+    if not os.path.exists(dest):
+        os.makedirs(dest)
+    plt.savefig(dest+"/ERA5_precipitation_yearsum_"+getyear+"_"+country+".png",  bbox_inches='tight')
+    plt.close(f) # so the figure is not displayed in Spyder
+
+    # Plot RADKLIM
+    if country=="Germany":
+        # Get lon lat limits from TSMP
+        lonlat_limits = [data_yearlysum["TSMP"][isel].lon.min(),
+                         data_yearlysum["TSMP"][isel].lon.max(),
+                         data_yearlysum["TSMP"][isel].lat.min(),
+                         data_yearlysum["TSMP"][isel].lat.max()]
+        
+        f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
+        plot = data_yearlysum["RADKLIM"][isel].plot(x="lon", y="lat", cmap=cmap, vmin=vlims[0], vmax=vlims[1], levels=nlevs, 
+                                                 subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
+                                                 cbar_kwargs={'label': "mm", 'shrink':0.88})
+        # ax1.set_extent([float(a) for a in lonlat_limits])
+        plot.axes.coastlines(alpha=0.7)
+        plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
+        plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
+        if len(country)>0: # focus on country domain
+            ax1.set_extent([lonlat_limits_country[country][0], 
+                            lonlat_limits_country[country][1], 
+                            lonlat_limits_country[country][2], 
+                            lonlat_limits_country[country][3]])        
+        getyear = str(data_yearlysum["RADKLIM"][isel].time.values).split("-")[0]
+        plt.title("RADKLIM RR "+getyear)
+        dest = "/home/jgiles/sciebo/Images/TSMP_IMERG_comparison/"+getyear+"/"+country+"/"
+        if not os.path.exists(dest):
+            os.makedirs(dest)
+        plt.savefig(dest+"/RADKLIM_precipitation_yearsum_"+getyear+"_"+country+".png",  bbox_inches='tight')
+        plt.close(f) # so the figure is not displayed in Spyder
+
+
     
     # Plot difference TSMP-IMERG
     # subtract the fields
@@ -626,8 +745,127 @@ for isel in np.arange(0,20):
     plt.close(f) # so the figure is not displayed in Spyder
         
 
+    # Plot difference TSMP-ERA5
+    # subtract the fields
+    diff = data_TSMP_rot_ERA5[isel] - data_yearlysum["ERA5"][isel].loc[{"longitude":slice(lonlat_limits[0], lonlat_limits[1]),
+                                              "latitude":slice(lonlat_limits[2], lonlat_limits[3])}]
+    
+    # Plot diff
+    cmap="BrBG"
+    nlevs = 21
+    vlims = [-1000,1000]
+    
+    f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
+    plot = diff.plot(cmap=cmap, vmin=vlims[0], vmax=vlims[1], levels=nlevs, 
+                                             subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
+                                            cbar_kwargs={'label': "mm", 'shrink':0.88})
+    plot.axes.coastlines(alpha=0.7)
+    plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
+    plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
+    if len(country)>0: # focus on country domain
+        ax1.set_extent([lonlat_limits_country[country][0], 
+                        lonlat_limits_country[country][1], 
+                        lonlat_limits_country[country][2], 
+                        lonlat_limits_country[country][3]])        
+    getyear = str( data_TSMP_rot[isel].time.values).split("-")[0]
+    plt.title("TSMP TOT_PREC - ERA5 total precipitation "+getyear)
+    dest = "/home/jgiles/sciebo/Images/TSMP_IMERG_comparison/"+getyear+"/"+country+"/"
+    if not os.path.exists(dest):
+        os.makedirs(dest)
+    plt.savefig(dest+"/diff_TSMP-ERA5_precipitation_yearsum_"+getyear+"_"+country+".png",  bbox_inches='tight')
+    plt.close(f) # so the figure is not displayed in Spyder
+    
+    
+    # Plot diff in % of ERA5
+    cmap="BrBG"
+    nlevs = 21
+    vlims = [-50,50]
+    
+    diff2 = diff/data_yearlysum["ERA5"][isel].loc[{"longitude":slice(lonlat_limits[0], lonlat_limits[1]),
+                                              "latitude":slice(lonlat_limits[2], lonlat_limits[3])}]*100
+    
+    f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
+    plot = diff2.plot(cmap=cmap, vmin=vlims[0], vmax=vlims[1], levels=nlevs, 
+                                             subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
+                                            cbar_kwargs={'label': "%", 'shrink':0.88})
+    plot.axes.coastlines(alpha=0.7)
+    plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
+    plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
+    if len(country)>0: # focus on country domain
+        ax1.set_extent([lonlat_limits_country[country][0], 
+                        lonlat_limits_country[country][1], 
+                        lonlat_limits_country[country][2], 
+                        lonlat_limits_country[country][3]])        
+    getyear = str( data_TSMP_rot[isel].time.values).split("-")[0]
+    plt.title("TSMP TOT_PREC - ERA5 total precipitation "+getyear)
+    dest = "/home/jgiles/sciebo/Images/TSMP_IMERG_comparison/"+getyear+"/"+country+"/"
+    if not os.path.exists(dest):
+        os.makedirs(dest)
+    plt.savefig(dest+"/diff_TSMP-ERA5_precipitation_yearsum_"+getyear+"_"+country+"_%.png",  bbox_inches='tight')
+    plt.close(f) # so the figure is not displayed in Spyder
+
+    
+    # Plot TSMP-RADKLIM
+    if country=="Germany":
+        # subtract the fields
+        diff = data_TSMP_rot[isel] - data_RADKLIM_rot[isel]
+        
+        # Plot diff
+        cmap="BrBG"
+        nlevs = 21
+        vlims = [-1000,1000]
+        
+        f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
+        plot = diff.plot(cmap=cmap, vmin=vlims[0], vmax=vlims[1], levels=nlevs, 
+                                                 subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
+                                                cbar_kwargs={'label': "mm", 'shrink':0.88}, extend="both")
+        plot.axes.coastlines(alpha=0.7)
+        plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
+        plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
+        if len(country)>0: # focus on country domain
+            ax1.set_extent([lonlat_limits_country[country][0], 
+                            lonlat_limits_country[country][1], 
+                            lonlat_limits_country[country][2], 
+                            lonlat_limits_country[country][3]])        
+        getyear = str( data_TSMP_rot[isel].time.values).split("-")[0]
+        plt.title("TSMP TOT_PREC - RADKLIM RR "+getyear)
+        dest = "/home/jgiles/sciebo/Images/TSMP_IMERG_comparison/"+getyear+"/"+country+"/"
+        if not os.path.exists(dest):
+            os.makedirs(dest)
+        plt.savefig(dest+"/diff_TSMP-RADKLIM_precipitation_yearsum_"+getyear+"_"+country+".png",  bbox_inches='tight')
+        plt.close(f) # so the figure is not displayed in Spyder
+        
+        
+        # Plot diff in % of RADKLIM
+        cmap="BrBG"
+        nlevs = 21
+        vlims = [-50,50]
+        
+        diff2 = diff/data_RADKLIM_rot[isel]*100
+        
+        f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
+        plot = diff2.plot(cmap=cmap, vmin=vlims[0], vmax=vlims[1], levels=nlevs, 
+                                                 subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
+                                                cbar_kwargs={'label': "%", 'shrink':0.88}, extend="both")
+        plot.axes.coastlines(alpha=0.7)
+        plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
+        plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
+        if len(country)>0: # focus on country domain
+            ax1.set_extent([lonlat_limits_country[country][0], 
+                            lonlat_limits_country[country][1], 
+                            lonlat_limits_country[country][2], 
+                            lonlat_limits_country[country][3]])        
+        getyear = str( data_TSMP_rot[isel].time.values).split("-")[0]
+        plt.title("TSMP TOT_PREC - RADKLIM RR "+getyear)
+        dest = "/home/jgiles/sciebo/Images/TSMP_IMERG_comparison/"+getyear+"/"+country+"/"
+        if not os.path.exists(dest):
+            os.makedirs(dest)
+        plt.savefig(dest+"/diff_TSMP-RADKLIM_precipitation_yearsum_"+getyear+"_"+country+"_%.png",  bbox_inches='tight')
+        plt.close(f) # so the figure is not displayed in Spyder
+        
+        
 #%% INTERANNUAL VARIABILITY
-country="Turkey"
+country="Germany"
 lonlat_limits_country = {"Turkey": [25, 45, 35.5, 42.5],
                          "Germany": [5, 16, 47, 56]}
 
@@ -641,16 +879,72 @@ d2 = data_yearlysum["IMERG"].loc[{"lon":slice(lonlat_limits_country[country][0],
                                  "lat":slice(lonlat_limits_country[country][2],
                                              lonlat_limits_country[country][3])}].mean(["lon","lat"])
 
-plt.plot(d1.time, d1, label="TSMP")
-plt.plot(d1.time, d2, label="IMERG")
+d3 = data_yearlysum["ERA5"].loc[{"longitude":slice(lonlat_limits_country[country][0],
+                                             lonlat_limits_country[country][1]),
+                                 "latitude":slice(lonlat_limits_country[country][2],
+                                             lonlat_limits_country[country][3])}].mean(["longitude","latitude"])
+
+if country == "Germany": 
+    d4 = data_RADKLIM_rot.loc[{"lon":slice(lonlat_limits_country[country][0],
+                                                 lonlat_limits_country[country][1]),
+                                     "lat":slice(lonlat_limits_country[country][2],
+                                                 lonlat_limits_country[country][3])}].mean(["lon","lat"])
+    
+    # in this case we need to make a mask of the valid values of RADKLIM and apply to the others, otherwise we are counting different areas
+    
+    mask_ger1 = data_RADKLIM_rot[0].notnull().astype(int).interp_like(data_TSMP_rot[0])==1
+    d1 = data_TSMP_rot.loc[{"lon":slice(lonlat_limits_country[country][0],
+                                                 lonlat_limits_country[country][1]),
+                                     "lat":slice(lonlat_limits_country[country][2],
+                                                 lonlat_limits_country[country][3])}].where(mask_ger1).mean(["lon","lat"])
+    
+    mask_ger2 = data_RADKLIM_rot[0].notnull().astype(int).interp_like(data_yearlysum["IMERG"][0])==1
+    d2 = data_yearlysum["IMERG"].where(mask_ger2).loc[{"lon":slice(lonlat_limits_country[country][0],
+                                                 lonlat_limits_country[country][1]),
+                                     "lat":slice(lonlat_limits_country[country][2],
+                                                 lonlat_limits_country[country][3])}].mean(["lon","lat"])
+    
+    mask_ger3 = ( data_RADKLIM_rot[0].notnull().astype(int).interp_like(data_yearlysum["ERA5"][0])==1 ).loc[{"lon":slice(lonlat_limits_country[country][0],
+                                                 lonlat_limits_country[country][1]),
+                                     "lat":slice(lonlat_limits_country[country][2],
+                                                 lonlat_limits_country[country][3])}]
+    d3 = data_yearlysum["ERA5"].loc[{"longitude":slice(lonlat_limits_country[country][0],
+                                                 lonlat_limits_country[country][1]),
+                                     "latitude":slice(lonlat_limits_country[country][2],
+                                                 lonlat_limits_country[country][3])}].where(mask_ger3).mean(["longitude","latitude", "lon", "lat"])
+    
+
+plt.plot(d3.time, d1, label="TSMP")
+plt.plot(d3.time, d2, label="IMERG")
+plt.plot(d3.time, d3, label="ERA5")
+if country=="Germany":
+    plt.plot(d3.time, d4, label="RADKLIM")    
 plt.legend()
 plt.title("Annual precip "+country+" [mm]")
 
-plt.plot(d1.time, d1-d1.mean(), label="TSMP")
-plt.plot(d1.time, d2-d2.mean(), label="IMERG")
+plt.plot(d3.time, d1-d1.mean(), label="TSMP")
+plt.plot(d3.time, d2-d2.mean(), label="IMERG")
+plt.plot(d3.time, d3-d3.mean(), label="ERA5")
+if country=="Germany":
+    plt.plot(d3.time, d4-d4.mean(), label="RADKLIM")
 plt.legend()
 plt.title("Annual precip anomaly "+country+" [mm]")
 
+#%% 3-hourly precipitation distribution
+yearsel="2016"
+
+imerg_3h = data["IMERG_europe"]["precipitationCal"].loc[{"time": yearsel}].resample({"time":"3H"}).sum()
+tsmp_3h = data["TSMP"]["TOT_PREC"].loc[{"time": yearsel}]
+
+imerg_3h_loc = imerg_3h.loc[{"lon":slice(lonlat_limits_country[country][0],
+                                             lonlat_limits_country[country][1]),
+                                 "lat":slice(lonlat_limits_country[country][2],
+                                             lonlat_limits_country[country][3])}]
+
+tsmp_3h_loc = tsmp_3h.loc[{"lon":slice(lonlat_limits_country[country][0],
+                                             lonlat_limits_country[country][1]),
+                                 "lat":slice(lonlat_limits_country[country][2],
+                                             lonlat_limits_country[country][3])}]
 
 #%% OLD CODE FROM HERE ON
 
