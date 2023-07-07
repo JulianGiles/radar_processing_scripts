@@ -67,7 +67,8 @@ zdr_offset = utils.zdr_offset_detection_vps(vert, mlbottom=5).compute()
 # Calculate ML from the VP
 utils.melting_layer_qvp_X_new(vert.median("azimuth").swap_dims({"range":"z"}), dim="z")
 !!!!!!!! ME QUEDE ACA, QUIERO CALCULAR LA ML BOTTOM DEL VP PARA APLICARLO AL METODO Y COMPARAR, PERO PRIMERO TENGO QUE ARREGLAR PHIDP
-utils.phidp_offset_detection(vert, phidp="UPHIDP")
+phidp_offset = utils.phidp_offset_detection(vert, phidp="UPHIDP")
+
     off = phidp_offset["PHIDP_offset"]
     start_range = phidp_offset["start_range"]
     
