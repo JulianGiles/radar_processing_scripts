@@ -410,8 +410,8 @@ for ff in files:
             temperatures = xr.concat(soundings, timedim)
             
             # Interpolate to higher resolution
-            hmax = 20000.
-            ht = np.arange(0., hmax)
+            hmax = 50000.
+            ht = np.arange(0., hmax, 50)
             itemp_da = temperatures.interpolate_na("height").interp({"height": ht})
             
             # Fix Temperature below first measurement and above last one
@@ -468,8 +468,8 @@ for ff in files:
             temperatures = era5_t["t"].loc[{"time":slice(dtslice0, dtslice1)}].isel({"latitude":0, "longitude":0})
             
             # Interpolate to higher resolution
-            hmax = 20000.
-            ht = np.arange(0., hmax)
+            hmax = 50000.
+            ht = np.arange(0., hmax, 50)
             
             def interp_to_ht(ds):
                 ds = ds.swap_dims({"lvl":"height"})
