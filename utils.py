@@ -316,6 +316,7 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
                         rho+"_norm": ds0[rho+"_norm"],
                         zh+"_norm": ds0[zh+"_norm"],
                         phi+"_norm": ds0[phi+"_norm"],
+                        "comb_dy": ds0.comb_dy,
                         rho+"_norm_dy": ds0[rho+"_norm_dy"],
                         zh+"_norm_dy": ds0[zh+"_norm_dy"],
                         phi+"_norm_dy": ds0[phi+"_norm_dy"],
@@ -1409,7 +1410,8 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
     Parameters
     ----------
     ds : xarray Dataset
-        Dataset with the vertical scan. ZDR, DBZH and RHOHV are needed.
+        Dataset with the vertical scan. ZDR, DBZH and RHOHV are needed. Dimensions 
+        should include "azimuth" and "range"
     zdr : str
         Name of the variable in ds for differential reflectivity data. Default is "ZDR".
     dbzh : str
@@ -1483,7 +1485,7 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
         except:
             raise RuntimeError("Something went wrong when looking for ML variable")
     elif type(mlbottom) is str:
-        ml_bottom = ds[mlbottom]
+        ml_bottom = ds["z"] < ds[mlbottom]
     elif type(mlbottom) in [float, int]:
         if type(temp) is str:
             ml_bottom = ds[temp] > mlbottom
@@ -1506,7 +1508,7 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
     ds_zdr = ds_zdr.where(ds[dbzh]>zhmin).where(ds[dbzh]<zhmax).where(ds[rhohv]>rhvmin)
     
     # Filter according to the minimum number of bins limit
-    ds_zdr = ds_zdr.where(ds_zdr.count(dim="range")>minbins)
+    ds_zdr = ds_zdr.where(ds_zdr.count(dim=("range","azimuth"))>minbins)
     
     # Calculate offset and others
     if mode=="median":
