@@ -1054,8 +1054,9 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
 
     # if some coord has dimension time, reduce using median
     for coord in ["latitude", "longitude", "altitude", "elevation"]:
-        if "time" in ds[coord].dims:
-            ds.coords[coord] = ds.coords[coord].median("time")
+        if coord in ds.coords:
+            if "time" in ds[coord].dims:
+                ds.coords[coord] = ds.coords[coord].median("time")
 
     # We need the ds to be georeferenced in case it is not
     if "z" not in ds.coords:
