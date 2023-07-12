@@ -43,7 +43,7 @@ except ModuleNotFoundError:
 #%% Set paths and load
 
 # Load preprocessed sweep and vertical scan (testing)
-date="2017-11-05"
+date="2017-09-30"
 loc="tur"
 swppath="/automount/realpep/upload/jgiles/dwd/"+date[0:4]+"/"+date[0:7]+"/"+date+"/"+loc+"/vol5minng01/01/*hd5"
 vertpath="/automount/realpep/upload/jgiles/dwd/"+date[0:4]+"/"+date[0:7]+"/"+date+"/"+loc+"/90gradstarng01/00/*hd5"
@@ -122,45 +122,6 @@ zdr_offset = utils.zdr_offset_detection_vps(vert, min_h=min_height, mlbottom=5).
 
 #%% TEST METHOD FOR VARIOUS PARAMETERS
 
-# Plot a moment VP, isotherms, ML bottom and calculated ZDR offset for different temperature levels
-mom = "DBZH"
-visdict14 = radarmet.visdict14
-norm = radarmet.get_discrete_norm(visdict14[mom]["ticks"])
-cmap = visdict14[mom]["cmap"] #mpl.cm.get_cmap("HomeyerRainbow")
-templevels = [3,5]
-
-fig = plt.figure(figsize=(7,7))
-# set height ratios for subplots
-gs = mpl.gridspec.GridSpec(2, 1, height_ratios=[5, 1], hspace=0) 
-ax = plt.subplot(gs[0])
-figvp = ml[mom].plot(x="time", cmap=cmap, norm=norm, extend="both", ylim=(0,10000), add_colorbar=False)
-figcontour = vert["TEMP"][:, 0, :].plot.contour(x="time", y="z", levels=[0]+templevels, ylim=(0,5000))
-# ax = plt.gca()
-ax.clabel(figcontour)
-qvp["height_ml_bottom_new_gia"].plot(color="white", label="ML from QVP")
-qvp["height_ml_new_gia"].plot(color="white")
-ml["height_ml_bottom_new_gia"].plot(color="black", label="ML from VP")
-ml["height_ml_new_gia"].plot(color="black")
-plt.legend()
-plt.title(mom+" "+loc.upper()+" "+date)
-plt.ylabel("height [m]")
-
-ax2=plt.subplot(gs[1], sharex=ax)
-ax3 = ax2.twinx()
-for nt, tv in enumerate(templevels):
-    zdr_offset = utils.zdr_offset_detection_vps(vert, min_h=600, mlbottom=tv).compute()
-    zdr_offset["ZDR_offset"].plot(label=str(tv), ls=[":", ":", ":"][nt], ax=ax2, ylim=(-0.2,1))
-    zdr_offset["ZDR_std_from_offset"].plot(label=str(tv), ls=["--", "--", ":"][nt], ax=ax3, ylim=(-0.2,1))
-ax2.set_title("")
-ax3.set_title("Dotted: offset. Dashed: offset std.")
-plt.legend(loc=(1.01,0.1))
-
-fig.subplots_adjust(right=0.9)
-cbar_ax = fig.add_axes([0.93, 0.3, 0.02, 0.5])
-fig.colorbar(figvp, cax=cbar_ax)
-
-
-
 # Plot a moment VP, isotherms, ML bottom and calculated ZDR offset for different number of valid bins below ML
 mom = "DBZH"
 visdict14 = radarmet.visdict14
@@ -190,9 +151,9 @@ vert_ml = vert.assign_coords({"height_ml_new_gia": ml["height_ml_new_gia"],
 ax2=plt.subplot(gs[1], sharex=ax)
 ax3 = ax2.twinx()
 for nt, mb in enumerate(minbins):
-    zdr_offset = utils.zdr_offset_detection_vps(vert_ml, min_h=600, minbins=mb).compute()
+    zdr_offset = utils.zdr_offset_detection_vps(vert_ml, min_h=min_height, minbins=mb).compute()
     zdr_offset["ZDR_offset"].plot(label=str(mb), ls=[":", ":", ":"][nt], ax=ax2, ylim=(-0.2,1))
-    zdr_offset["ZDR_std_from_offset"].plot(label=str(mb), ls=["--", "--", ":"][nt], ax=ax3, ylim=(-0.2,1))
+    zdr_offset["ZDR_std_from_offset"].plot(label=str(mb), ls=["--", "--", "--"][nt], ax=ax3, ylim=(-0.2,1))
 ax2.set_title("")
 ax3.set_title("Dotted: offset. Dashed: offset std.")
 plt.legend(loc=(1.01,0.1))
@@ -200,6 +161,93 @@ plt.legend(loc=(1.01,0.1))
 fig.subplots_adjust(right=0.9)
 cbar_ax = fig.add_axes([0.93, 0.3, 0.02, 0.5])
 fig.colorbar(figvp, cax=cbar_ax)
+
+
+
+
+# Plot a moment VP, isotherms, ML bottom and calculated ZDR offset for different temperature levels
+mom = "DBZH"
+visdict14 = radarmet.visdict14
+norm = radarmet.get_discrete_norm(visdict14[mom]["ticks"])
+cmap = visdict14[mom]["cmap"] #mpl.cm.get_cmap("HomeyerRainbow")
+templevels = [3,5]
+
+fig = plt.figure(figsize=(7,7))
+# set height ratios for subplots
+gs = mpl.gridspec.GridSpec(2, 1, height_ratios=[5, 1], hspace=0) 
+ax = plt.subplot(gs[0])
+figvp = ml[mom].plot(x="time", cmap=cmap, norm=norm, extend="both", ylim=(0,10000), add_colorbar=False)
+figcontour = vert["TEMP"][:, 0, :].plot.contour(x="time", y="z", levels=[0]+templevels, ylim=(0,5000))
+# ax = plt.gca()
+ax.clabel(figcontour)
+qvp["height_ml_bottom_new_gia"].plot(color="white", label="ML from QVP")
+qvp["height_ml_new_gia"].plot(color="white")
+ml["height_ml_bottom_new_gia"].plot(color="black", label="ML from VP")
+ml["height_ml_new_gia"].plot(color="black")
+plt.legend()
+plt.title(mom+" "+loc.upper()+" "+date)
+plt.ylabel("height [m]")
+
+ax2=plt.subplot(gs[1], sharex=ax)
+ax3 = ax2.twinx()
+for nt, tv in enumerate(templevels):
+    zdr_offset = utils.zdr_offset_detection_vps(vert, min_h=min_height, mlbottom=tv).compute()
+    zdr_offset["ZDR_offset"].plot(label=str(tv), ls=[":", ":", ":"][nt], ax=ax2, ylim=(-0.2,1))
+    zdr_offset["ZDR_std_from_offset"].plot(label=str(tv), ls=["--", "--", "--"][nt], ax=ax3, ylim=(-0.2,1))
+ax2.set_title("")
+ax3.set_title("Dotted: offset. Dashed: offset std.")
+plt.legend(loc=(1.01,0.1))
+
+fig.subplots_adjust(right=0.9)
+cbar_ax = fig.add_axes([0.93, 0.3, 0.02, 0.5])
+fig.colorbar(figvp, cax=cbar_ax)
+
+
+
+# Plot a moment VP, isotherms, ML bottom and calculated ZDR offset for different regions (below ML, in ML, above ML)
+mom = "DBZH"
+visdict14 = radarmet.visdict14
+norm = radarmet.get_discrete_norm(visdict14[mom]["ticks"])
+cmap = visdict14[mom]["cmap"] #mpl.cm.get_cmap("HomeyerRainbow")
+templevels = [3,5]
+
+vert_ml = vert.assign_coords({"height_ml_new_gia": ml["height_ml_new_gia"], 
+                              "height_ml_bottom_new_gia": ml["height_ml_bottom_new_gia"]})
+levels=["height_ml_bottom_new_gia", "height_ml_new_gia", -50]
+min_heights=[min_height, vert_ml["height_ml_bottom_new_gia"], vert_ml["height_ml_new_gia"]]
+
+fig = plt.figure(figsize=(7,7))
+# set height ratios for subplots
+gs = mpl.gridspec.GridSpec(2, 1, height_ratios=[5, 1], hspace=0) 
+ax = plt.subplot(gs[0])
+figvp = ml[mom].plot(x="time", cmap=cmap, norm=norm, extend="both", ylim=(0,10000), add_colorbar=False)
+figcontour = vert["TEMP"][:, 0, :].plot.contour(x="time", y="z", levels=[0]+templevels, ylim=(0,5000))
+# ax = plt.gca()
+ax.clabel(figcontour)
+qvp["height_ml_bottom_new_gia"].plot(color="white", label="ML from QVP")
+qvp["height_ml_new_gia"].plot(color="white")
+ml["height_ml_bottom_new_gia"].plot(color="black", label="ML from VP")
+ml["height_ml_new_gia"].plot(color="black")
+plt.legend()
+plt.title(mom+" "+loc.upper()+" "+date)
+plt.ylabel("height [m]")
+
+ax2=plt.subplot(gs[1], sharex=ax)
+ax3 = ax2.twinx()
+for nt, tv in enumerate(levels):
+    zdr_offset = utils.zdr_offset_detection_vps(vert_ml, min_h=min_heights[nt], mlbottom=tv).compute()
+    zdr_offset["ZDR_offset"].plot(label=str(tv), ls=[":", ":", ":"][nt], ax=ax2, ylim=(-0.2,1))
+    zdr_offset["ZDR_std_from_offset"].plot(label=str(tv), ls=["--", "--", "--"][nt], ax=ax3, ylim=(-0.2,1))
+    print("ZDR offset median: " + str(zdr_offset["ZDR_offset"].median().values))
+    print("ZDR offset std median: " + str(zdr_offset["ZDR_std_from_offset"].median().values))
+ax2.set_title("")
+ax3.set_title("Dotted: offset. Dashed: offset std.")
+plt.legend(loc=(1.01,0.1))
+
+fig.subplots_adjust(right=0.9)
+cbar_ax = fig.add_axes([0.93, 0.3, 0.02, 0.5])
+fig.colorbar(figvp, cax=cbar_ax)
+
 
 
 
