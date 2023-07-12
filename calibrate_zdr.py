@@ -43,10 +43,11 @@ except ModuleNotFoundError:
 #%% Set paths and load
 
 # Load preprocessed sweep and vertical scan (testing)
-date="2017-01-11"
-swppath="/automount/realpep/upload/jgiles/dwd/"+date[0:4]+"/"+date[0:7]+"/"+date+"/pro/vol5minng01/01/*hd5"
-vertpath="/automount/realpep/upload/jgiles/dwd/"+date[0:4]+"/"+date[0:7]+"/"+date+"/pro/90gradstarng01/00/*hd5"
-qvppath="/home/jgiles/dwd/qvps/"+date[0:4]+"/"+date[0:7]+"/"+date+"/pro/vol5minng01/07/*nc"
+date="2017-11-05"
+loc="tur"
+swppath="/automount/realpep/upload/jgiles/dwd/"+date[0:4]+"/"+date[0:7]+"/"+date+"/"+loc+"/vol5minng01/01/*hd5"
+vertpath="/automount/realpep/upload/jgiles/dwd/"+date[0:4]+"/"+date[0:7]+"/"+date+"/"+loc+"/90gradstarng01/00/*hd5"
+qvppath="/home/jgiles/dwd/qvps/"+date[0:4]+"/"+date[0:7]+"/"+date+"/"+loc+"/vol5minng01/07/*nc"
 
 swpfile=sorted(glob.glob(swppath))[0]
 vertfile=sorted(glob.glob(vertpath))[0]
@@ -57,9 +58,10 @@ vert=dttree.open_datatree(vertfile)["sweep_0"].to_dataset()
 qvp=xr.open_dataset(qvpfile)
 #%% Load and attach temperature data (for ML estimation)
 
-vert = utils.attach_ERA5_TEMP(vert, site="pro")
+vert = utils.attach_ERA5_TEMP(vert, site=loc)
 
 #%% Calculate ZDR offset
+min_height = 600+vert["altitude"].values
 
 # First calculate PHIDP offset, then calculate ML
 phidp_offset = utils.phidp_offset_detection(vert, phidp="UPHIDP")
@@ -76,9 +78,9 @@ vert = vert.assign({"UPHIDP_OC": phi_fix.assign_attrs(vert["UPHIDP"].attrs)})
 
 # Calculate ML from the VP
 moments={"DBZH": (10., 60.), "RHOHV": (0.65, 1.), "UPHIDP_OC": (-20, 360)}
-ml = utils.melting_layer_qvp_X_new(vert.where(vert["z"]>700).median("azimuth", keep_attrs=True)\
+ml = utils.melting_layer_qvp_X_new(vert.median("azimuth", keep_attrs=True)\
                                    .assign_coords({"z":vert["z"].median("azimuth", keep_attrs=True)})\
-                                   .swap_dims({"range":"z"}),
+                                   .swap_dims({"range":"z"}), min_h=min_height,
                                    dim="z", moments=moments, all_data=True)
 
 #### Giagrande refinment
@@ -116,7 +118,7 @@ ml = ml.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data
 
 
 
-zdr_offset = utils.zdr_offset_detection_vps(vert, min_h=600, mlbottom=5).compute()
+zdr_offset = utils.zdr_offset_detection_vps(vert, min_h=min_height, mlbottom=5).compute()
 
 #%% TEST METHOD FOR VARIOUS PARAMETERS
 
@@ -140,7 +142,7 @@ qvp["height_ml_new_gia"].plot(color="white")
 ml["height_ml_bottom_new_gia"].plot(color="black", label="ML from VP")
 ml["height_ml_new_gia"].plot(color="black")
 plt.legend()
-plt.title(mom)
+plt.title(mom+" "+loc.upper()+" "+date)
 plt.ylabel("height [m]")
 
 ax2=plt.subplot(gs[1], sharex=ax)
@@ -160,7 +162,7 @@ fig.colorbar(figvp, cax=cbar_ax)
 
 
 # Plot a moment VP, isotherms, ML bottom and calculated ZDR offset for different number of valid bins below ML
-mom = "ZDR"
+mom = "DBZH"
 visdict14 = radarmet.visdict14
 norm = radarmet.get_discrete_norm(visdict14[mom]["ticks"])
 cmap = visdict14[mom]["cmap"] #mpl.cm.get_cmap("HomeyerRainbow")
@@ -179,7 +181,7 @@ qvp["height_ml_new_gia"].plot(color="white")
 ml["height_ml_bottom_new_gia"].plot(color="black", label="ML from VP")
 ml["height_ml_new_gia"].plot(color="black")
 plt.legend()
-plt.title(mom)
+plt.title(mom+" "+loc.upper()+" "+date)
 plt.ylabel("height [m]")
 
 minbins=[10,100, 1000]

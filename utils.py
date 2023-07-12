@@ -172,7 +172,7 @@ def ml_height_top_new(ds, moment='comb_dy', dim='height',skipna=True, drop=True)
 
 
 
-def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), PHIDP=(-90.,-70.)), dim='height', thres=0.02, xwin=5, ywin=5, fmlh=0.3, all_data=False, clowres=False):
+def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), PHIDP=(-90.,-70.)), dim='height', thres=0.02, xwin=5, ywin=5, fmlh=0.3, min_h=600, all_data=False, clowres=False):
     '''
     Function to detect the melting layer based on wolfensberger et al 2015 (https://doi.org/10.1002/qj.2672) and refined for delta bump removing by K. Mühlbauer and further refined by T. Scharbach
 
@@ -202,6 +202,11 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
         Tolerance value for melting layer height limits, above and below +-(1 +- flmh) from
         calculated median top and bottom, respectively.
 
+    min_h : int, float
+        Minimum height of usable data within the polarimetric profiles, in m. This is relative to
+        sea level and not relative to the altitude of the radar (in accordance to the "z" coordinate 
+        from wradlib.georef.georeference_dataset). The default is 600. 
+
     all_data : bool
         If True, include all normalized moments in the output dataset. If False, only output 
         melting layer height values. Default is False.
@@ -218,8 +223,8 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
     rho = [k for k in moments if "rho" in k.lower()][0]
     phi = [k for k in moments if "phi" in k.lower()][0]
 
-    # step 1
-    ds0 = ml_normalise(ds, moments=moments, dim=dim)
+    # step 1: Filter values below min_h and normalize
+    ds0 = ml_normalise(ds.where(ds[dim]>min_h), moments=moments, dim=dim)
 
     # step 1a
     # removing profiles with too few data (>93% of array is nan)
@@ -1432,8 +1437,9 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
         Name of the temperature variable in ds. Only necessary if mlbottom is int.
         If None is given and mlbottom is int or float, the default name "TEMP" is used.
     min_h : float, optional
-        Minimum height of usable data within the polarimetric profiles, in m.
-        The default is 1000.
+        Minimum height of usable data within the polarimetric profiles, in m. This is relative to
+        sea level and not relative to the altitude of the radar (in accordance to the "z" coordinate 
+        from wradlib.georef.georeference_dataset). The default is 1000. 
     zhmin : float, optional
         Threshold on :math:`Z_{H}` (in dBZ) related to light rain.
         The default is 5.

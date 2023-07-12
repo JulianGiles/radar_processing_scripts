@@ -487,8 +487,8 @@ for elev in allelevs:
                                 continue
                         
                             # check that minval >= iris_minval
-                            if minval < iris_minval:
-                                print("! WARNING: there are "+mom+" values below the IRIS minimum encoded value !")
+                            #if minval < iris_minval:
+                                #print("! WARNING: there are "+mom+" values below the IRIS minimum encoded value !")
                         
                             # set IRIS NoData to NaN
                             ds[mom] = ds[mom].where(ds[mom] > iris_minval)

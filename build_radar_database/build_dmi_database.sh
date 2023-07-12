@@ -8,8 +8,8 @@
 
 concat_to_daily=true
 path=/automount/realpep/upload/turkey-data/
-location=ANK # which location to extract
-transfer=true # transfer to JSC? (deletes from local storage). If true, it will check if the files exist in JSC before doing anything, otherwise it will check locally
+location=GZT # which location to extract
+transfer=false # transfer to JSC? (deletes from local storage). If true, it will check if the files exist in JSC before doing anything, otherwise it will check locally
 jsc_folder=giles1@judac.fz-juelich.de:/p/largedata2/detectdata/projects/A04/radar_data/dmi/
 overwrite=false # what to do in case files are already found, if true then decompress and concat again and overwrite, if false skip this date
 
