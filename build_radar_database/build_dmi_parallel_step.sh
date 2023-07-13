@@ -2,15 +2,13 @@
 
 # This script should be called by build_dmi_parallel.sh with srun. It decompresses and processes one day of data.
 
-include_years=$1
-include_months=$2
-concat_to_daily=$3
-path=$4
-location=$5
-transfer=$6
-jsc_folder=$7
-overwrite=$8
-file=$9
+concat_to_daily=$1
+path=$2
+location=$3
+transfer=$4
+jsc_folder=$5
+overwrite=$6
+file=$7
 
 if [ -f "$file" ]; then
 
@@ -21,15 +19,6 @@ if [ -f "$file" ]; then
     month=${filename1: -4:2}
     day=${filename1: -2:2}
     loc=${location}
-
-    # WE HAD TO TAKE THIS PART OUT BECAUSE YOU CANNOT PASS ARRAYS FROM ONE SCRIPT TO ANOTHER
-    # check if this is the year-month we want to process, otherwise continue
-    # if [[ ${include_years[@]} =~ $year ]] && [[ ${include_months[@]} =~ $month ]] ; then
-    #     : # do nothing
-    # else
-    #     exit
-    # fi
-
 
     # create directory for this location if it doesn't exist
     midpath="$year/$year-$month/$year-$month-$day/$loc/"

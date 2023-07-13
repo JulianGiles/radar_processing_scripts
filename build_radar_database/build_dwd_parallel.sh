@@ -30,19 +30,19 @@ include_years=(2020)
 include_months=(07 08 09 10 11 12)
 
 concat_to_daily=true
-path=/p/scratch/paj2301/Turkey/
-location=SVS # which location to extract
+path=/p/scratch/paj2301/dwd_raw/
+location=pro # which location to extract
 transfer=false # transfer to JSC? (deletes from local storage). If true, it will check if the files exist in JSC before doing anything, otherwise it will check locally
-jsc_folder=/p/scratch/paj2301/dmi/
+jsc_folder=/p/largedata2/detectdata/projects/A04/radar_data/dwd/
 overwrite=false # what to do in case files are already found, if true then decompress and concat again and overwrite, if false skip this date
 
 
 count=0
 
-for file in ${path}/*${location}*.tar.gz; do
+for file in ${path}${location}/*/*${location}.tar; do
     if [ -f "$file" ]; then
         # extract year, month, day, and location from the file name
-        filename1=$(basename "$file" .tar.gz)
+        filename1=$(basename "$file" _$location.tar)
 
         year=${filename1: -8:4}
         month=${filename1: -4:2}
@@ -59,7 +59,7 @@ for file in ${path}/*${location}*.tar.gz; do
         ((count++))
 
 
-        srun -c 8 --account=detectrea -n 1 --exact --threads-per-core=1 ./build_dmi_parallel_step.sh ${concat_to_daily} ${path} ${location} ${transfer} ${jsc_folder} ${overwrite} ${file} &
+        srun -c 8 --account=detectrea -n 1 --exact --threads-per-core=1 ./build_dwd_parallel_step.sh ${concat_to_daily} ${path} ${location} ${transfer} ${jsc_folder} ${overwrite} ${file} &
 
         # process only 20 days at the same time
         if [ "$count" -ge 20 ]; then
@@ -73,4 +73,5 @@ for file in ${path}/*${location}*.tar.gz; do
 done
 
 wait
+
 
