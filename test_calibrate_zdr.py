@@ -9,7 +9,7 @@ Script for calculating ZDR calibration from different methods.
 
 1. “Bird bathing” with vertically pointing radar
 
-2. NOT IMPLEMENTED! Using light rain as a natural calibrator with intrinsic average ZDR of 0.25 dB for Z = 20 – 22 dBZ
+2. Using light rain as a natural calibrator with intrinsic average ZDR of 0.25 dB for Z = 20 – 22 dBZ
 
 3. NOT IMPLEMENTED! Using dry aggregated snow as a natural calibrator with intrinsic ZDR of 0.1 – 0.2 dB
 
@@ -128,8 +128,14 @@ ml = ml.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data
 
 
 
-
+# ZDR offset from VP
 zdr_offset = utils.zdr_offset_detection_vps(vert, min_h=min_height, mlbottom=5).compute()
+
+# ZDR offset from QVP (light rain consistency)
+qvp = utils.attach_ERA5_TEMP(qvp, site=loc)
+zdr_offset = utils.zhzdr_lr_consistency(qvp["DBZH"][:,1:].values, qvp["ZDR"][:,1:].values, qvp["RHOHV"][:,1:].values, 
+                                       (qvp["TEMP"][:,1:]).values,  tmp_th=3, rhohv_th=0.99, plot_correction=False)
+
 
 #%% TEST METHOD FOR VARIOUS PARAMETERS
 
