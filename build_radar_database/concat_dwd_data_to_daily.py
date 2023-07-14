@@ -31,31 +31,38 @@ moments = set(fp.split("_")[-2] for fp in ll)
 # discard "allmoms" from the set if it exists
 moments.discard("allmoms")
 
-# for every moment, open all files in folder (all timesteps) per moment into a dataset
-vardict = {} # a dict for putting a dataset per moment
-for mom in moments:
-    
-    # print("       Processing "+mom)
-    
-    # open the odim files (single moment and elevation, several timesteps)
-    llmom = sorted(glob.glob(path+"/ras*_"+mom+"_*hd5"))
-    
-    # # there is a bug with the current implementation of xradar. Re check this in future releases
-    # # Looks like now it works with a temporary fix in the files
-    vardict[mom] = wrl.io.open_odim_mfdataset(llmom)
-    
-    # It may happen that some time value is missing, fix that using info in rtime
-    if vardict[mom]["time"].isnull().any():
-        vardict[mom].coords["time"] = vardict[mom].rtime.min(dim="azimuth", skipna=True).compute()    
+try:
+    # for every moment, open all files in folder (all timesteps) per moment into a dataset
+    vardict = {} # a dict for putting a dataset per moment
+    for mom in moments:
         
-    # if some coord has dimension time, reduce using median
-    for coord in ["latitude", "longitude", "altitude", "elevation"]:
-        if "time" in vardict[mom][coord].dims:
-            vardict[mom].coords[coord] = vardict[mom].coords[coord].median("time")
-    
-    # the old method seems to still work fine (however, not recommended to use)
-    # vardict[mom] = wrl.io.open_odim(llmom, loader="h5py", chunks={})[0].data
-    
+        # print("       Processing "+mom)
+        
+        # open the odim files (single moment and elevation, several timesteps)
+        llmom = sorted(glob.glob(path+"/ras*_"+mom+"_*hd5"))
+        
+        # # there is a bug with the current implementation of xradar. Re check this in future releases
+        # # Looks like now it works with a temporary fix in the files
+        vardict[mom] = wrl.io.open_odim_mfdataset(llmom)
+        
+        # It may happen that some time value is missing, fix that using info in rtime
+        if vardict[mom]["time"].isnull().any():
+            vardict[mom].coords["time"] = vardict[mom].rtime.min(dim="azimuth", skipna=True).compute()    
+            
+        # if some coord has dimension time, reduce using median
+        for coord in ["latitude", "longitude", "altitude", "elevation"]:
+            if "time" in vardict[mom][coord].dims:
+                vardict[mom].coords[coord] = vardict[mom].coords[coord].median("time")
+        
+        # the old method seems to still work fine (however, not recommended to use)
+        # vardict[mom] = wrl.io.open_odim(llmom, loader="h5py", chunks={})[0].data
+except OSError:
+    pathparts = [ xx if len(xx)==8 and "20" in xx else None for xx in llmom[0].split("/") ]
+    pathparts.sort(key=lambda e: (e is None, e))
+    date = pathparts[0]
+    print(date+" "+mom+": Error opening files. Some file is corrupt or truncated.")
+    sys.exit("Script terminated early. "+date+" "+mom+": Error opening files. Some file is corrupt or truncated.")
+
 # create an empty radar volume and put the previous data inside
 vol = wrl.io.RadarVolume()
 vol.append(xr.merge(vardict.values()))

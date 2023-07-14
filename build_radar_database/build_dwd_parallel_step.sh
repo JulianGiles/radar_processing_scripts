@@ -119,6 +119,19 @@ if [ -f "$file" ]; then
                 fi
 
                 inner_path="$midpath/$mode/$nn/"
+
+                ### check that the processed files do not exist already, if they are not found, proceed to process
+                if ls $inner_path/*allmoms* 1> /dev/null 2>&1; then
+                    # if file exist do nothing
+                    filesize=$(wc -c $inner_path/*allmoms* | awk '{print $1}')
+
+                    # if file exists, check if it is larger than 1 mb, so we know it is not an erroneous file
+                    if [ $filesize -gt 1000000 ] && [ $overwrite = false ]; then
+                        # if file exists and it is large, then we skip this case
+                        continue
+                    fi
+                fi
+
                 mkdir -p $inner_path
                 mv ${tempdir}/*$mode*_$nn* "$inner_path/."
 
@@ -126,7 +139,7 @@ if [ -f "$file" ]; then
             done
         done
 
-        # delete inner file
+        # delete tar files and temporary folder
         rm "$midpath"/*.tar.gz
         rm -r "$tempdir"
 
