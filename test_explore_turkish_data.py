@@ -289,12 +289,14 @@ for vv in ["DBZH", "ZDR", "KDP", "RHOHV", "PHIDP"]:
 #%% Load QVPs
 mpl.rcParams.update(mpl.rcParamsDefault)
 
-qvps = xr.open_dataset("/home/jgiles/dmi/qvps/2015/2015-09/2015-09-30/ANK/MON_YAZ_K/12.0/qvp_MON_YAZ_K-allmoms-12.0-20152015-092015-09-30-ANK-h5netcdf.nc")
+# qvps = xr.open_dataset("/home/jgiles/dmi/qvps/2015/2015-09/2015-09-30/ANK/MON_YAZ_K/12.0/qvp_MON_YAZ_K-allmoms-12.0-20152015-092015-09-30-ANK-h5netcdf.nc")
 # qvps = xr.open_dataset("/home/jgiles/dmi/qvps/2017/2017-12/2017-12-24/HTY/VOL_B/10.0/qvp_VOL_B-allmoms-10.0-2017-12-24-HTY-h5netcdf.nc")
 # qvps = xr.open_dataset("/home/jgiles/dwd/qvps/2017/2017-07/2017-07-25/pro/vol5minng01/07/qvp_ras07-vol5minng01_sweeph5onem_allmoms_07-2017072500033500-pro-10392.nc")
+qvps = xr.open_dataset("/home/jgiles/dwd/qvps/2017/2017-11/2017-11-05/tur/vol5minng01/07/qvp_ras07-vol5minng01_sweeph5onem_allmoms_07-2017110500033500-tur-10832.nc")
+qvps = xr.open_dataset("/home/jgiles/dwd/qvps/2017/2017-11/2017-11-05/tur/vol5minng01/07/qvp_ras07-vol5minng01_sweeph5onem_allmoms_07-2017110500033500-tur-10832.nc")
 
 #%% Plot QVP
-tempfix=0 # to shift ERA5 data from K to C
+tempfix=273.15 # to shift ERA5 data from K to C
 
 vv="ZDR"
 visdict14 = radarmet.visdict14
@@ -302,9 +304,10 @@ norm = radarmet.get_discrete_norm(visdict14[vv]["ticks"])
 ticks = visdict14[vv]["ticks"]
 cmap = visdict14[vv]["cmap"] #mpl.cm.get_cmap("HomeyerRainbow")
 
-qvps["ZDR"].plot(x="time", cmap=cmap, norm=norm, extend="both", ylim=(0, 10000))
+(qvps["ZDR"]).plot(x="time", cmap=cmap, norm=norm, extend="both", ylim=(200, 7000))
 (qvps["TEMP"]-tempfix).plot.contour(x="time", levels=[3], colors="white") # 3 C line
 (qvps["TEMP"]-tempfix).plot.contour(x="time", levels=[3], colors="grey", linestyles="--")
+plt.title("corrected ZDR")
 
 #%% Plot scatter
 timesel="2017-07-25"
@@ -353,4 +356,6 @@ dsrpckd_loc_fil.plot.scatter(x="DBZH", y="ZDR", hue="TEMP", cmap="viridis", add_
 
 
 #%% Calibrate ZDR
-zdroffset = utils.zhzdr_lr_consistency(qvps["DBZH"].values, qvps["ZDR"].values, qvps["RHOHV"].values, qvps["TEMP"].values)
+qvps2=qvps.loc[{"time":slice("2017-11-05 09", "2017-11-05 11")}]
+zdroffset = utils.zhzdr_lr_consistency(qvps["DBZH"][:,1:].values, qvps["ZDR"][:,1:].values, qvps["RHOHV"][:,1:].values, 
+                                       (qvps["TEMP"][:,1:]-273.15).values,  tmp_th=-10, rhohv_th=0.7)
