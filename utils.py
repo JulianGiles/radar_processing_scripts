@@ -1184,6 +1184,10 @@ def calculate_noise_level(dbz, rho, noise=(-40, -20, 1), rho_bins=(0.9, 1.1, 0.0
     It returns a list of signal-to-noise and corrected rhohv arrays, as well as histograms involed in the calculations,
     a list of standard deviations for every result and the noise value with the minimum std.
     The final noise correction should be chosen based on the rn value (minumum std)
+    
+    The final noise level (rn) should be used with noise_correction2 one more time to get the final result.
+    It may happen that the correction is too strong and we get some RHOHV values over 1. We should
+    check this for some days of data and if that is the case, then select a noise level that is slightly less (about 2% less)
     """
     noise = np.arange(*noise)
     rho_bins = np.arange(*rho_bins)
