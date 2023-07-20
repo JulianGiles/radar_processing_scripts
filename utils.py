@@ -17,6 +17,7 @@ import datetime as dt
 import glob
 from multiprocessing import Pool
 
+
 def Entropy_timesteps_over_azimuth_different_vars_schneller(ds, zhlin="zhlin", zdrlin="zdrlin", rhohvnc="RHOHV_NC", kdp="KDP_ML_corrected"):
 
     '''
@@ -1195,10 +1196,41 @@ def calculate_noise_level(dbz, rho, noise=(-40, -20, 1), rho_bins=(0.9, 1.1, 0.0
     corr = [noise_correction2(dbz, rho, n) for n in noise]
     #with ProgressBar():
     #    corr = dask.compute(*corr)
-    hist = [dask.delayed(histogram)(rho0, snr0, bins=[rho_bins, snr_bins], block_size=rho.time.size) for snr0, rho0 in corr]
-    #hist = [histogram(rho0, snr0, bins=[rho_bins, snr_bins], block_size=rho.time.size) for snr0, rho0 in corr]
-    with ProgressBar():
-        hist = dask.compute(*hist)
+    # hist = [dask.delayed(histogram)(rho0, snr0, bins=[rho_bins, snr_bins], block_size=rho.time.size) for snr0, rho0 in corr]
+    hist = [histogram(rho0, snr0, bins=[rho_bins, snr_bins], block_size=rho.time.size) for snr0, rho0 in corr]
+    # with ProgressBar():
+    #     hist = dask.compute(*hist)
+    std = [np.std(r.idxmax('RHO_bin')).values for r in hist]
+    rn = noise[np.argmin(std)]
+    return corr, hist, std, rn
+
+def calculate_noise_level2(dbz, rho, noise=(-40, -20, 1), rho_bins=(0.9, 1.1, 0.005), snr_bins=(5., 30., .1)):
+    """
+    DOES NOT WORK!! I am trying to make the function faster and more efficient but multiprocessing.Pool and Dask
+    do not seem to help
+    
+    
+    This functions calculates the noise levels and noise corrections for RHOHV, for a range of noise values.
+    It returns a list of signal-to-noise and corrected rhohv arrays, as well as histograms involed in the calculations,
+    a list of standard deviations for every result and the noise value with the minimum std.
+    The final noise correction should be chosen based on the rn value (minumum std)
+    
+    The final noise level (rn) should be used with noise_correction2 one more time to get the final result.
+    It may happen that the correction is too strong and we get some RHOHV values over 1. We should
+    check this for some days of data and if that is the case, then select a noise level that is slightly less (about 2% less)
+    """
+    noise = np.arange(*noise)
+    rho_bins = np.arange(*rho_bins)
+    snr_bins = np.arange(*snr_bins)
+    noise_correction2_partial = partial(noise_correction2, dbz, rho)
+    with Pool() as P:
+        corr = P.map(noise_correction2_partial, noise)
+    histogram_partial = partial(histogram, bins=[rho_bins, snr_bins], block_size=rho.time.size)
+    with Pool() as P:
+        hist = P.starmap(histogram_partial, corr)
+    # hist = [histogram(rho0, snr0, bins=[rho_bins, snr_bins], block_size=rho.time.size) for snr0, rho0 in corr]
+    # with ProgressBar():
+    #     hist = dask.compute(*hist)
     std = [np.std(r.idxmax('RHO_bin')).values for r in hist]
     rn = noise[np.argmin(std)]
     return corr, hist, std, rn

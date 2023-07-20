@@ -195,5 +195,6 @@ for ff in files:
         ml = ml.assign_coords(height_ml_new_gia = ("time",first_valid_height_after_ml.data))
         ml = ml.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data))
         
+        !!!!!!! ADD VARIABLES NAMES HERE
         zdr_offset = utils.zdr_offset_detection_vps(vert, min_h=min_height, mlbottom=5).compute()
         
