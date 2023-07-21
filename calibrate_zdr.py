@@ -63,11 +63,12 @@ min_hgt = 600 # minimum height above the radar to be considered when calculating
 phidp_names = ["UPHIDP", "PHIDP"] # names to look for the PHIDP variable, in order of preference
 dbzh_names = ["DBZH"] # same but for DBZH
 rhohv_names = ["RHOHV"] # same but for RHOHV
+zdr_names = ["ZDR"]
 
 # check that countryws is set correctly
 if countryws not in ["dwd", "dmi"]:
-    print("country weather service name wrong")
-    sys.exit("country weather service name wrong")
+    print("incorrect country weather service name")
+    sys.exit("incorrect country weather service name")
 
 # get path according to selected options
 if calib_type==1:
@@ -138,6 +139,17 @@ for ff in files:
             if X_RHO in data.data_vars:
                 break
 
+        # get ZDR name
+        for X_ZDR in zdr_names:
+            if X_ZDR in data.data_vars:
+                break
+
+        # Check that all variables are present
+        check_vars = [xvar not in data.data_vars for xvar in [X_PHI, X_DBZH, X_RHO, X_ZDR]]
+        if any(check_vars):
+            print("Not all necessary variables found in the data.")
+            sys.exit("Not all necessary variables found in the data.")
+
         ### First we need to correct PHIDP and load corrected RHOHV
         
         # Calculate PHIDP offset
@@ -196,5 +208,5 @@ for ff in files:
         ml = ml.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data))
         
         !!!!!!! ADD VARIABLES NAMES HERE
-        zdr_offset = utils.zdr_offset_detection_vps(vert, min_h=min_height, mlbottom=5).compute()
+        zdr_offset = utils.zdr_offset_detection_vps(vert, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, min_h=min_height, mlbottom=5).compute()
         

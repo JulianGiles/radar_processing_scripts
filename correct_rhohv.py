@@ -40,17 +40,31 @@ except ModuleNotFoundError:
     import utils
     import radarmet
 
+import time
+start_time = time.time()
 
 #%% Set paths and options
+# paths for testing
+# path="/automount/realpep/upload/jgiles/dwd/2017/2017-09/2017-09-30/tur/vol5minng01/01/*hd5" # for QVPs: /home/jgiles/
+# path="/automount/realpep/upload/jgiles/dmi//2016/2016-05/2016-05-22/AFY/VOL_B/7.0/*h5*" # for QVPs: /home/jgiles/
 
-loc="tur"
-path="/automount/realpep/upload/jgiles/dwd/2017/2017-09/2017-09-30/tur/vol5minng01/01/*hd5" # for QVPs: /home/jgiles/
-path="/automount/realpep/upload/jgiles/dmi//2016/2016-05/2016-05-22/AFY/VOL_B/7.0/*h5*" # for QVPs: /home/jgiles/
+path0 = sys.argv[1]
+
+if "hd5" in path0 or "h5" in path0:
+    files=[path0]
+elif "dwd" in path0:
+    files = sorted(glob.glob(path0+"/*hd5*"))
+elif "dmi" in path0:
+    files = sorted(glob.glob(path0+"/*h5*"))
+else:
+    print("Country code not found in path")
+    sys.exit("Country code not found in path.")
+
+
 dbzh_names = ["DBZH"] # same but for DBZH
 rhohv_names = ["RHOHV"] # same but for RHOHV
 
 # get the files and check that it is not empty
-files = sorted(glob.glob(path))
 if len(files)==0:
     print("No files meet the selection criteria.")
     sys.exit("No files meet the selection criteria.")
@@ -58,6 +72,7 @@ if len(files)==0:
 #%% Load data
 
 for ff in files:
+    print("processing "+ff)
     if "dwd" in ff:
         data=dttree.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset()
     else:
@@ -134,3 +149,7 @@ for ff in files:
     
     filename = ("rhohv_nc_2percent").join(savepath.split("allmoms"))
     rho_nc_out.to_netcdf(filename)
+    
+#%% print how much time did it take
+total_time = time.time() - start_time
+print(f"Script took {total_time/60:.2f} minutes to run.")

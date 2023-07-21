@@ -1202,7 +1202,7 @@ def calculate_noise_level(dbz, rho, noise=(-40, -20, 1), rho_bins=(0.9, 1.1, 0.0
     hist = [histogram(rho0, snr0, bins=[rho_bins, snr_bins], block_size=rho.time.size) for snr0, rho0 in corr]
     # with ProgressBar():
     #     hist = dask.compute(*hist)
-    std = [np.std(r.idxmax('RHO_bin')).values for r in hist]
+    std = [np.std(r.idxmax('RHOHV_NC_bin')).values for r in hist]
     rn = noise[np.argmin(std)]
     return corr, hist, std, rn
 
