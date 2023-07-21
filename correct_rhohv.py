@@ -45,6 +45,7 @@ except ModuleNotFoundError:
 
 loc="tur"
 path="/automount/realpep/upload/jgiles/dwd/2017/2017-09/2017-09-30/tur/vol5minng01/01/*hd5" # for QVPs: /home/jgiles/
+path="/automount/realpep/upload/jgiles/dmi//2016/2016-05/2016-05-22/AFY/VOL_B/7.0/*h5*" # for QVPs: /home/jgiles/
 dbzh_names = ["DBZH"] # same but for DBZH
 rhohv_names = ["RHOHV"] # same but for RHOHV
 
@@ -83,4 +84,53 @@ for ff in files:
         if X_RHO in data.data_vars:
             break
 
-    rho_nc = utils.calculate_noise_level(data[X_DBZH], data[X_RHO])
+    # check that the variables actually exist, otherwise continue
+    if X_DBZH not in data.data_vars:
+        print("DBZH not found in data")
+        sys.exit("DBZH not found in data.")
+    if X_RHO not in data.data_vars:
+        print("RHOHV not found in data")
+        sys.exit("RHOHV not found in data.")
+
+    rho_nc = utils.calculate_noise_level(data[X_DBZH], data[X_RHO], noise=(-45, -15, 1))
+
+    # get the "best" noise correction level (acoording to the min std)
+    ncl = rho_nc[-1]
+    
+    # get index of the best correction
+    bci = np.array(rho_nc[-2]).argmin()
+    
+    # merge into a single array
+    rho_nc_out = xr.merge(rho_nc[0][bci])
+    
+    # add noise correction level as attribute
+    rho_nc_out.attrs["noise correction level"]=ncl
+    
+    # Just in case, calculate again for a NCL slightly lower (2%), in case the automatically-selected one is too strong
+    rho_nc2 = utils.noise_correction2(data[X_DBZH], data[X_RHO], ncl*1.02)
+    
+    # make a new array as before
+    rho_nc_out2 = xr.merge(rho_nc2)
+    rho_nc_out2.attrs["noise correction level"]=ncl*1.02
+    
+    # create saving directory if it does not exist
+    if "dwd" in ff:
+        country="dwd"
+    elif "dmi" in ff:
+        country="dmi"
+    else:
+        print("Country code not found in path")
+        sys.exit("Country code not found in path.")
+    
+    ff_parts = ff.split(country)
+    savepath = (country+"/rhohv_nc/").join(ff_parts)
+    savepathdir = os.path.dirname(savepath)
+    if not os.path.exists(savepathdir):
+        os.makedirs(savepathdir)
+
+    # save the arrays
+    filename = ("rhohv_nc").join(savepath.split("allmoms"))
+    rho_nc_out.to_netcdf(filename)
+    
+    filename = ("rhohv_nc_2percent").join(savepath.split("allmoms"))
+    rho_nc_out.to_netcdf(filename)
