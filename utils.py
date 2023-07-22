@@ -1520,36 +1520,41 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
     
     # Filter according to DBZH and RHOHV limits
     ds_zdr = ds_zdr.where(ds[dbzh]>zhmin).where(ds[dbzh]<zhmax).where(ds[rhohv]>rhvmin)
-    
+
+    # Get dimensions to reduce (other than time)
+    dims_wotime = [kk for kk in ds_zdr.dims]
+    while "time" in dims_wotime:
+        dims_wotime.remove("time")
+                            
     # Filter according to the minimum number of bins limit
-    ds_zdr = ds_zdr.where(ds_zdr.count(dim=("range","azimuth"))>minbins)
+    ds_zdr = ds_zdr.where(ds_zdr.count(dim=dims_wotime)>minbins)
     
     # Calculate offset and others
     if mode=="median":
-        zdr_offset = ds_zdr.median(dim=["range", "azimuth"]).assign_attrs(
+        zdr_offset = ds_zdr.median(dim=dims_wotime).assign_attrs(
             {"long_name":"ZDR offset from vertical profile (median)", 
              "standard_name":"ZDR_offset_from_vertical_profile"}
             )
     elif mode=="mean":
-        zdr_offset = ds_zdr.mean(dim=["range", "azimuth"]).assign_attrs(
+        zdr_offset = ds_zdr.mean(dim=dims_wotime).assign_attrs(
             {"long_name":"ZDR offset from vertical profile (mean)", 
              "standard_name":"ZDR_offset_from_vertical_profile"}
             )
     else:
         raise KeyError("mode must be either 'median' or 'mean'")
-    zdr_max = ds_zdr.max(dim=["range", "azimuth"]).assign_attrs(
+    zdr_max = ds_zdr.max(dim=dims_wotime).assign_attrs(
         {"long_name":"ZDR max from offset calculation", 
          "standard_name":"ZDR_max_from_offset_calculation"}
         )
-    zdr_min = ds_zdr.min(dim=["range", "azimuth"]).assign_attrs(
+    zdr_min = ds_zdr.min(dim=dims_wotime).assign_attrs(
         {"long_name":"ZDR min from offset calculation", 
          "standard_name":"ZDR_min_from_offset_calculation"}
         )
-    zdr_std = ds_zdr.std(dim=["range", "azimuth"]).assign_attrs(
+    zdr_std = ds_zdr.std(dim=dims_wotime).assign_attrs(
         {"long_name":"ZDR standard deviation from offset calculation", 
          "standard_name":"ZDR_std_from_offset_calculation"}
         )
-    zdr_sem = ( zdr_std / ds_zdr.count(dim=["range", "azimuth"])**(1/2) ).assign_attrs(
+    zdr_sem = ( zdr_std / ds_zdr.count(dim=dims_wotime)**(1/2) ).assign_attrs(
         {"long_name":"ZDR standard error of the mean from offset calculation", 
          "standard_name":"ZDR_sem_from_offset_calculation"}
         )
