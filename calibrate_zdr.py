@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sat Jul 22 21:31:29 2023
+
+@author: Julian
+"""
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -52,64 +58,50 @@ except ModuleNotFoundError:
 
 
 #%% Set paths and options
+path0 = sys.argv[1]
+calib_type = int(sys.argv[2]) # Like the numbers from the description above
 
-calib_type = 1 # Like the numbers from the description above
-qvpelev = "07" # which QVP to use in case calib_type is 2. 07 is 12 deg in DWD.
-loc="tur"
-countryws="dwd" # dwd for Germany, dmi for Turkey
-date="2017-09-30" # if a date, process a single date. If "", process everything.
-basepath="/automount/realpep/upload/jgiles/" # for QVPs: /home/jgiles/
 min_hgt = 600 # minimum height above the radar to be considered when calculating ZDR offset
 phidp_names = ["UPHIDP", "PHIDP"] # names to look for the PHIDP variable, in order of preference
 dbzh_names = ["DBZH"] # same but for DBZH
 rhohv_names = ["RHOHV"] # same but for RHOHV
 zdr_names = ["ZDR"]
 
-# check that countryws is set correctly
-if countryws not in ["dwd", "dmi"]:
-    print("incorrect country weather service name")
-    sys.exit("incorrect country weather service name")
-
-# get path according to selected options
-if calib_type==1:
-    if countryws=="dwd":
-        if date=="":
-            path = basepath+"/"+countryws+"/*/*/*/"+loc+"/90gradstarng01/00/*hd5"
-        else:
-            path = basepath+"/"+countryws+"/"+date[0:4]+"/"+date[0:7]+"/"+date+"/"+loc+"/90gradstarng01/00/*hd5"
-            
-    elif countryws=="dmi":
-        print("There are no vertical profiles in turkish data. Calibration method 1 not possible.")
-        sys.exit("There are no vertical profiles in turkish data. Calibration method 1 not possible.")
-
-elif calib_type==2:
-    if countryws=="dwd":
-        if date=="":
-            path = basepath+"/"+countryws+"/qvps/*/*/*/"+loc+"/vol5minng01/"+qvpelev+"/*hd5"
-        else:
-            path = basepath+"/"+countryws+"/"+date[0:4]+"/"+date[0:7]+"/"+date+"/"+loc+"/vol5minng01/"+qvpelev+"/*hd5"
-            
-    elif countryws=="dmi":
-        if date=="":
-            path = basepath+"/"+countryws+"/qvps/*/*/*/"+loc+"/*/"+qvpelev+"/*hd5"
-        else:
-            path = basepath+"/"+countryws+"/"+date[0:4]+"/"+date[0:7]+"/"+date+"/"+loc+"/*/"+qvpelev+"/*hd5"
-
-else:
+if calib_type not in [1,2]:
     print("Calibration method not implemented. Possible options are 1 or 2")
     sys.exit("Calibration method not implemented. Possible options are 1 or 2")
 
 # get the files and check that it is not empty
-files = sorted(glob.glob(path))
+if "hd5" in path0 or "h5" in path0:
+    files=[path0]
+elif "dwd" in path0:
+    files = sorted(glob.glob(path0+"/*hd5*"))
+elif "dmi" in path0:
+    files = sorted(glob.glob(path0+"/*h5*"))
+else:
+    print("Country code not found in path")
+    sys.exit("Country code not found in path.")
+
 if len(files)==0:
     print("No files meet the selection criteria.")
     sys.exit("No files meet the selection criteria.")
 
+# we define a funtion to look for loc inside a path string
+def find_loc(locs, path):
+    components = path.split(os.path.sep)
+    for element in locs:
+        for component in components:
+            if element.lower() in component.lower():
+                return element
+    return None
+
+locs = ["pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs"]
+
 #%% Load data
 
 for ff in files:
-    if calib_type==1 and countryws=="dwd":
-        data=dttree.open_datatree(ff)["sweep_0"].to_dataset()
+    if "dwd" in ff:
+        data=dttree.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset()
     else:
         data=xr.open_dataset(ff)
         
@@ -118,7 +110,10 @@ for ff in files:
         data.coords["time"] = data["rtime"].min(dim="azimuth", skipna=True).compute()
     
 #%% Load and attach temperature data (in case no ML is detected, and in case temperature comes from other source different than ERA5)
-
+    
+    # find loc and assign TEMP data accordingly    
+    loc = find_loc(locs, ff)
+    
     data = utils.attach_ERA5_TEMP(data, site=loc)
 
 #%% Calculate ZDR offset method 1
@@ -170,7 +165,7 @@ for ff in files:
         
         # Calculate ML from the VP
         moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI+"_OC": (-20, 180)}
-        ml = utils.melting_layer_qvp_X_new(data.where(data[X_RHOHV]>0.7).median("azimuth", keep_attrs=True)\
+        ml = utils.melting_layer_qvp_X_new(data.where(data[X_RHO]>0.7).median("azimuth", keep_attrs=True)\
                                            .assign_coords({"z":data["z"].median("azimuth", keep_attrs=True)})\
                                            .swap_dims({"range":"z"}), min_h=min_height,
                                            dim="z", moments=moments)
@@ -221,4 +216,22 @@ for ff in files:
         zdr_offset["ZDR_std_from_offset"].encoding = data[X_ZDR].encoding
         zdr_offset["ZDR_sem_from_offset"].encoding = data[X_RHO].encoding
 
-        # Save file
+        # create saving directory if it does not exist
+        if "dwd" in ff:
+            country="dwd"
+        elif "dmi" in ff:
+            country="dmi"
+        else:
+            print("Country code not found in path")
+            sys.exit("Country code not found in path.")
+        
+        ff_parts = ff.split(country)
+        savepath = (country+"/calibration/zdr/VP/").join(ff_parts)
+        savepathdir = os.path.dirname(savepath)
+        if not os.path.exists(savepathdir):
+            os.makedirs(savepathdir)
+    
+        # save the arrays
+        filename = ("zdr_offset").join(savepath.split("allmoms"))
+        zdr_offset.to_netcdf(filename)
+        
