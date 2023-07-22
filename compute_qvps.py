@@ -160,7 +160,7 @@ for ff in files:
     ds_qvp_ra2 = ds_qvp_ra.where(ds_qvp_ra["z"]>300)
     
     #### Detect melting layer
-    moments={X_ZH: (10., 60.), X_RHOHV: (0.65, 1.), X_PHIDP+"_OC": (-20, 360)}
+    moments={X_ZH: (10., 60.), X_RHOHV: (0.65, 1.), X_PHIDP+"_OC": (-20, 180)}
     dim = 'z'
     thres = 0.02 # gradient values over thres are kept. Lower is more permissive
     xwin = 9 # value for the time median smoothing
