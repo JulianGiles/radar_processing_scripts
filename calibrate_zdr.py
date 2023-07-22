@@ -9,7 +9,7 @@ Script for calculating ZDR calibration from different methods.
 
 1. “Bird bathing” with vertically pointing radar
 
-2. Using light rain as a natural calibrator with intrinsic average ZDR of 0.25 dB for Z = 20 – 22 dBZ
+2. Using light rain as a natural calibrator 
 
 3. NOT IMPLEMENTED! Using dry aggregated snow as a natural calibrator with intrinsic ZDR of 0.1 – 0.2 dB
 
@@ -150,7 +150,7 @@ for ff in files:
             print("Not all necessary variables found in the data.")
             sys.exit("Not all necessary variables found in the data.")
 
-        ### First we need to correct PHIDP and load corrected RHOHV
+        ### First we need to correct PHIDP and load noise corrected RHOHV (no corrected RHOHV for now)
         
         # Calculate PHIDP offset
         phidp_offset = utils.phidp_offset_detection(data, phidp=X_PHI)
@@ -165,15 +165,15 @@ for ff in files:
         
         data = data.assign({X_PHI+"_OC": phi_fix.assign_attrs(data[X_PHI].attrs)})
         
-        # Load corrected RHOHV
-        !!!!!!!!!!!!!!!!!!!!!
+        # Load noise corrected RHOHV
+        # we do not have consistent corrected RHOHV for now, so just use uncorrected
         
         # Calculate ML from the VP
-        moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI+"_OC": (-20, 360)}
-        ml = utils.melting_layer_qvp_X_new(data.median("azimuth", keep_attrs=True)\
+        moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI+"_OC": (-20, 180)}
+        ml = utils.melting_layer_qvp_X_new(data.where(data[X_RHOHV]>0.7).median("azimuth", keep_attrs=True)\
                                            .assign_coords({"z":data["z"].median("azimuth", keep_attrs=True)})\
                                            .swap_dims({"range":"z"}), min_h=min_height,
-                                           dim="z", moments=moments, all_data=True)
+                                           dim="z", moments=moments)
         
         #### Giagrande refinment
         hdim = "z"
@@ -206,7 +206,19 @@ for ff in files:
         
         ml = ml.assign_coords(height_ml_new_gia = ("time",first_valid_height_after_ml.data))
         ml = ml.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data))
+
+        # Add ML to VP
+        data = data.assign_coords(height_ml_new_gia = ("time",first_valid_height_after_ml.data))
+        data = data.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data))
         
-        !!!!!!! ADD VARIABLES NAMES HERE
-        zdr_offset = utils.zdr_offset_detection_vps(vert, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, min_h=min_height, mlbottom=5).compute()
-        
+        # Calculate offset
+        zdr_offset = utils.zdr_offset_detection_vps(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, min_h=min_height).compute()
+
+        # Copy encodings
+        zdr_offset["ZDR_offset"].encoding = data[X_ZDR].encoding
+        zdr_offset["ZDR_max_from_offset"].encoding = data[X_ZDR].encoding
+        zdr_offset["ZDR_min_from_offset"].encoding = data[X_ZDR].encoding
+        zdr_offset["ZDR_std_from_offset"].encoding = data[X_ZDR].encoding
+        zdr_offset["ZDR_sem_from_offset"].encoding = data[X_RHO].encoding
+
+        # Save file
