@@ -1507,7 +1507,7 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
             try:
                 ml_bottom = ds["TEMP"] > mlbottom
             except KeyError:
-                raise KeyError("temp is not given and could not be find by default")
+                raise KeyError("temp is not given and could not be found by default")
         else:
             raise TypeError("temp must be str or None")
     else:
