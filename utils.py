@@ -1211,7 +1211,7 @@ def calculate_noise_level(dbz, rho, noise=(-40, -20, 1), rho_bins=(0.9, 1.1, 0.0
 # Calibration of ZDR with light-rain consistency
 from matplotlib import pyplot as plt
 
-def zhzdr_lr_consistency(ZH, ZDR, RHO, TMP, rhohv_th=0.99, tmp_th=5, plot_correction=True):
+def zhzdr_lr_consistency_old(ZH, ZDR, RHO, TMP, rhohv_th=0.99, tmp_th=5, plot_correction=True):
     """
     ZH-ZDR Consistency in light rain, for ZDR calibration
     AR p.155-156
@@ -1248,6 +1248,145 @@ def zhzdr_lr_consistency(ZH, ZDR, RHO, TMP, rhohv_th=0.99, tmp_th=5, plot_correc
     
         plt.tight_layout()
         plt.show()
+    
+    return zdroffset
+
+def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99, min_h=1000, 
+                         mlbottom=None, temp=None, timemode="step", plot_correction=False, plot_timestep=0):
+    """
+    Improved function for
+    ZH-ZDR Consistency in light rain, for ZDR calibration
+    AR p.155-156
+    
+    ds : xarray Dataset
+        Dataset with ZDR, DBZH and RHOHV.
+    zdr : str
+        Name of the variable in ds for differential reflectivity data. Default is "ZDR".
+    dbzh : str
+        Name of the variable in ds for horizontal reflectivity data (in dB). Default is "DBZH".
+    rhohv : str
+        Name of the variable in ds for cross-correlation coefficient data. Default is "RHOHV".
+    mlbottom : str, int or float
+        If str: name of the ML bottom variable in ds. If None, it is assumed to 
+        be "height_ml_bottom_new_gia" or "height_ml_bottom" (in that order). 
+        If int or float: we assume the ML bottom is not available and we take the given
+        int value as the temperature level from which to consider radar bins.
+        Only gates below the melting layer bottom (i.e. the rain
+        region below the melting layer) are included in the method.
+    temp : str, optional
+        Name of the temperature variable in ds. Only necessary if mlbottom is int.
+        If None is given and mlbottom is int or float, the default name "TEMP" is used.
+    rhvmin : float, optional
+        Threshold on :math:`\rho_{HV}` (unitless) related to light rain.
+        The default is 0.99.
+    min_h : float, optional
+        Minimum height of usable data within the polarimetric profiles, in m. This is relative to
+        sea level and not relative to the altitude of the radar (in accordance to the "z" coordinate 
+        from wradlib.georef.georeference_dataset). The default is 1000.
+    timemode : str
+        How to calculate the offset in case a time dimension is found. "step" calculates one offset
+        per timestep. "all" calculates one offset for the whole ds. Default is "step"
+    plot_correction : bool
+        If True, plot the histogram showing the uncorrected vs corrected data. Default is False.
+    plot_timestep : int
+        In case timemode="step" and plot_correction=True, plot_timestep defines the time index to 
+        be plotted. By default the first timestep (index=0) is plotted.
+    
+    """
+    # We need the ds to be georeferenced in case it is not
+    if "z" not in ds.coords:
+        ds = ds.pipe(wrl.georef.georeference_dataset)
+    
+    if mlbottom is None:
+        try:
+            ml_bottom = ds["z"] < ds["height_ml_bottom_new_gia"]
+        except KeyError:
+            try:
+                ml_bottom = ds["z"] < ds["height_ml_bottom"]
+            except KeyError:
+                raise KeyError("Melting layer bottom not found in ds. Provide melting layer bottom or temperature level.")
+            except:
+                raise RuntimeError("Something went wrong when looking for ML variable")
+        except:
+            raise RuntimeError("Something went wrong when looking for ML variable")
+    elif type(mlbottom) is str:
+        ml_bottom = ds["z"] < ds[mlbottom]
+    elif type(mlbottom) in [float, int]:
+        if type(temp) is str:
+            ml_bottom = ds[temp] > mlbottom
+        elif temp is None:
+            try:
+                ml_bottom = ds["TEMP"] > mlbottom
+            except KeyError:
+                raise KeyError("temp is not given and could not be found by default")
+        else:
+            raise TypeError("temp must be str or None")
+    else:
+        raise TypeError("mlbottom must be str, int or None")
+
+    # filter data below ML and above min_h
+    ds_fil = ds.where(ml_bottom)
+    ds_fil = ds_fil.where(ds["z"]>min_h)
+
+    if "time" in ds and timemode=="step":
+        # Get dimensions to reduce (other than time)
+        dims_wotime = [kk for kk in ds_fil.dims]
+        while "time" in dims_wotime:
+            dims_wotime.remove("time")
+        
+        zdr_zh_20 = (ds_fil[zdr].where((ds_fil[dbzh]>=19)&(ds_fil[dbzh]<21)&(ds_fil[rhohv]>rhvmin))).median(dim=dims_wotime)
+        zdr_zh_22 = (ds_fil[zdr].where((ds_fil[dbzh]>=21)&(ds_fil[dbzh]<23)&(ds_fil[rhohv]>rhvmin))).median(dim=dims_wotime)
+        zdr_zh_24 = (ds_fil[zdr].where((ds_fil[dbzh]>=23)&(ds_fil[dbzh]<25)&(ds_fil[rhohv]>rhvmin))).median(dim=dims_wotime)
+        zdr_zh_26 = (ds_fil[zdr].where((ds_fil[dbzh]>=25)&(ds_fil[dbzh]<27)&(ds_fil[rhohv]>rhvmin))).median(dim=dims_wotime)
+        zdr_zh_28 = (ds_fil[zdr].where((ds_fil[dbzh]>=27)&(ds_fil[dbzh]<29)&(ds_fil[rhohv]>rhvmin))).median(dim=dims_wotime)
+        zdr_zh_30 = (ds_fil[zdr].where((ds_fil[dbzh]>=29)&(ds_fil[dbzh]<31)&(ds_fil[rhohv]>rhvmin))).median(dim=dims_wotime)
+
+        zdroffset = xr.concat([zdr_zh_20-.23, zdr_zh_22-.27, zdr_zh_24-.33, zdr_zh_26-.40, zdr_zh_28-.48, zdr_zh_30-.56], dim='dataarrays').sum(dim='dataarrays', skipna=True)/6
+        
+    else:
+        zdr_zh_20 = (ds_fil[zdr].where((ds_fil[dbzh]>=19)&(ds_fil[dbzh]<21)&(ds_fil[rhohv]>rhvmin))).median()
+        zdr_zh_22 = (ds_fil[zdr].where((ds_fil[dbzh]>=21)&(ds_fil[dbzh]<23)&(ds_fil[rhohv]>rhvmin))).median()
+        zdr_zh_24 = (ds_fil[zdr].where((ds_fil[dbzh]>=23)&(ds_fil[dbzh]<25)&(ds_fil[rhohv]>rhvmin))).median()
+        zdr_zh_26 = (ds_fil[zdr].where((ds_fil[dbzh]>=25)&(ds_fil[dbzh]<27)&(ds_fil[rhohv]>rhvmin))).median()
+        zdr_zh_28 = (ds_fil[zdr].where((ds_fil[dbzh]>=27)&(ds_fil[dbzh]<29)&(ds_fil[rhohv]>rhvmin))).median()
+        zdr_zh_30 = (ds_fil[zdr].where((ds_fil[dbzh]>=29)&(ds_fil[dbzh]<31)&(ds_fil[rhohv]>rhvmin))).median()
+
+        zdroffset = xr.concat([zdr_zh_20-.23, zdr_zh_22-.27, zdr_zh_24-.33, zdr_zh_26-.40, zdr_zh_28-.48, zdr_zh_30-.56], dim='dataarrays').sum(dim='dataarrays', skipna=True)/6
+    
+    if plot_correction:
+        try:
+            mask = ds_fil[rhohv]>rhvmin
+            plt.figure(figsize=(8,3))
+            plt.subplot(1,2,1)
+            if "time" in ds and timemode=="step":
+                hist_2d(ds_fil[dbzh].where(mask)[plot_timestep].values, ds_fil[zdr].where(mask)[plot_timestep].values, bins1=np.arange(0,40,1), bins2=np.arange(-1,3,.1))
+            else:
+                hist_2d(ds_fil[dbzh].where(mask).values, ds_fil[zdr].where(mask).values, bins1=np.arange(0,40,1), bins2=np.arange(-1,3,.1))
+            plt.plot([20,22,24,26,28,30],[.23, .27, .33, .40, .48, .56], color='black')
+            plt.title('Non-calibrated $Z_{DR}$')
+            plt.xlabel(r'$Z_H$', fontsize=15)
+            plt.ylabel(r'$Z_{DR}$', fontsize=15)
+            plt.grid(which='both', color='black', linestyle=':', alpha=0.5)
+            
+            plt.subplot(1,2,2)
+            if "time" in ds and timemode=="step":
+                hist_2d(ds_fil[dbzh].where(mask)[plot_timestep].values, ds_fil[zdr].where(mask)[plot_timestep].values-zdroffset[plot_timestep].values, bins1=np.arange(0,40,1), bins2=np.arange(-1,3,.1))
+            else:
+                hist_2d(ds_fil[dbzh].where(mask).values, ds_fil[zdr].where(mask).values-zdroffset, bins1=np.arange(0,40,1), bins2=np.arange(-1,3,.1))
+            plt.plot([20,22,24,26,28,30],[.23, .27, .33, .40, .48, .56], color='black')
+            plt.title('Calibrated $Z_{DR}$')
+            plt.xlabel(r'$Z_H$', fontsize=15)
+            plt.ylabel(r'$Z_{DR}$', fontsize=15)
+            plt.grid(which='both', color='black', linestyle=':', alpha=0.5)
+            if "time" in ds and timemode=="step":
+                plt.legend(title=r'$\Delta Z_{DR}$: '+str(np.round(zdroffset[plot_timestep].values,3))+'dB')
+            else:
+                plt.legend(title=r'$\Delta Z_{DR}$: '+str(np.round(zdroffset,3))+'dB')
+        
+            plt.tight_layout()
+            plt.show()
+        except ValueError:
+            print("No plotting: No light rain detected with current settings")
     
     return zdroffset
 
