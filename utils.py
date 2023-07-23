@@ -1388,6 +1388,8 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
         except ValueError:
             print("No plotting: No light rain detected with current settings")
     
+    # change name of the array
+    zdroffset.name="ZDR_offset"
     return zdroffset
 
 
