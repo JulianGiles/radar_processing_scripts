@@ -1344,12 +1344,12 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
         zdroffset = xr.concat([zdr_zh_20-.23, zdr_zh_22-.27, zdr_zh_24-.33, zdr_zh_26-.40, zdr_zh_28-.48, zdr_zh_30-.56], dim='dataarrays').sum(dim='dataarrays', skipna=True)/6
         
     else:
-        zdr_zh_20 = (ds_fil[zdr].where((ds_fil[dbzh]>=19)&(ds_fil[dbzh]<21)&(ds_fil[rhohv]>rhvmin))).median()
-        zdr_zh_22 = (ds_fil[zdr].where((ds_fil[dbzh]>=21)&(ds_fil[dbzh]<23)&(ds_fil[rhohv]>rhvmin))).median()
-        zdr_zh_24 = (ds_fil[zdr].where((ds_fil[dbzh]>=23)&(ds_fil[dbzh]<25)&(ds_fil[rhohv]>rhvmin))).median()
-        zdr_zh_26 = (ds_fil[zdr].where((ds_fil[dbzh]>=25)&(ds_fil[dbzh]<27)&(ds_fil[rhohv]>rhvmin))).median()
-        zdr_zh_28 = (ds_fil[zdr].where((ds_fil[dbzh]>=27)&(ds_fil[dbzh]<29)&(ds_fil[rhohv]>rhvmin))).median()
-        zdr_zh_30 = (ds_fil[zdr].where((ds_fil[dbzh]>=29)&(ds_fil[dbzh]<31)&(ds_fil[rhohv]>rhvmin))).median()
+        zdr_zh_20 = (ds_fil[zdr].where((ds_fil[dbzh]>=19)&(ds_fil[dbzh]<21)&(ds_fil[rhohv]>rhvmin))).compute().median()
+        zdr_zh_22 = (ds_fil[zdr].where((ds_fil[dbzh]>=21)&(ds_fil[dbzh]<23)&(ds_fil[rhohv]>rhvmin))).compute().median()
+        zdr_zh_24 = (ds_fil[zdr].where((ds_fil[dbzh]>=23)&(ds_fil[dbzh]<25)&(ds_fil[rhohv]>rhvmin))).compute().median()
+        zdr_zh_26 = (ds_fil[zdr].where((ds_fil[dbzh]>=25)&(ds_fil[dbzh]<27)&(ds_fil[rhohv]>rhvmin))).compute().median()
+        zdr_zh_28 = (ds_fil[zdr].where((ds_fil[dbzh]>=27)&(ds_fil[dbzh]<29)&(ds_fil[rhohv]>rhvmin))).compute().median()
+        zdr_zh_30 = (ds_fil[zdr].where((ds_fil[dbzh]>=29)&(ds_fil[dbzh]<31)&(ds_fil[rhohv]>rhvmin))).compute().median()
 
         zdroffset = xr.concat([zdr_zh_20-.23, zdr_zh_22-.27, zdr_zh_24-.33, zdr_zh_26-.40, zdr_zh_28-.48, zdr_zh_30-.56], dim='dataarrays').sum(dim='dataarrays', skipna=True)/6
     
