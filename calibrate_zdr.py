@@ -210,7 +210,7 @@ for ff in files:
                     
             # Calculate ML
             moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI+"_OC": (-20, 180)}
-            ml = utils.melting_layer_qvp_X_new(data.where(data[X_RHO]>0.7).median("azimuth", keep_attrs=True)\
+            ml = utils.melting_layer_qvp_X_new(data.where( (data[X_RHO]>0.7) & (data[X_DBZH] > 0) & (data[X_ZDR] > -1) ).median("azimuth", keep_attrs=True)\
                                                .assign_coords({"z":data["z"].median("azimuth", keep_attrs=True)})\
                                                .swap_dims({"range":"z"}), min_h=min_height,
                                                dim="z", moments=moments)
@@ -246,10 +246,16 @@ for ff in files:
             
             ml = ml.assign_coords(height_ml_new_gia = ("time",first_valid_height_after_ml.data))
             ml = ml.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data))
+            
+            # attach temperature data again, then filter ML heights above -1 C
+            ml = utils.attach_ERA5_TEMP(ml, site=loc)
+            
+            height_ml_new_gia_data = ml.height_ml_new_gia.where(ml.height_ml_new_gia<(ml["TEMP"]>-1).idxmin("z")).compute().data
+            height_ml_bottom_new_gia_data = ml.height_ml_bottom_new_gia.where(ml.height_ml_bottom_new_gia<(ml["TEMP"]>-1).idxmin("z")).compute().data
     
             # Add ML to data
-            data = data.assign_coords(height_ml_new_gia = ("time",first_valid_height_after_ml.data))
-            data = data.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data))
+            data = data.assign_coords(height_ml_new_gia = ("time",height_ml_new_gia_data))
+            data = data.assign_coords(height_ml_bottom_new_gia = ("time", height_ml_bottom_new_gia_data))
         else:
             print(X_PHI+" not found in the data, skipping ML detection and below-ML offset")
         
