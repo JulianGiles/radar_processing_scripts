@@ -127,7 +127,7 @@ for ff in files:
     # make a new array as before
     rho_nc_out2 = xr.merge(rho_nc2)
     rho_nc_out2.attrs["noise correction level"]=ncl*1.02
-    
+
     # create saving directory if it does not exist
     if "dwd" in ff:
         country="dwd"
@@ -143,12 +143,23 @@ for ff in files:
     if not os.path.exists(savepathdir):
         os.makedirs(savepathdir)
 
+    # copy encoding from DWD to reduce file size
+    rho_nc_out["RHOHV_NC"].encoding = data[X_RHO].encoding
+    rho_nc_out2["RHOHV_NC"].encoding = data[X_RHO].encoding
+    if country=="dwd": # special treatment for SNR since it may not be available in turkish data
+        rho_nc_out["SNRH"].encoding = data["SNRHC"].encoding
+        rho_nc_out2["SNRH"].encoding = data["SNRHC"].encoding
+    else:
+        rho_nc_dwd = xr.open_dataset(ff_parts[0]+"dwd/rhohv_nc/2015/2015-01/2015-01-01/pro/vol5minng01/00/ras07-vol5minng01_sweeph5onem_rhohv_nc_00-2015010100005900-pro-10392-hd5")
+        rho_nc_out["SNRH"].encoding = rho_nc_dwd["SNRH"].encoding
+        rho_nc_out2["SNRH"].encoding = rho_nc_dwd["SNRH"].encoding
+
     # save the arrays
     filename = ("rhohv_nc").join(savepath.split("allmoms"))
     rho_nc_out.to_netcdf(filename)
     
     filename = ("rhohv_nc_2percent").join(savepath.split("allmoms"))
-    rho_nc_out.to_netcdf(filename)
+    rho_nc_out2.to_netcdf(filename)
     
 #%% print how much time did it take
 total_time = time.time() - start_time
