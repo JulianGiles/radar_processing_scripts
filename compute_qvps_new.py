@@ -245,20 +245,20 @@ for ff in files:
     
     # Check that PHIDP is in data, otherwise skip ML detection
     if X_PHI in data.data_vars:
-    ######### Processing PHIDP
-    #### fix PHIDP
-    # filter
-    phi = ds[X_PHI].where((ds[X_RHO]>=0.9) & (ds[X_DBZH]>=0))
-    # calculate offset
-    phidp_offset = phi.pipe(radarmet.phase_offset, rng=3000)
-    off = phidp_offset["PHIDP_OFFSET"]
-    start_range = phidp_offset["start_range"]
+        ######### Processing PHIDP
+        #### fix PHIDP
+        # filter
+        phi = ds[X_PHI].where((ds[X_RHO]>=0.9) & (ds[X_DBZH]>=0))
+        # calculate offset
+        phidp_offset = phi.pipe(radarmet.phase_offset, rng=3000)
+        off = phidp_offset["PHIDP_OFFSET"]
+        start_range = phidp_offset["start_range"]
     
-    # apply offset
-    fix_range = 750
-    phi_fix = ds[X_PHI].copy()
-    off_fix = off.broadcast_like(phi_fix)
-    phi_fix = phi_fix.where(phi_fix.range >= start_range + fix_range).fillna(off_fix) - off
+        # apply offset
+        fix_range = 750
+        phi_fix = ds[X_PHI].copy()
+        off_fix = off.broadcast_like(phi_fix)
+        phi_fix = phi_fix.where(phi_fix.range >= start_range + fix_range).fillna(off_fix) - off
     
     # smooth and mask
     window = 7 # window along range   <----------- this value is quite important for the quality of KDP, since phidp is very noisy
