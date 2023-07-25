@@ -211,7 +211,7 @@ for ff in files:
         zdr_offset = xr.open_mfdataset(zdroffsetpath+"/"+zdrofffile)
         
         # create ZDR_OC variable
-        swp = swp.assign({X_ZDR+"_OC": swp[X_ZDR]-zdr_offset["ZDR_offset"]})
+        swp = swp.assign({X_ZDR+"_OC": swp[X_ZDR]-zdr_offset["ZDR_offset"].values})
         swp[X_ZDR+"_OC"].attrs = swp[X_ZDR].attrs
         
         # Change the default ZDR name to the corrected one
