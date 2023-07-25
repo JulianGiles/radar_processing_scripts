@@ -1554,7 +1554,7 @@ def phidp_offset_detection(ds, phidp="PHIDP", rhohv="RHOHV", dbzh="DBZH", rhohvm
 # ZDR calibration from VPs. Adapted from Daniel Sanchez-Rivas (TowerPy) to xarray
 def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="median",
                         mlbottom=None, temp=None, min_h=1000, zhmin=5,
-                        zhmax=30, rhvmin=0.98, minbins=2):
+                        zhmax=30, rhvmin=0.98, minbins=2, timemode="step"):
     r"""
     Calculate the offset on :math:`Z_{DR}` using vertical profiles. Only gates 
     below the melting layer bottom (i.e. the rain region below the melting layer)
@@ -1601,6 +1601,9 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
     minbins : float, optional
         Minimum number of :math:`Z_{DR}` bins related to light rain.
         The default is 2.
+    timemode : str
+        How to calculate the offset in case a time dimension is found. "step" calculates one offset
+        per timestep. "all" calculates one offset for the whole ds. Default is "step"
 
     Returns
     ----------
@@ -1662,44 +1665,83 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
     # Filter according to DBZH and RHOHV limits
     ds_zdr = ds_zdr.where(ds[dbzh]>zhmin).where(ds[dbzh]<zhmax).where(ds[rhohv]>rhvmin)
 
-    # Get dimensions to reduce (other than time)
-    dims_wotime = [kk for kk in ds_zdr.dims]
-    while "time" in dims_wotime:
-        dims_wotime.remove("time")
+    if "time" in ds and timemode=="step":
+        # Get dimensions to reduce (other than time)
+        dims_wotime = [kk for kk in ds_zdr.dims]
+        while "time" in dims_wotime:
+            dims_wotime.remove("time")
                             
-    # Filter according to the minimum number of bins limit
-    ds_zdr = ds_zdr.where(ds_zdr.count(dim=dims_wotime)>minbins)
-    
-    # Calculate offset and others
-    if mode=="median":
-        zdr_offset = ds_zdr.median(dim=dims_wotime).assign_attrs(
-            {"long_name":"ZDR offset from vertical profile (median)", 
-             "standard_name":"ZDR_offset_from_vertical_profile"}
+        # Filter according to the minimum number of bins limit
+        ds_zdr = ds_zdr.where(ds_zdr.count(dim=dims_wotime)>minbins)
+        
+        # Calculate offset and others
+        if mode=="median":
+            zdr_offset = ds_zdr.median(dim=dims_wotime).assign_attrs(
+                {"long_name":"ZDR offset from vertical profile (median)", 
+                 "standard_name":"ZDR_offset_from_vertical_profile"}
+                )
+        elif mode=="mean":
+            zdr_offset = ds_zdr.mean(dim=dims_wotime).assign_attrs(
+                {"long_name":"ZDR offset from vertical profile (mean)", 
+                 "standard_name":"ZDR_offset_from_vertical_profile"}
+                )
+        else:
+            raise KeyError("mode must be either 'median' or 'mean'")
+
+        zdr_max = ds_zdr.max(dim=dims_wotime).assign_attrs(
+            {"long_name":"ZDR max from offset calculation", 
+             "standard_name":"ZDR_max_from_offset_calculation"}
             )
-    elif mode=="mean":
-        zdr_offset = ds_zdr.mean(dim=dims_wotime).assign_attrs(
-            {"long_name":"ZDR offset from vertical profile (mean)", 
-             "standard_name":"ZDR_offset_from_vertical_profile"}
+        zdr_min = ds_zdr.min(dim=dims_wotime).assign_attrs(
+            {"long_name":"ZDR min from offset calculation", 
+             "standard_name":"ZDR_min_from_offset_calculation"}
             )
+        zdr_std = ds_zdr.std(dim=dims_wotime).assign_attrs(
+            {"long_name":"ZDR standard deviation from offset calculation", 
+             "standard_name":"ZDR_std_from_offset_calculation"}
+            )
+        zdr_sem = ( zdr_std / ds_zdr.count(dim=dims_wotime)**(1/2) ).assign_attrs(
+            {"long_name":"ZDR standard error of the mean from offset calculation", 
+             "standard_name":"ZDR_sem_from_offset_calculation"}
+            )
+
+                
     else:
-        raise KeyError("mode must be either 'median' or 'mean'")
-    zdr_max = ds_zdr.max(dim=dims_wotime).assign_attrs(
-        {"long_name":"ZDR max from offset calculation", 
-         "standard_name":"ZDR_max_from_offset_calculation"}
-        )
-    zdr_min = ds_zdr.min(dim=dims_wotime).assign_attrs(
-        {"long_name":"ZDR min from offset calculation", 
-         "standard_name":"ZDR_min_from_offset_calculation"}
-        )
-    zdr_std = ds_zdr.std(dim=dims_wotime).assign_attrs(
-        {"long_name":"ZDR standard deviation from offset calculation", 
-         "standard_name":"ZDR_std_from_offset_calculation"}
-        )
-    zdr_sem = ( zdr_std / ds_zdr.count(dim=dims_wotime)**(1/2) ).assign_attrs(
-        {"long_name":"ZDR standard error of the mean from offset calculation", 
-         "standard_name":"ZDR_sem_from_offset_calculation"}
-        )
-    
+        # Filter according to the minimum number of bins limit
+        ds_zdr = ds_zdr.where(ds_zdr.count()>minbins)
+
+        # Calculate offset and others
+        if mode=="median":
+            zdr_offset = ds_zdr.compute().median().assign_attrs(
+                {"long_name":"ZDR offset from vertical profile (median)", 
+                 "standard_name":"ZDR_offset_from_vertical_profile"}
+                )
+        elif mode=="mean":
+            zdr_offset = ds_zdr.compute().mean().assign_attrs(
+                {"long_name":"ZDR offset from vertical profile (mean)", 
+                 "standard_name":"ZDR_offset_from_vertical_profile"}
+                )
+        else:
+            raise KeyError("mode must be either 'median' or 'mean'")
+
+        zdr_max = ds_zdr.compute().max().assign_attrs(
+            {"long_name":"ZDR max from offset calculation", 
+             "standard_name":"ZDR_max_from_offset_calculation"}
+            )
+        zdr_min = ds_zdr.compute().min().assign_attrs(
+            {"long_name":"ZDR min from offset calculation", 
+             "standard_name":"ZDR_min_from_offset_calculation"}
+            )
+        zdr_std = ds_zdr.compute().std().assign_attrs(
+            {"long_name":"ZDR standard deviation from offset calculation", 
+             "standard_name":"ZDR_std_from_offset_calculation"}
+            )
+        zdr_sem = ( zdr_std / ds_zdr.compute().count()**(1/2) ).assign_attrs(
+            {"long_name":"ZDR standard error of the mean from offset calculation", 
+             "standard_name":"ZDR_sem_from_offset_calculation"}
+            )
+
+            
     # Merge results in a dataset
     ds_offset = xr.Dataset({"ZDR_offset": zdr_offset,
                             "ZDR_max_from_offset": zdr_max,

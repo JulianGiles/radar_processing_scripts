@@ -260,9 +260,29 @@ for ff in files:
             print(X_PHI+" not found in the data, skipping ML detection and below-ML offset")
         
         if 1 in calib_types:
-            if "height_ml_bottom_new_gia" in data:
-                # Calculate offset below ML
-                zdr_offset = utils.zdr_offset_detection_vps(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, min_h=min_height).compute()
+            #### Calculate per timestep and full timespan (daily for dwd and dmi concat files)
+            for timemode in ["step", "all"]:
+                # the the file name appendage for saving the file
+                fn_app = ["_timesteps" if timemode=="step" else "" ][0]
+                
+                if "height_ml_bottom_new_gia" in data:
+                    # Calculate offset below ML
+                    zdr_offset = utils.zdr_offset_detection_vps(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, min_h=min_height, timemode=timemode).compute()
+            
+                    # Copy encodings
+                    zdr_offset["ZDR_offset"].encoding = data[X_ZDR].encoding
+                    zdr_offset["ZDR_max_from_offset"].encoding = data[X_ZDR].encoding
+                    zdr_offset["ZDR_min_from_offset"].encoding = data[X_ZDR].encoding
+                    zdr_offset["ZDR_std_from_offset"].encoding = data[X_ZDR].encoding
+                    zdr_offset["ZDR_sem_from_offset"].encoding = data[X_RHO].encoding
+                    
+                    # save the arrays
+                    savepath = make_savedir(ff, "VP")
+                    filename = ("zdr_offset_belowML"+fn_app).join(savepath.split("allmoms"))
+                    zdr_offset.to_netcdf(filename)
+                
+                # calculate offset below 3 degrees C
+                zdr_offset = utils.zdr_offset_detection_vps(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=3, min_h=min_height, timemode=timemode).compute()
         
                 # Copy encodings
                 zdr_offset["ZDR_offset"].encoding = data[X_ZDR].encoding
@@ -273,38 +293,39 @@ for ff in files:
                 
                 # save the arrays
                 savepath = make_savedir(ff, "VP")
-                filename = ("zdr_offset_belowML_").join(savepath.split("allmoms"))
+                filename = ("zdr_offset_below3C"+fn_app).join(savepath.split("allmoms"))
                 zdr_offset.to_netcdf(filename)
-            
-            # calculate offset below 3 degrees C
-            zdr_offset = utils.zdr_offset_detection_vps(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=3, min_h=min_height).compute()
     
-            # Copy encodings
-            zdr_offset["ZDR_offset"].encoding = data[X_ZDR].encoding
-            zdr_offset["ZDR_max_from_offset"].encoding = data[X_ZDR].encoding
-            zdr_offset["ZDR_min_from_offset"].encoding = data[X_ZDR].encoding
-            zdr_offset["ZDR_std_from_offset"].encoding = data[X_ZDR].encoding
-            zdr_offset["ZDR_sem_from_offset"].encoding = data[X_RHO].encoding
-            
-            # save the arrays
-            savepath = make_savedir(ff, "VP")
-            filename = ("zdr_offset_below3C_").join(savepath.split("allmoms"))
-            zdr_offset.to_netcdf(filename)
-
-            # calculate offset for the whole column
-            zdr_offset = utils.zdr_offset_detection_vps(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=-100, min_h=min_height).compute()
+                # calculate offset above 0 degrees C
+                zdr_offset = utils.zdr_offset_detection_vps(data.where(data["TEMP"]<0), zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=-100, min_h=min_height, timemode=timemode).compute()
+        
+                # Copy encodings
+                zdr_offset["ZDR_offset"].encoding = data[X_ZDR].encoding
+                zdr_offset["ZDR_max_from_offset"].encoding = data[X_ZDR].encoding
+                zdr_offset["ZDR_min_from_offset"].encoding = data[X_ZDR].encoding
+                zdr_offset["ZDR_std_from_offset"].encoding = data[X_ZDR].encoding
+                zdr_offset["ZDR_sem_from_offset"].encoding = data[X_RHO].encoding
+                
+                # save the arrays
+                savepath = make_savedir(ff, "VP")
+                filename = ("zdr_offset_above0C"+fn_app).join(savepath.split("allmoms"))
+                zdr_offset.to_netcdf(filename)
     
-            # Copy encodings
-            zdr_offset["ZDR_offset"].encoding = data[X_ZDR].encoding
-            zdr_offset["ZDR_max_from_offset"].encoding = data[X_ZDR].encoding
-            zdr_offset["ZDR_min_from_offset"].encoding = data[X_ZDR].encoding
-            zdr_offset["ZDR_std_from_offset"].encoding = data[X_ZDR].encoding
-            zdr_offset["ZDR_sem_from_offset"].encoding = data[X_RHO].encoding
-            
-            # save the arrays
-            savepath = make_savedir(ff, "VP")
-            filename = ("zdr_offset_wholecol_").join(savepath.split("allmoms"))
-            zdr_offset.to_netcdf(filename)
+    
+                # calculate offset for the whole column
+                zdr_offset = utils.zdr_offset_detection_vps(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=-100, min_h=min_height, timemode=timemode).compute()
+        
+                # Copy encodings
+                zdr_offset["ZDR_offset"].encoding = data[X_ZDR].encoding
+                zdr_offset["ZDR_max_from_offset"].encoding = data[X_ZDR].encoding
+                zdr_offset["ZDR_min_from_offset"].encoding = data[X_ZDR].encoding
+                zdr_offset["ZDR_std_from_offset"].encoding = data[X_ZDR].encoding
+                zdr_offset["ZDR_sem_from_offset"].encoding = data[X_RHO].encoding
+                
+                # save the arrays
+                savepath = make_savedir(ff, "VP")
+                filename = ("zdr_offset_wholecol"+fn_app).join(savepath.split("allmoms"))
+                zdr_offset.to_netcdf(filename)
 
         if 2 in calib_types:
             if "height_ml_bottom_new_gia" in data:
@@ -316,7 +337,7 @@ for ff in files:
                 
                 # save the arrays
                 savepath = make_savedir(ff, "LR_consistency")
-                filename = ("zdr_offset_belowML_timesteps_").join(savepath.split("allmoms"))
+                filename = ("zdr_offset_belowML_timesteps").join(savepath.split("allmoms"))
                 zdr_offset.to_netcdf(filename)
                 
                 # Calculate offset below ML for full timespan
@@ -327,7 +348,7 @@ for ff in files:
                 
                 # save the arrays
                 savepath = make_savedir(ff, "LR_consistency")
-                filename = ("zdr_offset_belowML_").join(savepath.split("allmoms"))
+                filename = ("zdr_offset_belowML").join(savepath.split("allmoms"))
                 zdr_offset.to_netcdf(filename)
 
             # Calculate offset below 3 degrees C per timestep
@@ -338,7 +359,7 @@ for ff in files:
             
             # save the arrays
             savepath = make_savedir(ff, "LR_consistency")
-            filename = ("zdr_offset_below3C_timesteps_").join(savepath.split("allmoms"))
+            filename = ("zdr_offset_below3C_timesteps").join(savepath.split("allmoms"))
             zdr_offset.to_netcdf(filename)
             
             # Calculate offset below ML for full timespan
@@ -349,7 +370,7 @@ for ff in files:
             
             # save the arrays
             savepath = make_savedir(ff, "LR_consistency")
-            filename = ("zdr_offset_below3C_").join(savepath.split("allmoms"))
+            filename = ("zdr_offset_below3C").join(savepath.split("allmoms"))
             zdr_offset.to_netcdf(filename)
 
 #%% print how much time did it take
