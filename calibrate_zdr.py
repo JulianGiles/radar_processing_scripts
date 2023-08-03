@@ -27,7 +27,10 @@ Script for calculating ZDR calibration from different methods.
 
 
 import os
-os.chdir('/home/jgiles/')
+try:
+    os.chdir('/home/jgiles/')
+except FileNotFoundError:
+    None
 
 
 # NEEDS WRADLIB 1.19 !! (OR GREATER?)
@@ -159,7 +162,7 @@ for ff in files:
     
     data = utils.attach_ERA5_TEMP(data, site=loc)
 
-#%% Calculate ZDR offset method 1
+#%% Calculate ZDR offset method 1 or 2
     if 1 in calib_types or 2 in calib_types:
         min_height = min_hgt+data["altitude"].values
 
