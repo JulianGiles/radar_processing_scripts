@@ -1072,8 +1072,12 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
     enddt = dt.datetime.fromordinal(enddt0.toordinal())
     
     # open ERA5 files
-    era5_t = xr.open_mfdataset(reversed(glob.glob(era5_dir+"temperature/*"+str(startdt.year)+"*")), concat_dim="lvl", combine="nested")
-    era5_g = xr.open_mfdataset(reversed(glob.glob(era5_dir+"geopotential/*"+str(startdt.year)+"*")), concat_dim="lvl", combine="nested")
+    era5_t = xr.open_mfdataset(reversed(sorted(glob.glob(era5_dir+"temperature/*"+str(startdt.year)+"*"), 
+                                               key=lambda file_name: int(file_name.split("/")[-1].split('_')[1]))), 
+                               concat_dim="lvl", combine="nested")
+    era5_g = xr.open_mfdataset(reversed(sorted(glob.glob(era5_dir+"temperature/*"+str(startdt.year)+"*"), 
+                                               key=lambda file_name: int(file_name.split("/")[-1].split('_')[1]))), 
+                               concat_dim="lvl", combine="nested")
     
     # add altitude coord to temperature data
     earth_r = wrl.georef.projection.get_earth_radius(ds.latitude.values)
