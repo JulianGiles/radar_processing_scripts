@@ -11,7 +11,10 @@ then generates QVPs including sounding temperature values and saves to nc files.
 """
 
 import os
-os.chdir('/home/jgiles/')
+try:
+    os.chdir('/home/jgiles/')
+except FileNotFoundError:
+    None
 
 
 # NEEDS WRADLIB 1.19 !! (OR GREATER?)
@@ -46,6 +49,7 @@ start_time = time.time()
 
 #%% Set paths and options. We are going to convert the data for every day of data (i.e. for every daily file)
 
+# path0 = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/" # For testing
 path0 = sys.argv[1] # read path from console
 overwrite = True # overwrite existing files?
 
@@ -81,7 +85,12 @@ min_hgt = 600 # minimum height above the radar to be considered when calculating
 
 # Use ERA5 temperature profile? If so, it does not use sounding data
 era5_temp = True
-era5_dir = "/automount/ags/jgiles/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
+if "jgiles" in files[0]:
+    # then we are in local system
+    era5_dir = "/automount/ags/jgiles/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
+elif "giles1" in files[0]:
+    # then we are in JSC
+    era5_dir = "/p/scratch/detectrea/giles1/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
 
 # download sounding data?
 download_sounding = False
@@ -207,7 +216,7 @@ for ff in files:
             country="dwd"
         elif "dmi" in ff:
             country="dmi"
-        zdroffsetpath = os.path.dirname(edit_str(ff, country, country+zdroffdir))
+        zdroffsetpath = os.path.dirname(edit_str(edit_str(ff, country, country+zdroffdir), "/vol5minng01/07/", "/90gradstarng01/00/"))
         zdr_offset = xr.open_mfdataset(zdroffsetpath+"/"+zdrofffile)
         
         # create ZDR_OC variable
@@ -452,3 +461,7 @@ for ff in files:
 #%% Save dataset      
     # save file
     ds_qvp_ra.to_netcdf(savepath)
+
+#%% print how much time did it take
+total_time = time.time() - start_time
+print(f"Script took {total_time/60:.2f} minutes to run.")
