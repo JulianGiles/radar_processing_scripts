@@ -1075,7 +1075,7 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
     era5_t = xr.open_mfdataset(reversed(sorted(glob.glob(era5_dir+"temperature/*"+str(startdt.year)+"*"), 
                                                key=lambda file_name: int(file_name.split("/")[-1].split('_')[1]))), 
                                concat_dim="lvl", combine="nested")
-    era5_g = xr.open_mfdataset(reversed(sorted(glob.glob(era5_dir+"temperature/*"+str(startdt.year)+"*"), 
+    era5_g = xr.open_mfdataset(reversed(sorted(glob.glob(era5_dir+"geopotential/*"+str(startdt.year)+"*"), 
                                                key=lambda file_name: int(file_name.split("/")[-1].split('_')[1]))), 
                                concat_dim="lvl", combine="nested")
     
