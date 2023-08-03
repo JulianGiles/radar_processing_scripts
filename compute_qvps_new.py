@@ -53,9 +53,16 @@ start_time = time.time()
 path0 = sys.argv[1] # read path from console
 overwrite = True # overwrite existing files?
 
-zdroffdir = "/calibration/zdr/VP/" # subfolder where to find the zdr offset data
-zdrofffile = "*zdr_offset_belowML_00*" # pattern to select the appropriate file (careful with the zdr_offset_belowML_timesteps)
+# Set the possible ZDR calibrations locations to include (in order of priority)
+# The script will try to correct according to the first offset; if not available or nan it will 
+# continue with the next one, and so on. Only the used offset will be outputted in the final file.
+# All items in zdrofffile will be tested in each zdroffdir to load the data.
+zdroffdir = ["/calibration/zdr/VP/", "/calibration/zdr/LR_consistency/"] # subfolder(s) where to find the zdr offset data
+zdrofffile = ["*zdr_offset_belowML_00*", "*zdr_offset_below3C_00*", "*zdr_offset_wholecol_00*",
+              "*zdr_offset_belowML_07*", "*zdr_offset_below3C_07*",
+              "*zdr_offset_belowML-*", "*zdr_offset_below3C-*"] # pattern to select the appropriate file (careful with the zdr_offset_belowML_timesteps)
 
+# set the RHOHV correction location
 rhoncdir = "/rhohv_nc/" # subfolder where to find the noise corrected rhohv data
 rhoncfile = "*rhohv_nc_2percent*" # pattern to select the appropriate file (careful with the rhohv_nc_2percent)
 
@@ -211,23 +218,49 @@ for ff in files:
             break
 
     ### Load ZDR offset if available
+    if "dwd" in ff:
+        country="dwd"
+    elif "dmi" in ff:
+        country="dmi"
+
+    # We define a custom exception to stop the next nexted loops as soon as a file is loaded
+    class FileFound(Exception):
+        pass
+
     try:
-        if "dwd" in ff:
-            country="dwd"
-        elif "dmi" in ff:
-            country="dmi"
-        zdroffsetpath = os.path.dirname(edit_str(edit_str(ff, country, country+zdroffdir), "/vol5minng01/07/", "/90gradstarng01/00/"))
-        zdr_offset = xr.open_mfdataset(zdroffsetpath+"/"+zdrofffile)
-        
-        # create ZDR_OC variable
-        swp = swp.assign({X_ZDR+"_OC": swp[X_ZDR]-zdr_offset["ZDR_offset"].values})
-        swp[X_ZDR+"_OC"].attrs = swp[X_ZDR].attrs
-        
-        # Change the default ZDR name to the corrected one
-        X_ZDR = X_ZDR+"_OC"
-    except OSError:
-        print("No zdr offset to load: "+zdroffsetpath+"/"+zdrofffile)
-        
+        for zdrod in zdroffdir:
+            for zdrof in zdrofffile:
+                try:
+                    zdroffsetpath = os.path.dirname(edit_str(ff, country, country+zdrod))
+                    if "/VP/" in zdrod and "/vol5minng01/" in ff:
+                        elevnr = ff.split("/vol5minng01/")[-1][0:2]
+                        zdroffsetpath = edit_str(zdroffsetpath, "/vol5minng01/"+elevnr, "/90gradstarng01/00")
+                        
+                    zdr_offset = xr.open_mfdataset(zdroffsetpath+"/"+zdrof)
+                    
+                    # check that the offset have a valid value. Otherwise skip
+                    if zdr_offset["ZDR_offset"].isnull().all():
+                        continue
+                    
+                    # create ZDR_OC variable
+                    swp = swp.assign({X_ZDR+"_OC": swp[X_ZDR]-zdr_offset["ZDR_offset"].values})
+                    swp[X_ZDR+"_OC"].attrs = swp[X_ZDR].attrs
+                    
+                    # Change the default ZDR name to the corrected one
+                    X_ZDR = X_ZDR+"_OC"
+                    
+                    # raise the custom exception to stop the loops
+                    raise FileFound 
+                    
+                except OSError:
+                    pass
+                
+        # If no ZDR offset was loaded, print a message
+        print("No zdr offset to load: "+zdroffsetpath+"/"+zdrof)
+    except FileFound:
+        pass
+                
+                            
     ### Load noise corrected RHOHV if available
     try:
         if "dwd" in ff:
