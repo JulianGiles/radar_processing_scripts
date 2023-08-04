@@ -300,7 +300,7 @@ for ff in files:
             ywin0=1 # window size (bins) for the height rolling mean smoothing in ML detection
         elif "dmi" in ff:
             country="dmi"
-            window0=11 # number of range bins for phidp smoothing (this one is quite important!)
+            window0=17 # number of range bins for phidp smoothing (this one is quite important!)
             winlen0=21 # size of range window (bins) for the kdp-phidp calculations
             xwin0=5 # window size (bins) for the time rolling median smoothing in ML detection
             ywin0=5 # window size (bins) for the height rolling mean smoothing in ML detection
@@ -377,7 +377,7 @@ for ff in files:
             moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI+"_OC": (-20, 180)}
             clowres0=True
         elif country=="dmi":
-            moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI+"_OC": (-180, 180)}
+            moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI+"_OC": (-20, 180)}
             clowres0=False
 
         dim = 'z'
