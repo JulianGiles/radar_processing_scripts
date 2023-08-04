@@ -436,12 +436,18 @@ for ff in files:
  
 #%% Fix KDP in the ML using PHIDP:
     if X_PHI in data.data_vars:    
-        ds_qvp_ra3 = ds_qvp_ra.where(ds_qvp_ra["TEMP"]>-1) # discard possible erroneous ML values
+       
+        # discard possible erroneous ML values
+        isotherm = -1 # isotherm for the upper limit of possible ML values
+        z_isotherm = ds_qvp_ra.TEMP.isel(z=((ds_qvp_ra["TEMP"]-isotherm)**2).argmin("z").compute())["z"]
+        
+        ds_qvp_ra.coords["height_ml_new_gia"] = ds_qvp_ra["height_ml_new_gia"].where(ds_qvp_ra["height_ml_new_gia"]<=z_isotherm.values).compute()
+        ds_qvp_ra.coords["height_ml_bottom_new_gia"] = ds_qvp_ra["height_ml_bottom_new_gia"].where(ds_qvp_ra["height_ml_new_gia"]<=z_isotherm.values).compute()
         
         # get where PHIDP has nan values
         nan = np.isnan(ds[X_PHI+"_OC_MASKED"]) 
         # get PHIDP outside the ML
-        phi2 = ds[X_PHI+"_OC_MASKED"].where((ds.z < ds_qvp_ra3.height_ml_bottom_new_gia) | (ds.z > ds_qvp_ra3.height_ml_new_gia))#.interpolate_na(dim='range',dask_gufunc_kwargs = "allow_rechunk")
+        phi2 = ds[X_PHI+"_OC_MASKED"].where((ds.z < ds_qvp_ra.height_ml_bottom_new_gia) | (ds.z > ds_qvp_ra.height_ml_new_gia))#.interpolate_na(dim='range',dask_gufunc_kwargs = "allow_rechunk")
         # interpolate PHIDP in ML
         phi2 = phi2.interpolate_na(dim='range', method=interpolation_method_ML)
         # restore originally nan values
@@ -456,7 +462,7 @@ for ff in files:
         kdp_ml = radarmet.kdp_from_phidp(phi2, winlen, min_periods=3)
         
         # assign to datasets
-        ds = ds.assign({"KDP_ML_corrected": (["time", "azimuth", "range"], kdp_ml.values, ds_qvp_ra3["KDP"].attrs)})
+        ds = ds.assign({"KDP_ML_corrected": (["time", "azimuth", "range"], kdp_ml.values, ds_qvp_ra["KDP"].attrs)})
         
         #### Optional filtering:
         #ds["KDP_ML_corrected"] = ds.KDP_ML_corrected.where((ds.KDP_ML_corrected >= 0.0) & (ds.KDP_ML_corrected <= 3)) 
