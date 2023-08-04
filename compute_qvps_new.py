@@ -163,6 +163,11 @@ def edit_str(ff, replace, name):
     newff = (name).join(ff_parts)
     return newff
 
+# in case KDP is not in the dataset we defined its attributes according to DWD data:
+KDP_attrs={'_Undetect': 0.0,
+ 'units': 'degrees per kilometer',
+ 'long_name': 'Specific differential phase HV',
+ 'standard_name': 'radar_specific_differential_phase_hv'}
 #%% Load data
 
 for ff in files:
@@ -337,7 +342,7 @@ for ff in files:
         # assign new variables to dataset
         assign = {X_PHI+"_OC_SMOOTH": phi_median.assign_attrs(ds[X_PHI].attrs),
           X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs),
-          "KDP_CONV": kdp.assign_attrs(ds["KDP"].attrs),
+          "KDP_CONV": kdp.assign_attrs(KDP_attrs),
           "PHI_CONV": phidp.assign_attrs(ds[X_PHI].attrs),
         
           X_PHI+"_OFFSET": off.assign_attrs(ds[X_PHI].attrs),
@@ -462,7 +467,7 @@ for ff in files:
         kdp_ml = radarmet.kdp_from_phidp(phi2, winlen, min_periods=3)
         
         # assign to datasets
-        ds = ds.assign({"KDP_ML_corrected": (["time", "azimuth", "range"], kdp_ml.values, ds_qvp_ra["KDP"].attrs)})
+        ds = ds.assign({"KDP_ML_corrected": (["time", "azimuth", "range"], kdp_ml.values, KDP_attrs)})
         
         #### Optional filtering:
         #ds["KDP_ML_corrected"] = ds.KDP_ML_corrected.where((ds.KDP_ML_corrected >= 0.0) & (ds.KDP_ML_corrected <= 3)) 
