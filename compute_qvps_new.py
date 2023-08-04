@@ -467,7 +467,7 @@ for ff in files:
         kdp_ml = radarmet.kdp_from_phidp(phi2, winlen, min_periods=3)
         
         # assign to datasets
-        ds = ds.assign({"KDP_ML_corrected": (["time", "azimuth", "range"], kdp_ml.values, KDP_attrs)})
+        ds = ds.assign({"KDP_ML_corrected": (["time", "azimuth", "range"], kdp_ml.fillna(ds["KDP_CONV"]).values, KDP_attrs)})
         
         #### Optional filtering:
         #ds["KDP_ML_corrected"] = ds.KDP_ML_corrected.where((ds.KDP_ML_corrected >= 0.0) & (ds.KDP_ML_corrected <= 3)) 
