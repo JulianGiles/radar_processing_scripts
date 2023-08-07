@@ -135,7 +135,14 @@ def make_savedir(ff, name):
     if not os.path.exists(savepathdir):
         os.makedirs(savepathdir)
     return savepath
-        
+
+# ERA5 folder
+if "jgiles" in files[0]:
+    # then we are in local system
+    era5_dir = "/automount/ags/jgiles/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
+elif "giles1" in files[0]:
+    # then we are in JSC
+    era5_dir = "/p/scratch/detectrea/giles1/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
 
 #%% Load data
 
@@ -160,7 +167,7 @@ for ff in files:
     # find loc and assign TEMP data accordingly    
     loc = find_loc(locs, ff)
     
-    data = utils.attach_ERA5_TEMP(data, site=loc)
+    data = utils.attach_ERA5_TEMP(data, path=loc.join(era5_dir.split("loc")))
 
 #%% Calculate ZDR offset method 1 or 2
     if 1 in calib_types or 2 in calib_types:
@@ -211,54 +218,57 @@ for ff in files:
             
             data = data.assign({X_PHI+"_OC": phi_fix.assign_attrs(data[X_PHI].attrs)})
                     
-            # Calculate ML
-            moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI+"_OC": (-20, 180)}
-            ml = utils.melting_layer_qvp_X_new(data.where( (data[X_RHO]>0.7) & (data[X_DBZH] > 0) & (data[X_ZDR] > -1) ).median("azimuth", keep_attrs=True)\
-                                               .assign_coords({"z":data["z"].median("azimuth", keep_attrs=True)})\
-                                               .swap_dims({"range":"z"}), min_h=min_height,
-                                               dim="z", moments=moments)
-            
-            #### Giagrande refinment
-            hdim = "z"
-            # get data iside the currently detected ML
-            cut_above = ml.where(ml["z"]<ml.mlh_top)
-            cut_above = cut_above.where(ml["z"]>ml.mlh_bottom)
-            
-            # get the heights with min RHOHV
-            min_height_ML = cut_above[X_RHO].idxmin(dim="z") 
-            
-            # cut the data below and above the previous value
-            new_cut_below_min_ML = ml.where(ml["z"] > min_height_ML)
-            new_cut_above_min_ML = ml.where(ml["z"] < min_height_ML)
-            
-            # Filter out values outside some RHOHV range
-            new_cut_below_min_ML_filter = new_cut_below_min_ML[X_RHO].where((new_cut_below_min_ML[X_RHO]>=0.97)&(new_cut_below_min_ML[X_RHO]<=1))
-            new_cut_above_min_ML_filter = new_cut_above_min_ML[X_RHO].where((new_cut_above_min_ML[X_RHO]>=0.97)&(new_cut_above_min_ML[X_RHO]<=1))            
-            
-            
-            ######### ML TOP Giangrande refinement
-            
-            notnull = new_cut_below_min_ML_filter.notnull() # this replaces nan for False and the rest for True
-            first_valid_height_after_ml = notnull.where(notnull).idxmax(dim=hdim) # get the first True value, i.e. first valid value
-            
-            ######### ML BOTTOM Giangrande refinement
-            # For this one, we need to flip the coordinate so that it is actually selecting the last valid index
-            notnull = new_cut_above_min_ML_filter.notnull() # this replaces nan for False and the rest for True
-            last_valid_height = notnull.where(notnull).isel({hdim:slice(None, None, -1)}).idxmax(dim=hdim) # get the first True value, i.e. first valid value (flipped)
-            
-            
-            ml = ml.assign_coords(height_ml_new_gia = ("time",first_valid_height_after_ml.data))
-            ml = ml.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data))
-            
-            # attach temperature data again, then filter ML heights above -1 C
-            ml = utils.attach_ERA5_TEMP(ml, site=loc)
-            
-            height_ml_new_gia_data = ml.height_ml_new_gia.where(ml.height_ml_new_gia<(ml["TEMP"]>-1).idxmin("z")).compute().data
-            height_ml_bottom_new_gia_data = ml.height_ml_bottom_new_gia.where(ml.height_ml_bottom_new_gia<(ml["TEMP"]>-1).idxmin("z")).compute().data
-    
-            # Add ML to data
-            data = data.assign_coords(height_ml_new_gia = ("time",height_ml_new_gia_data))
-            data = data.assign_coords(height_ml_bottom_new_gia = ("time", height_ml_bottom_new_gia_data))
+            try:
+                # Calculate ML
+                moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI+"_OC": (-20, 180)}
+                ml = utils.melting_layer_qvp_X_new(data.where( (data[X_RHO]>0.7) & (data[X_DBZH] > 0) & (data[X_ZDR] > -1) ).median("azimuth", keep_attrs=True)\
+                                                   .assign_coords({"z":data["z"].median("azimuth", keep_attrs=True)})\
+                                                   .swap_dims({"range":"z"}), min_h=min_height,
+                                                   dim="z", moments=moments)
+                
+                #### Giagrande refinment
+                hdim = "z"
+                # get data iside the currently detected ML
+                cut_above = ml.where(ml["z"]<ml.mlh_top)
+                cut_above = cut_above.where(ml["z"]>ml.mlh_bottom)
+                
+                # get the heights with min RHOHV
+                min_height_ML = cut_above[X_RHO].idxmin(dim="z") 
+                
+                # cut the data below and above the previous value
+                new_cut_below_min_ML = ml.where(ml["z"] > min_height_ML)
+                new_cut_above_min_ML = ml.where(ml["z"] < min_height_ML)
+                
+                # Filter out values outside some RHOHV range
+                new_cut_below_min_ML_filter = new_cut_below_min_ML[X_RHO].where((new_cut_below_min_ML[X_RHO]>=0.97)&(new_cut_below_min_ML[X_RHO]<=1))
+                new_cut_above_min_ML_filter = new_cut_above_min_ML[X_RHO].where((new_cut_above_min_ML[X_RHO]>=0.97)&(new_cut_above_min_ML[X_RHO]<=1))            
+                
+                
+                ######### ML TOP Giangrande refinement
+                
+                notnull = new_cut_below_min_ML_filter.notnull() # this replaces nan for False and the rest for True
+                first_valid_height_after_ml = notnull.where(notnull).idxmax(dim=hdim) # get the first True value, i.e. first valid value
+                
+                ######### ML BOTTOM Giangrande refinement
+                # For this one, we need to flip the coordinate so that it is actually selecting the last valid index
+                notnull = new_cut_above_min_ML_filter.notnull() # this replaces nan for False and the rest for True
+                last_valid_height = notnull.where(notnull).isel({hdim:slice(None, None, -1)}).idxmax(dim=hdim) # get the first True value, i.e. first valid value (flipped)
+                
+                
+                ml = ml.assign_coords(height_ml_new_gia = ("time",first_valid_height_after_ml.data))
+                ml = ml.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data))
+                
+                # attach temperature data again, then filter ML heights above -1 C
+                ml = utils.attach_ERA5_TEMP(ml, site=loc)
+                
+                height_ml_new_gia_data = ml.height_ml_new_gia.where(ml.height_ml_new_gia<(ml["TEMP"]>-1).idxmin("z")).compute().data
+                height_ml_bottom_new_gia_data = ml.height_ml_bottom_new_gia.where(ml.height_ml_bottom_new_gia<(ml["TEMP"]>-1).idxmin("z")).compute().data
+        
+                # Add ML to data
+                data = data.assign_coords(height_ml_new_gia = ("time",height_ml_new_gia_data))
+                data = data.assign_coords(height_ml_bottom_new_gia = ("time", height_ml_bottom_new_gia_data))
+            except:
+                print("Calculating ML failed, skipping...")
         else:
             print(X_PHI+" not found in the data, skipping ML detection and below-ML offset")
         
