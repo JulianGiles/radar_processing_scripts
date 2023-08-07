@@ -255,6 +255,10 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
         except ValueError:
             xwin-=2
             
+    if xwin == 1:
+        med_mlh_bot = np.nan
+        med_mlh_top = np.nan
+            
     # step 7 (step 5 again)
     above = (1 + fmlh) * med_mlh_top
     below = (1 - fmlh) * med_mlh_bot
@@ -1125,9 +1129,13 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
             cds = cds.interp({'height': rds.z}, method='linear')
             cds = cds.interp({"time": rds.time}, method="linear")
 
-            # Fill any missing values in z
-            cds = cds.bfill(dim="z")
-            cds = cds.ffill(dim="z")
+            # Fill any missing values in z or range
+            try:
+                cds = cds.bfill(dim="z")
+                cds = cds.ffill(dim="z")
+            except ValueError:
+                cds = cds.bfill(dim="range")
+                cds = cds.ffill(dim="range")                
             
             # Fill any missing values in time
             cds = cds.ffill(dim="time")
