@@ -70,9 +70,9 @@ rhoncfile = "*rhohv_nc_2percent*" # pattern to select the appropriate file (care
 if "hd5" in path0 or "h5" in path0:
     files=[path0]
 elif "dwd" in path0:
-    files = sorted(glob.glob(path0+"/*hd5*"))
+    files = sorted(glob.glob(path0+"/*allmoms*hd5*"))
 elif "dmi" in path0:
-    files = sorted(glob.glob(path0+"/*h5*"))
+    files = sorted(glob.glob(path0+"/*allmoms*h5*"))
 else:
     print("Country code not found in path")
     sys.exit("Country code not found in path.")
