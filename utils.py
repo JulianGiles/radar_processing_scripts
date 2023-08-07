@@ -1124,6 +1124,15 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
             # cds = cds.interp({'height': rds.z}, method='linear')
             cds = cds.interp({'height': rds.z}, method='linear')
             cds = cds.interp({"time": rds.time}, method="linear")
+
+            # Fill any missing values in z
+            cds = cds.bfill(dim="z")
+            cds = cds.ffill(dim="z")
+            
+            # Fill any missing values in time
+            cds = cds.ffill(dim="time")
+            cds = cds.bfill(dim="time")
+
             rds = rds.assign({"TEMP": cds})
             rds.TEMP.attrs["source"]="ERA5"
             return rds
