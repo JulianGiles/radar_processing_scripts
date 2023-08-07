@@ -444,10 +444,7 @@ for ff in files:
        
         # discard possible erroneous ML values
         isotherm = -1 # isotherm for the upper limit of possible ML values
-        try:
-            z_isotherm = ds_qvp_ra.TEMP.isel(z=((ds_qvp_ra["TEMP"]-isotherm)**2).argmin("z").compute())["z"]
-        except ValueError: # in case the selection gives all NaN, isel will raise an error
-            z_isotherm = xr.DataArray(np.nan)
+        z_isotherm = ds_qvp_ra.TEMP.isel(z=((ds_qvp_ra["TEMP"]-isotherm)**2).argmin("z").compute())["z"]
         
         ds_qvp_ra.coords["height_ml_new_gia"] = ds_qvp_ra["height_ml_new_gia"].where(ds_qvp_ra["height_ml_new_gia"]<=z_isotherm.values).compute()
         ds_qvp_ra.coords["height_ml_bottom_new_gia"] = ds_qvp_ra["height_ml_bottom_new_gia"].where(ds_qvp_ra["height_ml_new_gia"]<=z_isotherm.values).compute()
