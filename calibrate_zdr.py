@@ -262,7 +262,7 @@ for ff in files:
                 ml = ml.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data))
                 
                 # attach temperature data again, then filter ML heights above -1 C
-                ml = utils.attach_ERA5_TEMP(ml, site=loc)
+                ml = utils.attach_ERA5_TEMP(ml, path=loc.join(era5_dir.split("loc")))
                 
                 height_ml_new_gia_data = ml.height_ml_new_gia.where(ml.height_ml_new_gia<(ml["TEMP"]>-1).idxmin("z")).compute().data
                 height_ml_bottom_new_gia_data = ml.height_ml_bottom_new_gia.where(ml.height_ml_bottom_new_gia<(ml["TEMP"]>-1).idxmin("z")).compute().data
