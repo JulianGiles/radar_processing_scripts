@@ -6,7 +6,10 @@ Created on Wed Mar 22 13:31:39 2023
 @author: jgiles
 """
 import os
-os.chdir('/home/jgiles/')
+try:
+    os.chdir('/home/jgiles/')
+except FileNotFoundError:
+    None
 
 
 # NEEDS WRADLIB 1.19 !! (OR GREATER?)
@@ -379,7 +382,7 @@ from Scripts.python.radar_processing_scripts import colormap_generator
 
 
 
-timesel = "2019-06-12"
+timesel = "2017-04-12"
 
 mom = "KDP"
 visdict14 = radarmet.visdict14
@@ -390,8 +393,8 @@ cmap = visdict14[mom]["cmap"]
 
 # QVP with ML heights
 ds_qvp_ra["KDP"].loc[{"time":timesel}].plot(x="time", cmap=cmap, norm=norm, extend="both")
-ds_qvp_ra.height_ml.loc[{"time":timesel}].plot(x="time", c="red")
-ds_qvp_ra.height_ml_bottom.loc[{"time":timesel}].plot(x="time", c="blue")
+ds_qvp_ra.height_ml_new_gia.loc[{"time":timesel}].plot(x="time", c="red")
+ds_qvp_ra.height_ml_bottom_new_gia.loc[{"time":timesel}].plot(x="time", c="blue")
 plt.title("original KDP")
 
 # ds_qvp_ra.height_ml_new_gia.loc[{"time":"2017-07-25"}].plot(x="time", c="magenta")
@@ -439,27 +442,31 @@ cmap = visdict14[mom]["cmap"]
 
 # QVP with ML heights
 ds_qvp_ra["DBZH"].loc[{"time":timesel}].plot(x="time", cmap=cmap, norm=norm, extend="both")
-ds_qvp_ra.height_ml.loc[{"time":timesel}].plot(x="time", c="red")
-ds_qvp_ra.height_ml_bottom.loc[{"time":timesel}].plot(x="time", c="blue")
+ds_qvp_ra.height_ml_new_gia.loc[{"time":timesel}].plot(x="time", c="red")
+ds_qvp_ra.height_ml_bottom_new_gia.loc[{"time":timesel}].plot(x="time", c="blue")
 plt.title("DBZH")
 
 
 
 # QVP with ML heights and entropy classification
 mom = "DBZH"
+mom_plot = "DBZH"
 visdict14 = radarmet.visdict14
 norm = radarmet.get_discrete_norm(visdict14[mom]["ticks"])
 cmap = mpl.cm.get_cmap("HomeyerRainbow")
-# cmap = get_discrete_cmap(visdict14["DBZH"]["ticks"], 'HomeyerRainbow')
-# cmap = visdict14[mom]["cmap"]
+cmap = radarmet.get_discrete_cmap(visdict14[mom]["ticks"], 'HomeyerRainbow')
+cmap = visdict14[mom]["cmap"]
 
-ds_qvp_ra["DBZH"].loc[{"time":timesel}].plot(x="time", cmap=cmap, norm=norm, extend="both")
-plt.title("DBZH")
+ds_qvp_ra[mom_plot].loc[{"time":timesel, "z":slice(200+ds_qvp_ra.altitude, 20000)}].plot(x="time", cmap=cmap, norm=norm, extend="both")
+plt.title(mom_plot)
 ds_qvp_ra.height_ml_new_gia.loc[{"time":timesel}].plot(x="time", c="magenta")
 ds_qvp_ra.height_ml_bottom_new_gia.loc[{"time":timesel}].plot(x="time", c="teal")
 
 ds_qvp_ra["min_entropy"].loc[{"time":timesel}].plot.contourf(x="time", levels=[0.8,1], hatches=["", "X"], colors="none", add_colorbar=False)
 
+ds_qvp_ra["TEMP"].loc[{"time":timesel}].plot.contour(x="time", levels=[3])
+
+xr.full_like(ds_qvp_ra.height_ml_bottom_new_gia.loc[{"time":timesel}],ds_qvp_ra.altitude + 200).plot()
 
 
 # PPI
@@ -680,13 +687,13 @@ qvps.loc[{"time": "2016-04-27"}]["min_entropy"].plot(x="time", vmin=0.8, cmap="p
 # This part should be run after having the QVPs computed (compute_qvps.py)
 
 #### Open QVP files
-path_qvps = "/home/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/*allmoms*"
+path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/*allmoms*"
 # path_qvps = "/automount/ftp/jgiles/qvps2/*/*/*/tur/vol5minng01/07/*allmoms*"
 path_qvps = "/home/jgiles/dmi/qvps/*/*/*/ANK/*/*/*allmoms*"
 
 files = sorted(glob.glob(path_qvps))
 
-TH = "DBZH" # set TH name, or set DBZH if TH not available, like in some turkish radars
+TH = "TH" # set TH name, or set DBZH if TH not available, like in some turkish radars
 
 
 # there are slight differences (noise) in z coord sometimes so we have to align all datasets
@@ -712,9 +719,12 @@ except:
 
 
 #### Filters
-# Filter only stratiform events (min entropy >= 0.8)
-with ProgressBar():
-    qvps_strat = qvps.where(qvps["min_entropy"]>=0.8, drop=True).compute()
+# Filter only stratiform events (min entropy >= 0.8) and ML detected
+# with ProgressBar():
+#     qvps_strat = qvps.where( (qvps["min_entropy"]>=0.8) & (qvps.height_ml_bottom_new_gia.notnull(), drop=True).compute()
+
+# Filter only stratiform events (min entropy >= 0.8) and ML detected
+qvps_strat = qvps.where( (qvps["min_entropy"]>=0.8) & (qvps.height_ml_bottom_new_gia.notnull()), drop=True)
 # Filter relevant values
 qvps_strat_fil = qvps_strat.where((qvps_strat[TH] > 0 )&(qvps_strat["KDP_ML_corrected"] > 0.0)&(qvps_strat["RHOHV"] > 0.7)&(qvps_strat["ZDR"] > -1))
 
@@ -784,7 +794,7 @@ fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.
 
 for nn, vv in enumerate(vars_to_plot.keys()):
 
-    utils.hist2d(ax[nn], qvps_strat_fil[vv], qvps_strat_fil["TEMP"]+adjtemp, whole_x_range=True, 
+    utils.hist2d(ax[nn], qvps_strat_fil.where(qvps_strat_fil.height_ml_bottom_new_gia.notnull())[vv], qvps_strat_fil["TEMP"].where(qvps_strat_fil.height_ml_bottom_new_gia.notnull())+adjtemp, whole_x_range=True, 
                  binsx=vars_to_plot[vv], binsy=[-20,15,tb], mode='rel_y', qq=0.2,
                  cb_mode=(nn+1)/len(vars_to_plot), cmap="plasma", colsteps=colsteps, 
                  fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
