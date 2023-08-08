@@ -455,7 +455,7 @@ ds = ds.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data
 
 #################################### CFADs
 
-def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, cb_mode=True, qq=0.2, cmap='turbo',
+def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, cb_mode=True, mq="median", qq=0.2, cmap='turbo',
            colsteps=10, mini=0, fsize=13, fcolor='black', mincounts=500, cblim=[0,26], N=False,
            cborientation="horizontal", shading='gouraud', **kwargs):
     """
@@ -473,6 +473,7 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
     whole_x_range: use the whole range of values in the x coordinate? if False, only values inside the limits of binsx will be considered
                 in the calculations and the counting of valid values; which can lead to different results depending how the bin ranges are defined.
     cb_mode : plot colorbar?
+    mq = Middle line to plot. Can be "median" or "mean"
     qq = percentile [0-1]. Calculates the qq and 1-qq percentiles.
     mincounts: minimum sample number to plot
     N: plot sample size?
@@ -597,7 +598,11 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
 
     
     img = ax.pcolormesh(mx, my ,RES , cmap=cmap, vmin=cblim[0], vmax=cblim[1], shading=shading, **kwargs) #, shading="gouraud"
-    ax.plot(var_mean, my, color='red', lw=2)
+    
+    if mq == "median":
+        ax.plot(var_med, my, color='red', lw=2)
+    elif mq == "mean":
+        ax.plot(var_mean, my, color='red', lw=2)
 
     ax.plot(var_qq1, my, color='red', linestyle='-.', lw=2)
     ax.plot(var_qq2, my, color='red', linestyle='-.', lw=2)
