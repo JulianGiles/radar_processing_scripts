@@ -1272,7 +1272,7 @@ def zhzdr_lr_consistency_old(ZH, ZDR, RHO, TMP, rhohv_th=0.99, tmp_th=5, plot_co
     
     return zdroffset
 
-def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99, min_h=1000, 
+def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99, min_h=500, 
                          mlbottom=None, temp=None, timemode="step", plot_correction=False, plot_timestep=0):
     """
     Improved function for
@@ -1303,7 +1303,7 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
     min_h : float, optional
         Minimum height of usable data within the polarimetric profiles, in m. This is relative to
         sea level and not relative to the altitude of the radar (in accordance to the "z" coordinate 
-        from wradlib.georef.georeference_dataset). The default is 1000.
+        from wradlib.georef.georeference_dataset). The default is 500.
     timemode : str
         How to calculate the offset in case a time dimension is found. "step" calculates one offset
         per timestep. "all" calculates one offset for the whole ds. Default is "step"
@@ -1393,16 +1393,16 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
             if "time" in ds and timemode=="step":
                 hist_2d(ds_fil[dbzh].where(mask)[plot_timestep].values, ds_fil[zdr].where(mask)[plot_timestep].values-zdroffset[plot_timestep].values, bins1=np.arange(0,40,1), bins2=np.arange(-1,3,.1))
             else:
-                hist_2d(ds_fil[dbzh].where(mask).values, ds_fil[zdr].where(mask).values-zdroffset, bins1=np.arange(0,40,1), bins2=np.arange(-1,3,.1))
+                hist_2d(ds_fil[dbzh].where(mask).values, ds_fil[zdr].where(mask).values-zdroffset.values, bins1=np.arange(0,40,1), bins2=np.arange(-1,3,.1))
             plt.plot([20,22,24,26,28,30],[.23, .27, .33, .40, .48, .56], color='black')
             plt.title('Calibrated $Z_{DR}$')
             plt.xlabel(r'$Z_H$', fontsize=15)
             plt.ylabel(r'$Z_{DR}$', fontsize=15)
             plt.grid(which='both', color='black', linestyle=':', alpha=0.5)
             if "time" in ds and timemode=="step":
-                plt.legend(title=r'$\Delta Z_{DR}$: '+str(np.round(zdroffset[plot_timestep].values,3))+'dB')
+                plt.legend(title=r'$\Delta Z_{DR}$: '+str(np.round(zdroffset.values[plot_timestep].values,3))+'dB')
             else:
-                plt.legend(title=r'$\Delta Z_{DR}$: '+str(np.round(zdroffset,3))+'dB')
+                plt.legend(title=r'$\Delta Z_{DR}$: '+str(np.round(zdroffset.values,3))+'dB')
         
             plt.tight_layout()
             plt.show()
