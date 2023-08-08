@@ -87,7 +87,7 @@ if len(files)==0:
 # path = "/automount/ftp/jgiles/pulled_from_detect/*/*/*/tur/vol5minng01/07/*allmoms*"
 # files = sorted(glob.glob(path))
 
-min_hgt = 600 # minimum height above the radar to be considered when calculating ML and entropy 
+min_hgt = 200 # minimum height above the radar to be considered when calculating ML and entropy 
 
 
 # Use ERA5 temperature profile? If so, it does not use sounding data
