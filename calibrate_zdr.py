@@ -66,7 +66,7 @@ start_time = time.time()
 path0 = sys.argv[1]
 calib_type = int(sys.argv[2]) # Like the numbers from the description above. Can be a multiple digit integer for simultaneous calculations
 
-min_hgt = 600 # minimum height above the radar to be considered when calculating ZDR offset
+min_hgt = 200 # minimum height above the radar to be considered when calculating ZDR offset
 phidp_names = ["UPHIDP", "PHIDP"] # names to look for the PHIDP variable, in order of preference
 dbzh_names = ["DBZH"] # same but for DBZH
 rhohv_names = ["RHOHV"] # same but for RHOHV
@@ -211,7 +211,10 @@ for ff in files:
             start_range = phidp_offset["start_range"]
         
             # apply offset
-            fix_range = 750
+            if "dwd" in ff:
+                fix_range = 750
+            else:
+                fix_range = 200
             phi_fix = data[X_PHI].copy()
             off_fix = off.broadcast_like(phi_fix)
             phi_fix = phi_fix.where(phi_fix.range >= start_range + fix_range).fillna(off_fix) - off
