@@ -298,12 +298,14 @@ for ff in files:
             winlen0=7 # size of range window (bins) for the kdp-phidp calculations
             xwin0=9 # window size (bins) for the time rolling median smoothing in ML detection
             ywin0=1 # window size (bins) for the height rolling mean smoothing in ML detection
+            fix_range = 750 # range from where to consider phi values (dwd data is bad in the first bin)
         elif "dmi" in ff:
             country="dmi"
             window0=17 # number of range bins for phidp smoothing (this one is quite important!)
             winlen0=21 # size of range window (bins) for the kdp-phidp calculations
             xwin0=5 # window size (bins) for the time rolling median smoothing in ML detection
             ywin0=5 # window size (bins) for the height rolling mean smoothing in ML detection
+            fix_range = 200 # range from where to consider phi values (dwd data is bad in the first bin)
 
         ######### Processing PHIDP
         #### fix PHIDP
@@ -315,7 +317,6 @@ for ff in files:
         start_range = phidp_offset["start_range"]
     
         # apply offset
-        fix_range = 750
         phi_fix = ds[X_PHI].copy()
         off_fix = off.broadcast_like(phi_fix)
         phi_fix = phi_fix.where(phi_fix.range >= start_range + fix_range).fillna(off_fix) - off
