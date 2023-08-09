@@ -171,7 +171,18 @@ KDP_attrs={'_Undetect': 0.0,
 #%% Load data
 
 for ff in files:
-    # check if the file already exists before starting
+    
+    skipfile=False
+    # skip files that are not volume scans (wind, surveillance, etc)
+    for skipscan in ["SURVEILLANCE", "WIND", "RHI"]:
+        if skipscan in ff:
+            print("Skipping: no QVP computed for "+skipscan)
+            skipfile=True
+            break
+    if skipfile:
+        continue
+    
+    # check if the QVP file already exists before starting
     savepath = make_savedir(ff, "")
     if os.path.exists(savepath) and not overwrite:
         continue
