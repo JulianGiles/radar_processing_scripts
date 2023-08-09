@@ -42,17 +42,27 @@ except ModuleNotFoundError:
 import warnings
 warnings.filterwarnings('ignore')
 
-#%% CFADs Load and compute
+#%% Load QVPs for stratiform-case CFTDs
 # This part should be run after having the QVPs computed (compute_qvps.py)
 
-#### Open QVP files
+#### Get QVP file list
 path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/*allmoms*"
-# path_qvps = "/automount/ftp/jgiles/qvps2/*/*/*/tur/vol5minng01/07/*allmoms*"
-path_qvps = "/home/jgiles/dmi/qvps/*/*/*/ANK/*/*/*allmoms*"
+# path_qvps = "/home/jgiles/dmi/qvps/*/*/*/ANK/*/*/*allmoms*"
 
 files = sorted(glob.glob(path_qvps))
 
-TH = "TH" # set TH name, or set DBZH if TH not available, like in some turkish radars
+#### Set variable names
+X_DBZH = "DBZH"
+X_RHOHV = "RHOHV"
+X_ZDR = "ZDR_OC"
+X_KDP = "KDP_ML_corrected"
+
+if "dwd" in files[0]:
+    country="dwd"
+    X_TH = "TH"
+elif "dmi" in files[0]:
+    country="dmi"
+    X_TH = "DBZH"
 
 
 # there are slight differences (noise) in z coord sometimes so we have to align all datasets
@@ -76,8 +86,10 @@ except:
     # if the above fails, just combine everything and fill the holes with nan (Turkish case)
     qvps = xr.open_mfdataset(files, combine="nested", concat_dim="time")
 
-
-#### Filters
+# Fill missing values in ZDR_OC with ZDR
+if X_ZDR == "ZDR_OC":
+    qvps[X_ZDR] = qvps[X_ZDR].where(qvps[X_ZDR].isnull(), qvps["ZDR"])
+#%% Filters (conditions for stratiform)
 # Filter only stratiform events (min entropy >= 0.8) and ML detected
 # with ProgressBar():
 #     qvps_strat = qvps.where( (qvps["min_entropy"]>=0.8) & (qvps.height_ml_bottom_new_gia.notnull(), drop=True).compute()
@@ -85,7 +97,10 @@ except:
 # Filter only stratiform events (min entropy >= 0.8) and ML detected
 qvps_strat = qvps.where( (qvps["min_entropy"]>=0.8) & (qvps.height_ml_bottom_new_gia.notnull()), drop=True)
 # Filter relevant values
-qvps_strat_fil = qvps_strat.where((qvps_strat[TH] > 0 )&(qvps_strat["KDP_ML_corrected"] > 0.0)&(qvps_strat["RHOHV"] > 0.7)&(qvps_strat["ZDR"] > -1))
+qvps_strat_fil = qvps_strat.where((qvps_strat[X_TH] > 0 )&
+                                  (qvps_strat[X_KDP] > 0.0)&
+                                  (qvps_strat[X_RHOHV] > 0.7)&
+                                  (qvps_strat[X_ZDR] > -1))
 
 #### General statistics
 values_sfc = qvps_strat_fil.isel({"z": 2})
@@ -100,7 +115,7 @@ qvps_ML = qvps_strat_fil.where( (qvps_strat_fil["z"] < qvps_strat_fil["height_ml
 values_ML_max = qvps_ML.max(dim="z")
 values_ML_min = qvps_ML.min(dim="z")
 values_ML_mean = qvps_ML.mean(dim="z")
-ML_height = qvps_ML["height_ml_new_gia"] - qvps_ML["height_ml_bottom_new_gia"]
+ML_thickness = qvps_ML["height_ml_new_gia"] - qvps_ML["height_ml_bottom_new_gia"]
 
 # Silke style
 # select timesteps with detected ML
@@ -108,7 +123,7 @@ gradient_silke = qvps_strat_fil.where(qvps_strat_fil["height_ml_new_gia"] > qvps
 gradient_silke_ML = gradient_silke.sel({"z": gradient_silke["height_ml_new_gia"]}, method="nearest")
 gradient_silke_ML_plus_2km = gradient_silke.sel({"z": gradient_silke_ML["z"]+2000}, method="nearest")
 gradient_final = (gradient_silke_ML_plus_2km - gradient_silke_ML)/2
-beta = gradient_final[TH] #### TH OR DBZH??
+beta = gradient_final[X_TH] #### TH OR DBZH??
 
 
 #### DGL statistics
@@ -134,7 +149,7 @@ ytlim=-20
 tb=1# degress C
 
 # Min counts per Temp layer
-mincounts=200
+mincounts=10
 
 #Colorbar limits and step
 cblim=[0,10]
@@ -145,18 +160,22 @@ colsteps=10
 vars_to_plot = {"DBZH": [0, 51, 1], 
                 "ZDR": [-1, 3.1, 0.1],
                 "KDP_ML_corrected": [0, 0.51, 0.01],
-                "RHOHV": [0.9, 1.005, 0.005]}
+                "RHOHV": [0.9, 1.004, 0.004]}
 
 
 fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
 
 for nn, vv in enumerate(vars_to_plot.keys()):
-
-    utils.hist2d(ax[nn], qvps_strat_fil.where(qvps_strat_fil.height_ml_bottom_new_gia.notnull())[vv], qvps_strat_fil["TEMP"].where(qvps_strat_fil.height_ml_bottom_new_gia.notnull())+adjtemp, whole_x_range=True, 
+    so=False
+    binsx2=None
+    if vv =="RHOHV":
+        so = True
+        binsx2 = [0.9, 1.005, 0.005]
+    utils.hist2d(ax[nn], qvps_strat_fil[vv], qvps_strat_fil["TEMP"]+adjtemp, whole_x_range=True, 
                  binsx=vars_to_plot[vv], binsy=[-20,15,tb], mode='rel_y', qq=0.2,
                  cb_mode=(nn+1)/len(vars_to_plot), cmap="plasma", colsteps=colsteps, 
                  fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
-                 cborientation="vertical", shading="nearest")
+                 cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
     ax[nn].set_ylim(15,ytlim)
     ax[nn].set_xlabel(vv, fontsize=10)
     
