@@ -455,7 +455,8 @@ ds = ds.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data
 
 #################################### CFADs
 
-def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, cb_mode=True, mq="median", qq=0.2, cmap='turbo',
+def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, cb_mode=True, 
+           mq="median", qq=0.2, cmap='turbo', smooth_out=False, binsx_out=[],
            colsteps=10, mini=0, fsize=13, fcolor='black', mincounts=500, cblim=[0,26], N=False,
            cborientation="horizontal", shading='gouraud', **kwargs):
     """
@@ -472,6 +473,12 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
             abs     : Absolute Dist.
     whole_x_range: use the whole range of values in the x coordinate? if False, only values inside the limits of binsx will be considered
                 in the calculations and the counting of valid values; which can lead to different results depending how the bin ranges are defined.
+    smooth_out : If True, calculates the hist2d according to binsx and then interpolates the result to binsx_out.
+                This is useful if the input data has a resolution lower than that of the desired bins, which 
+                produces a histogram with bands of zeros or higher values, depending on binsx. If using this
+                option, binsx should respresent the bins that best fit the data, producing an hist2d without 
+                visual glitches; and binsx_out should be the desired output bins.
+    binsx_out : Desired output bins for the x dimension if smooth_out is True.
     cb_mode : plot colorbar?
     mq = Middle line to plot. Can be "median" or "mean"
     qq = percentile [0-1]. Calculates the qq and 1-qq percentiles.
@@ -528,15 +535,23 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
         # at the edges and computing the histogram with those bins into account. Then, we discard the extreme values
         bins_px_ext = np.append(np.append(bins_px[::-1], -np.inf)[::-1], np.inf).copy()
         H_ext, xe_ext, ye = np.histogram2d(PX_flat, PY_flat, bins = (bins_px_ext, bins_py))
-        H = H_ext[1:-1,:]
+        H = H_ext[1:-1,:].copy()
         xe = xe_ext[1:-1]
     else:
         H, xe, ye = np.histogram2d(PX_flat, PY_flat, bins = (bins_px, bins_py))
-        H_ext = H # this is for the counting part of the overall sum
-    
+        H_ext = H.copy() # this is for the counting part of the overall sum
+        
     # Calc mean x and y (for plotting with center-based index)
     mx =0.5*(xe[0:-1]+xe[1:len(xe)])
     my =0.5*(ye[0:-1]+ye[1:len(ye)])
+    
+    if smooth_out:
+        bins_px2 = np.arange(binsx_out[0], binsx_out[1], binsx_out[2])
+        mx2 =0.5*(bins_px2[0:-1]+bins_px2[1:])
+        H_xr = xr.DataArray(H, coords={"mx":mx, "my":my})
+        H_xr_int = H_xr.interp(coords={"mx":mx2})
+        H = H_xr_int.values
+        mx=mx2
     
     # Calculate Percentil
     var_mean = []
