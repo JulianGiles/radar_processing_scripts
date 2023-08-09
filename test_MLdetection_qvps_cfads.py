@@ -794,7 +794,7 @@ fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.
 
 for nn, vv in enumerate(vars_to_plot.keys()):
 
-    utils.hist2d(ax[nn], qvps_strat_fil.where(qvps_strat_fil.height_ml_bottom_new_gia.notnull())[vv], qvps_strat_fil["TEMP"].where(qvps_strat_fil.height_ml_bottom_new_gia.notnull())+adjtemp, whole_x_range=True, 
+    utils.hist2d(ax[nn], qvps_strat_fil[vv], qvps_strat_fil["TEMP"]+adjtemp, whole_x_range=True, 
                  binsx=vars_to_plot[vv], binsy=[-20,15,tb], mode='rel_y', qq=0.2,
                  cb_mode=(nn+1)/len(vars_to_plot), cmap="plasma", colsteps=colsteps, 
                  fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
