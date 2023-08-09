@@ -130,7 +130,7 @@ def find_loc(locs, path):
 
 locs = ["pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs"]
 
-# define a function to create save directory for the offset and return file save path
+# define a function to create save directory and return file save path
 def make_savedir(ff, name):
     """
     ff: filepath of the original file
