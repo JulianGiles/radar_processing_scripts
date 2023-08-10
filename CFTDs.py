@@ -34,9 +34,12 @@ import matplotlib as mpl
 try:
     from Scripts.python.radar_processing_scripts import utils
     from Scripts.python.radar_processing_scripts import radarmet
+    from Scripts.python.radar_processing_scripts import colormap_generator
 except ModuleNotFoundError:
     import utils
     import radarmet
+    import colormap_generator
+
 
 
 import warnings
@@ -247,4 +250,17 @@ if country=="dwd":
 
 
 #%% Check particular dates
-qvps.loc[{"time":"2015-09-30"}].DBZH.dropna("z", how="all").plot(x="time", ylim=(0,10000))
+
+# Plot QVP
+visdict14 = radarmet.visdict14
+
+def plot_qvp(data, momname="DBZH", plot_ml=True):
+    norm = radarmet.get_discrete_norm(visdict14[mom]["ticks"])
+    # cmap = mpl.cm.get_cmap("HomeyerRainbow")
+    # cmap = get_discrete_cmap(visdict14["DBZH"]["ticks"], 'HomeyerRainbow')
+    cmap = visdict14[mom]["cmap"]
+
+
+qvps.loc[{"time":"2015-09-30"}].KDP_ML_corrected.dropna("z", how="all").plot(x="time", ylim=(0,10000))
+qvps.loc[{"time":"2015-09-30"}].height_ml_bottom_new_gia.plot()
+qvps.loc[{"time":"2015-09-30"}].height_ml_new_gia.plot()
