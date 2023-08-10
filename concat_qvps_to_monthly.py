@@ -73,8 +73,10 @@ for loc in ["pro", "tur", "umd", "AFY", "ANK", "GZT", "HTY", "SVS"]:
                             
                         return add_nan_ml(ds)
 
-                    
-                    qvps = xr.open_mfdataset(ffs2, combine="nested", concat_dim="time", preprocess=fix_z_and_time)
+                    try:
+                        qvps = xr.open_mfdataset(ffs2, combine="nested", concat_dim="time", preprocess=add_nan_ml)
+                    except:
+                        qvps = xr.open_mfdataset(ffs2, combine="nested", concat_dim="time", preprocess=fix_z_and_time)
                     
                     savepath1 = ffs2[0].split("/qvps/")[0]+"/qvps_monthly/"+yy+"/"+yy+"-"+mm+"/"
                     savepath2 = ffs2[0].split("/"+loc+"/")[1]
