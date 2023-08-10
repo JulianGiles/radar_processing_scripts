@@ -474,10 +474,12 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
     whole_x_range: use the whole range of values in the x coordinate? if False, only values inside the limits of binsx will be considered
                 in the calculations and the counting of valid values; which can lead to different results depending how the bin ranges are defined.
     smooth_out : If True, calculates the hist2d according to binsx and then interpolates the result to binsx_out.
-                This is useful if the input data has a resolution lower than that of the desired bins, which 
-                produces a histogram with bands of zeros or higher values, depending on binsx. If using this
+                This is useful if the input data has low resolution and close to that of the desired bins, which 
+                produces a histogram with alternating bands of low or high values, depending on binsx. If using this
                 option, binsx should respresent the bins that best fit the data, producing an hist2d without 
-                visual glitches; and binsx_out should be the desired output bins.
+                visual glitches; and binsx_out should be the desired output bins (but not too different from binsx). 
+                If the visual artifacts continue, a better approach may be to round the data and select binsx 
+                so that bands of zero values are generated, which will then be filled by the interpolation. 
     binsx_out : Desired output bins for the x dimension if smooth_out is True.
     cb_mode : plot colorbar?
     mq = Middle line to plot. Can be "median" or "mean"
@@ -549,9 +551,16 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
         bins_px2 = np.arange(binsx_out[0], binsx_out[1], binsx_out[2])
         mx2 =0.5*(bins_px2[0:-1]+bins_px2[1:])
         H_xr = xr.DataArray(H, coords={"mx":mx, "my":my})
-        H_xr_int = H_xr.interp(coords={"mx":mx2})
-        H = H_xr_int.values
+        # H_xr_int = H_xr.interp(coords={"mx":mx2}) # deprecated
+        # We discard points with zero, interpolate those with adjacent values and then interp everything to new grid
+        H_xr_int = H_xr.where(H_xr>0).interpolate_na(dim="mx").interp(coords={"mx":mx2})
+        H = H_xr_int.where(H_xr_int.notnull(), 0).values # replace nans by zeros
         mx=mx2
+        if whole_x_range:
+            # we need to put this new values from the new H into H_ext so the calculations below are correct
+            H_ext = np.concatenate([np.expand_dims(H_ext[0,:], 0),H, np.expand_dims(H_ext[-1,:], 0)])
+        else:
+            H_ext = H.copy()
     
     # Calculate Percentil
     var_mean = []
