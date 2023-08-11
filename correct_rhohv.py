@@ -164,3 +164,20 @@ for ff in files:
 #%% print how much time did it take
 total_time = time.time() - start_time
 print(f"Script took {total_time/60:.2f} minutes to run.")
+
+
+#%% Testing how this works
+# put the result into a new array to fit with a line
+rhonc_snrh = xr.DataArray(rho_nc_out.RHOHV_NC.values.flatten(), coords={"SNRH":rho_nc_out.SNRH.values.flatten()})
+
+rhonc_snrh.where((0<rhonc_snrh.SNRH)&(rhonc_snrh.SNRH<20)&(rhonc_snrh>0)).polyfit("SNRH", deg=1, skipna=True)
+
+# lets do it for every noise level
+fits=[]
+for nn,rhon in enumerate(rho_nc[0]):
+    merged = xr.merge(rhon)
+    rhonc_snrh = xr.DataArray(merged.RHOHV_NC.values.flatten(), coords={"SNRH":merged.SNRH.values.flatten()})
+    fits.append(float(rhonc_snrh.where((0<rhonc_snrh.SNRH)&(rhonc_snrh.SNRH<20)&(rhonc_snrh>0)).polyfit("SNRH", deg=1, skipna=True).polyfit_coefficients[0].values))
+
+# checking which fit has the slope closest to zero
+np.abs(np.array(fits)).argmin()
