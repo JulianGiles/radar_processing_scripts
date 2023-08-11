@@ -1394,8 +1394,13 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
         zdr_zh_28 = (ds_fil[zdr].where((ds_fil[dbzh]>=27)&(ds_fil[dbzh]<29)&(ds_fil[rhohv]>rhvmin))).median(dim=dims_wotime)
         zdr_zh_30 = (ds_fil[zdr].where((ds_fil[dbzh]>=29)&(ds_fil[dbzh]<31)&(ds_fil[rhohv]>rhvmin))).median(dim=dims_wotime)
 
-        zdroffset = xr.concat([zdr_zh_20-.23, zdr_zh_22-.27, zdr_zh_24-.33, zdr_zh_26-.40, zdr_zh_28-.48, zdr_zh_30-.56], dim='dataarrays').sum(dim='dataarrays', skipna=True)/6
+        zdroffset = xr.concat([zdr_zh_20-.23, zdr_zh_22-.27, zdr_zh_24-.33, zdr_zh_26-.40, zdr_zh_28-.48, zdr_zh_30-.56], dim='dataarrays').sum(dim='dataarrays', skipna=True, keep_attrs=True)/6
         
+        # drop ML coordinates if present
+        for coord in zdroffset.coords:
+            if "_ml" in coord:
+                zdroffset = zdroffset.drop_vars(coord)
+
     else:
         zdr_zh_20 = (ds_fil[zdr].where((ds_fil[dbzh]>=19)&(ds_fil[dbzh]<21)&(ds_fil[rhohv]>rhvmin))).compute().median()
         zdr_zh_22 = (ds_fil[zdr].where((ds_fil[dbzh]>=21)&(ds_fil[dbzh]<23)&(ds_fil[rhohv]>rhvmin))).compute().median()
@@ -1404,7 +1409,17 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
         zdr_zh_28 = (ds_fil[zdr].where((ds_fil[dbzh]>=27)&(ds_fil[dbzh]<29)&(ds_fil[rhohv]>rhvmin))).compute().median()
         zdr_zh_30 = (ds_fil[zdr].where((ds_fil[dbzh]>=29)&(ds_fil[dbzh]<31)&(ds_fil[rhohv]>rhvmin))).compute().median()
 
-        zdroffset = xr.concat([zdr_zh_20-.23, zdr_zh_22-.27, zdr_zh_24-.33, zdr_zh_26-.40, zdr_zh_28-.48, zdr_zh_30-.56], dim='dataarrays').sum(dim='dataarrays', skipna=True)/6
+        zdroffset = xr.concat([zdr_zh_20-.23, zdr_zh_22-.27, zdr_zh_24-.33, zdr_zh_26-.40, zdr_zh_28-.48, zdr_zh_30-.56], dim='dataarrays', combine_attrs="override").sum(dim='dataarrays', skipna=True, keep_attrs=True)/6
+        
+        # restore time dim if present
+        if "time" in ds:
+            zdroffset = zdroffset.expand_dims("time")
+            zdroffset["time"] = np.atleast_1d(ds.coords["time"][0]) # put the first time value as coord
+            
+    # restore attrs
+    zdroffset.attrs = ds_fil[zdr].attrs
+    zdroffset.attrs["long_name"] = "ZDR offset from light rain consistency method"
+    zdroffset.attrs["standard_name"] = "ZDR_offset_from_light_rain_consistency_method"
     
     if plot_correction:
         try:
@@ -1607,7 +1622,7 @@ def phidp_offset_detection(ds, phidp="PHIDP", rhohv="RHOHV", dbzh="DBZH", rhohvm
 # ZDR calibration from VPs. Adapted from Daniel Sanchez-Rivas (TowerPy) to xarray
 def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="median",
                         mlbottom=None, temp=None, min_h=1000, zhmin=5,
-                        zhmax=30, rhvmin=0.98, minbins=2, timemode="step"):
+                        zhmax=30, rhvmin=0.98, minbins=2, azmed=False, timemode="step"):
     r"""
     Calculate the offset on :math:`Z_{DR}` using vertical profiles. Only gates 
     below the melting layer bottom (i.e. the rain region below the melting layer)
@@ -1654,6 +1669,8 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
     minbins : float, optional
         Minimum number of :math:`Z_{DR}` bins related to light rain.
         The default is 2.
+    azmed : bool
+        If True, perform azimuthal median after filtering values and before offset calculation. Default is False
     timemode : str
         How to calculate the offset in case a time dimension is found. "step" calculates one offset
         per timestep. "all" calculates one offset for the whole ds. Default is "step"
@@ -1717,6 +1734,11 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
     
     # Filter according to DBZH and RHOHV limits
     ds_zdr = ds_zdr.where(ds[dbzh]>zhmin).where(ds[dbzh]<zhmax).where(ds[rhohv]>rhvmin)
+    
+    # Azimuth median before computing?
+    if azmed:
+        if "azimuth" in ds_zdr.dims:
+            ds_zdr = ds_zdr.median("azimuth")
 
     if "time" in ds and timemode=="step":
         # Get dimensions to reduce (other than time)
@@ -1731,12 +1753,14 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
         if mode=="median":
             zdr_offset = ds_zdr.median(dim=dims_wotime).assign_attrs(
                 {"long_name":"ZDR offset from vertical profile (median)", 
-                 "standard_name":"ZDR_offset_from_vertical_profile"}
+                 "standard_name":"ZDR_offset_from_vertical_profile",
+                 "units": "dB"}
                 )
         elif mode=="mean":
             zdr_offset = ds_zdr.mean(dim=dims_wotime).assign_attrs(
                 {"long_name":"ZDR offset from vertical profile (mean)", 
-                 "standard_name":"ZDR_offset_from_vertical_profile"}
+                 "standard_name":"ZDR_offset_from_vertical_profile",
+                 "units": "dB"}
                 )
         else:
             raise KeyError("mode must be either 'median' or 'mean'")
@@ -1767,12 +1791,14 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
         if mode=="median":
             zdr_offset = ds_zdr.compute().median().assign_attrs(
                 {"long_name":"ZDR offset from vertical profile (median)", 
-                 "standard_name":"ZDR_offset_from_vertical_profile"}
+                 "standard_name":"ZDR_offset_from_vertical_profile",
+                 "units": "dB"}
                 )
         elif mode=="mean":
             zdr_offset = ds_zdr.compute().mean().assign_attrs(
                 {"long_name":"ZDR offset from vertical profile (mean)", 
-                 "standard_name":"ZDR_offset_from_vertical_profile"}
+                 "standard_name":"ZDR_offset_from_vertical_profile",
+                 "units": "dB"}
                 )
         else:
             raise KeyError("mode must be either 'median' or 'mean'")
@@ -1802,7 +1828,18 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
                             "ZDR_std_from_offset": zdr_std,
                             "ZDR_sem_from_offset": zdr_sem}
                            )
-    
+
+    # restore time dim if present
+    if "time" in ds and "time" not in ds_offset:
+        ds_offset = ds_offset.expand_dims("time")
+        ds_offset["time"] = np.atleast_1d(ds.coords["time"][0]) # put the first time value as coord
+
+    # drop ML coordinates if present
+    for coord in ds_offset.coords:
+        if "_ml" in coord:
+            ds_offset = ds_offset.drop_vars(coord)
+
+
     return ds_offset
 
 
