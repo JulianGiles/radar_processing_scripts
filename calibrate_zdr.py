@@ -66,11 +66,21 @@ start_time = time.time()
 path0 = sys.argv[1]
 calib_type = int(sys.argv[2]) # Like the numbers from the description above. Can be a multiple digit integer for simultaneous calculations
 
-min_hgt = 200 # minimum height above the radar to be considered when calculating ZDR offset
 phidp_names = ["UPHIDP", "PHIDP"] # names to look for the PHIDP variable, in order of preference
 dbzh_names = ["DBZH"] # same but for DBZH
 rhohv_names = ["RHOHV"] # same but for RHOHV
 zdr_names = ["ZDR"]
+
+min_hgt = 200 # minimum height above the radar to be considered when calculating ZDR offset
+if "dwd" in path0 and "/VP/" in path0:
+    # for the VP we need to set a higher min height because there are several bins of unrealistic values
+    min_hgt = 600
+if "ANK" in path0:
+    # for ANK we need higher min_hgt to avoid artifacts
+    min_hgt = 400
+if "GZT" in path0:
+    # for GZT we need higher min_hgt to avoid artifacts
+    min_hgt = 300
 
 # get the files and check that it is not empty
 if "hd5" in path0 or "h5" in path0:
