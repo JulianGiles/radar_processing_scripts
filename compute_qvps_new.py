@@ -88,6 +88,15 @@ if len(files)==0:
 # files = sorted(glob.glob(path))
 
 min_hgt = 200 # minimum height above the radar to be considered when calculating ML and entropy 
+if "dwd" in path0 and "/VP/" in path0:
+    # for the VP we need to set a higher min height because there are several bins of unrealistic values
+    min_hgt = 600
+if "ANK" in path0:
+    # for ANK we need higher min_hgt to avoid artifacts
+    min_hgt = 400
+if "GZT" in path0:
+    # for GZT we need higher min_hgt to avoid artifacts
+    min_hgt = 300
 
 
 # Use ERA5 temperature profile? If so, it does not use sounding data
