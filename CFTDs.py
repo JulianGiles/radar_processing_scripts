@@ -254,13 +254,115 @@ if country=="dwd":
 # Plot QVP
 visdict14 = radarmet.visdict14
 
-def plot_qvp(data, momname="DBZH", plot_ml=True):
+def plot_qvp(data, momname="DBZH", tloc=slice("2015-01-01", "2020-12-31"), plot_ml=True, plot_entropy=False, **kwargs):
+    mom=momname
+    if "_" in momname:
+        mom= momname.split("_")[0]
     norm = radarmet.get_discrete_norm(visdict14[mom]["ticks"])
     # cmap = mpl.cm.get_cmap("HomeyerRainbow")
     # cmap = get_discrete_cmap(visdict14["DBZH"]["ticks"], 'HomeyerRainbow')
     cmap = visdict14[mom]["cmap"]
 
+    data[momname].loc[{"time":tloc}].dropna("z", how="all").plot(x="time", cmap=cmap, norm=norm, extend="both", **kwargs)
+    if plot_ml:
+        try:
+            data.loc[{"time":tloc}].height_ml_bottom_new_gia.plot(color="black")
+            data.loc[{"time":tloc}].height_ml_bottom_new_gia.plot(color="white",ls=":")
+            data.loc[{"time":tloc}].height_ml_new_gia.plot(color="black")
+            data.loc[{"time":tloc}].height_ml_new_gia.plot(color="white",ls=":")
+        except KeyError:
+            print("No ML in data")
+    if plot_entropy:
+        try:
+            data["min_entropy"].loc[{"time":tloc}].dropna("z", how="all").interpolate_na(dim="z").plot.contourf(x="time", levels=[0.8,1], hatches=["","X"], colors="none", add_colorbar=False)
+        except:
+            print("Plotting entropy failed")
 
-qvps.loc[{"time":"2015-09-30"}].KDP_ML_corrected.dropna("z", how="all").plot(x="time", ylim=(0,10000))
-qvps.loc[{"time":"2015-09-30"}].height_ml_bottom_new_gia.plot()
-qvps.loc[{"time":"2015-09-30"}].height_ml_new_gia.plot()
+plot_qvp(qvps_strat_fil, "KDP_ML_corrected", tloc="2015-09-30", plot_ml=True, plot_entropy=True, ylim=(2000,10000))
+
+
+qvps_strat_fil_notime = qvps_strat_fil.copy()
+qvps_strat_fil_notime = qvps_strat_fil_notime.reset_index("time")
+plot_qvp(qvps_strat_fil_notime, "KDP_ML_corrected", plot_ml=True, plot_entropy=True, ylim=(2000,10000))
+
+
+#%% Load offsets for exploring
+paths= ["/automount/realpep/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/ANK/*/12*/*below3C_timesteps-*",
+        "/automount/realpep/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/ANK/*/14*/*below3C_timesteps-*"]
+
+files_auxlist=[]
+for pp in paths:
+    files_auxlist.extend(glob.glob(pp))
+files_off = sorted(files_auxlist)
+
+zdr_off_LR_below3C_timesteps = xr.open_mfdataset(files_off, combine="nested", concat_dim="time")
+
+
+#%% Test ZDR calibration
+
+# ZDR offset looks nice for a nice stratiform case
+pro_vp_20170725 = dttree.open_datatree("/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/90gradstarng01/00/ras07-90gradstarng01_sweeph5onem_allmoms_00-2017072500041700-pro-10392-hd5")["sweep_0"].to_dataset()
+if pro_vp_20170725.time.isnull().any():
+    pro_vp_20170725.coords["time"] = pro_vp_20170725["rtime"].min(dim="azimuth", skipna=True).compute()
+loc="pro"
+era5_dir = "/automount/ags/jgiles/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
+pro_vp_20170725 = utils.attach_ERA5_TEMP(pro_vp_20170725, path=loc.join(era5_dir.split("loc")))
+
+zdr_offset_vp_pro_20170725 = utils.zdr_offset_detection_vps(pro_vp_20170725, min_h=400, timemode="all", mlbottom=3).compute()
+
+zdr_offset_vp_pro_20170725_azmedian = utils.zdr_offset_detection_vps(pro_vp_20170725, min_h=400, timemode="all", mlbottom=3, azmed=True).compute()
+
+# Let's find a not-nice case
+pro_vp_20170126 = dttree.open_datatree(glob.glob("/automount/realpep/upload/jgiles/dwd/2016/2016-01/2016-01-26/pro/90gradstarng01/00/ras07-90gradstarng01*")[0])["sweep_0"].to_dataset()
+if pro_vp_20170126.time.isnull().any():
+    pro_vp_20170126.coords["time"] = pro_vp_20170126["rtime"].min(dim="azimuth", skipna=True).compute()
+loc="pro"
+era5_dir = "/automount/ags/jgiles/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
+pro_vp_20170126 = utils.attach_ERA5_TEMP(pro_vp_20170126, path=loc.join(era5_dir.split("loc")))
+
+zdr_offset_vp_pro_20170126 = utils.zdr_offset_detection_vps(pro_vp_20170126, min_h=400, timemode="all", mlbottom=3).compute()
+
+zdr_offset_vp_pro_20170126_azmedian = utils.zdr_offset_detection_vps(pro_vp_20170126, min_h=400, timemode="all", mlbottom=3, azmed=True).compute()
+
+# that gives horrible values, lets see the data
+pro_vp_20170126.ZDR.median("azimuth").plot(x="time", vmin=-5, vmax=5)
+pro_vp_20170126.TEMP.median("azimuth").plot.contour(x="time", levels=[0,3], colors="white")
+
+utils.zdr_offset_detection_vps(pro_vp_20170126, min_h=400, timemode="step", mlbottom=3, azmed=True).compute().ZDR_offset.plot()
+# only the timesteps in the end where the ZDR reasonable values touch the ground give reasonable ZDR offset, 
+# lets check the distribution of ZDR values
+pro_vp_20170126.ZDR.plot.hist(bins=np.arange(-10,10.1,0.1))
+# the distribution is has several values around -4, probably due to the noisy values close to the ML
+# lets check the data filter that goes on in the function
+pro_vp_20170126.ZDR.where(pro_vp_20170126.TEMP>3).where(pro_vp_20170126["z"]>400).median("azimuth").assign_coords({"z": pro_vp_20170126["z"].median("azimuth")}).swap_dims({"range":"z"}).plot(x="time", y="z", vmin=-5, vmax=5, ylim=(0,2500))
+
+pro_vp_20170126.DBZH.where(pro_vp_20170126.TEMP>3).where(pro_vp_20170126["z"]>400).median("azimuth").assign_coords({"z": pro_vp_20170126["z"].median("azimuth")}).swap_dims({"range":"z"}).plot(x="time", y="z", vmin=-5, vmax=70, ylim=(0,2500))
+
+
+pro_vp_20170126.ZDR.where(pro_vp_20170126.TEMP>3).where(pro_vp_20170126["z"]>400).where(pro_vp_20170126["DBZH"]>5).where(pro_vp_20170126["DBZH"]<30).where(pro_vp_20170126["RHOHV"]>0.98).median("azimuth").assign_coords({"z": pro_vp_20170126["z"].median("azimuth")}).swap_dims({"range":"z"}).plot(x="time", y="z", vmin=-5, vmax=5, ylim=(0,2500))
+
+pro_vp_20170126.DBZH.where(pro_vp_20170126.TEMP>3).where(pro_vp_20170126["z"]>400).where(pro_vp_20170126["DBZH"]>5).where(pro_vp_20170126["DBZH"]<30).where(pro_vp_20170126["RHOHV"]>0.98).median("azimuth").assign_coords({"z": pro_vp_20170126["z"].median("azimuth")}).swap_dims({"range":"z"}).plot(x="time", y="z", vmin=-0, vmax=30, ylim=(0,2500))
+
+pro_vp_20170126.RHOHV.where(pro_vp_20170126.TEMP>3).where(pro_vp_20170126["z"]>400).where(pro_vp_20170126["DBZH"]>5).where(pro_vp_20170126["DBZH"]<30).where(pro_vp_20170126["RHOHV"]>0.98).median("azimuth").assign_coords({"z": pro_vp_20170126["z"].median("azimuth")}).swap_dims({"range":"z"}).plot(x="time", y="z", vmin=0.98, vmax=1, ylim=(0,2500))
+
+
+# Repeat for ANK
+ank_12_20180306 = xr.open_mfdataset("/automount/realpep/upload/jgiles/dmi/2018/2018-03/2018-03-06/ANK/MON_YAZ_G/14.0/*")
+loc="ank"
+era5_dir = "/automount/ags/jgiles/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
+ank_12_20180306 = utils.attach_ERA5_TEMP(ank_12_20180306, path=loc.join(era5_dir.split("loc")))
+
+zdr_offset_ank_12_20180306 = utils.zhzdr_lr_consistency(ank_12_20180306, min_h=ank_12_20180306.altitude.values+300, timemode="all", mlbottom=3).compute()
+
+# that gives horrible values, lets see the data
+ank_12_20180306.ZDR.median("azimuth").plot(x="time", vmin=-5, vmax=5, ylim=(0,20000))
+ank_12_20180306.TEMP.median("azimuth").plot.contour(x="time", levels=[0,3], colors="white")
+
+# lets check the distribution of ZDR values
+ank_12_20180306.ZDR.plot.hist(bins=np.arange(-10,10.1,0.1))
+
+# lets check the data filter that goes on in the function
+ank_12_20180306.ZDR.where(ank_12_20180306.TEMP>3).where(ank_12_20180306["z"]>ank_12_20180306.altitude.values+300).median("azimuth").assign_coords({"z": ank_12_20180306["z"].median("azimuth")}).swap_dims({"range":"z"}).plot(x="time", y="z", vmin=-5, vmax=5, ylim=(ank_12_20180306.altitude,ank_12_20180306.altitude+2500))
+ank_12_20180306.DBZH.where(ank_12_20180306.TEMP>3).where(ank_12_20180306["z"]>ank_12_20180306.altitude.values+300).median("azimuth").assign_coords({"z": ank_12_20180306["z"].median("azimuth")}).swap_dims({"range":"z"}).plot(x="time", y="z", vmin=-5, vmax=5, ylim=(ank_12_20180306.altitude,ank_12_20180306.altitude+2500))
+
+ank_12_20180306.ZDR.where(ank_12_20180306.TEMP>3).where(ank_12_20180306["z"]>ank_12_20180306.altitude.values+300).where((ank_12_20180306["DBZH"]>5)&(ank_12_20180306["DBZH"]<30)&(ank_12_20180306["RHOHV"]>0.98)).median("azimuth").assign_coords({"z": ank_12_20180306["z"].median("azimuth")}).swap_dims({"range":"z"}).plot(x="time", y="z", vmin=-5, vmax=5, ylim=(ank_12_20180306.altitude,ank_12_20180306.altitude+2500))
