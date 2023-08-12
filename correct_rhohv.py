@@ -108,12 +108,26 @@ for ff in files:
         sys.exit("RHOHV not found in data.")
 
     rho_nc = utils.calculate_noise_level(data[X_DBZH], data[X_RHO], noise=(-45, -15, 1))
-
-    # get the "best" noise correction level (acoording to the min std)
-    ncl = rho_nc[-1]
     
-    # get index of the best correction
-    bci = np.array(rho_nc[-2]).argmin()
+    # lets do a linear fit for every noise level
+    fits=[]
+    for nn,rhon in enumerate(rho_nc[0]):
+        merged = xr.merge(rhon)
+        rhonc_snrh = xr.DataArray(merged.RHOHV_NC.values.flatten(), coords={"SNRH":merged.SNRH.values.flatten()})
+        fits.append(float(rhonc_snrh.where((0<rhonc_snrh.SNRH)&(rhonc_snrh.SNRH<20)&(rhonc_snrh>0.7)).polyfit("SNRH", deg=1, skipna=True).polyfit_coefficients[0].values))
+    
+    # checking which fit has the slope closest to zero
+    bci = np.abs(np.array(fits)).argmin()
+
+    # get the best noise correction level according to bci
+    ncl = np.arange(-45, -15, 1)[bci]
+
+
+    # # get the "best" noise correction level (acoording to the min std)
+    # ncl = rho_nc[-1]
+    
+    # # get index of the best correction
+    # bci = np.array(rho_nc[-2]).argmin()
     
     # merge into a single array
     rho_nc_out = xr.merge(rho_nc[0][bci])
@@ -167,17 +181,19 @@ print(f"Script took {total_time/60:.2f} minutes to run.")
 
 
 #%% Testing how this works
+"""
 # put the result into a new array to fit with a line
 rhonc_snrh = xr.DataArray(rho_nc_out.RHOHV_NC.values.flatten(), coords={"SNRH":rho_nc_out.SNRH.values.flatten()})
 
-rhonc_snrh.where((0<rhonc_snrh.SNRH)&(rhonc_snrh.SNRH<20)&(rhonc_snrh>0)).polyfit("SNRH", deg=1, skipna=True)
+rhonc_snrh.where((0<rhonc_snrh.SNRH)&(rhonc_snrh.SNRH<20)&(rhonc_snrh>0.7)).polyfit("SNRH", deg=1, skipna=True)
 
 # lets do it for every noise level
 fits=[]
 for nn,rhon in enumerate(rho_nc[0]):
     merged = xr.merge(rhon)
     rhonc_snrh = xr.DataArray(merged.RHOHV_NC.values.flatten(), coords={"SNRH":merged.SNRH.values.flatten()})
-    fits.append(float(rhonc_snrh.where((0<rhonc_snrh.SNRH)&(rhonc_snrh.SNRH<20)&(rhonc_snrh>0)).polyfit("SNRH", deg=1, skipna=True).polyfit_coefficients[0].values))
+    fits.append(float(rhonc_snrh.where((0<rhonc_snrh.SNRH)&(rhonc_snrh.SNRH<20)&(rhonc_snrh>0.7)).polyfit("SNRH", deg=1, skipna=True).polyfit_coefficients[0].values))
 
 # checking which fit has the slope closest to zero
 np.abs(np.array(fits)).argmin()
+"""
