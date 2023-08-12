@@ -22,19 +22,31 @@ export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK}
 # Set the directory to look for the files
 dir=/p/scratch/detectrea/giles1/radar_data/dwd/
 
+# set a name for the counter file (counting how many job steps running at the same time
+counterfile=$dir/count_pro.txt
+
 # Create a list of all files that include *allmoms* in their name
 files=$(find $dir -name "*90gradstarng01*allmoms*pro*" -type f)
 
 count=0
+echo $count > $counterfile
+startcount=0
 # Loop through each file in the list
 for file in $files; do
 
+    count=$(<$counterfile)
     ((count++))
+    echo $count > $counterfile
+    ((startcount++))
     # Pass the file path to the python script
-    srun -c 6 --account=detectrea -n 1 --exact --threads-per-core=1  python $dir/correct_rhohv.py $file; ((count--))
+    { srun -c 6 --account=detectrea -n 1 --exact --threads-per-core=1  python $dir/correct_rhohv.py $file; count=$(<$counterfile); ((count--)) ; echo $count > $counterfile; } &
 
-    while [ "$count" -ge 30 ]; do
-        sleep 30
+    if [ "$startcount" -le 30 ]; then
+        sleep 5
+    fi
+
+    while [ "$(<$counterfile)" -ge 30 ]; do
+        sleep 5
     done
 
 done
