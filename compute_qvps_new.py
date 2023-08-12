@@ -352,6 +352,11 @@ for ff in files:
         
         # derive KDP from PHIDP (convolution method)
         winlen = winlen0 # windowlen 
+        
+        phidp, kdp = radarmet.kdp_phidp_vulpiani(phi_masked, winlen, min_periods=winlen//2)
+        
+        """
+        # deprecated
         # min_periods = 7 # min number of vaid bins
         kdp = radarmet.kdp_from_phidp(phi_masked, winlen, min_periods=winlen//2)
         kdp1 = kdp.interpolate_na(dim='range')
@@ -359,6 +364,7 @@ for ff in files:
         # derive PHIDP from KDP (convolution method)
         winlen = winlen0
         phidp = radarmet.phidp_from_kdp(kdp1, winlen)
+        """
         
         # assign new variables to dataset
         assign = {X_PHI+"_OC_SMOOTH": phi_median.assign_attrs(ds[X_PHI].attrs),
