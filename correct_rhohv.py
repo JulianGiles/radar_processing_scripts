@@ -11,7 +11,10 @@ Script for noise-correcting RHOHV.
 
 
 import os
-os.chdir('/home/jgiles/')
+try:
+    os.chdir('/home/jgiles/')
+except FileNotFoundError:
+    None
 
 
 # NEEDS WRADLIB 1.19 !! (OR GREATER?)
