@@ -68,11 +68,11 @@ calib_type = int(sys.argv[2]) # Like the numbers from the description above. Can
 
 phidp_names = ["UPHIDP", "PHIDP"] # names to look for the PHIDP variable, in order of preference
 dbzh_names = ["DBZH"] # same but for DBZH
-rhohv_names = ["RHOHV"] # same but for RHOHV
+rhohv_names = ["RHOHV_NC", "RHOHV"] # same but for RHOHV
 zdr_names = ["ZDR"]
 
 min_hgt = 200 # minimum height above the radar to be considered when calculating ZDR offset
-if "dwd" in path0 and "/VP/" in path0:
+if "dwd" in path0 and "90grads" in path0:
     # for the VP we need to set a higher min height because there are several bins of unrealistic values
     min_hgt = 600
 if "ANK" in path0:
@@ -125,6 +125,10 @@ def find_loc(locs, path):
 
 locs = ["pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs"]
 
+# set the RHOHV correction location
+rhoncdir = "/rhohv_nc/" # subfolder where to find the noise corrected rhohv data
+rhoncfile = "*rhohv_nc_2percent*" # pattern to select the appropriate file (careful with the rhohv_nc_2percent)
+
 # define a function to create save directory for the offset and return file save path
 def make_savedir(ff, name):
     """
@@ -145,6 +149,19 @@ def make_savedir(ff, name):
     if not os.path.exists(savepathdir):
         os.makedirs(savepathdir)
     return savepath
+
+# define a function to split a string at a certain pattern and replace it (like in the function before but only returning the path)
+def edit_str(ff, replace, name):
+    """
+    ff: string of file path or whatever
+    replace: what string part to replace
+    name: new string to put
+    """
+
+    ff_parts = ff.split(replace)
+    newff = (name).join(ff_parts)
+    return newff
+
 
 # ERA5 folder
 if "jgiles" in files[0]:
@@ -171,6 +188,22 @@ for ff in files:
     for coord in ["latitude", "longitude", "altitude", "elevation"]:
         if "time" in data[coord].dims:
             data.coords[coord] = data.coords[coord].min("time")
+
+#%% Load noise corrected RHOHV if available
+    try:
+        if "dwd" in ff:
+            country="dwd"
+        elif "dmi" in ff:
+            country="dmi"
+        rhoncpath = os.path.dirname(edit_str(ff, country, country+rhoncdir))
+        rho_nc = xr.open_mfdataset(rhoncpath+"/"+rhoncfile)
+        
+        # create RHOHV_NC variable
+        data = data.assign(rho_nc)
+        data["RHOHV_NC"].attrs["noise correction level"] = rho_nc.attrs["noise correction level"]
+        
+    except OSError:
+        print("No noise corrected rhohv to load: "+rhoncpath+"/"+rhoncfile)
 
 #%% Load and attach temperature data (in case no ML is detected, and in case temperature comes from other source different than ERA5)
     
