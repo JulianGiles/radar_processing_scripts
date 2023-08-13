@@ -167,7 +167,7 @@ for ff in files:
         rho_nc_out["SNRH"].encoding = data["SNRHC"].encoding
         rho_nc_out2["SNRH"].encoding = data["SNRHC"].encoding
     else:
-        rho_nc_dwd = xr.open_dataset(ff_parts[0]+"dwd/rhohv_nc/2015/2015-01/2015-01-01/pro/vol5minng01/00/ras07-vol5minng01_sweeph5onem_rhohv_nc_00-2015010100005900-pro-10392-hd5")
+        rho_nc_dwd = xr.open_dataset(ff_parts[0]+"dwd/rhohv_nc/2015/2015-01/2015-01-01/pro/90gradstarng01/00/ras07-90gradstarng01_sweeph5onem_rhohv_nc_00-2015010100042300-pro-10392-hd5", engine="netcdf4")
         rho_nc_out["SNRH"].encoding = rho_nc_dwd["SNRH"].encoding
         rho_nc_out2["SNRH"].encoding = rho_nc_dwd["SNRH"].encoding
 
