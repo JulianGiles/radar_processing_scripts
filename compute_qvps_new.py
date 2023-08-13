@@ -533,6 +533,25 @@ for ff in files:
     # save file
     ds_qvp_ra.to_netcdf(savepath)
 
+#%% If ML was detected, create a txt file for quick reference
+    try:
+        if ds_qvp_ra.height_ml_new_gia.notnull().any():
+            with open( os.path.dirname(savepath)+'/ML_detected.txt', 'w') as f:
+                f.write('')
+    except:
+        pass
+
+#%% If pixels over 30 DBZH detected at some timestep in the sweep, write a txt file for reference
+    try:
+        valid = (ds[X_DBZH][:,:,1:]>30).sum(dim=("azimuth", "range")).compute() > ds[X_DBZH][:,:,1:].count(dim=("azimuth", "range")).compute()*0.01
+        if valid.any():
+            with open( os.path.dirname(savepath)+'/DBZH_over_30.txt', 'w') as f:
+                f.write('')
+    except:
+        pass
+
+
+
 #%% print how much time did it take
 total_time = time.time() - start_time
 print(f"Script took {total_time/60:.2f} minutes to run.")
