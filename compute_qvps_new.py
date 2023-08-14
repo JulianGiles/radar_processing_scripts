@@ -481,7 +481,7 @@ for ff in files:
         # get PHIDP outside the ML
         phi2 = ds[X_PHI+"_OC_MASKED"].where((ds.z < ds_qvp_ra.height_ml_bottom_new_gia) | (ds.z > ds_qvp_ra.height_ml_new_gia))#.interpolate_na(dim='range',dask_gufunc_kwargs = "allow_rechunk")
         # interpolate PHIDP in ML
-        phi2 = phi2.interpolate_na(dim='range', method=interpolation_method_ML)
+        phi2 = phi2.chunk(dict(range=-1)).interpolate_na(dim='range', method=interpolation_method_ML)
         # restore originally nan values
         phi2 = xr.where(nan, np.nan, phi2)
         
