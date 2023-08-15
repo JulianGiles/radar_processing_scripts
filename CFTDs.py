@@ -49,16 +49,23 @@ warnings.filterwarnings('ignore')
 # This part should be run after having the QVPs computed (compute_qvps.py)
 
 #### Get QVP file list
-path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/*allmoms*"
 path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_monthly/*/*/umd/vol5minng01/07/*allmoms*"
-path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*"
-path_qvps2 = "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/14*/*allmoms*"
+path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/*/*/*/ANK/*/12*/*allmoms*"
+# path_qvps = ["/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*",
+#              "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/14*/*allmoms*"]
 
-files = sorted(glob.glob(path_qvps))+sorted(glob.glob(path_qvps2))
+if isinstance(path_qvps, str):
+    files = sorted(glob.glob(path_qvps))
+elif len(path_qvps)==1:    
+    files = sorted(glob.glob(path_qvps[0]))
+else:
+    files = []
+    for fglob in path_qvps:
+        files.extend(glob.glob(fglob))
 
 #### Set variable names
 X_DBZH = "DBZH"
-X_RHOHV = "RHOHV"
+X_RHOHV = "RHOHV_NC"
 X_ZDR = "ZDR_OC"
 X_KDP = "KDP_ML_corrected"
 
@@ -91,9 +98,12 @@ except:
     # if the above fails, just combine everything and fill the holes with nan (Turkish case)
     qvps = xr.open_mfdataset(files, combine="nested", concat_dim="time")
 
-# Fill missing values in ZDR_OC with ZDR
+# Fill missing values in ZDR_OC and RHOHV_NC with the uncorrected variables
 if X_ZDR == "ZDR_OC":
     qvps[X_ZDR] = qvps[X_ZDR].where(qvps[X_ZDR].notnull(), qvps["ZDR"])
+if X_RHOHV == "RHOHV_NC":
+    qvps[X_RHOHV] = qvps[X_RHOHV].where(qvps[X_RHOHV].notnull(), qvps["RHOHV"])
+
 #%% Filters (conditions for stratiform)
 # Filter only stratiform events (min entropy >= 0.8) and ML detected
 # with ProgressBar():
@@ -103,7 +113,7 @@ if X_ZDR == "ZDR_OC":
 qvps_strat = qvps.where( (qvps["min_entropy"]>=0.8) & (qvps.height_ml_bottom_new_gia.notnull()), drop=True)
 # Filter relevant values
 qvps_strat_fil = qvps_strat.where((qvps_strat[X_TH] > 0 )&
-                                  (qvps_strat[X_KDP] > 0)&
+                                  (qvps_strat[X_KDP] > -0.1)&
                                   (qvps_strat[X_RHOHV] > 0.7)&
                                   (qvps_strat[X_ZDR] > -1) &
                                   (qvps_strat[X_ZDR] < 3))
@@ -220,20 +230,23 @@ if country=="dmi":
 # DWD
 if country=="dwd":
     
-    vars_to_plot = {"DBZH": [0, 51, 1], 
-                    "ZDR_OC": [-1, 3.1, 0.1],
-                    "KDP_ML_corrected": [0, 0.51, 0.01],
-                    "RHOHV": [0.9, 1.004, 0.004]}
+    vars_to_plot = {"DBZH": [0, 46, 1], 
+                    "ZDR_OC": [-0.5, 2.1, 0.1],
+                    "KDP_ML_corrected": [-0.1, 0.41, 0.01],
+                    "RHOHV_NC": [0.9, 1.004, 0.004]}
 
     fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
     
     for nn, vv in enumerate(vars_to_plot.keys()):
         so=False
         binsx2=None
-        if vv =="RHOHV":
+        adj=1
+        if "RHOHV" in vv:
             so = True
             binsx2 = [0.9, 1.005, 0.005]
-        utils.hist2d(ax[nn], qvps_strat_fil[vv], qvps_strat_fil["TEMP"]+adjtemp, whole_x_range=True, 
+        if "KDP" in vv:
+            adj=1
+        utils.hist2d(ax[nn], qvps_strat_fil[vv]*adj, qvps_strat_fil["TEMP"]+adjtemp, whole_x_range=True, 
                      binsx=vars_to_plot[vv], binsy=[-20,15,tb], mode='rel_y', qq=0.2,
                      cb_mode=(nn+1)/len(vars_to_plot), cmap="plasma", colsteps=colsteps, 
                      fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
@@ -278,7 +291,7 @@ def plot_qvp(data, momname="DBZH", tloc=slice("2015-01-01", "2020-12-31"), plot_
         except:
             print("Plotting entropy failed")
 
-plot_qvp(qvps_strat_fil, "KDP_ML_corrected", tloc="2015-09-30", plot_ml=True, plot_entropy=True, ylim=(2000,10000))
+plot_qvp(qvps, "UPHIDP", tloc="2017-07-25", plot_ml=True, plot_entropy=True, ylim=(0,10000))
 
 
 qvps_strat_fil_notime = qvps_strat_fil.copy()
