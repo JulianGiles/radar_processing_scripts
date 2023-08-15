@@ -73,6 +73,8 @@ elif "dwd" in path0:
     files = sorted(glob.glob(path0+"/*allmoms*hd5*"))
 elif "dmi" in path0:
     files = sorted(glob.glob(path0+"/*allmoms*h5*"))
+elif isinstance(path0, list):
+    files = path0
 else:
     print("Country code not found in path")
     sys.exit("Country code not found in path.")
