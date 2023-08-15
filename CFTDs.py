@@ -50,7 +50,8 @@ warnings.filterwarnings('ignore')
 
 #### Get QVP file list
 path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_monthly/*/*/umd/vol5minng01/07/*allmoms*"
-path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/*/*/*/ANK/*/12*/*allmoms*"
+path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/*/*/*/ANK/*/*/*allmoms*"
+path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/*/*allmoms*"
 # path_qvps = ["/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*",
 #              "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/14*/*allmoms*"]
 
@@ -189,8 +190,8 @@ if country=="dmi":
 
     vars_to_plot = {"DBZH": [0, 51, 1],
                     "ZDR_OC": [-1.05, 3.1, 0.1],
-                    "KDP_ML_corrected": [0, 0.51, 0.01],
-                    "RHOHV": [0.9, 1.002, 0.002]}
+                    "KDP_ML_corrected": [-0.1, 0.51, 0.01],
+                    "RHOHV_NC": [0.9, 1.002, 0.002]}
     
     fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
     
@@ -206,7 +207,7 @@ if country=="dmi":
             so=True
             binsx2 = [-1, 3.1, 0.1]
             rd=1
-        if vv =="RHOHV":
+        if "RHOHV" in vv:
             so = True
             binsx2 = [0.9, 1.005, 0.005]
             rd=3
@@ -220,8 +221,6 @@ if country=="dmi":
         
         ax[nn].tick_params(labelsize=15) #change font size of ticks
         plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
-    
-    
     
     ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
 
