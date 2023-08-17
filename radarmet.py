@@ -392,8 +392,12 @@ def get_peaks(da, height=0):
 
 def smooth_data(data, kernel):
     res = data.copy()
-    for i, dat in enumerate(data.values):
-        res[i] = convolve(dat, kernel)
+    try: # in case data is xarray
+        for i, dat in enumerate(data.values):
+            res[i] = convolve(dat, kernel)
+    except AttributeError: # in case data is numpy array
+        for i, dat in enumerate(data):
+            res[i] = convolve(dat, kernel)
     return res
 
 
@@ -545,7 +549,7 @@ def kdp_phidp_vulpiani(da, winlen, min_periods=2):
                           )
 
 
-def xr_rolling(da, window, window2=None, method="mean", min_periods=2, **kwargs):
+def xr_rolling(da, window, window2=None, method="mean", min_periods=2, rangepad="fill", **kwargs):
     """Apply rolling function `method` to 2D datasets
 
     Parameter
@@ -563,6 +567,11 @@ def xr_rolling(da, window, window2=None, method="mean", min_periods=2, **kwargs)
         function name to apply
     min_periods : int
         minimum number of valid bins
+    rangepad : string
+        Padding method for the edges of the range dimension. "fill" will fill the 
+        nan values resulting from not enough bins by stretching the closest value.
+        "reflect" will extend the original array by reflecting around the edges 
+        so there is enough bins for the calculation
     **kwargs : dict
         kwargs to feed to rolling function
 
@@ -573,10 +582,14 @@ def xr_rolling(da, window, window2=None, method="mean", min_periods=2, **kwargs)
     """
     prng = window // 2
     srng = slice(prng, -prng)
-    da_new = da.pad(range=prng, mode='reflect', reflect_type='odd')
+    if rangepad == "reflect":
+        da_new = da.pad(range=prng, mode='reflect', reflect_type='odd')
+        isel = dict(range=srng)
+    else:
+        da_new = da
+        isel = dict()
 
     dim = dict(range=window)
-    isel = dict(range=srng)
 
     if window2 is not None:
         paz = window2 // 2
@@ -589,6 +602,10 @@ def xr_rolling(da, window, window2=None, method="mean", min_periods=2, **kwargs)
 
     da_new = getattr(rolling, method)(**kwargs)
     da_new = da_new.isel(**isel)
+    
+    if rangepad == "fill":
+        da_new = da_new.bfill("range").ffill("range")
+    
     return da_new
 
 
