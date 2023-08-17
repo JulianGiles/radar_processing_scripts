@@ -173,7 +173,10 @@ colors_prabhakar = np.array([[0.00, 1.00, 1.00],
                              [0.58, 0.44, 0.86]])
 
 cmap_prabhakar = mpl.colors.ListedColormap(colors_prabhakar)
-mpl.cm.register_cmap("miub2", cmap=cmap_prabhakar)
+try: # try to register in case it is not there
+    mpl.cm.register_cmap("miub2", cmap=cmap_prabhakar)
+except ValueError:
+    pass
 
 visdict14 = dict(ZH=dict(ticks=np.arange(-10,55,5),
                          contours=[0, 5, 10, 15, 20, 25, 30, 35],
