@@ -494,7 +494,7 @@ for ff in files:
         # winlen in gates
         # TODO: window length in m
         winlen = winlen0
-        kdp_ml = radarmet.kdp_from_phidp(phi2, winlen, min_periods=3)
+        phidp_ml, kdp_ml = radarmet.kdp_phidp_vulpiani(phi2, winlen, min_periods=3)
         
         # assign to datasets
         ds = ds.assign({"KDP_ML_corrected": (["time", "azimuth", "range"], kdp_ml.fillna(ds["KDP_CONV"]).values, KDP_attrs)})
@@ -504,7 +504,7 @@ for ff in files:
         
         ds = ds.assign_coords({'height': ds.z})
         
-        kdp_ml_qvp = ds["KDP_ML_corrected"].median("azimuth", keep_attrs=True)
+        kdp_ml_qvp = ds["KDP_ML_corrected"].where( (ds[X_RHO] > 0.7) & (ds[X_TH] > 0) & (ds[X_ZDR] > -1) ).median("azimuth", keep_attrs=True)
         kdp_ml_qvp = kdp_ml_qvp.assign_coords({"z": ds["z"].median("azimuth")})
         kdp_ml_qvp = kdp_ml_qvp.swap_dims({"range":"z"}) # swap range dimension for height
         ds_qvp_ra = ds_qvp_ra.assign({"KDP_ML_corrected": kdp_ml_qvp})
