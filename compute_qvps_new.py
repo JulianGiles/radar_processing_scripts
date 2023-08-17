@@ -33,6 +33,7 @@ from xhistogram.xarray import histogram
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from multiprocessing import Pool
+from functools import partial
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -332,9 +333,10 @@ for ff in files:
         ######### Processing PHIDP
         #### fix PHIDP
         # filter
-        phi = ds[X_PHI].where((ds[X_RHO]>=0.9) & (ds[X_DBZH]>=0))
+        phi = ds[X_PHI].where((ds[X_RHO]>=0.9) & (ds[X_DBZH]>=0) & (ds["z"]>min_height) )
         # calculate offset
-        phidp_offset = phi.pipe(radarmet.phase_offset, rng=3000)
+        rng_offset = phi.range.diff("range").median().values * window0
+        phidp_offset = phi.pipe(radarmet.phase_offset, rng=rng_offset)
         off = phidp_offset["PHIDP_OFFSET"]
         start_range = phidp_offset["start_range"]
     
@@ -343,19 +345,26 @@ for ff in files:
         off_fix = off.broadcast_like(phi_fix)
         phi_fix = phi_fix.where(phi_fix.range >= start_range + fix_range).fillna(off_fix) - off
     
-        # smooth and mask
+        # smooth range dim
         window = window0 # window along range   <----------- this value is quite important for the quality of KDP, since phidp is very noisy
         window2 = None # window along azimuth
-        phi_median = phi_fix.pipe(radarmet.xr_rolling, window, window2=window2, method='median', skipna=True, min_periods=window//2)
+        phi_median = phi_fix.pipe(radarmet.xr_rolling, window, window2=window2, method='median', min_periods=window/2, skipna=False)
+
+        # Apply additional smoothing
+        gkern = radarmet.gauss_kernel(window, window)
+        smooth_partial = partial(radarmet.smooth_data, kernel=gkern)
+        # phiclean = radarmet.smooth_data(phi_median[0], gkern)
+        phiclean = xr.apply_ufunc(smooth_partial, phi_median.compute(), 
+                                  input_core_dims=[["azimuth","range"]], output_core_dims=[["azimuth","range"]],
+                                  vectorize=True)
+
+        # mask 
         phi_masked = phi_median.where((ds[X_RHO] >= 0.95) & (ds[X_DBZH] >= 0.))
         
-        # dr = phi_masked.range.diff('range').median('range').values / 1000.
-        # print("range res [km]:", dr)
-        
-        # derive KDP from PHIDP (convolution method)
+        # derive KDP from PHIDP (Vulpiani)
         winlen = winlen0 # windowlen 
         
-        phidp, kdp = radarmet.kdp_phidp_vulpiani(phi_masked, winlen, min_periods=winlen//2)
+        phidp, kdp = radarmet.kdp_phidp_vulpiani(phi_masked, winlen, min_periods=winlen/2)
         
         """
         # deprecated
