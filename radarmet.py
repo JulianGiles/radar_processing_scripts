@@ -394,7 +394,7 @@ def smooth_data(data, kernel):
     return res
 
 
-def phase_offset(phioff, rng=3000.):
+def phase_offset(phioff, rng=3000., npix=None):
     """Calculate Phase offset.
 
     Parameter
@@ -409,13 +409,16 @@ def phase_offset(phioff, rng=3000.):
 
     Return
     ------
-    xarray.Dataset
+    phidp_offset: xarray.Dataset
         Dataset with variables PHIDP_OFFSET, start_range and stop_range
     """
     range_step = np.diff(phioff.range)[0]
     nprec = int(rng / range_step)
-    if nprec % 2:
+    if not nprec % 2:
         nprec += 1
+
+    if npix is None:
+        npix = nprec // 2 + 1
 
     # create binary array
     phib = xr.where(np.isnan(phioff), 0, 1)
@@ -423,15 +426,21 @@ def phase_offset(phioff, rng=3000.):
     # take nprec range bins and calculate sum
     phib_sum = phib.rolling(range=nprec, center=True).sum(skipna=True)
 
+    # find at least N pixels in
+    # phib_sum_N = phib_sum.where(phib_sum >= npix)
+    phib_sum_N = xr.where(phib_sum <= npix, phib_sum, npix)
+
     # get start range of first N consecutive precip bins
-    start_range = phib_sum.idxmax(dim="range") - nprec // 2 * np.diff(phib_sum.range)[0]
-    # get range of first non-nan value per ray
-    #start_range = (~np.isnan(phioff)).idxmax(dim='range', skipna=True)
-    # add range
+    start_range = phib_sum_N.idxmax(dim="range") - nprec // 2 * np.diff(phib_sum.range)[0]
+    start_range = xr.where(start_range < 0, 0, start_range)
+
+    # get stop range
     stop_range = start_range + rng
+    
     # get phase values in specified range
     off = phioff.where((phioff.range >= start_range) & (phioff.range <= stop_range),
-                       drop=True)
+                       drop=False)
+    
     # calculate nan median over range
     off = off.median(dim='range', skipna=True)
     return xr.Dataset(dict(PHIDP_OFFSET=off,
