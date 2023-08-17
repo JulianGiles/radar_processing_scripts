@@ -2865,9 +2865,9 @@ def phase_zphi(phi, rng=1000.):
     stop_range_idx = len(phib_sum.range) - (phib_sum[:, ::-1].argmax(dim="range") - offset_idx) - 2
     # get phase values in specified range
     first = phi.where((phi.range >= start_range) & (phi.range <= start_range + rng),
-                       drop=True).min(dim='range', skipna=True)
+                       drop=True).quantile(0.05, dim='range', skipna=True)
     last = phi.where((phi.range >= stop_range - rng) & (phi.range <= stop_range),
-                       drop=True).max(dim='range', skipna=True)
+                       drop=True).quantile(0.95, dim='range', skipna=True)
 
 
     return xr.Dataset(dict(phib=phib_sum,
