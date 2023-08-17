@@ -478,6 +478,7 @@ for ff in files:
         ds_qvp_ra.coords["height_ml_new_gia"] = ds_qvp_ra["height_ml_new_gia"].where(ds_qvp_ra["height_ml_new_gia"]<=z_isotherm.values).compute()
         ds_qvp_ra.coords["height_ml_bottom_new_gia"] = ds_qvp_ra["height_ml_bottom_new_gia"].where(ds_qvp_ra["height_ml_new_gia"]<=z_isotherm.values).compute()
         
+        # PHIDP delta bump correction
         # get where PHIDP has nan values
         nan = np.isnan(ds[X_PHI+"_OC_MASKED"]) 
         # get PHIDP outside the ML
