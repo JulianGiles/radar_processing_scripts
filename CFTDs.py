@@ -50,10 +50,18 @@ warnings.filterwarnings('ignore')
 
 #### Get QVP file list
 path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_monthly/*/*/umd/vol5minng01/07/*allmoms*"
-path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/*/*/*/ANK/*/*/*allmoms*"
-path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/*/*allmoms*"
+path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
+# path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/*/*/*/ANK/*/*/*allmoms*"
+# path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/*/*allmoms*"
 # path_qvps = ["/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*",
 #              "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/14*/*allmoms*"]
+
+# ## Special selection of dates based on ML_detected.txt or some other criteria (works but still quite slow)
+# special_selection = "/automount/realpep/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/ML*"
+# path_special = glob.glob(special_selection)
+# path_qvps = []
+# for ff in path_special:
+#     path_qvps.append(os.path.dirname(ff)+"/*allmoms*")
 
 if isinstance(path_qvps, str):
     files = sorted(glob.glob(path_qvps))
@@ -77,27 +85,29 @@ elif "dmi" in files[0]:
     country="dmi"
     X_TH = "DBZH"
 
-
-# there are slight differences (noise) in z coord sometimes so we have to align all datasets
-# since the time coord has variable length, we cannot use join="override" so we define a function to copy
-# the z coord from the first dataset into the rest with preprocessing
-# There are also some time values missing, ignore those
-# Some files do not have TEMP data, fill with nan
-first_file = xr.open_mfdataset(files[0]) 
-first_file_z = first_file.z.copy()
-def fix_z_and_time(ds):
-    ds.coords["z"] = first_file_z
-    ds = ds.where(ds["time"].notnull(), drop=True)
-    if "TEMP" not in ds.coords:
-        ds.coords["TEMP"] = xr.full_like( ds["DBZH"], np.nan ).compute()
+if len(files)==1:
+    qvps = xr.open_mfdataset(files)
+else:
+    # there are slight differences (noise) in z coord sometimes so we have to align all datasets
+    # since the time coord has variable length, we cannot use join="override" so we define a function to copy
+    # the z coord from the first dataset into the rest with preprocessing
+    # There are also some time values missing, ignore those
+    # Some files do not have TEMP data, fill with nan
+    first_file = xr.open_mfdataset(files[0]) 
+    first_file_z = first_file.z.copy()
+    def fix_z_and_time(ds):
+        ds.coords["z"] = first_file_z
+        ds = ds.where(ds["time"].notnull(), drop=True)
+        if "TEMP" not in ds.coords:
+            ds.coords["TEMP"] = xr.full_like( ds["DBZH"], np.nan ).compute()
+            
+        return ds
         
-    return ds
-    
-try:
-    qvps = xr.open_mfdataset(files, preprocess=fix_z_and_time)
-except: 
-    # if the above fails, just combine everything and fill the holes with nan (Turkish case)
-    qvps = xr.open_mfdataset(files, combine="nested", concat_dim="time")
+    try:
+        qvps = xr.open_mfdataset(files, preprocess=fix_z_and_time)
+    except: 
+        # if the above fails, just combine everything and fill the holes with nan (Turkish case)
+        qvps = xr.open_mfdataset(files, combine="nested", concat_dim="time")
 
 # Fill missing values in ZDR_OC and RHOHV_NC with the uncorrected variables
 if X_ZDR == "ZDR_OC":
@@ -188,9 +198,9 @@ colsteps=10
 # PHIDP: 0.708661 deg
 if country=="dmi":
 
-    vars_to_plot = {"DBZH": [0, 51, 1],
-                    "ZDR_OC": [-1.05, 3.1, 0.1],
-                    "KDP_ML_corrected": [-0.1, 0.51, 0.01],
+    vars_to_plot = {"DBZH": [0, 46, 1],
+                    "ZDR_OC": [-0.51, 2.1, 0.1],
+                    "KDP_ML_corrected": [-0.1, 0.41, 0.01],
                     "RHOHV_NC": [0.9, 1.002, 0.002]}
     
     fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
@@ -201,11 +211,11 @@ if country=="dmi":
         rd=10 # arbitrarily large decimal position to round to (so it is actually not rounded)
         if vv == "DBZH":
             so=False
-            binsx2 = [0, 51, 1]
+            binsx2 = [0, 46, 1]
             rd = 1 # decimal position to round to
         if vv == "ZDR_OC":
             so=True
-            binsx2 = [-1, 3.1, 0.1]
+            binsx2 = [-0.5, 2.1, 0.1]
             rd=1
         if "RHOHV" in vv:
             so = True
@@ -290,12 +300,26 @@ def plot_qvp(data, momname="DBZH", tloc=slice("2015-01-01", "2020-12-31"), plot_
         except:
             print("Plotting entropy failed")
 
-plot_qvp(qvps, "UPHIDP", tloc="2017-07-25", plot_ml=True, plot_entropy=True, ylim=(0,10000))
+plot_qvp(qvps, "KDP_ML_corrected", tloc="2017-07-25", plot_ml=True, plot_entropy=True, ylim=(0,10000))
 
 
 qvps_strat_fil_notime = qvps_strat_fil.copy()
 qvps_strat_fil_notime = qvps_strat_fil_notime.reset_index("time")
 plot_qvp(qvps_strat_fil_notime, "KDP_ML_corrected", plot_ml=True, plot_entropy=True, ylim=(2000,10000))
+
+#%% Checking PHIDP
+# get and plot a random selection of QVPs
+import random
+rand_dates = [random.randint(0, len(qvps_strat.time)) for _ in range(100)]
+for xx in rand_dates:
+    qvps.where(qvps_strat.time)["KDP_ML_corrected"][xx].plot(color="b", alpha=0.1)
+    
+
+# PLot a random selection of QVPs with negative KDP in the first 7 bins
+qvps_negKDP = qvps.where((qvps_strat["KDP_ML_corrected"][:,0:7]<=0).all("z"), drop=True)
+rand_dates = [random.randint(0, len(qvps_negKDP.time)) for _ in range(100)]
+for xx in rand_dates:
+    qvps_negKDP["UPHIDP_OC_MASKED"][xx].plot(color="b", alpha=0.1, ylim=(-3,3))
 
 
 #%% Load offsets for exploring
@@ -378,3 +402,8 @@ ank_12_20180306.ZDR.where(ank_12_20180306.TEMP>3).where(ank_12_20180306["z"]>ank
 ank_12_20180306.DBZH.where(ank_12_20180306.TEMP>3).where(ank_12_20180306["z"]>ank_12_20180306.altitude.values+300).median("azimuth").assign_coords({"z": ank_12_20180306["z"].median("azimuth")}).swap_dims({"range":"z"}).plot(x="time", y="z", vmin=-5, vmax=5, ylim=(ank_12_20180306.altitude,ank_12_20180306.altitude+2500))
 
 ank_12_20180306.ZDR.where(ank_12_20180306.TEMP>3).where(ank_12_20180306["z"]>ank_12_20180306.altitude.values+300).where((ank_12_20180306["DBZH"]>5)&(ank_12_20180306["DBZH"]<30)&(ank_12_20180306["RHOHV"]>0.98)).median("azimuth").assign_coords({"z": ank_12_20180306["z"].median("azimuth")}).swap_dims({"range":"z"}).plot(x="time", y="z", vmin=-5, vmax=5, ylim=(ank_12_20180306.altitude,ank_12_20180306.altitude+2500))
+
+
+#%% Test KDP from ZPHI
+ff = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/ras07-vol5minng01_sweeph5onem_allmoms_07-2017072500033500-pro-10392-hd5"
+pro20170725=dttree.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset()
