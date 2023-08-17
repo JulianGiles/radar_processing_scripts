@@ -306,7 +306,7 @@ for ff in files:
     except OSError:
         print("No noise corrected rhohv to load: "+rhoncpath+"/"+rhoncfile)
 
-#%% Correct PHIDP for ML detection
+#%% Correct PHIDP 
     ################## Before entropy calculation we need to use the melting layer detection algorithm 
     ds = swp
     interpolation_method_ML = "linear" # for interpolating PHIDP in the ML
