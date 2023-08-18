@@ -625,12 +625,16 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
     img = ax.pcolormesh(mx, my ,RES , cmap=cmap, vmin=cblim[0], vmax=cblim[1], shading=shading, **kwargs) #, shading="gouraud"
     
     if mq == "median":
-        ax.plot(var_med, my, color='red', lw=2)
+        ax.plot(var_med, my, color='#39081D', lw=2)
+        # ax.plot(var_med, my, color='white', lw=2, ls=(0, (5, 5)))
     elif mq == "mean":
-        ax.plot(var_mean, my, color='red', lw=2)
+        ax.plot(var_mean, my, color='#39081D', lw=2)
+        # ax.plot(var_mean, my, color='white', lw=2, ls=(0, (5, 5)))
 
-    ax.plot(var_qq1, my, color='red', linestyle='-.', lw=2)
-    ax.plot(var_qq2, my, color='red', linestyle='-.', lw=2)
+    ax.plot(var_qq1, my, color='#39081D', ls="-.", lw=2)
+    # ax.plot(var_qq1, my, color='white', linestyle=(0, (1, 5)), lw=2)
+    ax.plot(var_qq2, my, color='#39081D', ls="-.", lw=2)
+    # ax.plot(var_qq2, my, color='white', linestyle=(0, (1, 5)), lw=2)
     
     # se the x limits in case the lines go off the pcolormesh
     ax.set_xlim(xe[0], xe[-1])
