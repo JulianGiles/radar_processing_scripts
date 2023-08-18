@@ -19,7 +19,7 @@ import numpy as np
 # path_qvps = sys.argv[1] # read path from console
 # or set path here
 path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps/"
-path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/"
+# path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/"
 
 # special search criteria based on auxiliary files
 special_selection = "ML_detected*"
