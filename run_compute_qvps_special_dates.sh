@@ -8,7 +8,7 @@
 dir=/automount/realpep/upload/jgiles/dwd/
 
 # Input text file containing file paths
-input_file="${dir}folders_ML_reprocess_umdfail.txt"
+input_file="${dir}folders_ML_reprocess.txt"
 
 # Which location to process
 loc=umd
