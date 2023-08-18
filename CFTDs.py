@@ -49,10 +49,11 @@ warnings.filterwarnings('ignore')
 # This part should be run after having the QVPs computed (compute_qvps.py)
 
 #### Get QVP file list
-path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_monthly/*/*/umd/vol5minng01/07/*allmoms*"
-path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
+path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/*allmoms*"
+path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/umd/vol5minng01/07/*allmoms*"
+# path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
 # path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/*/*/*/ANK/*/*/*allmoms*"
-path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*"
+# path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*"
 # path_qvps = ["/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*",
 #              "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/14*/*allmoms*"]
 
@@ -181,7 +182,7 @@ ytlim=-20
 tb=1# degress C
 
 # Min counts per Temp layer
-mincounts=10
+mincounts=200
 
 #Colorbar limits and step
 cblim=[0,10]
