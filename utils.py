@@ -556,6 +556,7 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
         H_xr_int = H_xr.where(H_xr>0).interpolate_na(dim="mx").interp(coords={"mx":mx2})
         H = H_xr_int.where(H_xr_int.notnull(), 0).values # replace nans by zeros
         mx=mx2
+        xe=bins_px2
         if whole_x_range:
             # we need to put this new values from the new H into H_ext so the calculations below are correct
             H_ext = np.concatenate([np.expand_dims(H_ext[0,:], 0),H, np.expand_dims(H_ext[-1,:], 0)])
