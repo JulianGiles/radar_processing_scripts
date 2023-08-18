@@ -52,7 +52,7 @@ warnings.filterwarnings('ignore')
 path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_monthly/*/*/umd/vol5minng01/07/*allmoms*"
 path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
 # path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/*/*/*/ANK/*/*/*allmoms*"
-# path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/*/*allmoms*"
+path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*"
 # path_qvps = ["/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*",
 #              "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/14*/*allmoms*"]
 
@@ -198,10 +198,10 @@ colsteps=10
 # PHIDP: 0.708661 deg
 if country=="dmi":
 
-    vars_to_plot = {"DBZH": [0, 46, 1],
-                    "ZDR_OC": [-0.51, 2.1, 0.1],
-                    "KDP_ML_corrected": [-0.1, 0.41, 0.01],
-                    "RHOHV_NC": [0.9, 1.002, 0.002]}
+    vars_to_plot = {"DBZH": [0, 45.5, 0.5], 
+                    "ZDR_OC": [-0.505, 2.05, 0.1],
+                    "KDP":  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.013],
+                    "RHOHV": [0.9, 1.002, 0.002]}
     
     fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
     
@@ -210,13 +210,17 @@ if country=="dmi":
         binsx2=None
         rd=10 # arbitrarily large decimal position to round to (so it is actually not rounded)
         if vv == "DBZH":
-            so=False
+            so=True
             binsx2 = [0, 46, 1]
             rd = 1 # decimal position to round to
         if vv == "ZDR_OC":
             so=True
             binsx2 = [-0.5, 2.1, 0.1]
             rd=1
+        if vv == "KDP":
+            so=True #True
+            binsx2 = [-0.1, 0.51, 0.01]
+            rd=2
         if "RHOHV" in vv:
             so = True
             binsx2 = [0.9, 1.005, 0.005]
@@ -311,8 +315,8 @@ plot_qvp(qvps_strat_fil_notime, "KDP_ML_corrected", plot_ml=True, plot_entropy=T
 # get and plot a random selection of QVPs
 import random
 rand_dates = [random.randint(0, len(qvps_strat.time)) for _ in range(100)]
-for xx in rand_dates:
-    qvps.where(qvps_strat.time)["KDP_ML_corrected"][xx].plot(color="b", alpha=0.1)
+for xx in range(100):
+    qvps.where(qvps_strat.time).loc[{"time":"2017-07-25"}]["KDP_ML_corrected"][xx].plot(color="b", alpha=0.1)
     
 
 # PLot a random selection of QVPs with negative KDP in the first 7 bins
