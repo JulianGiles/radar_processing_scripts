@@ -104,12 +104,15 @@ if "GZT" in path0:
 
 # Use ERA5 temperature profile? If so, it does not use sounding data
 era5_temp = True
-if "jgiles" in files[0]:
+if os.path.exists("/automount/ags/jgiles/ERA5/hourly/"):
     # then we are in local system
     era5_dir = "/automount/ags/jgiles/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
-elif "giles1" in files[0]:
+elif os.path.exists("/p/scratch/detectrea/giles1/ERA5/hourly/"):
     # then we are in JSC
     era5_dir = "/p/scratch/detectrea/giles1/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
+elif os.path.exists("/p/largedata2/detectdata/projects/A04/ERA5/hourly/"):
+    # then we are in JSC
+    era5_dir = "/p/largedata2/detectdata/projects/A04/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
 
 # download sounding data?
 download_sounding = False
@@ -393,15 +396,25 @@ for ff in files:
         """
         
         # assign new variables to dataset
-        assign = {X_PHI+"_OC_SMOOTH": phi_median.assign_attrs(ds[X_PHI].attrs),
-          X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs),
-          "KDP_CONV": kdp.assign_attrs(KDP_attrs),
-          "PHI_CONV": phidp.assign_attrs(ds[X_PHI].attrs),
+        if "UPHIDP" not in X_PHI:
+            assign = {
+              X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs),
+              "KDP_CONV": kdp.assign_attrs(KDP_attrs),
+              "PHI_CONV": phidp.assign_attrs(ds[X_PHI].attrs)
+              }
+                
+            ds = ds.assign(assign)
         
-          X_PHI+"_OFFSET": off.assign_attrs(ds[X_PHI].attrs),
-          X_PHI+"_OC": phi_fix.assign_attrs(ds[X_PHI].attrs)}
-
-        ds = ds.assign(assign)
+        else:
+            assign = {X_PHI+"_OC_SMOOTH": phi_median.assign_attrs(ds[X_PHI].attrs),
+              X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs),
+              "KDP_CONV": kdp.assign_attrs(KDP_attrs),
+              "PHI_CONV": phidp.assign_attrs(ds[X_PHI].attrs),
+            
+              X_PHI+"_OFFSET": off.assign_attrs(ds[X_PHI].attrs),
+              X_PHI+"_OC": phi_fix.assign_attrs(ds[X_PHI].attrs)}
+    
+            ds = ds.assign(assign)
         
     else:
         print(X_PHI+" not found in the data, skipping ML detection")
@@ -430,7 +443,10 @@ for ff in files:
             moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI+"_OC": (-20, 180)}
             clowres0=True
         elif country=="dmi":
-            moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI+"_OC": (-20, 180)}
+            if X_PHI+"_OC" in ds.data_vars:
+                moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI+"_OC": (-20, 180)}
+            else:
+                moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI: (-20, 180)}
             clowres0=False
 
         dim = 'z'
