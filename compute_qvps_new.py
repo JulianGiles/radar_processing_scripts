@@ -302,8 +302,12 @@ for ff in files:
         swp = swp.assign(rho_nc)
         swp["RHOHV_NC"].attrs["noise correction level"] = rho_nc.attrs["noise correction level"]
         
-        # Change the default ZDR name to the corrected one
-        X_RHO = X_RHO+"_NC"
+        # Check that the corrected RHOHV does not have much higher STD than the original (50% more)
+        # if that is the case we take it that the correction did not work well so we won't use it
+        if not (swp["RHOHV"].std()*1.5 < swp["RHOHV_NC"].std()).compute():
+            # Change the default RHOHV name to the corrected one
+            X_RHO = X_RHO+"_NC"
+            
     except OSError:
         print("No noise corrected rhohv to load: "+rhoncpath+"/"+rhoncfile)
 
@@ -332,34 +336,45 @@ for ff in files:
 
         ######### Processing PHIDP
         #### fix PHIDP
+        # flip PHIDP in case it is wrapping around the edges (case for turkish radars)
+        if ds[X_PHI].notnull().any() and not ((ds[X_PHI]>-20)*(ds[X_PHI]<20)).any():
+            ds[X_PHI] = xr.where(ds[X_PHI]<=0, ds[X_PHI]+180, ds[X_PHI]-180, keep_attrs=True).compute()
+        
         # filter
         phi = ds[X_PHI].where((ds[X_RHO]>=0.9) & (ds[X_DBZH]>=0) & (ds["z"]>min_height) )
-        # calculate offset
-        rng_offset = phi.range.diff("range").median().values * window0
-        phidp_offset = phi.pipe(radarmet.phase_offset, rng=rng_offset)
-        off = phidp_offset["PHIDP_OFFSET"]
-        start_range = phidp_offset["start_range"]
+        
+        # phidp may be already preprocessed (turkish case), then proceed directly to masking and then vulpiani
+        if "UPHIDP" not in X_PHI:
+            # mask 
+            phi_masked = phi.where((ds[X_RHO] >= 0.95) & (ds[X_DBZH] >= 0.))
+        
+        else:
+            # calculate offset
+            rng_offset = phi.range.diff("range").median().values * window0
+            phidp_offset = phi.pipe(radarmet.phase_offset, rng=rng_offset)
+            off = phidp_offset["PHIDP_OFFSET"]
+            start_range = phidp_offset["start_range"]
+        
+            # apply offset
+            phi_fix = ds[X_PHI].copy()
+            off_fix = off.broadcast_like(phi_fix)
+            phi_fix = phi_fix.where(phi_fix.range >= start_range + fix_range).fillna(off_fix) - off
+        
+            # smooth range dim
+            window = window0 # window along range   <----------- this value is quite important for the quality of KDP, since phidp is very noisy
+            window2 = None # window along azimuth
+            phi_median = phi_fix.pipe(radarmet.xr_rolling, window, window2=window2, method='median', min_periods=round(window/2), skipna=False)
     
-        # apply offset
-        phi_fix = ds[X_PHI].copy()
-        off_fix = off.broadcast_like(phi_fix)
-        phi_fix = phi_fix.where(phi_fix.range >= start_range + fix_range).fillna(off_fix) - off
+            # Apply additional smoothing
+            gkern = radarmet.gauss_kernel(window, window)
+            smooth_partial = partial(radarmet.smooth_data, kernel=gkern)
+            # phiclean = radarmet.smooth_data(phi_median[0], gkern)
+            phiclean = xr.apply_ufunc(smooth_partial, phi_median.compute(), 
+                                      input_core_dims=[["azimuth","range"]], output_core_dims=[["azimuth","range"]],
+                                      vectorize=True)
     
-        # smooth range dim
-        window = window0 # window along range   <----------- this value is quite important for the quality of KDP, since phidp is very noisy
-        window2 = None # window along azimuth
-        phi_median = phi_fix.pipe(radarmet.xr_rolling, window, window2=window2, method='median', min_periods=window/2, skipna=False)
-
-        # Apply additional smoothing
-        gkern = radarmet.gauss_kernel(window, window)
-        smooth_partial = partial(radarmet.smooth_data, kernel=gkern)
-        # phiclean = radarmet.smooth_data(phi_median[0], gkern)
-        phiclean = xr.apply_ufunc(smooth_partial, phi_median.compute(), 
-                                  input_core_dims=[["azimuth","range"]], output_core_dims=[["azimuth","range"]],
-                                  vectorize=True)
-
-        # mask 
-        phi_masked = phi_median.where((ds[X_RHO] >= 0.95) & (ds[X_DBZH] >= 0.))
+            # mask 
+            phi_masked = phiclean.where((ds[X_RHO] >= 0.95) & (ds[X_DBZH] >= 0.))
         
         # derive KDP from PHIDP (Vulpiani)
         winlen = winlen0 # windowlen 
