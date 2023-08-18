@@ -431,7 +431,7 @@ def phase_offset(phioff, rng=3000., npix=None):
     phib = xr.where(np.isnan(phioff), 0, 1)
 
     # take nprec range bins and calculate sum
-    phib_sum = phib.rolling(range=nprec, center=True).sum(skipna=True)
+    phib_sum = phib.rolling(range=nprec, center=True).sum(skipna=True).fillna(0)
 
     # find at least N pixels in
     # phib_sum_N = phib_sum.where(phib_sum >= npix)
@@ -607,6 +607,70 @@ def xr_rolling(da, window, window2=None, method="mean", min_periods=2, rangepad=
         da_new = da_new.bfill("range").ffill("range")
     
     return da_new
+
+'''
+# THIS FUNCTION FOR PHIDP PROCESSING NEEDS PY-ART. NOT IMPLEMENTED ATM!!!
+def phidp_giangrande(radar, gatefilter, refl_field='DBZH', ncp_field='NCP',
+                     rhv_field='RHOHV_CORR', phidp_field='PHIDP'):
+    """
+    Phase processing using the LP method in Py-ART. A LP solver is required,
+
+    Parameters:
+    ===========
+    radar:
+        Py-ART radar structure.
+    gatefilter:
+        Gate filter.
+    refl_field: str
+        Reflectivity field label.
+    ncp_field: str
+        Normalised coherent power field label.
+    rhv_field: str
+        Cross correlation ration field label.
+    phidp_field: str
+        Differential phase label.
+
+    Returns:
+    ========
+    phidp_gg: dict
+        Field dictionary containing processed differential phase shifts.
+    kdp_gg: dict
+        Field dictionary containing recalculated differential phases.
+    """
+    
+    unfphidic = pyart.correct.dealias_unwrap_phase(radar,
+                                                   gatefilter=gatefilter,
+                                                   skip_checks=True,
+                                                   vel_field=phidp_field,
+                                                   nyquist_vel=90)
+
+    radar.add_field_like(phidp_field, 'PHITMP', unfphidic['data'])
+    
+    phidp_gg, kdp_gg = pyart.correct.phase_proc_lp(radar, 0.0,
+                                                   LP_solver='cylp',
+                                                   ncp_field=ncp_field,
+                                                   refl_field=refl_field,
+                                                   rhv_field=rhv_field,
+                                                   phidp_field='PHITMP')
+
+    phidp_gg['data'], kdp_gg['data'] = _fix_phidp_from_kdp(phidp_gg['data'],
+                                                           kdp_gg['data'],
+                                                           radar.range['data'],
+                                                           gatefilter)
+    try:
+        # Remove temp variables.
+        radar.fields.pop('PHITMP')
+    except Exception:
+        pass
+
+    phidp_gg['data'] = phidp_gg['data'].astype(np.float32)
+    phidp_gg['_Least_significant_digit'] = 4
+    kdp_gg['data'] = kdp_gg['data'].astype(np.float32)
+    kdp_gg['_Least_significant_digit'] = 4
+    
+    return phidp_gg, kdp_gg
+
+'''
 
 
 # Hydrometeor Classification
