@@ -412,3 +412,23 @@ ank_12_20180306.ZDR.where(ank_12_20180306.TEMP>3).where(ank_12_20180306["z"]>ank
 #%% Test KDP from ZPHI
 ff = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/ras07-vol5minng01_sweeph5onem_allmoms_07-2017072500033500-pro-10392-hd5"
 pro20170725=dttree.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset()
+
+#%% Load multiple elevations of DWD to check if there is better PHIDP
+ff = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/*/*allmoms*"
+
+files = sorted(glob.glob(ff))
+
+vollist = []
+for fx in files:
+    vollist.append(dttree.open_datatree(fx)["sweep_"+fx.split("/")[-2][1]].to_dataset())
+    vollist[-1].coords["elevation"] = vollist[-1].coords["elevation"].median()
+    vollist[-1] = vollist[-1].expand_dims("elevation")
+
+xx = 9
+tt = np.arange(0, len(vollist[xx].time), 20)
+aa = np.arange(0, 360, 30)
+for tx in tt:
+    for ax in aa:
+        vollist[xx].UPHIDP[0, tx, ax,:].plot(color="b", alpha=0.01)
+
+vol = xr.concat(vollist, dim="elevation")
