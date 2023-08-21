@@ -605,11 +605,11 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
     # overall sum for relative distribution
     if mode=='rel_all':
         allsum = np.nansum(H_ext)
-        allsum[allsum<mincounts]=np.nan
+        allsum[var_count<mincounts]=np.nan
         relHa = H.T/allsum
     elif mode=='rel_y':
         allsum = np.nansum(H_ext, axis=0)
-        allsum[allsum<mincounts]=np.nan
+        allsum[var_count<mincounts]=np.nan
         relHa = (H/allsum).T # transpose so the y axis is temperature
         
     elif mode=='abs':
