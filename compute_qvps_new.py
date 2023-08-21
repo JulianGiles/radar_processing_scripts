@@ -340,8 +340,11 @@ for ff in files:
         ######### Processing PHIDP
         #### fix PHIDP
         # flip PHIDP in case it is wrapping around the edges (case for turkish radars)
-        if ds[X_PHI].notnull().any() and not ((ds[X_PHI]>-20)*(ds[X_PHI]<20)).any():
-            ds[X_PHI] = xr.where(ds[X_PHI]<=0, ds[X_PHI]+180, ds[X_PHI]-180, keep_attrs=True).compute()
+        if ds[X_PHI].notnull().any():
+            values_center = ((ds[X_PHI]>-50)*(ds[X_PHI]<50)).sum().compute()
+            values_sides = ((ds[X_PHI]>50)+(ds[X_PHI]<-50)).sum().compute()
+            if values_sides > values_center:
+                ds[X_PHI] = xr.where(ds[X_PHI]<=0, ds[X_PHI]+180, ds[X_PHI]-180, keep_attrs=True).compute()
         
         # filter
         phi = ds[X_PHI].where((ds[X_RHO]>=0.9) & (ds[X_DBZH]>=0) & (ds["z"]>min_height) )
