@@ -201,7 +201,7 @@ if country=="dmi":
 
     vars_to_plot = {"DBZH": [0, 45.5, 0.5], 
                     "ZDR_OC": [-0.505, 2.05, 0.1],
-                    "KDP":  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.013],
+                    "KDP_ML_corrected":  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.013],
                     "RHOHV": [0.9, 1.002, 0.002]}
     
     fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
@@ -218,7 +218,7 @@ if country=="dmi":
             so=True
             binsx2 = [-0.5, 2.1, 0.1]
             rd=1
-        if vv == "KDP":
+        if "KDP" in vv:
             so=True #True
             binsx2 = [-0.1, 0.51, 0.01]
             rd=2
@@ -227,7 +227,7 @@ if country=="dmi":
             binsx2 = [0.9, 1.005, 0.005]
             rd=3
         utils.hist2d(ax[nn], qvps_strat_fil[vv].round(rd), qvps_strat_fil["TEMP"]+adjtemp, whole_x_range=True, 
-                     binsx=vars_to_plot[vv], binsy=[-20,15,tb], mode='rel_y', qq=0.2,
+                     binsx=vars_to_plot[vv], binsy=[-20,16,tb], mode='rel_y', qq=0.2,
                      cb_mode=(nn+1)/len(vars_to_plot), cmap="plasma", colsteps=colsteps, 
                      fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
                      cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
@@ -261,7 +261,7 @@ if country=="dwd":
         if "KDP" in vv:
             adj=1
         utils.hist2d(ax[nn], qvps_strat_fil[vv]*adj, qvps_strat_fil["TEMP"]+adjtemp, whole_x_range=True, 
-                     binsx=vars_to_plot[vv], binsy=[-20,15,tb], mode='rel_y', qq=0.2,
+                     binsx=vars_to_plot[vv], binsy=[-20,16,tb], mode='rel_y', qq=0.2,
                      cb_mode=(nn+1)/len(vars_to_plot), cmap="plasma", colsteps=colsteps, 
                      fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
                      cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
