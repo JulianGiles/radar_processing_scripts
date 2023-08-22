@@ -96,7 +96,7 @@ for loc in ["pro", "tur", "umd", "AFY", "ANK", "GZT", "HTY", "SVS"]:
                         print("Could not determine country to build savepath. Ignoring "+" ".join([loc, yy, mm, mode, elev]))
                         continue
                     
-                    savepath1 = ffs2[0].split(country)[0]+"monthly_files_"+special_selection.replace("*", "")+"/"+loc+"/"+yy+"/"+yy+"-"+mm+"/"
+                    savepath1 = ffs2[0].split(country)[0]+country+"/monthly_files_"+special_selection.replace("*", "")+"/"+loc+"/"+yy+"/"+yy+"-"+mm+"/"
                     savepath2 = ffs2[0].split("/"+loc+"/")[1]
                     savepath = savepath1 + savepath2
                     savepathdir = os.path.dirname(savepath)
