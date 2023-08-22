@@ -433,3 +433,139 @@ for tx in tt:
         vollist[xx].UPHIDP[0, tx, ax,:].plot(color="b", alpha=0.01)
 
 vol = xr.concat(vollist, dim="elevation")
+
+
+#%% Plot radar locations over map
+from osgeo import osr
+
+wgs84 = osr.SpatialReference()
+wgs84.ImportFromEPSG(4326)
+
+# Load a sample PPI
+# swpx = dttree.open_datatree("/automount/realpep/upload/jgiles/dwd/2016/2016-01/2016-01-01/pro/vol5minng01/07/ras07-vol5minng01_sweeph5onem_allmoms_07-2016010100034100-pro-10392-hd5")["sweep_7"].to_dataset().DBZH[0]
+# swpx = dttree.open_datatree("/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/05/ras07-vol5minng01_sweeph5onem_allmoms_05-2017072500030000-pro-10392-hd5")["sweep_5"].to_dataset().DBZH[0]
+swpx = xr.open_dataset("/automount/realpep/upload/jgiles/dmi/2018/2018-03/2018-03-06/HTY/VOL_B/10.0/VOL_B-allmoms-10.0-2018-03-06-HTY-h5netcdf.nc").DBZH[0]
+swpx = swpx.pipe(wrl.georef.georeference_dataset,  proj=wgs84)
+
+# Download DEM data
+
+extent = wrl.zonalstats.get_bbox(swpx.x.values, swpx.y.values)
+extent
+
+# apply fake token, data is already available
+os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = "eyJ0eXAiOiJKV1QiLCJvcmlnaW4iOiJFYXJ0aGRhdGEgTG9naW4iLCJzaWciOiJlZGxqd3RwdWJrZXlfb3BzIiwiYWxnIjoiUlMyNTYifQ.eyJ0eXBlIjoiVXNlciIsInVpZCI6ImpnaWxlcyIsImV4cCI6MTY5NzkwMDAyMiwiaWF0IjoxNjkyNzE2MDIyLCJpc3MiOiJFYXJ0aGRhdGEgTG9naW4ifQ.4OhlJ-fTL_ii7EB2Eavyg7fPotk_U6g5ZC9ryS1RFp0cb8KGDl0ptwtifmV7A1__5FbLQlvH3MUKQg_Gq5LKTGi61bn_BBeXzRxx2Z8WJW7uuESQQH61urrbji-xwiIVo65r0tDfT0qYYulbA4X9DPBom2BHMvcvitgnvwRiQFpK8S6h7xoYLqCgHJOtATBc_2Su28qaDfH_SwRLI81iQYDnfLPhL_iWVf3bQxdObl31WD4inrST8IMSg59KMuioRRHdydE7PPsGxHWV5U2PFfRwjS1dqi0ntP_mlXoBpG-Eh-vNdaWi4KSGZA4PYN4AuTV1ijzGEzd8Qvw2aIo6Xg"
+# set location of wradlib-data, where wradlib will search for any available data
+os.environ["WRADLIB_DATA"] = "/home/jgiles/wradlib-data-main/"
+# get the tiles
+dem = wrl.io.get_srtm(extent.values())
+
+# DEM to spherical coords
+
+sitecoords = (swpx.longitude.values, swpx.latitude.values, swpx.altitude.values)
+r = swpx.range.values
+az = swpx.azimuth.values
+bw = 1
+beamradius = wrl.util.half_power_radius(r, bw)
+
+rastervalues, rastercoords, proj = wrl.georef.extract_raster_dataset(
+    dem, nodata=-32768.0
+)
+
+rlimits = (extent["left"], extent["bottom"], extent["right"], extent["top"])
+# Clip the region inside our bounding box
+ind = wrl.util.find_bbox_indices(rastercoords, rlimits)
+rastercoords = rastercoords[ind[1] : ind[3], ind[0] : ind[2], ...]
+rastervalues = rastervalues[ind[1] : ind[3], ind[0] : ind[2]]
+
+polcoords = np.dstack([swpx.x.values, swpx.y.values])
+# Map rastervalues to polar grid points
+polarvalues = wrl.ipol.cart_to_irregular_spline(
+    rastercoords, rastervalues, polcoords, order=3, prefilter=False
+)
+
+# Partial and cumulative beam blockage
+PBB = wrl.qual.beam_block_frac(polarvalues, swpx.z.values, beamradius)
+PBB = np.ma.masked_invalid(PBB)
+
+CBB = wrl.qual.cum_beam_block_frac(PBB)
+
+# just a little helper function to style x and y axes of our maps
+def annotate_map(ax, cm=None, title=""):
+    xticks = ax.get_xticks()
+    ticks = (xticks / 1000).astype(int)
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(ticks)
+    yticks = ax.get_yticks()
+    ticks = (yticks / 1000).astype(int)
+    ax.set_yticks(yticks)
+    ax.set_yticklabels(ticks)
+    ax.set_xlabel("Kilometers")
+    ax.set_ylabel("Kilometers")
+    if not cm is None:
+        plt.colorbar(cm, ax=ax)
+    if not title == "":
+        ax.set_title(title)
+    ax.grid()
+
+#make the plots
+alt = swpx.z.values
+fig = plt.figure(figsize=(15, 12))
+
+# create subplots
+ax1 = plt.subplot2grid((2, 2), (0, 0))
+ax2 = plt.subplot2grid((2, 2), (0, 1))
+ax3 = plt.subplot2grid((2, 2), (1, 0), colspan=2, rowspan=1)
+
+# azimuth angle
+angle = 270
+
+# Plot terrain (on ax1)
+ax1, dem = wrl.vis.plot_ppi(
+    polarvalues, ax=ax1, r=r, az=az, cmap=mpl.cm.terrain, vmin=0.0
+)
+ax1.plot(
+    [0, np.sin(np.radians(angle)) * 1e5], [0, np.cos(np.radians(angle)) * 1e5], "r-"
+)
+ax1.plot(sitecoords[0], sitecoords[1], "ro")
+annotate_map(ax1, dem, "Terrain within {0} km range".format(np.max(r / 1000.0) + 0.1))
+ax1.set_xlim(-100000, 100000)
+ax1.set_ylim(-100000, 100000)
+
+# Plot CBB (on ax2)
+ax2, cbb = wrl.vis.plot_ppi(CBB, ax=ax2, r=r, az=az, cmap=mpl.cm.PuRd, vmin=0, vmax=1)
+annotate_map(ax2, cbb, "Beam-Blockage Fraction")
+ax2.set_xlim(-100000, 100000)
+ax2.set_ylim(-100000, 100000)
+
+# Plot single ray terrain profile on ax3
+(bc,) = ax3.plot(r / 1000.0, alt[angle, :], "-b", linewidth=3, label="Beam Center")
+(b3db,) = ax3.plot(
+    r / 1000.0,
+    (alt[angle, :] + beamradius),
+    ":b",
+    linewidth=1.5,
+    label="3 dB Beam width",
+)
+ax3.plot(r / 1000.0, (alt[angle, :] - beamradius), ":b")
+ax3.fill_between(r / 1000.0, 0.0, polarvalues[angle, :], color="0.75")
+ax3.set_xlim(0.0, np.max(r / 1000.0) + 0.1)
+ax3.set_ylim(0.0, 3000)
+ax3.set_xlabel("Range (km)")
+ax3.set_ylabel("Altitude (m)")
+ax3.grid()
+
+axb = ax3.twinx()
+(bbf,) = axb.plot(r / 1000.0, CBB[angle, :], "-g", label="BBF")
+axb.spines["right"].set_color("g")
+axb.tick_params(axis="y", colors="g")
+axb.set_ylabel("Beam-blockage fraction", c="g")
+axb.set_ylim(0.0, 1.0)
+axb.set_xlim(0.0, np.max(r / 1000.0) + 0.1)
+
+
+legend = ax3.legend(
+    (bc, b3db, bbf),
+    ("Beam Center", "3 dB Beam width", "BBF"),
+    loc="upper left",
+    fontsize=10,
+)
