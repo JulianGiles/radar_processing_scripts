@@ -126,6 +126,7 @@ qvps_strat = qvps.where( (qvps["min_entropy"]>=0.8) & (qvps.height_ml_bottom_new
 # Filter relevant values
 qvps_strat_fil = qvps_strat.where((qvps_strat[X_TH] > 0 )&
                                   (qvps_strat[X_KDP] > -0.1)&
+                                  (qvps_strat[X_KDP] < 3)&
                                   (qvps_strat[X_RHOHV] > 0.7)&
                                   (qvps_strat[X_ZDR] > -1) &
                                   (qvps_strat[X_ZDR] < 3))
@@ -210,11 +211,11 @@ if country=="dmi":
         so=False
         binsx2=None
         rd=10 # arbitrarily large decimal position to round to (so it is actually not rounded)
-        if vv == "DBZH":
+        if "DBZH" in vv:
             so=True
             binsx2 = [0, 46, 1]
             rd = 1 # decimal position to round to
-        if vv == "ZDR_OC":
+        if "ZDR" in vv:
             so=True
             binsx2 = [-0.5, 2.1, 0.1]
             rd=1
