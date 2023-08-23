@@ -30,6 +30,7 @@ from dask.diagnostics import ProgressBar
 from xhistogram.xarray import histogram
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+import xradar as xd
 
 try:
     from Scripts.python.radar_processing_scripts import utils
@@ -53,7 +54,7 @@ path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/
 path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/umd/vol5minng01/07/*allmoms*"
 # path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
 # path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/*/*/*/ANK/*/*/*allmoms*"
-path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_singlefile/ML_detected/ANK/*/*/*allmoms*"
+# path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_singlefile/ML_detected/SVS/*/*/*allmoms*"
 # path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*"
 # path_qvps = ["/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*",
 #              "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/14*/*allmoms*"]
@@ -77,7 +78,7 @@ else:
 
 #### Set variable names
 X_DBZH = "DBZH"
-X_RHOHV = "RHOHV"
+X_RHOHV = "RHOHV_NC"
 X_ZDR = "ZDR_OC"
 X_KDP = "KDP_ML_corrected"
 
@@ -198,10 +199,13 @@ except:
 
 #### Calculate retreivals
 
-# to check the wavelength of each radar, in cm for germans
+# to check the wavelength of each radar, in cm for DWD, in 1/100 cm for DMI ()
 # filewl = ""
-# xr.open_dataset(filewl, group="how")
-Lambda = 53.138 # radar wavelength in mm (pro: 53.138)
+# xr.open_dataset(filewl, group="how") # DWD
+# file1 = "/automount/realpep/upload/jgiles/dmi_raw/acq/OLDDATA/uza/RADAR/2015/01/01/ANK/RAW/ANK150101000008.RAW6M00"
+# xd.io.backends.iris.IrisRawFile(file1, loaddata=False).ingest_header["task_configuration"]["task_misc_info"]["wavelength"]
+
+Lambda = 53.1 # radar wavelength in mm (pro: 53.138, ANK: 53.1, AFY: 53.3, GZT: 53.3, HTY: 53.3, SVS:53.3)
 
 # LWC 
 lwc_zh_zdr = 10**(0.058*qvps_strat_fil[X_DBZH] - 0.118*qvps_strat_fil[X_ZDR] - 2.36) # Reimann et al 2021 (adjusted for Germany)
@@ -211,9 +215,9 @@ lwc_kdp = 10**(0.568*np.log10(qvps_strat_fil[X_KDP]) + 0.06) # Reimann et al 202
 # IWC (Collected from Blanke et al 2023)
 iwc_zh_t = 10**(0.06 * qvps_strat_fil[X_DBZH] - 0.0197*qvps_strat_fil["TEMP"] - 1.7) # empirical from Hogan et al 2006
 
-iwc_zdr_zh_kdp = xr.where(qvps_strat_fil[X_ZDR]>0.4, 
+iwc_zdr_zh_kdp = xr.where(qvps_strat_fil[X_ZDR]>0.4, # Carlin et al 2021
                           4*10**(-3)*( qvps_strat_fil[X_KDP]*Lambda/( 1-wrl.trafo.idecibel(qvps_strat_fil[X_ZDR])**-1 ) ), 
-                          0.031474 * ( qvps_strat_fil[X_KDP]**Lambda )**0.66 * qvps_strat_fil[X_DBZH]**0.28 ) # Carlin et al 2021
+                          0.031474 * ( qvps_strat_fil[X_KDP]*Lambda )**0.66 * qvps_strat_fil[X_DBZH]**0.28 ) 
 
 # Dm
 Dm_ice_zh = 1.055*qvps_strat_fil[X_DBZH]**0.271 # Matrosov et al. (2019)
@@ -242,7 +246,7 @@ retreivals = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
                          "Dm_rain_zdr3": Dm_rain_zdr3,
                          "Nt_ice_zh_iwc": Nt_ice_zh_iwc,
                          "Nt_rain_zh_zdr": Nt_rain_zh_zdr,
-                         })
+                         }).compute()
 
 #### General statistics
 values_sfc = qvps_strat_fil.isel({"z": 2})
@@ -391,9 +395,9 @@ if country=="dwd":
 # plot CFTDs retreivals
 # We assume that everything above ML is frozen and everything below is liquid
 
-IWC = "iwc_zh_t" # iwc_zh_t or iwc_zdr_zh_kdp
-LWC = "lwc_zh_zdr" # lwc_zh_zdr or lwc_zh_zdr2 or lwc_kdp
-Dm_ice = "Dm_ice_zh" # Dm_ice_zh or Dm_ice_zh_kdp
+IWC = "iwc_zdr_zh_kdp" # iwc_zh_t or iwc_zdr_zh_kdp
+LWC = "lwc_kdp" # lwc_zh_zdr or lwc_zh_zdr2 or lwc_kdp
+Dm_ice = "Dm_ice_zh_kdp" # Dm_ice_zh or Dm_ice_zh_kdp
 Dm_rain = "Dm_rain_zdr3" # Dm_rain_zdr, Dm_rain_zdr2 or Dm_rain_zdr3
 Nt_ice = "Nt_ice_zh_iwc" # Nt_ice_zh_iwc
 Nt_rain = "Nt_rain_zh_zdr" # Nt_rain_zh_zdr
@@ -410,9 +414,9 @@ retreivals_merged = xr.Dataset({
 
 # if country=="dwd":
 
-vars_to_plot = {"WC": [-0.1, 0.82, 0.02], 
-                "Dm": [0, 3.1, 0.1],
-                "Nt": [-1.1, 2.1, 0.1],
+vars_to_plot = {"WC": [-0.1, 0.82, 0.02], # [-0.1, 0.82, 0.02], 
+                "Dm": [0, 3.1, 0.1], # [0, 3.1, 0.1],
+                "Nt": [-1.1, 2.1, 0.1], # [-1.1, 2.1, 0.1],
                 }
 
 fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15,5), width_ratios=(1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
@@ -667,7 +671,87 @@ if country=="dwd":
     ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
 
 
-#%% Plot radar locations over map
+#%% Plot map with radars and partial beam blockage
+from osgeo import osr
+import matplotlib.pyplot as plt
+from matplotlib.transforms import offset_copy
+
+import cartopy.crs as ccrs
+import cartopy.io.img_tiles as cimgt
+
+
+# Create a Stamen terrain background instance.
+stamen_terrain = cimgt.Stamen('terrain-background')
+
+# set projection
+wgs84 = osr.SpatialReference()
+wgs84.ImportFromEPSG(4326)
+
+# Load a sample PPI
+ff = glob.glob("/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/*allmoms*")[0]
+swpx = dttree.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset().DBZH[0]
+swpx = swpx.pipe(wrl.georef.georeference_dataset, proj=wgs84)
+
+# Download DEM data
+
+extent = wrl.zonalstats.get_bbox(swpx.x.values, swpx.y.values)
+extent
+
+# apply token
+os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = "eyJ0eXAiOiJKV1QiLCJvcmlnaW4iOiJFYXJ0aGRhdGEgTG9naW4iLCJzaWciOiJlZGxqd3RwdWJrZXlfb3BzIiwiYWxnIjoiUlMyNTYifQ.eyJ0eXBlIjoiVXNlciIsInVpZCI6ImpnaWxlcyIsImV4cCI6MTY5NzkwMDAyMiwiaWF0IjoxNjkyNzE2MDIyLCJpc3MiOiJFYXJ0aGRhdGEgTG9naW4ifQ.4OhlJ-fTL_ii7EB2Eavyg7fPotk_U6g5ZC9ryS1RFp0cb8KGDl0ptwtifmV7A1__5FbLQlvH3MUKQg_Gq5LKTGi61bn_BBeXzRxx2Z8WJW7uuESQQH61urrbji-xwiIVo65r0tDfT0qYYulbA4X9DPBom2BHMvcvitgnvwRiQFpK8S6h7xoYLqCgHJOtATBc_2Su28qaDfH_SwRLI81iQYDnfLPhL_iWVf3bQxdObl31WD4inrST8IMSg59KMuioRRHdydE7PPsGxHWV5U2PFfRwjS1dqi0ntP_mlXoBpG-Eh-vNdaWi4KSGZA4PYN4AuTV1ijzGEzd8Qvw2aIo6Xg"
+# set location of wradlib-data, where wradlib will search for any available data
+os.environ["WRADLIB_DATA"] = "/home/jgiles/wradlib-data-main/"
+# get the tiles
+dem = wrl.io.get_srtm(extent.values())
+
+# DEM to spherical coords
+
+sitecoords = (swpx.longitude.values, swpx.latitude.values, swpx.altitude.values)
+r = swpx.range.values
+az = swpx.azimuth.values
+bw = 1
+beamradius = wrl.util.half_power_radius(r, bw)
+
+rastervalues, rastercoords, proj = wrl.georef.extract_raster_dataset(
+    dem, nodata=-32768.0
+)
+
+rlimits = (extent["left"], extent["bottom"], extent["right"], extent["top"])
+# Clip the region inside our bounding box
+ind = wrl.util.find_bbox_indices(rastercoords, rlimits)
+rastercoords = rastercoords[ind[1] : ind[3], ind[0] : ind[2], ...]
+rastervalues = rastervalues[ind[1] : ind[3], ind[0] : ind[2]]
+
+polcoords = np.dstack([swpx.x.values, swpx.y.values])
+# Map rastervalues to polar grid points
+polarvalues = wrl.ipol.cart_to_irregular_spline(
+    rastercoords, rastervalues, polcoords, order=3, prefilter=False
+)
+
+# Partial and cumulative beam blockage
+PBB = wrl.qual.beam_block_frac(polarvalues, swpx.z.values, beamradius)
+PBB = np.ma.masked_invalid(PBB)
+
+CBB = wrl.qual.cum_beam_block_frac(PBB)
+CBB_xr = xr.ones_like(swpx)*CBB
+
+#make the plots
+fig = plt.figure()
+
+# create subplots
+ax = fig.add_subplot(1, 1, 1, projection=stamen_terrain.crs)
+
+# Limit the extent of the map to a small longitude/latitude range.
+ax.set_extent([0, 20, 45, 55], crs=ccrs.Geodetic())
+
+# Add the Stamen data at zoom level 8.
+ax.add_image(stamen_terrain, 8)
+
+# Plot CBB (on ax1)
+CBB_xr.plot(x="x", y="y", ax=ax, transform=wgs84.crs)
+# ax1, cbb = wrl.vis.plot_ppi(CBB_xr, ax=ax, r=r, az=az, cmap=mpl.cm.PuRd, vmin=0, vmax=1)
+
+#%% Test plot partial beam blockage and scan with DEM
 from osgeo import osr
 
 wgs84 = osr.SpatialReference()
@@ -675,8 +759,8 @@ wgs84.ImportFromEPSG(4326)
 
 # Load a sample PPI
 # swpx = dttree.open_datatree("/automount/realpep/upload/jgiles/dwd/2016/2016-01/2016-01-01/pro/vol5minng01/07/ras07-vol5minng01_sweeph5onem_allmoms_07-2016010100034100-pro-10392-hd5")["sweep_7"].to_dataset().DBZH[0]
-# swpx = dttree.open_datatree("/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/05/ras07-vol5minng01_sweeph5onem_allmoms_05-2017072500030000-pro-10392-hd5")["sweep_5"].to_dataset().DBZH[0]
-swpx = xr.open_dataset("/automount/realpep/upload/jgiles/dmi/2018/2018-03/2018-03-06/HTY/VOL_B/10.0/VOL_B-allmoms-10.0-2018-03-06-HTY-h5netcdf.nc").DBZH[0]
+swpx = dttree.open_datatree("/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/05/ras07-vol5minng01_sweeph5onem_allmoms_05-2017072500030000-pro-10392-hd5")["sweep_5"].to_dataset().DBZH[0]
+# swpx = xr.open_dataset("/automount/realpep/upload/jgiles/dmi/2018/2018-03/2018-03-06/HTY/VOL_B/10.0/VOL_B-allmoms-10.0-2018-03-06-HTY-h5netcdf.nc").DBZH[0]
 swpx = swpx.pipe(wrl.georef.georeference_dataset,  proj=wgs84)
 
 # Download DEM data
@@ -801,3 +885,84 @@ legend = ax3.legend(
     loc="upper left",
     fontsize=10,
 )
+
+#%% Test plot background map image
+import matplotlib.pyplot as plt
+from matplotlib.transforms import offset_copy
+
+import cartopy.crs as ccrs
+import cartopy.io.img_tiles as cimgt
+
+
+def main():
+    # Create a Stamen terrain background instance.
+    stamen_terrain = cimgt.Stamen('terrain-background')
+
+    fig = plt.figure()
+
+    # Create a GeoAxes in the tile's projection.
+    ax = fig.add_subplot(1, 1, 1, projection=stamen_terrain.crs)
+
+    # Limit the extent of the map to a small longitude/latitude range.
+    ax.set_extent([0, 20, 45, 55], crs=ccrs.Geodetic())
+
+    # Add the Stamen data at zoom level 8.
+    ax.add_image(stamen_terrain, 8)
+
+    # Add a marker for the Eyjafjallajökull volcano.
+    # ax.plot(-19.613333, 63.62, marker='o', color='red', markersize=12,
+    #         alpha=0.7, transform=ccrs.Geodetic())
+
+    # Use the cartopy interface to create a matplotlib transform object
+    # for the Geodetic coordinate system. We will use this along with
+    # matplotlib's offset_copy function to define a coordinate system which
+    # translates the text by 25 pixels to the left.
+    geodetic_transform = ccrs.Geodetic()._as_mpl_transform(ax)
+    text_transform = offset_copy(geodetic_transform, units='dots', x=-25)
+
+    # Add text 25 pixels to the left of the volcano.
+    # ax.text(-19.613333, 63.62, u'Eyjafjallajökull',
+    #         verticalalignment='center', horizontalalignment='right',
+    #         transform=text_transform,
+    #         bbox=dict(facecolor='sandybrown', alpha=0.5, boxstyle='round'))
+    # plt.show()
+
+
+if __name__ == '__main__':
+    main()
+    
+#%% Test combined
+import matplotlib.pyplot as plt
+import numpy as np
+import cartopy.crs as ccrs
+import cartopy.io.img_tiles as cimgt
+from matplotlib.transforms import offset_copy
+
+# Your existing PPI plot code here
+
+# Create a Stamen terrain background instance.
+stamen_terrain = cimgt.Stamen('terrain-background')
+
+# Create a GeoAxes in the tile's projection.
+fig = plt.figure(figsize=(12, 12))
+ax1 = fig.add_subplot(1, 1, 1, projection=stamen_terrain.crs)
+
+# Add the Stamen data at an appropriate zoom level.
+ax1.add_image(stamen_terrain, 10)
+
+# Set up the coordinate transformation for your PPI plot.
+ppi_crs = ccrs.PlateCarree()
+
+# Plot your PPI data on top of the map.
+# You need to use the 'transform' parameter to specify the coordinate system of your PPI data.
+# Make sure 'rlimits' correspond to the extent of your PPI data in the PlateCarree coordinate system.
+ax1.imshow(CBB, extent=rlimits, cmap='PuRd', origin='upper', alpha=0.5, transform=ppi_crs)
+
+# Set up ticks, labels, title, etc. for the combined plot
+# You might need to adjust these according to your specific needs
+ax1.set_xlabel("Longitude")
+ax1.set_ylabel("Latitude")
+ax1.set_title("Combined PPI and Map Plot")
+
+# Show the combined plot
+plt.show()
