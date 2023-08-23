@@ -53,6 +53,7 @@ path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/
 path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/umd/vol5minng01/07/*allmoms*"
 # path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
 # path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/*/*/*/ANK/*/*/*allmoms*"
+path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_singlefile/ML_detected/ANK/*/*/*allmoms*"
 # path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*"
 # path_qvps = ["/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*",
 #              "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/14*/*allmoms*"]
@@ -63,6 +64,7 @@ path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/um
 # path_qvps = []
 # for ff in path_special:
 #     path_qvps.append(os.path.dirname(ff)+"/*allmoms*")
+
 
 if isinstance(path_qvps, str):
     files = sorted(glob.glob(path_qvps))
@@ -75,7 +77,7 @@ else:
 
 #### Set variable names
 X_DBZH = "DBZH"
-X_RHOHV = "RHOHV_NC"
+X_RHOHV = "RHOHV"
 X_ZDR = "ZDR_OC"
 X_KDP = "KDP_ML_corrected"
 
@@ -85,6 +87,8 @@ if "dwd" in files[0]:
 elif "dmi" in files[0]:
     country="dmi"
     X_TH = "DBZH"
+
+# Load QVPs
 
 if len(files)==1:
     qvps = xr.open_mfdataset(files)
@@ -110,11 +114,67 @@ else:
         # if the above fails, just combine everything and fill the holes with nan (Turkish case)
         qvps = xr.open_mfdataset(files, combine="nested", concat_dim="time")
 
+
 # Fill missing values in ZDR_OC and RHOHV_NC with the uncorrected variables
 if X_ZDR == "ZDR_OC":
     qvps[X_ZDR] = qvps[X_ZDR].where(qvps[X_ZDR].notnull(), qvps["ZDR"])
 if X_RHOHV == "RHOHV_NC":
     qvps[X_RHOHV] = qvps[X_RHOHV].where(qvps[X_RHOHV].notnull(), qvps["RHOHV"])
+
+
+# # Load daily data
+# # ## Special selection of convective dates based on DBZH_over_30.txt files
+# special_selection = "/automount/realpep/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/DBZH_over_30*"
+# special_filter = "/automount/realpep/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/ML_detected_*"
+# path_special = glob.glob(special_selection)
+# path_filter = glob.glob(special_filter)
+# path_filter_dirs = [os.path.dirname(ff) for ff in path_filter]
+
+# path_daily = []
+# for ff in path_special:
+#     if os.path.dirname(ff) in path_filter_dirs: 
+#         continue
+#     path_daily.append(os.path.dirname("/".join(ff.split("/qvps/")))+"/*allmoms*")
+       
+# if isinstance(path_daily, str):
+#     files_daily = sorted(glob.glob(path_daily))
+# elif len(path_daily)==1:    
+#     files_daily = sorted(glob.glob(path_daily[0]))
+# else:
+#     files_daily = []
+#     for fglob in path_daily:
+#         files_daily.extend(glob.glob(fglob))
+        
+# def fix_dailys(data):
+#     # fix time dim in case some value is NaT
+#     if data.time.isnull().any():
+#         data.coords["time"] = data["rtime"].min(dim="azimuth", skipna=True).compute()
+
+#     # take time out of the coords if necessary
+#     for coord in ["latitude", "longitude", "altitude", "elevation"]:
+#         if "time" in data[coord].dims:
+#             data.coords[coord] = data.coords[coord].min("time")
+    
+#     for X_PHI in ["PHIDP"]:
+#         if X_PHI in data.data_vars:
+#             # flip PHIDP in case it is wrapping around the edges (case for turkish radars)
+#             if data[X_PHI].notnull().any():
+#                 values_center = ((data[X_PHI]>-50)*(data[X_PHI]<50)).sum().compute()
+#                 values_sides = ((data[X_PHI]>50)+(data[X_PHI]<-50)).sum().compute()
+#                 if values_sides > values_center:
+#                     data[X_PHI] = xr.where(data[X_PHI]<=0, data[X_PHI]+180, data[X_PHI]-180, keep_attrs=True).compute()
+
+#     return data
+
+# open_files=[]
+# for ff in files_daily[0:20]:
+#     if "dwd" in ff:
+#         # basepath=ff.split("dwd")
+#         open_files.append(fix_dailys(dttree.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset()))
+#     else:
+#         open_files.append(fix_dailys(xr.open_dataset(ff)))
+        
+# data = xr.concat(open_files, dim="time")
 
 #%% Filters (conditions for stratiform)
 # Filter only stratiform events (min entropy >= 0.8) and ML detected
@@ -136,6 +196,54 @@ try:
 except:
     print("Could not filter out low SNR")
 
+#### Calculate retreivals
+
+# to check the wavelength of each radar, in cm for germans
+# filewl = ""
+# xr.open_dataset(filewl, group="how")
+Lambda = 53.138 # radar wavelength in mm (pro: 53.138)
+
+# LWC 
+lwc_zh_zdr = 10**(0.058*qvps_strat_fil[X_DBZH] - 0.118*qvps_strat_fil[X_ZDR] - 2.36) # Reimann et al 2021 (adjusted for Germany)
+lwc_zh_zdr2 = 1.38*10**(-3) *10**(0.1*qvps_strat_fil[X_DBZH] - 2.43*qvps_strat_fil[X_ZDR] + 1.12*qvps_strat_fil[X_ZDR]**2 - 0.176*qvps_strat_fil[X_ZDR]**3 ) # Ryzhkov et al 2022, used in S band
+lwc_kdp = 10**(0.568*np.log10(qvps_strat_fil[X_KDP]) + 0.06) # Reimann et al 2021(adjusted for Germany)
+
+# IWC (Collected from Blanke et al 2023)
+iwc_zh_t = 10**(0.06 * qvps_strat_fil[X_DBZH] - 0.0197*qvps_strat_fil["TEMP"] - 1.7) # empirical from Hogan et al 2006
+
+iwc_zdr_zh_kdp = xr.where(qvps_strat_fil[X_ZDR]>0.4, 
+                          4*10**(-3)*( qvps_strat_fil[X_KDP]*Lambda/( 1-wrl.trafo.idecibel(qvps_strat_fil[X_ZDR])**-1 ) ), 
+                          0.031474 * ( qvps_strat_fil[X_KDP]**Lambda )**0.66 * qvps_strat_fil[X_DBZH]**0.28 ) # Carlin et al 2021
+
+# Dm
+Dm_ice_zh = 1.055*qvps_strat_fil[X_DBZH]**0.271 # Matrosov et al. (2019)
+Dm_ice_zh_kdp = 0.67*( qvps_strat_fil[X_DBZH]/(qvps_strat_fil[X_KDP]*Lambda) )**(1/3) # Bukovcic et al. (2020)
+Dm_rain_zdr = 0.3015*qvps_strat_fil[X_ZDR]**3 - 1.2087*qvps_strat_fil[X_ZDR]**2 + 1.9068*qvps_strat_fil[X_ZDR] + 0.5090 # (for rain but tuned for Germany X-band, JuYu Chen, Zdr in dB, Dm in mm)
+Dm_rain_zdr2 = 0.171*qvps_strat_fil[X_ZDR]**3 - 0.725*qvps_strat_fil[X_ZDR]**2 + 1.48*qvps_strat_fil[X_ZDR] + 0.717 # (Hu and Ryzhkov 2022, used in S band data but could work for C band)
+Dm_rain_zdr3 = xr.where(qvps_strat_fil[X_ZDR]<1.25, # Bringi et al 2009 (C-band)
+                        0.0203*qvps_strat_fil[X_ZDR]**4 - 0.149*qvps_strat_fil[X_ZDR]**3 + 0.221*qvps_strat_fil[X_ZDR]**2 + 0.557*qvps_strat_fil[X_ZDR] + 0.801,
+                        0.0355*qvps_strat_fil[X_ZDR]**3 - 0.302*qvps_strat_fil[X_ZDR]**2 + 1.06*qvps_strat_fil[X_ZDR] + 0.684
+                        )
+
+# log(Nt)
+Nt_ice_zh_iwc = (3.39 + 2*np.log10(iwc_zh_t) - 0.1*qvps_strat_fil[X_DBZH]) # (Hu and Ryzhkov 2022, different than Carlin et al 2021 only in the offset, but works better)
+Nt_rain_zh_zdr = ( -2.37 + 0.1*qvps_strat_fil[X_DBZH] - 2.89*qvps_strat_fil[X_ZDR] + 1.28*qvps_strat_fil[X_ZDR]**2 - 0.213*qvps_strat_fil[X_ZDR]**3 )# Hu and Ryzhkov 2022
+
+# Put everything together
+retreivals = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
+                         "lwc_zh_zdr2":lwc_zh_zdr2,
+                         "lwc_kdp": lwc_kdp,
+                         "iwc_zh_t": iwc_zh_t,
+                         "iwc_zdr_zh_kdp": iwc_zdr_zh_kdp,
+                         "Dm_ice_zh": Dm_ice_zh,
+                         "Dm_ice_zh_kdp": Dm_ice_zh_kdp,
+                         "Dm_rain_zdr": Dm_rain_zdr,
+                         "Dm_rain_zdr2": Dm_rain_zdr2,
+                         "Dm_rain_zdr3": Dm_rain_zdr3,
+                         "Nt_ice_zh_iwc": Nt_ice_zh_iwc,
+                         "Nt_rain_zh_zdr": Nt_rain_zh_zdr,
+                         })
+
 #### General statistics
 values_sfc = qvps_strat_fil.isel({"z": 2})
 values_snow = qvps_strat_fil.sel({"z": qvps_strat_fil["height_ml_new_gia"]}, method="nearest")
@@ -153,11 +261,11 @@ ML_thickness = qvps_ML["height_ml_new_gia"] - qvps_ML["height_ml_bottom_new_gia"
 
 # Silke style
 # select timesteps with detected ML
-gradient_silke = qvps_strat_fil.where(qvps_strat_fil["height_ml_new_gia"] > qvps_strat_fil["height_ml_bottom_new_gia"], drop=True)
-gradient_silke_ML = gradient_silke.sel({"z": gradient_silke["height_ml_new_gia"]}, method="nearest")
-gradient_silke_ML_plus_2km = gradient_silke.sel({"z": gradient_silke_ML["z"]+2000}, method="nearest")
-gradient_final = (gradient_silke_ML_plus_2km - gradient_silke_ML)/2
-beta = gradient_final[X_TH] #### TH OR DBZH??
+# gradient_silke = qvps_strat_fil.where(qvps_strat_fil["height_ml_new_gia"] > qvps_strat_fil["height_ml_bottom_new_gia"], drop=True)
+# gradient_silke_ML = gradient_silke.sel({"z": gradient_silke["height_ml_new_gia"]}, method="nearest")
+# gradient_silke_ML_plus_2km = gradient_silke.sel({"z": gradient_silke_ML["z"]+2000}, method="nearest")
+# gradient_final = (gradient_silke_ML_plus_2km - gradient_silke_ML)/2
+# beta = gradient_final[X_TH] #### TH OR DBZH??
 
 
 #### DGL statistics
@@ -167,6 +275,8 @@ qvps_DGL = qvps_strat_fil.where((qvps_strat_fil["TEMP"] >= -20)&(qvps_strat_fil[
 values_DGL_max = qvps_DGL.max(dim="z")
 values_DGL_min = qvps_DGL.min(dim="z")
 values_DGL_mean = qvps_DGL.mean(dim="z")
+
+
 
 #%% CFADs Plot
 
@@ -202,7 +312,7 @@ if country=="dmi":
 
     vars_to_plot = {"DBZH": [0, 45.5, 0.5], 
                     "ZDR_OC": [-0.505, 2.05, 0.1],
-                    "KDP_ML_corrected":  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.013],
+                    "KDP_ML_corrected":  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
                     "RHOHV": [0.9, 1.002, 0.002]}
     
     fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
@@ -221,7 +331,7 @@ if country=="dmi":
             rd=1
         if "KDP" in vv:
             so=True #True
-            binsx2 = [-0.1, 0.51, 0.01]
+            binsx2 = [-0.1, 0.52, 0.02]
             rd=2
         if "RHOHV" in vv:
             so = True
@@ -243,11 +353,12 @@ if country=="dmi":
 
 
 # DWD
+# plot CFTDs moments
 if country=="dwd":
     
     vars_to_plot = {"DBZH": [0, 46, 1], 
                     "ZDR_OC": [-0.5, 2.1, 0.1],
-                    "KDP_ML_corrected": [-0.1, 0.41, 0.01],
+                    "KDP_ML_corrected": [-0.1, 0.52, 0.02],
                     "RHOHV_NC": [0.9, 1.004, 0.004]}
 
     fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
@@ -275,6 +386,60 @@ if country=="dwd":
     
     
     ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+
+
+# plot CFTDs retreivals
+# We assume that everything above ML is frozen and everything below is liquid
+
+IWC = "iwc_zh_t" # iwc_zh_t or iwc_zdr_zh_kdp
+LWC = "lwc_zh_zdr" # lwc_zh_zdr or lwc_zh_zdr2 or lwc_kdp
+Dm_ice = "Dm_ice_zh" # Dm_ice_zh or Dm_ice_zh_kdp
+Dm_rain = "Dm_rain_zdr3" # Dm_rain_zdr, Dm_rain_zdr2 or Dm_rain_zdr3
+Nt_ice = "Nt_ice_zh_iwc" # Nt_ice_zh_iwc
+Nt_rain = "Nt_rain_zh_zdr" # Nt_rain_zh_zdr
+
+retreivals_merged = xr.Dataset({
+                                "WC": retreivals[IWC].where(retreivals[IWC].z > retreivals.height_ml_new_gia,
+                                                                  retreivals[LWC].where(retreivals[LWC].z < retreivals.height_ml_bottom_new_gia ) ),
+                                "Dm": retreivals[Dm_ice].where(retreivals[Dm_ice].z > retreivals.height_ml_new_gia,
+                                                                  retreivals[Dm_rain].where(retreivals[Dm_rain].z < retreivals.height_ml_bottom_new_gia ) ),
+                                "Nt": (retreivals[Nt_ice].where(retreivals[Nt_ice].z > retreivals.height_ml_new_gia,
+                                                                  retreivals[Nt_rain].where(retreivals[Nt_rain].z < retreivals.height_ml_bottom_new_gia ) ) ),
+    })
+
+
+# if country=="dwd":
+
+vars_to_plot = {"WC": [-0.1, 0.82, 0.02], 
+                "Dm": [0, 3.1, 0.1],
+                "Nt": [-1.1, 2.1, 0.1],
+                }
+
+fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15,5), width_ratios=(1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+for nn, vv in enumerate(vars_to_plot.keys()):
+    so=False
+    binsx2=None
+    adj=1
+    if "RHOHV" in vv:
+        so = True
+        binsx2 = [0.9, 1.005, 0.005]
+    if "KDP" in vv:
+        adj=1
+    utils.hist2d(ax[nn], retreivals_merged[vv]*adj, retreivals_merged["TEMP"]+adjtemp, whole_x_range=True, 
+                 binsx=vars_to_plot[vv], binsy=[-20,16,tb], mode='rel_y', qq=0.2,
+                 cb_mode=(nn+1)/len(vars_to_plot), cmap="plasma", colsteps=colsteps, 
+                 fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
+                 cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
+    ax[nn].set_ylim(15,ytlim)
+    ax[nn].set_xlabel(vv, fontsize=10)
+    
+    ax[nn].tick_params(labelsize=15) #change font size of ticks
+    plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+
+
+
+ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
 
 
 #%% Check particular dates
@@ -435,6 +600,73 @@ for tx in tt:
 vol = xr.concat(vollist, dim="elevation")
 
 
+#%% Convective events
+# filter 
+data_fil = data.where(data[X_DBZH]>30, drop=True).where(qvps.height_ml_new_gia.isnull(), drop=True)
+data_fil = data_fil.pipe(wrl.georef.georeference_dataset)
+
+# attach temperature
+era5_dir = "/automount/ags/jgiles/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
+data_fil = utils.attach_ERA5_TEMP(data_fil, path="pro".join(era5_dir.split("loc")))
+
+# Plot CFTDs
+
+# adjustment from K to C (disables now because I know that all qvps have ERA5 data)
+adjtemp = 0
+# if (qvps_strat_fil["TEMP"]>100).any(): #if there is any temp value over 100, we assume the units are Kelvin
+#     print("at least one TEMP value > 100 found, assuming TEMP is in K and transforming to C")
+#     adjtemp = -273.15 # adjustment parameter from K to C
+
+# top temp limit
+ytlim=-20
+
+# Temp bins
+tb=1# degress C
+
+# Min counts per Temp layer
+mincounts=200
+
+#Colorbar limits and step
+cblim=[0,10]
+colsteps=10
+
+
+
+
+if country=="dwd":
+    
+    vars_to_plot = {"DBZH": [0, 46, 1], 
+                    "ZDR": [-0.5, 2.1, 0.1],
+                    "KDP": [-0.1, 0.52, 0.02],
+                    "RHOHV": [0.9, 1.004, 0.004]}
+
+    fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+    
+    for nn, vv in enumerate(vars_to_plot.keys()):
+        so=False
+        binsx2=None
+        adj=1
+        if "RHOHV" in vv:
+            so = True
+            binsx2 = [0.9, 1.005, 0.005]
+        if "KDP" in vv:
+            adj=1
+        utils.hist2d(ax[nn], data_fil[vv]*adj, data_fil["TEMP"]+adjtemp, whole_x_range=True, 
+                     binsx=vars_to_plot[vv], binsy=[-20,16,tb], mode='rel_y', qq=0.2,
+                     cb_mode=(nn+1)/len(vars_to_plot), cmap="plasma", colsteps=colsteps, 
+                     fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
+                     cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
+        ax[nn].set_ylim(15,ytlim)
+        ax[nn].set_xlabel(vv, fontsize=10)
+        
+        ax[nn].tick_params(labelsize=15) #change font size of ticks
+        plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+    
+    
+    
+    ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+
+
 #%% Plot radar locations over map
 from osgeo import osr
 
@@ -521,7 +753,7 @@ angle = 270
 
 # Plot terrain (on ax1)
 ax1, dem = wrl.vis.plot_ppi(
-    polarvalues, ax=ax1, r=r, az=az, cmap=mpl.cm.terrain, vmin=0.0
+    polarvalues, ax=ax1, r=r, az=az, cmap=mpl.cm.cubehelix, vmin=0.0
 )
 ax1.plot(
     [0, np.sin(np.radians(angle)) * 1e5], [0, np.cos(np.radians(angle)) * 1e5], "r-"
