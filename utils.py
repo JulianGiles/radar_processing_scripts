@@ -631,9 +631,9 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
         ax.plot(var_mean, my, color='#39081D', lw=2)
         # ax.plot(var_mean, my, color='white', lw=2, ls=(0, (5, 5)))
 
-    ax.plot(var_qq1, my, color='#39081D', ls="-.", lw=2)
+    ax.plot(var_qq1, my, color='black', ls="-.", lw=2)
     # ax.plot(var_qq1, my, color='white', linestyle=(0, (1, 5)), lw=2)
-    ax.plot(var_qq2, my, color='#39081D', ls="-.", lw=2)
+    ax.plot(var_qq2, my, color='black', ls="-.", lw=2)
     # ax.plot(var_qq2, my, color='white', linestyle=(0, (1, 5)), lw=2)
     
     # se the x limits in case the lines go off the pcolormesh
