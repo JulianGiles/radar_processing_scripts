@@ -678,6 +678,7 @@ from matplotlib.transforms import offset_copy
 
 import cartopy.crs as ccrs
 import cartopy.io.img_tiles as cimgt
+import cartopy
 
 
 # Create a Stamen terrain background instance.
@@ -734,6 +735,7 @@ PBB = np.ma.masked_invalid(PBB)
 
 CBB = wrl.qual.cum_beam_block_frac(PBB)
 CBB_xr = xr.ones_like(swpx)*CBB
+CBB_xr = CBB_xr.pipe(wrl.georef.georeference_dataset, proj=ccrs.Geodetic())
 
 #make the plots
 fig = plt.figure()
@@ -742,14 +744,19 @@ fig = plt.figure()
 ax = fig.add_subplot(1, 1, 1, projection=stamen_terrain.crs)
 
 # Limit the extent of the map to a small longitude/latitude range.
-ax.set_extent([0, 20, 45, 55], crs=ccrs.Geodetic())
+ax.set_extent([13, 14, 52, 54], crs=ccrs.Geodetic())  # [0, 20, 45, 55]
 
 # Add the Stamen data at zoom level 8.
-ax.add_image(stamen_terrain, 8, alpha=0.1)
+ax.add_image(stamen_terrain, 8, alpha=0.5)
 
 # Plot CBB (on ax1)
 CBB_xr.plot(x="x", y="y", ax=ax)
 # ax1, cbb = wrl.vis.plot_ppi(CBB_xr, ax=ax, r=r, az=az, cmap=mpl.cm.PuRd, vmin=0, vmax=1)
+
+ax.coastlines(alpha=0.7)
+ax.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=True)
+ax.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
+
 
 #%% Test plot partial beam blockage and scan with DEM
 from osgeo import osr
