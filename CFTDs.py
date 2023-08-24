@@ -46,15 +46,27 @@ except ModuleNotFoundError:
 import warnings
 warnings.filterwarnings('ignore')
 
+# we define a funtion to look for loc inside a path string
+def find_loc(locs, path):
+    components = path.split(os.path.sep)
+    for element in locs:
+        for component in components:
+            if element.lower() in component.lower():
+                return element
+    return None
+
+locs = ["pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs"]
+
+
 #%% Load QVPs for stratiform-case CFTDs
 # This part should be run after having the QVPs computed (compute_qvps.py)
 
 #### Get QVP file list
 path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/*allmoms*"
-path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/umd/vol5minng01/07/*allmoms*"
+path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
 # path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
 # path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/*/*/*/ANK/*/*/*allmoms*"
-# path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_singlefile/ML_detected/SVS/*/*/*allmoms*"
+# path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_singlefile/ML_detected/ANK/*/12*/*allmoms*"
 # path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*"
 # path_qvps = ["/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*",
 #              "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/14*/*allmoms*"]
@@ -280,7 +292,28 @@ values_DGL_max = qvps_DGL.max(dim="z")
 values_DGL_min = qvps_DGL.min(dim="z")
 values_DGL_mean = qvps_DGL.mean(dim="z")
 
+# Put everything in a dict
+try: # check if exists, if not, create it
+    stats
+except NameError:
+    stats = {}
 
+stats[find_loc(locs, files[0])] = {"values_sfc": values_sfc.compute().copy(),
+                                   "values_snow": values_snow.compute().copy(),
+                                   "values_rain": values_rain.compute().copy(),
+                                   "values_ML_max": values_ML_max.compute().copy(),
+                                   "values_ML_min": values_ML_min.compute().copy(),
+                                   "values_ML_mean": values_ML_mean.compute().copy(),
+                                   "ML_thickness": ML_thickness.compute().copy(),
+                                   "values_DGL_max": values_DGL_max.compute().copy(),
+                                   "values_DGL_min": values_DGL_min.compute().copy(),
+                                   "values_DGL_mean": values_DGL_mean.compute().copy(),
+    }
+
+# Save stats
+# for ll in stats.keys():
+#     for xx in stats[ll].keys():
+#         stats[ll][xx].to_netcdf("/automount/realpep/upload/jgiles/radar_stats/stratiform/"+ll+"_"+xx+".nc")
 
 #%% CFADs Plot
 
@@ -303,6 +336,7 @@ mincounts=200
 cblim=[0,10]
 colsteps=10
 
+cmaphist="Oranges"
 
 # Plot horizontally
 # DMI
@@ -343,7 +377,7 @@ if country=="dmi":
             rd=3
         utils.hist2d(ax[nn], qvps_strat_fil[vv].round(rd), qvps_strat_fil["TEMP"]+adjtemp, whole_x_range=True, 
                      binsx=vars_to_plot[vv], binsy=[-20,16,tb], mode='rel_y', qq=0.2,
-                     cb_mode=(nn+1)/len(vars_to_plot), cmap="plasma", colsteps=colsteps, 
+                     cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
                      fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
                      cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
         ax[nn].set_ylim(15,ytlim)
@@ -378,7 +412,7 @@ if country=="dwd":
             adj=1
         utils.hist2d(ax[nn], qvps_strat_fil[vv]*adj, qvps_strat_fil["TEMP"]+adjtemp, whole_x_range=True, 
                      binsx=vars_to_plot[vv], binsy=[-20,16,tb], mode='rel_y', qq=0.2,
-                     cb_mode=(nn+1)/len(vars_to_plot), cmap="plasma", colsteps=colsteps, 
+                     cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
                      fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
                      cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
         ax[nn].set_ylim(15,ytlim)
@@ -403,11 +437,11 @@ Nt_ice = "Nt_ice_zh_iwc" # Nt_ice_zh_iwc
 Nt_rain = "Nt_rain_zh_zdr" # Nt_rain_zh_zdr
 
 retreivals_merged = xr.Dataset({
-                                "WC": retreivals[IWC].where(retreivals[IWC].z > retreivals.height_ml_new_gia,
+                                "IWC/LWC [g/m^{3}]": retreivals[IWC].where(retreivals[IWC].z > retreivals.height_ml_new_gia,
                                                                   retreivals[LWC].where(retreivals[LWC].z < retreivals.height_ml_bottom_new_gia ) ),
-                                "Dm": retreivals[Dm_ice].where(retreivals[Dm_ice].z > retreivals.height_ml_new_gia,
+                                "Dm [mm]": retreivals[Dm_ice].where(retreivals[Dm_ice].z > retreivals.height_ml_new_gia,
                                                                   retreivals[Dm_rain].where(retreivals[Dm_rain].z < retreivals.height_ml_bottom_new_gia ) ),
-                                "Nt": (retreivals[Nt_ice].where(retreivals[Nt_ice].z > retreivals.height_ml_new_gia,
+                                "log10(Nt) [1/L]": (retreivals[Nt_ice].where(retreivals[Nt_ice].z > retreivals.height_ml_new_gia,
                                                                   retreivals[Nt_rain].where(retreivals[Nt_rain].z < retreivals.height_ml_bottom_new_gia ) ) ),
     })
 
@@ -432,7 +466,7 @@ for nn, vv in enumerate(vars_to_plot.keys()):
         adj=1
     utils.hist2d(ax[nn], retreivals_merged[vv]*adj, retreivals_merged["TEMP"]+adjtemp, whole_x_range=True, 
                  binsx=vars_to_plot[vv], binsy=[-20,16,tb], mode='rel_y', qq=0.2,
-                 cb_mode=(nn+1)/len(vars_to_plot), cmap="plasma", colsteps=colsteps, 
+                 cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
                  fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
                  cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
     ax[nn].set_ylim(15,ytlim)
@@ -461,6 +495,7 @@ def plot_qvp(data, momname="DBZH", tloc=slice("2015-01-01", "2020-12-31"), plot_
     cmap = visdict14[mom]["cmap"]
 
     data[momname].loc[{"time":tloc}].dropna("z", how="all").plot(x="time", cmap=cmap, norm=norm, extend="both", **kwargs)
+    
     if plot_ml:
         try:
             data.loc[{"time":tloc}].height_ml_bottom_new_gia.plot(color="black")
@@ -474,8 +509,12 @@ def plot_qvp(data, momname="DBZH", tloc=slice("2015-01-01", "2020-12-31"), plot_
             data["min_entropy"].loc[{"time":tloc}].dropna("z", how="all").interpolate_na(dim="z").plot.contourf(x="time", levels=[0.8,1], hatches=["","X"], colors="none", add_colorbar=False)
         except:
             print("Plotting entropy failed")
+    plt.title(mom)
 
-plot_qvp(qvps, "KDP_ML_corrected", tloc="2017-07-25", plot_ml=True, plot_entropy=True, ylim=(0,10000))
+qvps_fix = qvps.copy()
+qvps_fix["KDP_ML_corrected"] = qvps_fix["KDP_ML_corrected"].where(qvps_fix.height_ml_new_gia.notnull(),  qvps_fix["KDP_CONV"])
+with mpl.rc_context({'font.size': 10}):
+    plot_qvp(qvps_fix, "RHOHV", tloc="2015-09-30", plot_ml=True, plot_entropy=True, ylim=(qvps.altitude,10000))
 
 
 qvps_strat_fil_notime = qvps_strat_fil.copy()
@@ -680,6 +719,18 @@ import cartopy.crs as ccrs
 import cartopy.io.img_tiles as cimgt
 import cartopy
 
+files = [glob.glob("/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/*allmoms*")[0],
+         glob.glob("/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/tur/vol5minng01/07/*allmoms*")[0],
+         glob.glob("/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/umd/vol5minng01/07/*allmoms*")[0],
+         ]
+
+files = [glob.glob("/automount/realpep/upload/jgiles/dmi/2015/2015-03/2015-03-03/ANK/MON_YAZ_K/12.0/*allmoms*")[0],
+         glob.glob("/automount/realpep/upload/jgiles/dmi/2020/2020-07/2020-07-02/AFY/VOL_B/10.0/*allmoms*")[0],
+         glob.glob("/automount/realpep/upload/jgiles/dmi/2016/2016-04/2016-04-07/GZT/MON_YAZ_C/12.0/*allmoms*")[0],
+         glob.glob("/automount/realpep/upload/jgiles/dmi/2016/2016-04/2016-04-07/HTY/MON_YAZ_C/12.0/*allmoms*")[0],
+         glob.glob("/automount/realpep/upload/jgiles/dmi/2020/2020-01/2020-01-11/SVS/VOL_B/10.0/*allmoms*")[0],
+         ]
+
 
 # Create a Stamen terrain background instance.
 stamen_terrain = cimgt.Stamen('terrain-background')
@@ -688,75 +739,98 @@ stamen_terrain = cimgt.Stamen('terrain-background')
 wgs84 = osr.SpatialReference()
 wgs84.ImportFromEPSG(4326)
 
-# Load a sample PPI
-ff = glob.glob("/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/*allmoms*")[0]
-swpx = dttree.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset().DBZH[0]
-swpx = swpx.pipe(wrl.georef.georeference_dataset, proj=wgs84)
-
-# Download DEM data
-
-extent = wrl.zonalstats.get_bbox(swpx.x.values, swpx.y.values)
-extent
-
-# apply token
-os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = "eyJ0eXAiOiJKV1QiLCJvcmlnaW4iOiJFYXJ0aGRhdGEgTG9naW4iLCJzaWciOiJlZGxqd3RwdWJrZXlfb3BzIiwiYWxnIjoiUlMyNTYifQ.eyJ0eXBlIjoiVXNlciIsInVpZCI6ImpnaWxlcyIsImV4cCI6MTY5NzkwMDAyMiwiaWF0IjoxNjkyNzE2MDIyLCJpc3MiOiJFYXJ0aGRhdGEgTG9naW4ifQ.4OhlJ-fTL_ii7EB2Eavyg7fPotk_U6g5ZC9ryS1RFp0cb8KGDl0ptwtifmV7A1__5FbLQlvH3MUKQg_Gq5LKTGi61bn_BBeXzRxx2Z8WJW7uuESQQH61urrbji-xwiIVo65r0tDfT0qYYulbA4X9DPBom2BHMvcvitgnvwRiQFpK8S6h7xoYLqCgHJOtATBc_2Su28qaDfH_SwRLI81iQYDnfLPhL_iWVf3bQxdObl31WD4inrST8IMSg59KMuioRRHdydE7PPsGxHWV5U2PFfRwjS1dqi0ntP_mlXoBpG-Eh-vNdaWi4KSGZA4PYN4AuTV1ijzGEzd8Qvw2aIo6Xg"
-# set location of wradlib-data, where wradlib will search for any available data
-os.environ["WRADLIB_DATA"] = "/home/jgiles/wradlib-data-main/"
-# get the tiles
-dem = wrl.io.get_srtm(extent.values())
-
-# DEM to spherical coords
-
-sitecoords = (swpx.longitude.values, swpx.latitude.values, swpx.altitude.values)
-r = swpx.range.values
-az = swpx.azimuth.values
-bw = 1
-beamradius = wrl.util.half_power_radius(r, bw)
-
-rastervalues, rastercoords, proj = wrl.georef.extract_raster_dataset(
-    dem, nodata=-32768.0
-)
-
-rlimits = (extent["left"], extent["bottom"], extent["right"], extent["top"])
-# Clip the region inside our bounding box
-ind = wrl.util.find_bbox_indices(rastercoords, rlimits)
-rastercoords = rastercoords[ind[1] : ind[3], ind[0] : ind[2], ...]
-rastervalues = rastervalues[ind[1] : ind[3], ind[0] : ind[2]]
-
-polcoords = np.dstack([swpx.x.values, swpx.y.values])
-# Map rastervalues to polar grid points
-polarvalues = wrl.ipol.cart_to_irregular_spline(
-    rastercoords, rastervalues, polcoords, order=3, prefilter=False
-)
-
-# Partial and cumulative beam blockage
-PBB = wrl.qual.beam_block_frac(polarvalues, swpx.z.values, beamradius)
-PBB = np.ma.masked_invalid(PBB)
-
-CBB = wrl.qual.cum_beam_block_frac(PBB)
-CBB_xr = xr.ones_like(swpx)*CBB
-CBB_xr = CBB_xr.pipe(wrl.georef.georeference_dataset, proj=ccrs.Geodetic())
+CBB_list = []
+for ff in files:
+    
+    # Load a sample PPI
+    if "dwd" in files[0]:
+        swpx = dttree.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset().DBZH[0]
+    if "dmi" in files[0]:
+        swpx = xr.open_dataset(ff).DBZH[0]
+        
+    swpx = swpx.pipe(wrl.georef.georeference_dataset, proj=wgs84)
+    
+    # Download DEM data
+    
+    extent = wrl.zonalstats.get_bbox(swpx.x.values, swpx.y.values)
+    extent
+    
+    # apply token
+    os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = "eyJ0eXAiOiJKV1QiLCJvcmlnaW4iOiJFYXJ0aGRhdGEgTG9naW4iLCJzaWciOiJlZGxqd3RwdWJrZXlfb3BzIiwiYWxnIjoiUlMyNTYifQ.eyJ0eXBlIjoiVXNlciIsInVpZCI6ImpnaWxlcyIsImV4cCI6MTY5NzkwMDAyMiwiaWF0IjoxNjkyNzE2MDIyLCJpc3MiOiJFYXJ0aGRhdGEgTG9naW4ifQ.4OhlJ-fTL_ii7EB2Eavyg7fPotk_U6g5ZC9ryS1RFp0cb8KGDl0ptwtifmV7A1__5FbLQlvH3MUKQg_Gq5LKTGi61bn_BBeXzRxx2Z8WJW7uuESQQH61urrbji-xwiIVo65r0tDfT0qYYulbA4X9DPBom2BHMvcvitgnvwRiQFpK8S6h7xoYLqCgHJOtATBc_2Su28qaDfH_SwRLI81iQYDnfLPhL_iWVf3bQxdObl31WD4inrST8IMSg59KMuioRRHdydE7PPsGxHWV5U2PFfRwjS1dqi0ntP_mlXoBpG-Eh-vNdaWi4KSGZA4PYN4AuTV1ijzGEzd8Qvw2aIo6Xg"
+    # set location of wradlib-data, where wradlib will search for any available data
+    os.environ["WRADLIB_DATA"] = "/home/jgiles/wradlib-data-main/"
+    # get the tiles
+    dem = wrl.io.get_srtm(extent.values())
+    
+    # DEM to spherical coords
+    
+    sitecoords = (swpx.longitude.values, swpx.latitude.values, swpx.altitude.values)
+    r = swpx.range.values
+    az = swpx.azimuth.values
+    bw = 1
+    beamradius = wrl.util.half_power_radius(r, bw)
+    
+    rastervalues, rastercoords, proj = wrl.georef.extract_raster_dataset(
+        dem, nodata=-32768.0
+    )
+    
+    rlimits = (extent["left"], extent["bottom"], extent["right"], extent["top"])
+    # Clip the region inside our bounding box
+    ind = wrl.util.find_bbox_indices(rastercoords, rlimits)
+    rastercoords = rastercoords[ind[1] : ind[3], ind[0] : ind[2], ...]
+    rastervalues = rastervalues[ind[1] : ind[3], ind[0] : ind[2]]
+    
+    polcoords = np.dstack([swpx.x.values, swpx.y.values])
+    # Map rastervalues to polar grid points
+    polarvalues = wrl.ipol.cart_to_irregular_spline(
+        rastercoords, rastervalues, polcoords, order=3, prefilter=False
+    )
+    
+    # Partial and cumulative beam blockage
+    PBB = wrl.qual.beam_block_frac(polarvalues, swpx.z.values, beamradius)
+    PBB = np.ma.masked_invalid(PBB)
+    
+    CBB = wrl.qual.cum_beam_block_frac(PBB)
+    CBB_xr = xr.ones_like(swpx)*CBB
+    CBB_list.append(CBB_xr.rename("Beam blockage fraction").copy())
 
 #make the plots
-fig = plt.figure()
-
-# create subplots
-ax = fig.add_subplot(1, 1, 1, projection=stamen_terrain.crs)
-
-# Limit the extent of the map to a small longitude/latitude range.
-ax.set_extent([13, 14, 52, 54], crs=ccrs.Geodetic())  # [0, 20, 45, 55]
-
-# Add the Stamen data at zoom level 8.
-ax.add_image(stamen_terrain, 8, alpha=0.5)
-
-# Plot CBB (on ax1)
-CBB_xr.plot(x="x", y="y", ax=ax)
-# ax1, cbb = wrl.vis.plot_ppi(CBB_xr, ax=ax, r=r, az=az, cmap=mpl.cm.PuRd, vmin=0, vmax=1)
-
-ax.coastlines(alpha=0.7)
-ax.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=True)
-ax.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
-
+fs = 5
+with mpl.rc_context({'font.size': fs}):
+    fig = plt.figure()
+    
+    # create subplots
+    ax = fig.add_subplot(1, 1, 1, projection=stamen_terrain.crs)
+    
+    # Limit the extent of the map to a small longitude/latitude range.
+    # ax.set_extent([13, 15, 52, 54], crs=ccrs.Geodetic())  # [0, 20, 45, 55]
+    if "dwd" in files[0]:
+        ax.set_extent([6, 15, 47, 55], crs=ccrs.Geodetic())  # [0, 20, 45, 55]
+    if "dmi" in files[0]:
+        ax.set_extent([25, 45, 35, 42], crs=ccrs.Geodetic())  # [0, 20, 45, 55]
+    
+    # Add the Stamen data at zoom level 8.
+    ax.add_image(stamen_terrain, 8, alpha=1)
+    
+    for nn,CBB_xr in enumerate(CBB_list):
+        # Plot CBB (on ax1)
+        cbarbool = False
+        if nn == 0: cbarbool = True
+        CBB_xr.plot(x="x", y="y", ax=ax, alpha= 0.7, vmin=0, vmax=1, cmap=mpl.cm.PuRd, transform=ccrs.PlateCarree(), add_colorbar=cbarbool)
+        # ax1, cbb = wrl.vis.plot_ppi(CBB_xr, ax=ax, r=r, az=az, cmap=mpl.cm.PuRd, vmin=0, vmax=1)
+        
+        # add a marker in center of the radar
+        ax.plot(CBB_xr.longitude, CBB_xr.latitude, marker='o', color='red', markersize=1,
+                alpha=1, transform=ccrs.Geodetic())
+    
+    ax.coastlines(alpha=0.7, linewidth=0.5)
+    gl = ax.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
+    gl.xlabel_style = {'size': fs}
+    gl.ylabel_style = {'size': fs}
+    ax.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=0.5, alpha=0.4) #countries
+    ax.tick_params(axis='both', labelsize=fs)
+    
+    plt.title("")
 
 #%% Test plot partial beam blockage and scan with DEM
 from osgeo import osr
@@ -917,8 +991,8 @@ def main():
     ax.add_image(stamen_terrain, 8)
 
     # Add a marker for the Eyjafjallajökull volcano.
-    # ax.plot(-19.613333, 63.62, marker='o', color='red', markersize=12,
-    #         alpha=0.7, transform=ccrs.Geodetic())
+    ax.plot(-19.613333, 63.62, marker='o', color='red', markersize=12,
+            alpha=0.7, transform=ccrs.Geodetic())
 
     # Use the cartopy interface to create a matplotlib transform object
     # for the Geodetic coordinate system. We will use this along with
