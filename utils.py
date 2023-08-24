@@ -175,7 +175,7 @@ def ml_height_top_new(ds, moment='comb_dy', dim='height',skipna=True, drop=True)
 
 def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), PHIDP=(-90.,-70.)), dim='height', thres=0.02, xwin=5, ywin=5, fmlh=0.3, min_h=600, all_data=False, clowres=False):
     '''
-    Function to detect the melting layer based on wolfensberger et al 2015 (https://doi.org/10.1002/qj.2672) and refined for delta bump removing by K. Mühlbauer and further refined by T. Scharbach
+    Function to detect the melting layer based on wolfensberger et al 2016 (https://doi.org/10.1002/qj.2672) and refined for delta bump removing by K. Mühlbauer and further refined by T. Scharbach
 
     Parameter
     ---------
@@ -625,16 +625,16 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
     img = ax.pcolormesh(mx, my ,RES , cmap=cmap, vmin=cblim[0], vmax=cblim[1], shading=shading, **kwargs) #, shading="gouraud"
     
     if mq == "median":
-        ax.plot(var_med, my, color='#39081D', lw=2)
-        # ax.plot(var_med, my, color='white', lw=2, ls=(0, (5, 5)))
+        ax.plot(var_med, my, color='black', lw=2)
+        # ax.plot(var_med, my, color='black', lw=2, ls=(0, (5, 5)))
     elif mq == "mean":
-        ax.plot(var_mean, my, color='#39081D', lw=2)
-        # ax.plot(var_mean, my, color='white', lw=2, ls=(0, (5, 5)))
+        ax.plot(var_mean, my, color='black', lw=2)
+        # ax.plot(var_mean, my, color='black', lw=2, ls=(0, (5, 5)))
 
     ax.plot(var_qq1, my, color='black', ls="-.", lw=2)
-    # ax.plot(var_qq1, my, color='white', linestyle=(0, (1, 5)), lw=2)
+    # ax.plot(var_qq1, my, color='black', linestyle=(0, (1, 5)), lw=2)
     ax.plot(var_qq2, my, color='black', ls="-.", lw=2)
-    # ax.plot(var_qq2, my, color='white', linestyle=(0, (1, 5)), lw=2)
+    # ax.plot(var_qq2, my, color='black', linestyle=(0, (1, 5)), lw=2)
     
     # se the x limits in case the lines go off the pcolormesh
     ax.set_xlim(xe[0], xe[-1])
