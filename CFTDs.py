@@ -514,7 +514,7 @@ def plot_qvp(data, momname="DBZH", tloc=slice("2015-01-01", "2020-12-31"), plot_
 qvps_fix = qvps.copy()
 qvps_fix["KDP_ML_corrected"] = qvps_fix["KDP_ML_corrected"].where(qvps_fix.height_ml_new_gia.notnull(),  qvps_fix["KDP_CONV"])
 with mpl.rc_context({'font.size': 10}):
-    plot_qvp(qvps_fix, "RHOHV", tloc="2015-09-30", plot_ml=True, plot_entropy=True, ylim=(qvps.altitude,10000))
+    plot_qvp(qvps_fix, "KDP_ML_corrected", tloc="2017-07-25", plot_ml=True, plot_entropy=True, ylim=(qvps.altitude,10000))
 
 
 qvps_strat_fil_notime = qvps_strat_fil.copy()
