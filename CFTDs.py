@@ -414,9 +414,9 @@ retreivals_merged = xr.Dataset({
 
 # if country=="dwd":
 
-vars_to_plot = {"WC": [-0.1, 0.82, 0.02], # [-0.1, 0.82, 0.02], 
-                "Dm": [0, 3.1, 0.1], # [0, 3.1, 0.1],
-                "Nt": [-1.1, 2.1, 0.1], # [-1.1, 2.1, 0.1],
+vars_to_plot = {"IWC/LWC [g/m^{3}]": [-0.1, 0.82, 0.02], # [-0.1, 0.82, 0.02], 
+                "Dm [mm]": [0, 3.1, 0.1], # [0, 3.1, 0.1],
+                "log10(Nt) [1/L]": [-2, 2.1, 0.1], # [-2, 2.1, 0.1],
                 }
 
 fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15,5), width_ratios=(1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
@@ -745,10 +745,10 @@ ax = fig.add_subplot(1, 1, 1, projection=stamen_terrain.crs)
 ax.set_extent([0, 20, 45, 55], crs=ccrs.Geodetic())
 
 # Add the Stamen data at zoom level 8.
-ax.add_image(stamen_terrain, 8)
+ax.add_image(stamen_terrain, 8, alpha=0.1)
 
 # Plot CBB (on ax1)
-CBB_xr.plot(x="x", y="y", ax=ax, transform=wgs84.crs)
+CBB_xr.plot(x="x", y="y", ax=ax)
 # ax1, cbb = wrl.vis.plot_ppi(CBB_xr, ax=ax, r=r, az=az, cmap=mpl.cm.PuRd, vmin=0, vmax=1)
 
 #%% Test plot partial beam blockage and scan with DEM
