@@ -521,6 +521,81 @@ qvps_strat_fil_notime = qvps_strat_fil.copy()
 qvps_strat_fil_notime = qvps_strat_fil_notime.reset_index("time")
 plot_qvp(qvps_strat_fil_notime, "KDP_ML_corrected", plot_ml=True, plot_entropy=True, ylim=(2000,10000))
 
+#%% Statistics histograms
+import ridgeplot
+
+ridge_vars = [X_DBZH, X_ZDR, X_RHOHV, X_KDP]
+
+vars_ticks = {X_DBZH: np.arange(0, 46, 1), 
+                X_ZDR: np.arange(-0.5, 2.1, 0.1),
+                X_KDP: np.arange(-0.1, 0.52, 0.02),
+                X_RHOHV: np.arange(0.9, 1.004, 0.004)
+                }
+
+bins = {"ML_thickness": np.arange(0,1200,50),
+        "values_snow": vars_ticks,
+        "values_rain": vars_ticks,
+        "values_DGL_mean": vars_ticks,
+        "values_ML_mean": vars_ticks,
+        }
+
+# for loc in stats.keys():
+#     for ss in bins.keys():
+#         stats[loc][ss].plot.hist(bins=bins[ss], histtype='step',
+#                                                weights=np.ones_like(stats[loc][ss])*100 / len(stats[loc][ss]))
+
+
+order = ['pro', 'afy', 'ank', 'gzt', 'hty', 'svs']
+for ss in bins.keys():
+    try: 
+        for vv in ridge_vars:
+
+            if vv == "RHOHV_NC":
+                order_turk = order.copy()
+                order_turk.remove("pro")
+                samples = [stats["pro"][ss][vv].dropna("time").values] + [stats[loc][ss]["RHOHV"].dropna("time").values for loc in order_turk]
+            else:
+                samples = [stats[loc][ss][vv].dropna("time").values for loc in order]
+
+            fig = ridgeplot.ridgeplot(samples=samples,
+                                    colorscale="viridis",
+                                    colormode="row-index",
+                                    coloralpha=0.65,
+                                    labels=order,
+                                    linewidth=2,
+                                    spacing=5 / 9,
+                                    )
+            fig.update_layout(
+                            height=760,
+                            width=900,
+                            font_size=16,
+                            plot_bgcolor="white",
+                            showlegend=False,
+                            title=ss+" "+vv,
+                            xaxis_tickvals=bins[ss][vv],
+            )
+            fig.write_html("/home/jgiles/sciebo/Images/AMS poster/final/ridgeplots_stats/"+ss+"_"+vv+".html")            
+    except: 
+        samples = [stats[loc][ss].values for loc in order]
+        fig = ridgeplot.ridgeplot(samples=samples,
+                                colorscale="viridis",
+                                colormode="row-index",
+                                coloralpha=0.65,
+                                labels=order,
+                                linewidth=2,
+                                spacing=5 / 9,
+                                )
+        fig.update_layout(
+                        height=760,
+                        width=900,
+                        font_size=16,
+                        plot_bgcolor="white",
+                        showlegend=False,
+                        title=ss,
+                        xaxis_tickvals=bins[ss],
+        )
+        fig.write_html("/home/jgiles/sciebo/Images/AMS poster/final/ridgeplots_stats/"+ss+".html")
+    
 #%% Checking PHIDP
 # get and plot a random selection of QVPs
 import random
