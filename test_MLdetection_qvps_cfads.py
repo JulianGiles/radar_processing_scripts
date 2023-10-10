@@ -43,6 +43,7 @@ warnings.filterwarnings('ignore')
 #%% Load files
 # paths to files to load
 path = "/home/jgiles/dwd/pulled_from_detect/2017/2017-07/2017-07-2*/pro/vol5minng01/07/*allmoms*"
+path = "/automount/realpep/upload/jgiles/dmi/2015/2015-09/2015-09-30/ANK/MON_YAZ_K/12.0/*allmoms*"
 files = sorted(glob.glob(path))
 
 # create a list to store each file as datatree
