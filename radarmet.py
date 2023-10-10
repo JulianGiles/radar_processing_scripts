@@ -538,7 +538,7 @@ def kdp_phidp_vulpiani(da, winlen, min_periods=2):
     dr = da.range.diff('range').median('range').values / 1000.
     print("range res [km]:", dr)
     print("processing window [km]:", dr * winlen)
-    return xr.apply_ufunc(wrl.dp.process_raw_phidp_vulpiani,
+    return xr.apply_ufunc(wrl.dp.phidp_kdp_vulpiani,
                           da,
                           input_core_dims=[["range"]],
                           output_core_dims=[["range"], ["range"]],
@@ -1206,7 +1206,7 @@ def read_gr_sweep(gr_file_path, offset_z=0, offset_phi=0, offset_zdr=0):
                            output_core_dims=[["range"]],
                            kwargs=dict(dx=0.125, initial=0.0, axis=-1), ) * 2
 
-    phidp2, kdp2 = xr.apply_ufunc(wrl.dp.process_raw_phidp_vulpiani,
+    phidp2, kdp2 = xr.apply_ufunc(wrl.dp.phidp_kdp_vulpiani,
                                   ds0.PHIDP.where(
                                       (ds0.RHOHV >= 0.95) & (ds0.DBZH >= 0.)),
                                   input_core_dims=[["range"]],
