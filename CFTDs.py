@@ -35,11 +35,11 @@ import xradar as xd
 try:
     from Scripts.python.radar_processing_scripts import utils
     from Scripts.python.radar_processing_scripts import radarmet
-    from Scripts.python.radar_processing_scripts import colormap_generator
+    # from Scripts.python.radar_processing_scripts import colormap_generator
 except ModuleNotFoundError:
     import utils
     import radarmet
-    import colormap_generator
+    # import colormap_generator
 
 
 
@@ -808,7 +808,7 @@ files = [glob.glob("/automount/realpep/upload/jgiles/dmi/2015/2015-03/2015-03-03
 
 
 # Create a Stamen terrain background instance.
-stamen_terrain = cimgt.Stamen('terrain-background')
+terrain_map = cimgt.GoogleTiles('satellite') # This used Stamen maps before but it was moved to Stadia and not fixed in cartopy so far
 
 # set projection
 wgs84 = osr.SpatialReference()
@@ -823,7 +823,7 @@ for ff in files:
     if "dmi" in files[0]:
         swpx = xr.open_dataset(ff).DBZH[0]
         
-    swpx = swpx.pipe(wrl.georef.georeference_dataset, proj=wgs84)
+    swpx = swpx.pipe(wrl.georef.georeference, proj=wgs84)
     
     # Download DEM data
     
@@ -870,12 +870,13 @@ for ff in files:
     CBB_list.append(CBB_xr.rename("Beam blockage fraction").copy())
 
 #make the plots
+# https://stackoverflow.com/questions/62448828/python-cartopy-map-clip-area-outside-country-polygon
 fs = 5
 with mpl.rc_context({'font.size': fs}):
     fig = plt.figure()
     
     # create subplots
-    ax = fig.add_subplot(1, 1, 1, projection=stamen_terrain.crs)
+    ax = fig.add_subplot(1, 1, 1, projection=terrain_map.crs)
     
     # Limit the extent of the map to a small longitude/latitude range.
     # ax.set_extent([13, 15, 52, 54], crs=ccrs.Geodetic())  # [0, 20, 45, 55]
@@ -885,7 +886,7 @@ with mpl.rc_context({'font.size': fs}):
         ax.set_extent([25, 45, 35, 42], crs=ccrs.Geodetic())  # [0, 20, 45, 55]
     
     # Add the Stamen data at zoom level 8.
-    ax.add_image(stamen_terrain, 8, alpha=1)
+    ax.add_image(terrain_map, 8, alpha=1)
     
     for nn,CBB_xr in enumerate(CBB_list):
         # Plot CBB (on ax1)
@@ -907,7 +908,7 @@ with mpl.rc_context({'font.size': fs}):
     
     plt.title("")
 
-#%% Test plot partial beam blockage and scan with DEM
+#%% Plot partial beam blockage and scan with DEM
 from osgeo import osr
 
 wgs84 = osr.SpatialReference()
@@ -1087,38 +1088,3 @@ def main():
 if __name__ == '__main__':
     main()
     
-#%% Test combined
-import matplotlib.pyplot as plt
-import numpy as np
-import cartopy.crs as ccrs
-import cartopy.io.img_tiles as cimgt
-from matplotlib.transforms import offset_copy
-
-# Your existing PPI plot code here
-
-# Create a Stamen terrain background instance.
-stamen_terrain = cimgt.Stamen('terrain-background')
-
-# Create a GeoAxes in the tile's projection.
-fig = plt.figure(figsize=(12, 12))
-ax1 = fig.add_subplot(1, 1, 1, projection=stamen_terrain.crs)
-
-# Add the Stamen data at an appropriate zoom level.
-ax1.add_image(stamen_terrain, 10)
-
-# Set up the coordinate transformation for your PPI plot.
-ppi_crs = ccrs.PlateCarree()
-
-# Plot your PPI data on top of the map.
-# You need to use the 'transform' parameter to specify the coordinate system of your PPI data.
-# Make sure 'rlimits' correspond to the extent of your PPI data in the PlateCarree coordinate system.
-ax1.imshow(CBB, extent=rlimits, cmap='PuRd', origin='upper', alpha=0.5, transform=ppi_crs)
-
-# Set up ticks, labels, title, etc. for the combined plot
-# You might need to adjust these according to your specific needs
-ax1.set_xlabel("Longitude")
-ax1.set_ylabel("Latitude")
-ax1.set_title("Combined PPI and Map Plot")
-
-# Show the combined plot
-plt.show()
