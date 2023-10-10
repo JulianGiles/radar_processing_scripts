@@ -219,7 +219,7 @@ for ff in files:
             data.coords[coord] = data.coords[coord].min("time")
 
 #%% Georeference
-    swp = data.pipe(wrl.georef.georeference_dataset) 
+    swp = data.pipe(wrl.georef.georeference) 
 
 #%% Check variable names and add corrections and calibrations
     min_height = min_hgt+swp["altitude"].values
