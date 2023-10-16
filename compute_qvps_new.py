@@ -357,7 +357,7 @@ for ff in files:
         else:
             # calculate offset
             rng_offset = phi.range.diff("range").median().values * window0
-            phidp_offset = phi.pipe(radarmet.phase_offset, rng=rng_offset)
+            phidp_offset = phi.pipe(radarmet.phase_offset, rng=rng_offset, center=True, min_periods=4)
             off = phidp_offset["PHIDP_OFFSET"]
             start_range = phidp_offset["start_range"]
         
@@ -458,54 +458,15 @@ for ff in files:
         ywin = ywin0 # value for the height mean smoothing (1 for Cband)
         fmlh = 0.3
          
-        ml_qvp = utils.melting_layer_qvp_X_new(ds_qvp_ra2, moments=moments, 
-                 dim=dim, thres=thres, xwin=xwin, ywin=ywin, fmlh=fmlh, all_data=True, clowres=clowres0)
+        ds_qvp_ra = utils.melting_layer_qvp_X_new(ds_qvp_ra2, moments=moments, 
+                 dim=dim, thres=thres, xwin=xwin, ywin=ywin, fmlh=fmlh, min_h=min_height, all_data=True, clowres=clowres0)
     
         #### Assign ML values to dataset
         
-        ds = ds.assign_coords({'height_ml': ml_qvp.mlh_top})
-        ds = ds.assign_coords({'height_ml_bottom': ml_qvp.mlh_bottom})
-        
-        ds_qvp_ra = ds_qvp_ra.assign_coords({'height_ml': ml_qvp.mlh_top})
-        ds_qvp_ra = ds_qvp_ra.assign_coords({'height_ml_bottom': ml_qvp.mlh_bottom})
-    
-        #### Giangrande refinment
-        hdim = "z"
-        # get data iside the currently detected ML
-        cut_above = ds_qvp_ra.where(ds_qvp_ra[hdim]<ds_qvp_ra.height_ml)
-        cut_above = cut_above.where(ds_qvp_ra[hdim]>ds_qvp_ra.height_ml_bottom)
-        #test_above = cut_above.where((cut_above.rho >=0.7)&(cut_above.rho <0.98))
-        
-        # get the heights with min RHOHV
-        min_height_ML = cut_above[X_RHO].idxmin(dim=hdim) 
-        
-        # cut the data below and above the previous value
-        new_cut_below_min_ML = ds_qvp_ra.where(ds_qvp_ra[hdim] > min_height_ML)
-        new_cut_above_min_ML = ds_qvp_ra.where(ds_qvp_ra[hdim] < min_height_ML)
-        
-        # Filter out values outside some RHOHV range
-        new_cut_below_min_ML_filter = new_cut_below_min_ML[X_RHO].where((new_cut_below_min_ML[X_RHO]>=0.97)&(new_cut_below_min_ML[X_RHO]<=1))
-        new_cut_above_min_ML_filter = new_cut_above_min_ML[X_RHO].where((new_cut_above_min_ML[X_RHO]>=0.97)&(new_cut_above_min_ML[X_RHO]<=1))            
-    
-    
-        ######### ML TOP Giangrande refinement
-        
-        notnull = new_cut_below_min_ML_filter.notnull() # this replaces nan for False and the rest for True
-        first_valid_height_after_ml = notnull.where(notnull).idxmax(dim=hdim) # get the first True value, i.e. first valid value
-        
-        ######### ML BOTTOM Giangrande refinement
-        # For this one, we need to flip the coordinate so that it is actually selecting the last valid index
-        notnull = new_cut_above_min_ML_filter.notnull() # this replaces nan for False and the rest for True
-        last_valid_height = notnull.where(notnull).isel({hdim:slice(None, None, -1)}).idxmax(dim=hdim) # get the first True value, i.e. first valid value (flipped)
-        
-        
-        # assign new values
-        ds_qvp_ra = ds_qvp_ra.assign_coords(height_ml_new_gia = ("time",first_valid_height_after_ml.data))
-        ds_qvp_ra = ds_qvp_ra.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data))
-        
-        
-        ds = ds.assign_coords(height_ml_new_gia = ("time",first_valid_height_after_ml.data))
-        ds = ds.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data))
+        ds = ds.assign_coords({'height_ml': ds_qvp_ra.height_ml})
+        ds = ds.assign_coords({'height_ml_bottom': ds_qvp_ra.height_ml_bottom})
+        ds = ds.assign_coords({'height_ml_new_gia': ds_qvp_ra.height_ml_new_gia})
+        ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp_ra.height_ml_bottom_new_gia})
     
 #%% Attach ERA5 temperature profile
     loc = find_loc(locs, ff)
