@@ -401,23 +401,25 @@ def smooth_data(data, kernel):
     return res
 
 
-def phase_offset(phioff, rng=3000., npix=None):
+def phase_offset(phioff, method=None, rng=3000.0, npix=None, **kwargs):
     """Calculate Phase offset.
 
     Parameter
     ---------
     phioff : xarray.DataArray
-        differential phase array
+        differential phase DataArray
 
     Keyword Arguments
     -----------------
+    method : str
+        aggregation method, defaults to 'median'
     rng : float
         range in m to calculate system phase offset
 
     Return
     ------
-    phidp_offset: xarray.Dataset
-        Dataset with variables PHIDP_OFFSET, start_range and stop_range
+    phidp_offset : xarray.Dataset
+        Dataset with PhiDP offset and start/stop ranges
     """
     range_step = np.diff(phioff.range)[0]
     nprec = int(rng / range_step)
@@ -431,29 +433,39 @@ def phase_offset(phioff, rng=3000., npix=None):
     phib = xr.where(np.isnan(phioff), 0, 1)
 
     # take nprec range bins and calculate sum
-    phib_sum = phib.rolling(range=nprec, center=True).sum(skipna=True).fillna(0)
+    phib_sum = phib.rolling(range=nprec, **kwargs).sum(skipna=True)
 
     # find at least N pixels in
     # phib_sum_N = phib_sum.where(phib_sum >= npix)
     phib_sum_N = xr.where(phib_sum <= npix, phib_sum, npix)
 
     # get start range of first N consecutive precip bins
-    start_range = phib_sum_N.idxmax(dim="range") - nprec // 2 * np.diff(phib_sum.range)[0]
+    start_range = (
+        phib_sum_N.idxmax(dim="range") - nprec // 2 * np.diff(phib_sum.range)[0]
+    )
     start_range = xr.where(start_range < 0, 0, start_range)
 
     # get stop range
     stop_range = start_range + rng
-    
     # get phase values in specified range
-    off = phioff.where((phioff.range >= start_range) & (phioff.range <= stop_range),
-                       drop=False)
-    
+    off = phioff.where(
+        (phioff.range >= start_range) & (phioff.range <= stop_range), drop=False
+    )
     # calculate nan median over range
-    off = off.median(dim='range', skipna=True)
-    return xr.Dataset(dict(PHIDP_OFFSET=off,
-                           start_range=start_range,
-                           stop_range=stop_range))
+    if method is None:
+        method = "median"
+    func = getattr(off, method)
+    off_func = func(dim="range", skipna=True)
 
+    return xr.Dataset(
+        dict(
+            PHIDP_OFFSET=off_func,
+            start_range=start_range,
+            stop_range=stop_range,
+            phib_sum=phib_sum,
+            phib=phib,
+        )
+    )
 
 def kdp_from_phidp(da, winlen, min_periods=2):
     """Derive KDP from PHIDP (based on convolution filter).
