@@ -20,6 +20,7 @@ import datatree as dttree
 import xradar as xd
 import sys
 import scipy
+import matplotlib as mpl
 
 #### Helper functions and definitions
 
@@ -2923,3 +2924,51 @@ if X_PHI in ds.data_vars:
 
 
 """
+
+#### Plotting helping functions
+
+def get_discrete_cmap(ticks, colors, bad="white", over=None, under=None):
+    """Create discrete colormap.
+
+    Parameters
+    ----------
+    ticks : int | sequence
+        number of ticks or sequence of ticks
+    colors : colormap | sequence
+        colormap or sequence of colors
+    bad : color
+    over : color
+    under : color
+
+    Returns
+    -------
+    matplotlib.colors.ListedColormap
+    """
+    ticks = ticks if isinstance(ticks, int) else len(ticks)
+    if isinstance(colors, (str, mpl.colors.Colormap)):
+        cmap = mpl.cm.get_cmap(colors)
+        colors = cmap(np.linspace(0, 1, ticks + 1))
+    cmap = mpl.colors.ListedColormap(colors[1:-1])
+    if over is None:
+        over = colors[-1]
+    if under is None:
+        under = colors[0]
+    cmap.set_under(under)
+    cmap.set_over(over)
+    cmap.set_bad(color=bad)
+    return cmap
+
+
+def get_discrete_norm(ticks):
+    """Return discrete boundary norm.
+
+    Parameters
+    ----------
+    ticks : sequence
+        sequence of ticks
+
+    Returns
+    -------
+    matplotlib.colors.BoundaryNorm
+    """
+    return mpl.colors.BoundaryNorm(ticks, len(ticks) - 1)
