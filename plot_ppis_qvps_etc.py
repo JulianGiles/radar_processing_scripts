@@ -54,9 +54,13 @@ warnings.filterwarnings('ignore')
 ## Load the data into an xarray dataset (ds)
 
 ff = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/*allmoms*"
+# ff = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/90gradstarng01/00/*allmoms*"
+# ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-10/2021-10-30/ess/90gradstarng01/00/*"
+# ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-07/2021-07-24/ess/90gradstarng01/00/*"
 ds = utils.load_dwd_preprocessed(ff)
+# ds = utils.load_dwd_raw(ff)
 
-if "dwd" in ff:
+if "dwd" in ff or "DWD" in ff:
     country="dwd"
     clowres0=True # this is for the ML detection algorithm
 elif "dmi" in ff:
@@ -67,9 +71,9 @@ elif "dmi" in ff:
 
 ds = ds.pipe(wrl.georef.georeference) 
 
-## Define minimum height
+## Define minimum height of usable data
 
-min_height = utils.min_hgts["default"] + ds["altitude"].values
+min_height = utils.min_hgts["90grads"] + ds["altitude"].values
 
 ## Get variable names
 
@@ -163,9 +167,9 @@ phase_pross_params = {
 if X_PHI in ds.data_vars:
     # Set parameters according to data
     
-    for param_name in phase_pross_params[country].keys():
-        globals()[param_name] = phase_pross_params[country][param_name]    
-    # window0, winlen0, xwin0, ywin0, fix_range = phase_pross_params[country].values() # explicit alternative
+    # for param_name in phase_pross_params[country].keys():
+    #     globals()[param_name] = phase_pross_params[country][param_name]    
+    window0, winlen0, xwin0, ywin0, fix_range = phase_pross_params[country].values() # explicit alternative
 
     # phidp may be already preprocessed (turkish case), then proceed directly to masking and then vulpiani
     if "UPHIDP" not in X_PHI:
@@ -261,7 +265,7 @@ if X_PHI in ds.data_vars:
 #%% Plot PPI
 
 tsel = "2015-09-30T08:04"
-datasel = data.loc[{"time": tsel}].pipe(wrl.georef.georeference)
+datasel = ds.loc[{"time": tsel}].pipe(wrl.georef.georeference)
 
 # New Colormap
 colors = ["#2B2540", "#4F4580", "#5a77b1",
@@ -276,3 +280,199 @@ cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(tic
 norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
 cmap = "miub2"
 datasel[mom][0].wrl.plot(x="x", y="y", cmap=cmap, norm=norm, xlim=(-25000,25000), ylim=(-25000,25000))
+
+#%% Plot QVP
+
+
+#%% Compute ZDR VP calibration
+
+zdr_offset_belowML = utils.zdr_offset_detection_vps(ds, zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, min_h=min_height, timemode="step").compute()
+zdr_offset_belowML_all = utils.zdr_offset_detection_vps(ds, zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, min_h=min_height, timemode="all").compute()
+
+zdr_offset_inML = utils.zdr_offset_detection_vps(ds.where(ds.z>ds.height_ml_bottom_new_gia), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="height_ml_new_gia", min_h=min_height, timemode="step").compute()
+zdr_offset_inML_all = utils.zdr_offset_detection_vps(ds.where(ds.z>ds.height_ml_bottom_new_gia), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="height_ml_new_gia", min_h=min_height, timemode="all").compute()
+
+zdr_offset_aboveML = utils.zdr_offset_detection_vps(ds.where(ds.z>ds.height_ml_new_gia), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom=-100, min_h=min_height, timemode="step").compute()
+zdr_offset_aboveML_all = utils.zdr_offset_detection_vps(ds.where(ds.z>ds.height_ml_new_gia), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom=-100, min_h=min_height, timemode="all").compute()
+
+zdr_offset_whole = utils.zdr_offset_detection_vps(ds, zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom=-100, min_h=min_height, timemode="step").compute()
+zdr_offset_whole_all = utils.zdr_offset_detection_vps(ds, zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom=-100, min_h=min_height, timemode="all").compute()
+
+cond_noML = ((ds.z>ds.height_ml_new_gia) + (ds.z<ds.height_ml_bottom_new_gia)).compute()
+zdr_offset_whole_noML = utils.zdr_offset_detection_vps(ds.where(cond_noML), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom=-100, min_h=min_height, timemode="step").compute()
+zdr_offset_whole_noML_all = utils.zdr_offset_detection_vps(ds, zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom=-100, min_h=min_height, timemode="all").compute()
+
+
+# Temporary fix because I do not have ERA5 temp downloaded for after 2020
+zdr_offset_aboveML = utils.zdr_offset_detection_vps(ds.assign_coords({"fake_ml":ds.height_ml_bottom_new_gia+10000}).where(ds.z>ds.height_ml_new_gia), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="fake_ml", min_h=min_height, timemode="step").compute()
+zdr_offset_aboveML_all = utils.zdr_offset_detection_vps(ds.assign_coords({"fake_ml":ds.height_ml_bottom_new_gia+10000}).where(ds.z>ds.height_ml_new_gia), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="fake_ml", min_h=min_height, timemode="all").compute()
+
+zdr_offset_whole = utils.zdr_offset_detection_vps(ds.assign_coords({"fake_ml":ds.height_ml_bottom_new_gia+10000}), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="fake_ml", min_h=min_height, timemode="step").compute()
+zdr_offset_whole_all = utils.zdr_offset_detection_vps(ds.assign_coords({"fake_ml":ds.height_ml_bottom_new_gia+10000}), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="fake_ml", min_h=min_height, timemode="all").compute()
+
+cond_noML = ((ds.z>ds.height_ml_new_gia) + (ds.z<ds.height_ml_bottom_new_gia)).compute()
+zdr_offset_whole_noML = utils.zdr_offset_detection_vps(ds.assign_coords({"fake_ml":ds.height_ml_bottom_new_gia+10000}).where(cond_noML), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="fake_ml", min_h=min_height, timemode="step").compute()
+zdr_offset_whole_noML_all = utils.zdr_offset_detection_vps(ds.assign_coords({"fake_ml":ds.height_ml_bottom_new_gia+10000}), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="fake_ml", min_h=min_height, timemode="all").compute()
+
+#%% Plot ZDR VP calibration 
+
+# Plot a moment VP, isotherms, ML bottom and calculated ZDR offset for different regions (below ML, in ML, above ML)
+mom = "RHOHV_NC"
+visdict14 = radarmet.visdict14
+norm = utils.get_discrete_norm(visdict14[mom]["ticks"])
+cmap = utils.get_discrete_cmap(visdict14[mom]["ticks"], visdict14[mom]["cmap"]) #mpl.cm.get_cmap("HomeyerRainbow")
+templevels = [-100]
+date = ds.time[0].values.astype('datetime64[D]').astype(str)
+
+offsets_to_plot = {"Below ML": zdr_offset_belowML,
+                   "In ML": zdr_offset_inML,
+                   "Above ML": zdr_offset_aboveML,
+                   "Whole column": zdr_offset_whole,
+                   "Whole column \n no ML": zdr_offset_whole_noML}
+
+fig = plt.figure(figsize=(7,7))
+# set height ratios for subplots
+gs = mpl.gridspec.GridSpec(2, 1, height_ratios=[2, 1], hspace=0) 
+ax = plt.subplot(gs[0])
+figvp = ds_qvp[mom].plot(x="time", cmap=cmap, norm=norm, extend="both", ylim=(0,10000), add_colorbar=False)
+figcontour = ds_qvp["TEMP"].plot.contour(x="time", y="z", levels=[0]+templevels, ylim=(0,5000))
+# ax = plt.gca()
+ax.clabel(figcontour)
+# plot ML limits
+ds_qvp["height_ml_bottom_new_gia"].plot(color="black", label="ML") 
+ds_qvp["height_ml_new_gia"].plot(color="black")
+# Plot min_height
+(xr.ones_like(ds_qvp["height_ml_new_gia"])*min_height).plot(color="black")
+# ax.text(ds_qvp.time[0]-1, min_height, "min_height")
+ax.text(-0.16, min_height/5000, "min_height", transform=ax.transAxes)
+plt.legend()
+plt.title(mom+" "+loc.upper()+" "+date)
+plt.ylabel("height [m]")
+
+ax2=plt.subplot(gs[1], sharex=ax)
+ax3 = ax2.twinx()
+for noff in offsets_to_plot.keys():
+    offsets_to_plot[noff]["ZDR_offset"].plot(label=str(noff), ls="-", ax=ax2, ylim=(-0.3,1))
+    ax2.set_ylabel("")
+    offsets_to_plot[noff]["ZDR_std_from_offset"].plot(label=str(noff), ls="--", ax=ax3, ylim=(-0.3,1), alpha=0.5)
+    ax3.set_ylabel("")
+    
+ax2.set_title("")
+ax3.set_title("Full: offset. Dashed: offset std.")
+ax3.set_yticks([],[])
+ax3.legend(loc=(1.01,0))
+
+fig.subplots_adjust(right=0.9)
+cbar_ax = fig.add_axes([0.93, 0.4, 0.02, 0.5])
+fig.colorbar(figvp, cax=cbar_ax, extend="both")
+
+
+# Same as above but with separate plots for the line plots
+# Plot a moment VP, isotherms, ML bottom and calculated ZDR offset for different regions (below ML, in ML, above ML)
+mom = "RHOHV"
+visdict14 = radarmet.visdict14
+norm = utils.get_discrete_norm(visdict14[mom]["ticks"])
+cmap = utils.get_discrete_cmap(visdict14[mom]["ticks"], visdict14[mom]["cmap"]) #mpl.cm.get_cmap("HomeyerRainbow")
+templevels = [-100]
+date = ds.time[0].values.astype('datetime64[D]').astype(str)
+
+offsets_to_plot = {"Below ML": zdr_offset_belowML,
+                   "In ML": zdr_offset_inML,
+                   "Above ML": zdr_offset_aboveML,
+                   "Whole column": zdr_offset_whole,
+                   "Whole column \n no ML": zdr_offset_whole_noML}
+
+fig = plt.figure(figsize=(7,7))
+# set height ratios for subplots
+gs = mpl.gridspec.GridSpec(3, 1, height_ratios=[2, 1, 1], hspace=0) 
+ax = plt.subplot(gs[0])
+figvp = ds_qvp[mom].plot(x="time", cmap=cmap, norm=norm, extend="both", ylim=(0,10000), add_colorbar=False)
+figcontour = ds_qvp["TEMP"].plot.contour(x="time", y="z", levels=[0]+templevels, ylim=(0,5000))
+# ax = plt.gca()
+ax.clabel(figcontour)
+# plot ML limits
+ds_qvp["height_ml_bottom_new_gia"].plot(color="black", label="ML") 
+ds_qvp["height_ml_new_gia"].plot(color="black")
+# Plot min_height
+(xr.ones_like(ds_qvp["height_ml_new_gia"])*min_height).plot(color="black")
+# ax.text(ds_qvp.time[0]-1, min_height, "min_height")
+ax.text(-0.16, min_height/5000, "min_height", transform=ax.transAxes)
+plt.legend()
+plt.title(mom+" "+loc.upper()+" "+date)
+plt.ylabel("height [m]")
+
+ax2=plt.subplot(gs[1], sharex=ax)
+ax3 = plt.subplot(gs[2], sharex=ax2)
+for noff in offsets_to_plot.keys():
+    offsets_to_plot[noff]["ZDR_offset"].plot(label=str(noff), ls="-", ax=ax2, ylim=(-0.4,0.1))
+    ax2.set_ylabel("")
+    offsets_to_plot[noff]["ZDR_std_from_offset"].plot(label=str(noff), ls="-", ax=ax3, ylim=(0,1))
+    ax3.set_ylabel("")
+
+ax2.set_title("")
+ax3.set_title("")
+ax2.text(0.5, 0.9, "Offset", transform=ax2.transAxes, horizontalalignment='center')    
+ax3.text(0.5, 0.9, "Standard Dev.", transform=ax3.transAxes, horizontalalignment='center')    
+# ax3.set_yticks([],[])
+ax2.legend(loc=(1.01,0))
+
+## Custom legend
+# Extract the current legend handles and labels
+handles = ax2.get_legend().legendHandles
+labels = ax2.get_legend().get_texts()
+
+# Modify the legend labels and add a title
+new_labels = [str(round(float(offsets_to_plot[noff]["ZDR_offset"].median()), 4)) for noff in offsets_to_plot.keys()]
+legend_title = "Daily offsets"
+
+# Create a new legend with the modified handles, labels, and title
+ax3.legend(handles=handles, labels=new_labels, title=legend_title, loc=(1.01,0))
+
+
+fig.subplots_adjust(right=0.9)
+cbar_ax = fig.add_axes([0.93, 0.55, 0.02, 0.3])
+fig.colorbar(figvp, cax=cbar_ax, extend="both")
+
+#%% Check noise correction for URHOHV
+
+X_RHO = "URHOHV"
+
+rho_nc = utils.calculate_noise_level(ds[X_DBZH], ds[X_RHO], noise=(-45, -15, 1))
+
+# lets do a linear fit for every noise level
+fits=[]
+for nn,rhon in enumerate(rho_nc[0]):
+    merged = xr.merge(rhon)
+    rhonc_snrh = xr.DataArray(merged.RHOHV_NC.values.flatten(), coords={"SNRH":merged.SNRH.values.flatten()})
+    fits.append(float(rhonc_snrh.where((0<rhonc_snrh.SNRH)&(rhonc_snrh.SNRH<20)&(rhonc_snrh>0.7)).polyfit("SNRH", deg=1, skipna=True).polyfit_coefficients[0].values))
+
+# # checking which fit has the slope closest to zero
+# bci = np.abs(np.array(fits)).argmin()
+
+# # get the best noise correction level according to bci
+# ncl = np.arange(-45, -15, 1)[bci]
+
+# get the "best" noise correction level (acoording to the min std)
+ncl = rho_nc[-1]
+
+# get index of the best correction
+bci = np.array(rho_nc[-2]).argmin()
+
+# merge into a single array
+rho_nc_out = xr.merge(rho_nc[0][bci])
+
+# add noise correction level as attribute
+rho_nc_out.attrs["noise correction level"]=ncl
+
+
+# plot
+rho_nc_out.RHOHV_NC[0].plot(vmin=0, vmax=1)
+
+(rho_nc_out.RHOHV_NC[0]>1).plot()
+
+ds.RHOHV[0].plot(vmin=0, vmax=1)
+ds.URHOHV[0].plot(vmin=0, vmax=1)
+
+
+plt.scatter(rho_nc[0][bci][0][0], rho_nc[0][bci][1][0], s=0.01, alpha=0.5)
+plt.scatter(ds["SNRH"][0], ds[X_RHO][0], s=0.01, alpha=0.5)
