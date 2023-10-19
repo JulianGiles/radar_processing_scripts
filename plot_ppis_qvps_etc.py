@@ -433,26 +433,14 @@ fig.subplots_adjust(right=0.9)
 cbar_ax = fig.add_axes([0.93, 0.55, 0.02, 0.3])
 fig.colorbar(figvp, cax=cbar_ax, extend="both")
 
-#%% Check noise correction for URHOHV
+#%% Check noise correction for RHOHV
 
-X_RHO = "URHOHV"
+X_RHO = "RHOHV"
 
-rho_nc = utils.calculate_noise_level(ds[X_DBZH], ds[X_RHO], noise=(-45, -15, 1))
+# calculate the noise level
+rho_nc = utils.calculate_noise_level(ds[X_DBZH][0], ds[X_RHO][0], noise=(-40, -20, 1))
 
-# lets do a linear fit for every noise level
-fits=[]
-for nn,rhon in enumerate(rho_nc[0]):
-    merged = xr.merge(rhon)
-    rhonc_snrh = xr.DataArray(merged.RHOHV_NC.values.flatten(), coords={"SNRH":merged.SNRH.values.flatten()})
-    fits.append(float(rhonc_snrh.where((0<rhonc_snrh.SNRH)&(rhonc_snrh.SNRH<20)&(rhonc_snrh>0.7)).polyfit("SNRH", deg=1, skipna=True).polyfit_coefficients[0].values))
-
-# # checking which fit has the slope closest to zero
-# bci = np.abs(np.array(fits)).argmin()
-
-# # get the best noise correction level according to bci
-# ncl = np.arange(-45, -15, 1)[bci]
-
-# get the "best" noise correction level (acoording to the min std)
+# get the "best" noise correction level (acoording to the min std, Veli's way)
 ncl = rho_nc[-1]
 
 # get index of the best correction
@@ -465,14 +453,65 @@ rho_nc_out = xr.merge(rho_nc[0][bci])
 rho_nc_out.attrs["noise correction level"]=ncl
 
 
-# plot
-rho_nc_out.RHOHV_NC[0].plot(vmin=0, vmax=1)
-
-(rho_nc_out.RHOHV_NC[0]>1).plot()
-
-ds.RHOHV[0].plot(vmin=0, vmax=1)
-ds.URHOHV[0].plot(vmin=0, vmax=1)
+# Correct rhohv just using the SNRHC from the files (from Ryzhkov and Zrnic page 186)
+# we assume eta = 1
+zdr_nc = wrl.trafo.idecibel(ds["SNRHC"][0]) * ds["ZDR"][0] / (wrl.trafo.idecibel(ds["SNRHC"][0]) + 1 - ds["ZDR"][0])
+# zdr_nc = 1 # another approximation would be to set ZDR = 1
+rho_nc2 = ds[X_RHO][0] * (1 + 1/wrl.trafo.idecibel(ds["SNRHC"][0].where(ds["SNRHC"][0]>0)) )**0.5 * (1 + zdr_nc/wrl.trafo.idecibel(ds["SNRHC"][0]) )**0.5
 
 
-plt.scatter(rho_nc[0][bci][0][0], rho_nc[0][bci][1][0], s=0.01, alpha=0.5)
+## Plot
+# plot noise corrected RHOHV with utils.calculate_noise_level
+rho_nc_out.RHOHV_NC.plot(vmin=0, vmax=1)
+plt.title("Noise corrected RHOHV with own noise calc")
+
+(rho_nc_out.RHOHV_NC>1).plot()
+plt.title("Bins with noise corrected RHOHV > 1")
+
+# plot noise corrected RHOHV with DWD SNRHC
+rho_nc2.plot(vmin=0, vmax=1)
+plt.title("Noise corrected RHOHV with SNRHC from files")
+
+(rho_nc2>1).plot()
+plt.title("Bins with noise corrected RHOHV > 1")
+
+# plot the SNRH
+rho_nc_out["SNRH"].plot(vmin=-60, vmax=60)
+plt.title("SNRH from own noise calc")
+
+ds["SNRHC"][0].plot(vmin=-60, vmax=60)
+plt.title("SNRH from DWD")
+
+# plot scatters of RHOHV vs SNR
+plt.scatter(rho_nc[0][bci][0], rho_nc[0][bci][1], s=0.01, alpha=0.5)
 plt.scatter(ds["SNRH"][0], ds[X_RHO][0], s=0.01, alpha=0.5)
+
+# Plot ZDR and noise corrected ZDR to check if it really makes a difference (looks like it does not)
+
+ds.ZDR[0].plot(vmin=-2, vmax=2)
+plt.title("ZDR")
+
+zdr_nc.plot(vmin=-2, vmax=2)
+plt.title("noise corrected ZDR")
+
+(ds.ZDR[0] - zdr_nc).plot(vmin=-0.1, vmax=0.1)
+plt.title("Difference ZDR - noise corrected ZDR")
+
+#%% Check noise power level in raw DWD files
+
+ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/20*/*/*/pro/vol5minng01/05/*snrhc*"
+files = glob.glob(ff)
+
+noise_h = []
+noise_v = []
+eta = []
+date_time = []
+for f0 in files:
+    aux = dttree.open_datatree(f0)
+    noise_h.append(aux["how"]["radar_system"].attrs["noise_H_pw0"])
+    noise_v.append(aux["how"]["radar_system"].attrs["noise_V_pw0"])
+    eta.append(noise_h[-1]/noise_v[-1])
+    
+    datestr = aux["what"].attrs["date"]
+    timestr = aux["what"].attrs["time"]
+    date_time.append(datetime.datetime.strptime(datestr + timestr, "%Y%m%d%H%M%S"))
