@@ -33,6 +33,9 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import xradar as xd
 import cmweather
+import hvplot
+import hvplot.xarray
+import holoviews as hv
 
 try:
     from Scripts.python.radar_processing_scripts import utils
@@ -433,6 +436,129 @@ fig.subplots_adjust(right=0.9)
 cbar_ax = fig.add_axes([0.93, 0.55, 0.02, 0.3])
 fig.colorbar(figvp, cax=cbar_ax, extend="both")
 
+#%% Timeseries of ZDR offsets
+
+loc0 = "umd"
+
+## Load
+f_VPzdroff_below3c = "/automount/realpep/upload/jgiles/dwd/calibration/zdr/VP/20*/*/*/"+loc0+"/90gradstarng01/00/*_zdr_offset_below3C_00*"
+f_VPzdroff_belowML = "/automount/realpep/upload/jgiles/dwd/calibration/zdr/VP/20*/*/*/"+loc0+"/90gradstarng01/00/*_zdr_offset_belowML_00*"
+f_VPzdroff_wholecol = "/automount/realpep/upload/jgiles/dwd/calibration/zdr/VP/20*/*/*/"+loc0+"/90gradstarng01/00/*_zdr_offset_wholecol_00*"
+
+f_LRzdroff_below3c = "/automount/realpep/upload/jgiles/dwd/calibration/zdr/LR_consistency/20*/*/*/"+loc0+"/vol5minng01/07/*_zdr_offset_below3C_07*"
+f_LRzdroff_belowML = "/automount/realpep/upload/jgiles/dwd/calibration/zdr/LR_consistency/20*/*/*/"+loc0+"/vol5minng01/07/*_zdr_offset_belowML_07*"
+
+VPzdroff_below3c = xr.open_mfdataset(f_VPzdroff_below3c)
+VPzdroff_belowML = xr.open_mfdataset(f_VPzdroff_belowML)
+VPzdroff_wholecol = xr.open_mfdataset(f_VPzdroff_wholecol)
+
+LRzdroff_below3c = xr.open_mfdataset(f_LRzdroff_below3c)
+LRzdroff_below3c = LRzdroff_below3c.where(abs(LRzdroff_below3c["ZDR_offset"])>0.00049) # special filtering since the NA values are set to a fix float close to zero
+LRzdroff_belowML = xr.open_mfdataset(f_LRzdroff_belowML)
+LRzdroff_belowML = LRzdroff_belowML.where(abs(LRzdroff_belowML["ZDR_offset"])>0.00049) # special filtering since the NA values are set to a fix float close to zero
+
+
+## Plot
+
+VPzdroff_below3c["ZDR_offset"].plot.scatter(x="time", s=1, edgecolors=None, linewidths=0, label="VP below 3C")
+VPzdroff_belowML["ZDR_offset"].plot.scatter(x="time", s=1, edgecolors=None, linewidths=0, label="VP below ML")
+VPzdroff_wholecol["ZDR_offset"].plot.scatter(x="time", s=1, edgecolors=None, linewidths=0, label="VP whole col")
+
+LRzdroff_below3c["ZDR_offset"].plot.scatter(x="time", s=1, edgecolors=None, linewidths=0, label="ZH-ZDR below 3C")
+LRzdroff_belowML["ZDR_offset"].plot.scatter(x="time", s=1, edgecolors=None, linewidths=0, label="ZH-ZDR below ML")
+
+# plt.legend()
+lgnd = plt.legend()
+for handle in lgnd.legend_handles:
+    handle.set_sizes([6.0])
+
+plt.ylabel("ZDR offsets")    
+plt.ylim(-1,1)
+plt.title(loc0.upper())
+
+
+## Plot interactively
+# put everything in the same dataset
+zdroffsets = xr.merge([VPzdroff_below3c["ZDR_offset"].rename("VP below 3C"), 
+                       VPzdroff_belowML["ZDR_offset"].rename("VP below ML"),
+                       VPzdroff_wholecol["ZDR_offset"].rename("VP whole col"), 
+                       LRzdroff_below3c["ZDR_offset"].rename("ZH-ZDR below 3C"),
+                       LRzdroff_belowML["ZDR_offset"].rename("ZH-ZDR below ML"),
+                       ],)
+# add also rolling median of the offsets
+zdroffsets_rollmed = xr.merge([
+                       zdroffsets["VP below 3C"].compute().interpolate_na("time").rolling(time=31, center=True, min_periods=10).median().rename("VP below 3C rolling median"), 
+                       zdroffsets["VP below ML"].compute().interpolate_na("time").rolling(time=31, center=True, min_periods=10).median().rename("VP below ML rolling median"),
+                       zdroffsets["VP whole col"].compute().interpolate_na("time").rolling(time=31, center=True, min_periods=10).median().rename("VP whole col rolling median"), 
+                       zdroffsets["ZH-ZDR below 3C"].compute().interpolate_na("time").rolling(time=31, center=True, min_periods=10).median().rename("ZH-ZDR below 3C rolling median"),
+                       zdroffsets["ZH-ZDR below ML"].compute().interpolate_na("time").rolling(time=31, center=True, min_periods=10).median().rename("ZH-ZDR below ML rolling median"),
+                       ],)
+
+
+
+# Create an interactive scatter plot from the combined Dataset
+scatter = zdroffsets.hvplot.scatter(x='time', 
+                                    y=['VP below 3C', 'VP below ML', 'VP whole col', 
+                                       'ZH-ZDR below 3C', 'ZH-ZDR below ML'],
+                                    width=1000, height=400, size=1, muted_alpha=0)
+
+lines = zdroffsets_rollmed.hvplot.line(x='time', 
+                                    y=['VP below 3C rolling median', 'VP below ML rolling median', 'VP whole col rolling median', 
+                                       'ZH-ZDR below 3C rolling median', 'ZH-ZDR below ML rolling median'],
+                                    width=1000, height=400, muted_alpha=0)
+
+# Combine both plots
+overlay = (scatter * lines)
+# overlay=lines
+
+# Customize the plot (add titles, labels, etc.)
+overlay.opts(title="ZDR offsets and 31 day centered rolling median (10 day min, interpolated where NaN)", xlabel="Time", ylabel="ZDR offsets", show_grid=True)
+
+# Save the interactive plot to an HTML file
+hv.save(overlay, "/user/jgiles/interactive_plot.html")
+
+
+## Timeseries of ZDR VP offset above vs below ML
+## Load
+f_VPzdroff_belowML = "/automount/realpep/upload/jgiles/dwd/calibration/zdr/VP/20*/*/*/"+loc0+"/90gradstarng01/00/*_zdr_offset_belowML_00*"
+f_VPzdroff_above0c = "/automount/realpep/upload/jgiles/dwd/calibration/zdr/VP/20*/*/*/"+loc0+"/90gradstarng01/00/*_zdr_offset_above0C_00*"
+
+VPzdroff_belowML = xr.open_mfdataset(f_VPzdroff_belowML)
+VPzdroff_above0c = xr.open_mfdataset(f_VPzdroff_above0c)
+
+
+## Plot
+
+VPzdroff_belowML["ZDR_offset"].plot.scatter(x="time", s=1, edgecolors=None, linewidths=0, label="VP below ML")
+VPzdroff_above0c["ZDR_offset"].plot.scatter(x="time", s=1, edgecolors=None, linewidths=0, label="VP above 0C")
+
+# plt.legend()
+lgnd = plt.legend()
+for handle in lgnd.legend_handles:
+    handle.set_sizes([6.0])
+
+plt.title("")
+plt.ylabel("ZDR offsets")    
+plt.ylim(-1,1)
+
+## Plot difference
+
+(VPzdroff_belowML["ZDR_offset"]-VPzdroff_above0c["ZDR_offset"]).plot.scatter(x="time", s=1, edgecolors=None, linewidths=0, label="below-above ML diff")
+
+# add +-0.1 lines
+(xr.ones_like(VPzdroff_belowML["ZDR_offset"])*0.1).plot(x="time", c="black", label="0.1")
+(xr.ones_like(VPzdroff_belowML["ZDR_offset"])*-0.1).plot(x="time", c="black", label="-0.1")
+
+# plt.legend()
+lgnd = plt.legend()
+lgnd.legend_handles[0].set_sizes([6.0])
+
+plt.grid()
+plt.title("")
+plt.ylabel("ZDR offsets")    
+plt.ylim(-0.3,0.3)
+
+
 #%% Check noise correction for RHOHV
 
 X_RHO = "RHOHV"
@@ -515,3 +641,18 @@ for f0 in files:
     datestr = aux["what"].attrs["date"]
     timestr = aux["what"].attrs["time"]
     date_time.append(datetime.datetime.strptime(datestr + timestr, "%Y%m%d%H%M%S"))
+
+#%% Testing my version of the raw DWD data with the other one that has more moments
+mydata = utils.load_dwd_raw("/automount/realpep/upload/RealPEP-SPP/newdata/2022-Nov-new/pro/2016/2016-05-27/pro/vol5minng01/05/*")
+otherdata = utils.load_dwd_raw("/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2016/2016-05/2016-05-27/pro/vol5minng01/05/*")
+
+xr.testing.assert_allclose(mydata.SQIV[0], otherdata.SQIV[0])
+
+mydata.DBZH[0].plot()
+otherdata.DBZH[0].plot()
+
+(mydata.UVRADH[0] - otherdata.UVRADH[0]).plot()
+
+# check raw metadata
+mydataraw = dttree.open_datatree(glob.glob("/automount/realpep/upload/RealPEP-SPP/newdata/2022-Nov-new/pro/2016/2016-05-27/pro/vol5minng01/05/*dbzh*")[0])
+otherdataraw = dttree.open_datatree(glob.glob("/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2016/2016-05/2016-05-27/pro/vol5minng01/05/*dbzh*")[0])
