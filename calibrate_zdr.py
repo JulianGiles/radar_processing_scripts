@@ -421,7 +421,7 @@ for ff in files:
             filename = ("zdr_offset_below3C_timesteps").join(savepath.split("allmoms"))
             zdr_offset.to_netcdf(filename)
             
-            # Calculate offset below ML for full timespan
+            # Calculate offset below 3 degrees C for full timespan
             zdr_offset = utils.zhzdr_lr_consistency(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=3, min_h=min_height, timemode="all")
             
             # Copy encodings
