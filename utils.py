@@ -384,6 +384,44 @@ def load_dmi_raw(filepath): # THIS IS NOT IMPLEMENTED YET # !!!
     
     return fix_flipped_phidp(fix_time_in_coords(dmidata))
 
+def load_qvps(filepath):
+    """
+    Load DWD or DMI QVP data.
+
+    Parameter
+    ---------
+    filepath : str
+            Location of the file or path with wildcards to find files using glob
+    """
+    # collect files
+    files = sorted(glob.glob(filepath))
+
+    if len(files)==1:
+        qvps = xr.open_mfdataset(files)
+    else:
+        # there are slight differences (noise) in z coord sometimes so we have to align all datasets
+        # since the time coord has variable length, we cannot use join="override" so we define a function to copy
+        # the z coord from the first dataset into the rest with preprocessing
+        # There are also some time values missing, ignore those
+        # Some files do not have TEMP data, fill with nan
+        first_file = xr.open_mfdataset(files[0]) 
+        first_file_z = first_file.z.copy()
+        def fix_z_and_time(ds):
+            ds.coords["z"] = first_file_z
+            ds = ds.where(ds["time"].notnull(), drop=True)
+            if "TEMP" not in ds.coords:
+                ds.coords["TEMP"] = xr.full_like( ds["DBZH"], np.nan ).compute()
+                
+            return ds
+            
+        try:
+            qvps = xr.open_mfdataset(files, preprocess=fix_z_and_time)
+        except: 
+            # if the above fails, just combine everything and fill the holes with nan (Turkish case)
+            qvps = xr.open_mfdataset(files, combine="nested", concat_dim="time")
+    
+    return qvps
+
 
 #### Loading ZDR offsets and RHOHV noise corrected
 
