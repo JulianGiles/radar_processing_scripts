@@ -47,6 +47,9 @@ except ModuleNotFoundError:
     # import colormap_generator
 
 
+os.environ['WRADLIB_DATA'] = '/home/jgiles/wradlib-data-main'
+# set earthdata token (this may change, only lasts a few months https://urs.earthdata.nasa.gov/users/jgiles/user_tokens)
+os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = "eyJ0eXAiOiJKV1QiLCJvcmlnaW4iOiJFYXJ0aGRhdGEgTG9naW4iLCJzaWciOiJlZGxqd3RwdWJrZXlfb3BzIiwiYWxnIjoiUlMyNTYifQ.eyJ0eXBlIjoiVXNlciIsInVpZCI6ImpnaWxlcyIsImV4cCI6MTcwMzMzMjE5NywiaWF0IjoxNjk4MTQ4MTk3LCJpc3MiOiJFYXJ0aGRhdGEgTG9naW4ifQ.6DB5JJ9vdC7Vvwvaa7_mb_HbpVAh05Gz26dzdateN10C5lAd2X4a1_zClx7KkTpyoeVZSzkGSgtcd5Azc_btG0am4r2aJDGv4Zp4Vg55G4mcZMp-aTR7D520InQLMvqFacVO5wwmvfNWzMT4TyLGcXwPuX58s1oaFR5gRL9T30pXN9nEs-1aJg4LUl553PfdOvvom3q-JKXFtSTE2nLyEQOzWW36COl1aHwq6Wh4ykn4aq6ppTVAIeHdgkjtnQtxbhd9trm16fSbX9HIgG7n-drnz_v-WMeFuycMHa-zLDKnd3U3oZW6XAUq2akw2ddu6ChwoTZ4Ix2di7fudioo9Q"
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -284,8 +287,187 @@ norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
 cmap = "miub2"
 datasel[mom][0].wrl.plot(x="x", y="y", cmap=cmap, norm=norm, xlim=(-25000,25000), ylim=(-25000,25000))
 
-#%% Plot QVP
+#%% Load QVPs
+ff = "/automount/realpep/upload/jgiles/dwd/qvps/2015/*/*/pro/vol5minng01/07/*allmoms*"
+ds_qvps = utils.load_qvps(ff)
 
+
+#%% Plot QVPs
+
+import panel as pn
+from bokeh.resources import INLINE
+
+selday = "2015-01-02"
+
+var_options = ['DBZH', 'RHOHV', 'ZDR_OC', 'KDP_ML_corrected',
+               'UVRADH', 'UZDR', 'ZDR', 'UWRADH', 'TH', 'VRADH', 'SQIH',
+               'WRADH', 'UPHIDP', 'KDP', 'SNRHC', 'SQIH',
+                'URHOHV', 'SNRH', 'RHOHV_NC', 'UPHIDP_OC']
+
+var_starting = ['DBZH', 'ZDR_OC', "ZDR", 'KDP_ML_corrected', "RHOHV_NC", "RHOHV_NC"]
+
+# Define the function to update plots
+def update_plots(selected_day, selected_vars):
+    selected_data = ds_qvps.sel(time=selected_day)
+    available_vars = selected_vars
+
+    plots = []
+
+    for var in available_vars:
+        quadmesh = selected_data[var].hvplot.quadmesh(
+            x='time', y='z', cmap='viridis', title=var,
+            xlabel='Time', ylabel='Height (m)', colorbar=True
+        ).opts(width=800, height=400)
+
+        plots.append(quadmesh)
+
+    nplots = len(plots)
+    gridplot = pn.Column(pn.Row(*plots[:round(nplots/2)]),
+                         pn.Row(*plots[round(nplots/2):]),
+                         )
+    return gridplot
+    # return pn.Row(*plots)
+
+# Convert the date range to a list of datetime objects
+date_range = pd.to_datetime(ds_qvps.time.data)
+start_date = date_range.min().date()
+end_date = date_range.max().date()
+
+date_range_str = list(np.unique([str(date0.date()) for date0 in date_range]))
+
+# Create widgets for variable selection and toggles
+selected_day_slider = pn.widgets.DiscreteSlider(name='Select Date', options=date_range_str, value=date_range_str[0])
+
+selected_vars_selector = pn.widgets.CheckBoxGroup(name='Select Variables', 
+                                                  value=var_starting, 
+                                                  options=var_options,
+                                                  inline=True)
+
+# # this works but the file is so large that it is not loading in Firefox or Chrome
+# selected_vars_selector = pn.widgets.Select(name='Select Variables', 
+#                                                   value="ZDR", 
+#                                                   options=["ZDR", "ZDR_OC", "UZDR"],
+#                                                   )
+
+
+@pn.depends(selected_day_slider.param.value)
+# Define the function to update plots based on widget values
+def update_plots_callback(event):
+    selected_day = str(selected_day_slider.value)
+    selected_vars = selected_vars_selector.value
+    plot = update_plots(selected_day, selected_vars)
+    plot_panel[0] = plot
+
+selected_day_slider.param.watch(update_plots_callback, 'value')
+selected_vars_selector.param.watch(update_plots_callback, 'value')
+
+# Create the initial plot
+initial_day = str(start_date)
+initial_vars = var_starting
+# initial_vars = "ZDR"
+plot_panel = pn.Row(update_plots(initial_day, initial_vars))
+
+# Create the Panel layout
+layout = pn.Column(
+    selected_day_slider,
+    # selected_vars_selector, # works with pn.widgets.Select but creates too-large files that do not load
+    plot_panel
+)
+
+
+# Display or save the plot as an HTML file
+# pn.serve(layout)
+
+layout.save("/user/jgiles/interactive.html", resources=INLINE, embed=True, 
+            max_states=1000, max_opts=1000)
+
+# layout.save("/user/jgiles/interactive.html", resources=INLINE, embed=True, 
+#             states={"Select Date":date_range_str, "Select Variables": var_options}, 
+#             max_states=1000, max_opts=1000)
+
+
+#%% Plot QVPs
+import panel as pn
+
+
+# Define the function to update plots
+def update_plots(selected_day, selected_vars, show_height_lines, show_min_entropy):
+    selected_data = ds_qvps.sel(time=selected_day)
+    available_vars = selected_vars
+
+    plots = []
+
+    for var in available_vars:
+        quadmesh = selected_data.hvplot.quadmesh(
+            x='time', y='z', C=var, cmap='viridis', title=var,
+            xlabel='Time', ylabel='Height (m)', colorbar=True
+        ).opts(width=400, height=400)
+
+        # Add line plots for height_ml_new_gia and height_ml_bottom_new_gia
+        if show_height_lines:
+            line1 = selected_data.hvplot.line(
+                x='time', y='height_ml_new_gia',
+                line_color='red', line_width=2, line_dash='dashed', legend=False
+            )
+            line2 = selected_data.hvplot.line(
+                x='time', y='height_ml_bottom_new_gia',
+                line_color='blue', line_width=2, line_dash='dotted', legend=False
+            )
+            quadmesh = (quadmesh * line1 * line2).opts(legend_position='top_left')
+
+        # Add hatches for min_entropy when it's greater than 0.8
+        if show_min_entropy:
+            min_entropy_values = selected_data.min_entropy
+            # min_entropy_hatches = hv.QuadMesh(min_entropy_values > 0.8, kdims=["time", "z"])
+            # quadmesh = (quadmesh * min_entropy_hatches.opts(hatching='true')).opts(legend_position='top_left')
+
+        plots.append(quadmesh)
+
+    return pn.Row(*plots)
+
+# Convert the date range to a list of datetime objects
+date_range = pd.to_datetime(ds_qvps.time.data)
+start_date = date_range.min().date()
+end_date = date_range.max().date()
+
+# Create widgets for variable selection and toggles
+selected_day_slider = pn.widgets.DateSlider(name='Select Date', start=start_date, end=end_date)
+selected_vars_selector = pn.widgets.CheckButtonGroup(name='Select Variables', value=['DBZH', 'RHOHV', 'ZDR_OC', 'KDP_ML_corrected'], options=[w for w in list(ds_qvps.data_vars) if w.isupper()])
+show_height_lines_toggle = pn.widgets.Toggle(name='Show Height Lines', value=True)
+show_min_entropy_toggle = pn.widgets.Toggle(name='Show Min Entropy Hatches', value=True)
+
+# Define the function to update plots based on widget values
+def update_plots_callback(event):
+    selected_day = selected_day_slider.value
+    selected_vars = selected_vars_selector.value
+    show_height_lines = show_height_lines_toggle.value
+    show_min_entropy = show_min_entropy_toggle.value
+    plot = update_plots(selected_day, selected_vars, show_height_lines, show_min_entropy)
+    plot_panel[0] = plot
+
+selected_day_slider.param.watch(update_plots_callback, 'value')
+selected_vars_selector.param.watch(update_plots_callback, 'value')
+show_height_lines_toggle.param.watch(update_plots_callback, 'value')
+show_min_entropy_toggle.param.watch(update_plots_callback, 'value')
+
+# Create the initial plot
+initial_day = ds_qvps.time.min().data
+initial_vars = ['DBZH', 'RHOHV', 'ZDR_OC', 'KDP_ML_corrected']
+initial_height_lines = True
+initial_min_entropy = True
+plot_panel = pn.Row(update_plots(initial_day, initial_vars, initial_height_lines, initial_min_entropy))
+
+# Create the Panel layout
+layout = pn.Column(
+    selected_day_slider,
+    selected_vars_selector,
+    show_height_lines_toggle,
+    show_min_entropy_toggle,
+    plot_panel
+)
+
+# Display or save the plot as an HTML file
+layout.save("/user/jgiles/interactive.html")
 
 #%% Compute ZDR VP calibration
 
