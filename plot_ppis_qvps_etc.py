@@ -291,8 +291,100 @@ datasel[mom][0].wrl.plot(x="x", y="y", cmap=cmap, norm=norm, xlim=(-25000,25000)
 ff = "/automount/realpep/upload/jgiles/dwd/qvps/2015/*/*/pro/vol5minng01/07/*allmoms*"
 ds_qvps = utils.load_qvps(ff)
 
+#%% Plot QPVs interactive (working)
+import panel as pn
+from bokeh.resources import INLINE
 
-#%% Plot QVPs
+selday = "2015-01-02"
+
+var_options = ['DBZH', 'RHOHV', 'ZDR_OC', 'KDP_ML_corrected',
+               'UVRADH', 'UZDR', 'ZDR', 'UWRADH', 'TH', 'VRADH', 'SQIH',
+               'WRADH', 'UPHIDP', 'KDP', 'SNRHC', 'SQIH',
+                'URHOHV', 'SNRH', 'RHOHV_NC', 'UPHIDP_OC']
+
+var_starting = ['DBZH', 'ZDR_OC', 'KDP_ML_corrected', "RHOHV_NC"]
+
+# Define the function to update plots
+def update_plots(selected_day, selected_vars):
+    selected_data = ds_qvps.sel(time=selected_day)
+    available_vars = selected_vars
+
+    plots = []
+
+    for var in available_vars:
+        quadmesh = selected_data[var].hvplot.quadmesh(
+            x='time', y='z', cmap='viridis', title=var,
+            xlabel='Time', ylabel='Height (m)', colorbar=True
+        ).opts(width=800, height=400)
+
+        plots.append(quadmesh)
+
+    nplots = len(plots)
+    gridplot = pn.Column(pn.Row(*plots[:round(nplots/2)]),
+                         pn.Row(*plots[round(nplots/2):]),
+                         )
+    return gridplot
+    # return pn.Row(*plots)
+
+# Convert the date range to a list of datetime objects
+date_range = pd.to_datetime(ds_qvps.time.data)
+start_date = date_range.min().date()
+end_date = date_range.max().date()
+
+date_range_str = list(np.unique([str(date0.date()) for date0 in date_range]))
+
+# Create widgets for variable selection and toggles
+selected_day_slider = pn.widgets.DiscreteSlider(name='Select Date', options=date_range_str, value=date_range_str[0])
+
+selected_vars_selector = pn.widgets.CheckBoxGroup(name='Select Variables', 
+                                                  value=var_starting, 
+                                                  options=var_options,
+                                                  inline=True)
+
+# # this works but the file is so large that it is not loading in Firefox or Chrome
+# selected_vars_selector = pn.widgets.Select(name='Select Variables', 
+#                                                   value="ZDR", 
+#                                                   options=["ZDR", "ZDR_OC", "UZDR"],
+#                                                   )
+
+
+@pn.depends(selected_day_slider.param.value)
+# Define the function to update plots based on widget values
+def update_plots_callback(event):
+    selected_day = str(selected_day_slider.value)
+    selected_vars = selected_vars_selector.value
+    plot = update_plots(selected_day, selected_vars)
+    plot_panel[0] = plot
+
+selected_day_slider.param.watch(update_plots_callback, 'value')
+selected_vars_selector.param.watch(update_plots_callback, 'value')
+
+# Create the initial plot
+initial_day = str(start_date)
+initial_vars = var_starting
+# initial_vars = "ZDR"
+plot_panel = pn.Row(update_plots(initial_day, initial_vars))
+
+# Create the Panel layout
+layout = pn.Column(
+    selected_day_slider,
+    # selected_vars_selector, # works with pn.widgets.Select but creates too-large files that do not load
+    plot_panel
+)
+
+
+# Display or save the plot as an HTML file
+# pn.serve(layout)
+
+layout.save("/user/jgiles/interactive.html", resources=INLINE, embed=True, 
+            max_states=1000, max_opts=1000)
+
+# layout.save("/user/jgiles/interactive.html", resources=INLINE, embed=True, 
+#             states={"Select Date":date_range_str, "Select Variables": var_options}, 
+#             max_states=1000, max_opts=1000)
+
+
+#%% Plot QVPs interactive (testing)
 
 import panel as pn
 from bokeh.resources import INLINE
@@ -304,7 +396,8 @@ var_options = ['DBZH', 'RHOHV', 'ZDR_OC', 'KDP_ML_corrected',
                'WRADH', 'UPHIDP', 'KDP', 'SNRHC', 'SQIH',
                 'URHOHV', 'SNRH', 'RHOHV_NC', 'UPHIDP_OC']
 
-var_starting = ['DBZH', 'ZDR_OC', "ZDR", 'KDP_ML_corrected', "RHOHV_NC", "RHOHV_NC"]
+var_starting = ['DBZH', 'ZDR_OC', "ZDR", 'KDP_ML_corrected', "RHOHV_NC", "RHOHV"]
+var_starting = ['DBZH', 'ZDR_OC', 'KDP_ML_corrected', "RHOHV_NC"]
 
 # Define the function to update plots
 def update_plots(selected_day, selected_vars):
