@@ -385,9 +385,12 @@ layout.save("/user/jgiles/interactive.html", resources=INLINE, embed=True,
 
 
 #%% Plot QVPs interactive (testing)
-
+from functools import partial
 import panel as pn
 from bokeh.resources import INLINE
+from bokeh.models import FixedTicker
+from bokeh.models import CategoricalColorMapper, ColorBar
+from bokeh.colors import Color
 
 selday = "2015-01-02"
 
@@ -399,6 +402,9 @@ var_options = ['DBZH', 'RHOHV', 'ZDR_OC', 'KDP_ML_corrected',
 var_starting = ['DBZH', 'ZDR_OC', "ZDR", 'KDP_ML_corrected', "RHOHV_NC", "RHOHV"]
 var_starting = ['DBZH', 'ZDR_OC', 'KDP_ML_corrected', "RHOHV_NC"]
 
+visdict14 = radarmet.visdict14
+
+
 # Define the function to update plots
 def update_plots(selected_day, selected_vars):
     selected_data = ds_qvps.sel(time=selected_day)
@@ -406,11 +412,47 @@ def update_plots(selected_day, selected_vars):
 
     plots = []
 
+    # define a function for plotting a discrete colorbar with equal color ranges
+    def cbar_hook(hv_plot, _, cmap, ticklist):
+        COLORS = [mpl.colors.rgb2hex(cc, keep_alpha=True) for cc in cmap.colors]
+        BOUNDS = ticklist
+        plot = hv_plot.handles["plot"]
+        factors = [f"{BOUNDS[i]} - {BOUNDS[i + 1]}" for i in range(len(COLORS))]
+        mapper = CategoricalColorMapper(
+            palette=COLORS,
+            factors=factors,
+        )
+        color_bar = ColorBar(color_mapper=mapper)
+        plot.right[0] = color_bar
+
+
     for var in available_vars:
+        # set colorbar settings
+        ticklist = list(visdict14[var]["ticks"])
+        norm = utils.get_discrete_norm(visdict14[var]["ticks"])
+        cmap = utils.get_discrete_cmap(visdict14[var]["ticks"], visdict14[var]["cmap"]) #mpl.cm.get_cmap("HomeyerRainbow")
+        
+        # # define a function for plotting a discrete colorbar with equal color ranges
+        # def cbar_hook(hv_plot, _):
+        #     COLORS = [mpl.colors.rgb2hex(cc, keep_alpha=True) for cc in cmap.colors]
+        #     BOUNDS = ticklist
+        #     plot = hv_plot.handles["plot"]
+        #     factors = [f"{BOUNDS[i]} - {BOUNDS[i + 1]}" for i in range(len(COLORS))]
+        #     mapper = CategoricalColorMapper(
+        #         palette=COLORS,
+        #         factors=factors,
+        #     )
+        #     color_bar = ColorBar(color_mapper=mapper)
+        #     plot.right[0] = color_bar
+
         quadmesh = selected_data[var].hvplot.quadmesh(
             x='time', y='z', cmap='viridis', title=var,
             xlabel='Time', ylabel='Height (m)', colorbar=True
-        ).opts(width=800, height=400)
+        ).opts(width=800, height=400, 
+               cmap=cmap, color_levels=ticklist, clim=(ticklist[0], ticklist[-1]), 
+               # hooks=[cbar_hook],
+               hooks=[partial(cbar_hook, cmap=cmap, ticklist=ticklist)],
+               )
 
         plots.append(quadmesh)
 
