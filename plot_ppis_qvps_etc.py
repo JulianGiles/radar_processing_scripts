@@ -510,7 +510,158 @@ layout.save("/user/jgiles/interactive.html", resources=INLINE, embed=True,
 #             max_states=1000, max_opts=1000)
 
 
-#%% Plot QVPs interactive (example to replicate)
+
+#%% TEST (shows the error)
+import xarray as xr
+import hvplot.xarray
+from bokeh.models import CategoricalColorMapper, ColorBar
+
+COLORS = ["magenta", "green", "yellow", "orange", "red"]
+BOUNDS = [-273.15, -43, -23, -3, 27, 47]
+COLORS = ["magenta", "green", "yellow", "orange", "red", "purple"]
+BOUNDS = [0, 230, 250, 270, 300, 320, 400]
+
+def cbar_hook(hv_plot, _):
+    plot = hv_plot.handles["plot"]
+    factors = [f"{BOUNDS[i]} - {BOUNDS[i + 1]}" for i in range(len(COLORS))]
+    mapper = CategoricalColorMapper(
+        palette=COLORS,
+        factors=factors,
+    )
+    color_bar = ColorBar(color_mapper=mapper)
+    plot.right[0] = color_bar
+
+
+ds = xr.tutorial.open_dataset("air_temperature").isel(time=0)#-273.15
+layout = pn.Column( ds.hvplot.quadmesh("lon", "lat").opts(
+    cmap=COLORS,
+    color_levels=BOUNDS,
+    clim=(BOUNDS[0], BOUNDS[-1]),
+    # hooks=[cbar_hook],
+    width=800, height=400,
+)
+)
+
+layout.save("/user/jgiles/interactive_test.html", resources=INLINE, embed=True, 
+            max_states=1000, max_opts=1000)
+
+
+#%% TEST (trying to fix the error)
+import xarray as xr
+import hvplot.xarray
+from bokeh.models import CategoricalColorMapper, ColorBar, LinearColorMapper
+
+COLORS = ["green", "yellow", "orange", "red"]
+BOUNDS = [ 230, 250, 270, 300, 320]
+
+granularity = 0.1
+BOUNDS_mapper = np.linspace(BOUNDS[0], BOUNDS[-1], int(np.ceil((BOUNDS[-1] - BOUNDS[0])/granularity))) # do nos use np.arange!!! could be very imprecise
+COLORS_mapper = []
+for n,c in enumerate(COLORS):
+    COLORS_mapper.extend([c]* ( ( BOUNDS[n] <= BOUNDS_mapper ) * ( BOUNDS_mapper < BOUNDS[n+1] ) ).sum())
+
+mapper = LinearColorMapper(palette=COLORS_mapper, low=BOUNDS[0], high=BOUNDS[-1])
+
+def cbar_hook(hv_plot, _):
+    plot = hv_plot.handles["plot"]
+    factors = [f"{BOUNDS[i]} - {BOUNDS[i + 1]}" for i in range(len(COLORS))]
+    mapper = CategoricalColorMapper(
+        palette=COLORS,
+        factors=factors,
+    )
+    color_bar = ColorBar(color_mapper=mapper)
+    plot.right[0] = color_bar
+
+
+ds = xr.tutorial.open_dataset("air_temperature").isel(time=0)#-273.15
+layout = pn.Column( ds.hvplot.quadmesh("lon", "lat").opts(
+    cmap= COLORS, # COLORS_mapper,
+    color_levels= BOUNDS, #BOUNDS_mapper.round(1).tolist(),
+    clim=(BOUNDS[0], BOUNDS[-1]),
+    hooks=[cbar_hook],
+    width=800, height=400,
+    # colorbar_opts = {'ticker': FixedTicker(ticks=BOUNDS), "color_mapper":mapper},  # this changes nothing
+)
+)
+
+layout.save("/user/jgiles/interactive_test.html", resources=INLINE, embed=True, 
+            max_states=1000, max_opts=1000)
+
+#%% TEST (trying to fix the error by stacking plots filtered by their values)
+# looks like this works!!
+import xarray as xr
+from functools import reduce
+import hvplot.xarray
+from bokeh.models import CategoricalColorMapper, ColorBar
+
+COLORS = ["magenta", "green", "yellow", "orange", "red"]
+BOUNDS = [-273.15, -43, -23, -3, 27, 47]
+COLORS = ["magenta", "green", "yellow", "orange", "red", "purple"]
+BOUNDS = [0, 230, 250, 270, 300, 320, 400]
+
+def cbar_hook(hv_plot, _):
+    plot = hv_plot.handles["plot"]
+    factors = [f"{BOUNDS[i]} - {BOUNDS[i + 1]}" for i in range(len(COLORS))]
+    mapper = CategoricalColorMapper(
+        palette=COLORS,
+        factors=factors,
+    )
+    color_bar = ColorBar(color_mapper=mapper)
+    plot.right[0] = color_bar
+
+
+ds = xr.tutorial.open_dataset("air_temperature").isel(time=0)#-273.15
+# layout = pn.Column( ds.where(ds>=BOUNDS[1]).where(ds<BOUNDS[2]).hvplot.quadmesh("lon", "lat").opts(
+#     cmap=[COLORS[1]],
+#     color_levels=BOUNDS[1:3],
+#     clim=(BOUNDS[1], BOUNDS[2]),
+#     # hooks=[cbar_hook],
+#     width=800, height=400,
+# )*
+#     ds.where(ds>=BOUNDS[2]).where(ds<BOUNDS[3]).hvplot.quadmesh("lon", "lat").opts(
+#         cmap=[COLORS[2]],
+#         color_levels=BOUNDS[2:4],
+#         clim=(BOUNDS[2], BOUNDS[3]),
+#         # hooks=[cbar_hook],
+#         width=800, height=400,
+#     ) *
+#     ds.hvplot.quadmesh("lon", "lat").opts(
+#         cmap=['#ffffff00'], # add a transparent layer only to recover the values when hovering with mouse
+#         color_levels=BOUNDS[0]+BOUNDS[-1],
+#         clim=(BOUNDS[0], BOUNDS[-1]),
+#         hooks=[cbar_hook],
+#         width=800, height=400,
+#     )
+
+# )
+
+plots = []
+for n,cc in enumerate(COLORS):
+    plots.append(ds.where(ds>=BOUNDS[n]).where(ds<BOUNDS[n+1]).hvplot.quadmesh("lon", "lat").opts(
+        cmap=[COLORS[n]],
+        color_levels=BOUNDS[n:n+2],
+        clim=(BOUNDS[n], BOUNDS[n+1]),
+        # hooks=[cbar_hook],
+        width=800, height=400,
+    ))
+
+layout = pn.Column( reduce((lambda x, y: x * y), plots) *
+    ds.hvplot.quadmesh("lon", "lat").opts(
+        cmap=['#ffffff00'], # add a transparent layer only to recover the values when hovering with mouse
+        color_levels=BOUNDS[0]+BOUNDS[-1],
+        clim=(BOUNDS[0], BOUNDS[-1]),
+        hooks=[cbar_hook],
+        width=800, height=400,
+    )
+
+)
+
+
+layout.save("/user/jgiles/interactive_test.html", resources=INLINE, embed=True, 
+            max_states=1000, max_opts=1000)
+
+
+#%% Plot QVPs interactive (idea-example to replicate)
 import panel as pn
 
 
