@@ -429,29 +429,18 @@ def update_plots(selected_day, selected_vars):
     for var in available_vars:
         # set colorbar settings
         ticklist = list(visdict14[var]["ticks"])
+        # ticklist = [-100]+list(visdict14[var]["ticks"])+[100]
         norm = utils.get_discrete_norm(visdict14[var]["ticks"])
         cmap = utils.get_discrete_cmap(visdict14[var]["ticks"], visdict14[var]["cmap"]) #mpl.cm.get_cmap("HomeyerRainbow")
-        
-        # # define a function for plotting a discrete colorbar with equal color ranges
-        # def cbar_hook(hv_plot, _):
-        #     COLORS = [mpl.colors.rgb2hex(cc, keep_alpha=True) for cc in cmap.colors]
-        #     BOUNDS = ticklist
-        #     plot = hv_plot.handles["plot"]
-        #     factors = [f"{BOUNDS[i]} - {BOUNDS[i + 1]}" for i in range(len(COLORS))]
-        #     mapper = CategoricalColorMapper(
-        #         palette=COLORS,
-        #         factors=factors,
-        #     )
-        #     color_bar = ColorBar(color_mapper=mapper)
-        #     plot.right[0] = color_bar
+        # cmap = visdict14[var]["cmap"] #mpl.cm.get_cmap("HomeyerRainbow")
 
         quadmesh = selected_data[var].hvplot.quadmesh(
             x='time', y='z', cmap='viridis', title=var,
             xlabel='Time', ylabel='Height (m)', colorbar=True
         ).opts(width=800, height=400, 
                cmap=cmap, color_levels=ticklist, clim=(ticklist[0], ticklist[-1]), 
-               # hooks=[cbar_hook],
-               hooks=[partial(cbar_hook, cmap=cmap, ticklist=ticklist)],
+                colorbar_opts = {'ticker': FixedTicker(ticks=ticklist),},  # this changes nothing
+               # hooks=[partial(cbar_hook, cmap=cmap, ticklist=ticklist)],
                )
 
         plots.append(quadmesh)
@@ -521,7 +510,7 @@ layout.save("/user/jgiles/interactive.html", resources=INLINE, embed=True,
 #             max_states=1000, max_opts=1000)
 
 
-#%% Plot QVPs
+#%% Plot QVPs interactive (example to replicate)
 import panel as pn
 
 
