@@ -385,7 +385,7 @@ layout.save("/user/jgiles/interactive.html", resources=INLINE, embed=True,
 
 
 #%% Plot QVPs interactive (testing)
-from functools import partial
+from functools import partial, reduce
 import panel as pn
 from bokeh.resources import INLINE
 from bokeh.models import FixedTicker
@@ -404,6 +404,8 @@ var_starting = ['DBZH', 'ZDR_OC', 'KDP_ML_corrected', "RHOHV_NC"]
 
 visdict14 = radarmet.visdict14
 
+# for testing with a shorter timespan
+ds_qvps = ds_qvps.sel(time=slice("2015-01-02","2015-01-10"))
 
 # Define the function to update plots
 def update_plots(selected_day, selected_vars):
@@ -428,21 +430,52 @@ def update_plots(selected_day, selected_vars):
 
     for var in available_vars:
         # set colorbar settings
-        ticklist = list(visdict14[var]["ticks"])
-        # ticklist = [-100]+list(visdict14[var]["ticks"])+[100]
+        # ticklist = list(visdict14[var]["ticks"])
+        ticklist = [-100]+list(visdict14[var]["ticks"])+[100]
         norm = utils.get_discrete_norm(visdict14[var]["ticks"])
-        cmap = utils.get_discrete_cmap(visdict14[var]["ticks"], visdict14[var]["cmap"]) #mpl.cm.get_cmap("HomeyerRainbow")
-        # cmap = visdict14[var]["cmap"] #mpl.cm.get_cmap("HomeyerRainbow")
+        # cmap = utils.get_discrete_cmap(visdict14[var]["ticks"], visdict14[var]["cmap"]) #mpl.cm.get_cmap("HomeyerRainbow")
+        cmap = visdict14[var]["cmap"] #mpl.cm.get_cmap("HomeyerRainbow")
+        cmap_list = [mpl.colors.rgb2hex(cc, keep_alpha=True) for cc in cmap.colors]
 
-        quadmesh = selected_data[var].hvplot.quadmesh(
-            x='time', y='z', cmap='viridis', title=var,
-            xlabel='Time', ylabel='Height (m)', colorbar=True
-        ).opts(width=800, height=400, 
-               cmap=cmap, color_levels=ticklist, clim=(ticklist[0], ticklist[-1]), 
-                colorbar_opts = {'ticker': FixedTicker(ticks=ticklist),},  # this changes nothing
-               # hooks=[partial(cbar_hook, cmap=cmap, ticklist=ticklist)],
-               )
+        # quadmesh = selected_data[var].hvplot.quadmesh(
+        #     x='time', y='z', cmap='viridis', title=var,
+        #     xlabel='Time', ylabel='Height (m)', colorbar=True
+        # ).opts(width=800, height=400, 
+        #        cmap=cmap, color_levels=ticklist, clim=(ticklist[0], ticklist[-1]), 
+        #         # colorbar_opts = {'ticker': FixedTicker(ticks=ticklist),},  # this changes nothing
+        #         hooks=[partial(cbar_hook, cmap=cmap, ticklist=ticklist)],
+        #        )
 
+               
+        quadmesh = []
+        for n,cc in enumerate(cmap_list):
+            # select only the data in this interval of the colorbar
+            interval_data = selected_data[var].where(selected_data[var]>=ticklist[n]).where(selected_data[var]<ticklist[n+1])
+            
+            quadmesh.append(interval_data.hvplot.quadmesh(
+                x='time', y='z', cmap='viridis', title=var,
+                xlabel='Time', ylabel='Height (m)', colorbar=True
+                ).opts(
+                cmap=[cmap_list[n]],
+                color_levels=ticklist[n:n+2],
+                clim=(ticklist[n], ticklist[n+1]),
+                width=800, height=400,
+            ))
+        
+        quadmesh = reduce((lambda x, y: x * y), quadmesh) *\
+            selected_data[var].hvplot.quadmesh(
+                x='time', y='z', cmap='viridis', title=var,
+                xlabel='Time', ylabel='Height (m)', colorbar=True
+                ).opts(
+                cmap=['#ffffff00'], # add a transparent layer only to recover the values when hovering with mouse
+                color_levels=ticklist[0]+ticklist[-1],
+                clim=(ticklist[0], ticklist[-1]),
+                hooks=[partial(cbar_hook, cmap=cmap, ticklist=ticklist)],
+                width=800, height=400,
+            )
+        
+        
+               
         plots.append(quadmesh)
 
     nplots = len(plots)
@@ -588,7 +621,7 @@ layout.save("/user/jgiles/interactive_test.html", resources=INLINE, embed=True,
             max_states=1000, max_opts=1000)
 
 #%% TEST (trying to fix the error by stacking plots filtered by their values)
-# looks like this works!!
+# This works, but the stacked plots are not combined into a single element, so it takes a lot of space
 import xarray as xr
 from functools import reduce
 import hvplot.xarray
