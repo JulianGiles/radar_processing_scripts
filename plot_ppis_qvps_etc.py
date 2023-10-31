@@ -299,6 +299,7 @@ ds_qvps = utils.load_qvps(ff)
 #          	plot_kwargs.pop('vmin', None)
 #          	plot_kwargs.pop('vmax', None)
 
+# Plots DBZH and RHOHV_NC fixed in left panels and selectable variables in right panels
 
 import panel as pn
 from bokeh.resources import INLINE
@@ -306,12 +307,15 @@ hv.extension("matplotlib")
 
 selday = "2015-01-02"
 
-var_options = ['DBZH', 'RHOHV', 'ZDR_OC', 'KDP_ML_corrected',
-               'UVRADH', 'UZDR', 'ZDR', 'UWRADH', 'TH', 'VRADH', 'SQIH',
-               'WRADH', 'UPHIDP', 'KDP', 'SNRHC', 'SQIH',
-                'URHOHV', 'SNRH', 'RHOHV_NC', 'UPHIDP_OC']
+var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR', 'TH',
+#               'UVRADH', 'UZDR',  'UWRADH', 'VRADH', 'SQIH', # not implemented yet in visdict14
+               # 'WRADH', 'SNRHC', 'URHOHV', 'SNRH',
+                'UPHIDP', 'KDP', 'RHOHV_NC', 'UPHIDP_OC']
 
-var_starting = ['DBZH', 'ZDR_OC', 'KDP_ML_corrected', "RHOHV_NC"]
+var_starting1 = "ZDR_OC"
+var_starting2 = "KDP_ML_corrected"
+var_fix1 = "DBZH"
+var_fix2 = "RHOHV_NC"
 
 visdict14 = radarmet.visdict14
 
@@ -336,9 +340,9 @@ def cbar_hook(hv_plot, _, cmap_extend, ticklist, norm, label):
 
 
 # Define the function to update plots
-def update_plots(selected_day, selected_vars):
+def update_plots(selected_day, selected_var1, selected_var2):
     selected_data = ds_qvps.sel(time=selected_day)
-    available_vars = selected_vars
+    available_vars = [ var_fix1, selected_var1, var_fix2, selected_var2 ]
 
     plots = []
 
@@ -382,46 +386,190 @@ date_range_str = list(np.unique([str(date0.date()) for date0 in date_range]))[0:
 # Create widgets for variable selection and toggles
 selected_day_slider = pn.widgets.DiscreteSlider(name='Select Date', options=date_range_str, value=date_range_str[0])
 
-selected_vars_selector = pn.widgets.CheckBoxGroup(name='Select Variables', 
-                                                  value=var_starting, 
+var1_selector = pn.widgets.Select(name='Select Variable 1', 
+                                                  value=var_starting1, 
                                                   options=var_options,
-                                                  inline=True)
+                                                   # inline=True
+                                                  )
 
-# this works but the file is so large that it is not loading in Firefox or Chrome
-# selected_vars_selector = pn.widgets.Select(name='Select Variables', 
-#                                                   value="ZDR", 
-#                                                   options=["ZDR", "ZDR_OC", "UZDR"],
-#                                                   inline=True
-#                                                   )
+var2_selector = pn.widgets.Select(name='Select Variable 2', 
+                                                  value=var_starting2, 
+                                                  options=var_options,
+                                                   # inline=True
+                                                  )
 
 
-@pn.depends(selected_day_slider.param.value)
+@pn.depends(selected_day_slider.param.value, var1_selector.param.value, var2_selector.param.value)
 # Define the function to update plots based on widget values
 def update_plots_callback(event):
     selected_day = str(selected_day_slider.value)
-    selected_vars = selected_vars_selector.value
-    plot = update_plots(selected_day, selected_vars)
+    selected_var1 = var1_selector.value
+    selected_var2 = var2_selector.value
+    plot = update_plots(selected_day, selected_var1, selected_var2)
     plot_panel[0] = plot
 
 selected_day_slider.param.watch(update_plots_callback, 'value')
-# selected_vars_selector.param.watch(update_plots_callback, 'value')
+var1_selector.param.watch(update_plots_callback, 'value')
+var2_selector.param.watch(update_plots_callback, 'value')
 
 # Create the initial plot
 initial_day = str(start_date)
-initial_vars = var_starting
-# initial_vars = "ZDR"
-plot_panel = pn.Row(update_plots(initial_day, initial_vars))
+initial_var1 = var_starting1
+initial_var2 = var_starting2
+plot_panel = pn.Row(update_plots(initial_day, initial_var1, initial_var2))
 
 # Create the Panel layout
 layout = pn.Column(
     selected_day_slider,
-    # selected_vars_selector, # works with pn.widgets.Select but creates too-large files that do not load
+    var1_selector,
+    var2_selector,
     plot_panel
 )
 
 
 layout.save("/user/jgiles/interactive_matplotlib.html", resources=INLINE, embed=True, 
             max_states=1000, max_opts=1000)
+
+
+
+#%% Plot QPVs interactive, with matplotlib backend (testing) fix in holoviews/plotting/mpl/raster.py
+# this works with a manual fix in the holoviews files.
+# In Holoviews 1.17.1, add the following to line 192 in holoviews/plotting/mpl/raster.py:
+# if 'norm' in plot_kwargs: # vmin/vmax should now be exclusively in norm
+#          	plot_kwargs.pop('vmin', None)
+#          	plot_kwargs.pop('vmax', None)
+
+
+import panel as pn
+from bokeh.resources import INLINE
+hv.extension("matplotlib")
+
+selday = "2015-01-02"
+
+var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR', 'TH',
+#               'UVRADH', 'UZDR',  'UWRADH', 'VRADH', 'SQIH', # not implemented yet in visdict14
+               # 'WRADH', 'SNRHC', 'URHOHV', 'SNRH',
+                'UPHIDP', 'KDP', 'RHOHV_NC', 'UPHIDP_OC']
+
+var_starting = ['DBZH', 'RHOHV_NC', 'ZDR_OC', "KDP_ML_corrected"]
+var_starting1 = "ZDR_OC"
+var_starting2 = "KDP_ML_corrected"
+var_fix1 = "DBZH"
+var_fix2 = "RHOHV_NC"
+
+visdict14 = radarmet.visdict14
+
+# define a function for plotting a custom discrete colorbar
+def cbar_hook(hv_plot, _, cmap_extend, ticklist, norm, label):
+    COLORS = cmap_extend
+    BOUNDS = ticklist
+    # norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+    ax = hv_plot.handles["axis"]
+    fig = hv_plot.handles["fig"]
+    fig.subplots_adjust(right=0.9)
+    cbar_ax = fig.add_axes([0.93, 0.35, 0.02, 0.35])
+    fig.colorbar(
+        mpl.cm.ScalarMappable(cmap=cmap_extend, norm=norm),
+        cax=cbar_ax,
+        extend='both',
+        ticks=ticklist[1:-1],
+        # spacing='proportional',
+        orientation='vertical',
+        label=label,
+    )   
+
+
+# Define the function to update plots
+def update_plots(selected_day, selected_var1, selected_var2):
+    selected_data = ds_qvps.sel(time=selected_day)
+    available_vars = [ var_fix1, selected_var1, var_fix2, selected_var2 ]
+
+    plots = []
+
+    for var in available_vars:
+        ticks = visdict14[var]["ticks"]
+        norm = utils.get_discrete_norm(ticks)
+        cmap = visdict14[var]["cmap"] # I need the cmap with extreme colors too here
+        cmap_list = [mpl.colors.rgb2hex(cc, keep_alpha=True) for cc in cmap.colors]
+        cmap_extend = utils.get_discrete_cmap(ticks, cmap)
+        ticklist = [-100]+list(ticks)+[100]
+
+        quadmesh = selected_data[var].hvplot.quadmesh(
+            x='time', y='z', title=var,
+            xlabel='Time', ylabel='Height (m)', colorbar=False,
+            width=500, height=250, norm=norm,
+        ).opts(
+                cmap=cmap_extend,
+                color_levels=ticks.tolist(),
+                clim=(ticks[0], ticks[-1]),
+                hooks=[partial(cbar_hook, cmap_extend=cmap_extend, ticklist=ticklist, norm=norm, label=selected_data[var].units)],
+
+            )
+
+        plots.append(quadmesh)
+
+    nplots = len(plots)
+    gridplot = pn.Column(pn.Row(*plots[:round(nplots/2)]),
+                         pn.Row(*plots[round(nplots/2):]),
+                         )
+    return gridplot
+    # return pn.Row(*plots)
+        
+
+# Convert the date range to a list of datetime objects
+date_range = pd.to_datetime(ds_qvps.time.data)
+start_date = date_range.min().date()
+end_date = date_range.max().date()
+
+date_range_str = list(np.unique([str(date0.date()) for date0 in date_range]))[0:10]
+
+# Create widgets for variable selection and toggles
+selected_day_slider = pn.widgets.DiscreteSlider(name='Select Date', options=date_range_str, value=date_range_str[0])
+
+var1_selector = pn.widgets.Select(name='Select Variable 1', 
+                                                  value=var_starting1, 
+                                                  options=var_options,
+                                                  # inline=True
+                                                  )
+
+var2_selector = pn.widgets.Select(name='Select Variable 2', 
+                                                  value=var_starting2, 
+                                                  options=var_options,
+                                                  # inline=True
+                                                  )
+
+
+@pn.depends(selected_day_slider.param.value, var1_selector.param.value, var2_selector.param.value)
+# Define the function to update plots based on widget values
+def update_plots_callback(event):
+    selected_day = str(selected_day_slider.value)
+    selected_var1 = var1_selector.value
+    selected_var2 = var2_selector.value
+    plot = update_plots(selected_day, selected_var1, selected_var2)
+    plot_panel[0] = plot
+
+selected_day_slider.param.watch(update_plots_callback, 'value')
+var1_selector.param.watch(update_plots_callback, 'value')
+var2_selector.param.watch(update_plots_callback, 'value')
+
+# Create the initial plot
+initial_day = str(start_date)
+initial_var1 = var_starting1
+initial_var2 = var_starting2
+plot_panel = pn.Row(update_plots(initial_day, initial_var1, initial_var2))
+
+# Create the Panel layout
+layout = pn.Column(
+    selected_day_slider,
+    var1_selector,
+    var2_selector,
+    plot_panel
+)
+
+
+layout.save("/user/jgiles/interactive_matplotlib.html", resources=INLINE, embed=True, 
+            max_states=1000, max_opts=1000)
+
 
 #%% Plot QPVs interactive (working)
 import panel as pn
