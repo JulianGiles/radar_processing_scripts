@@ -292,13 +292,13 @@ datasel[mom][0].wrl.plot(x="x", y="y", cmap=cmap, norm=norm, xlim=(-25000,25000)
 ff = "/automount/realpep/upload/jgiles/dwd/qvps/2015/*/*/pro/vol5minng01/07/*allmoms*"
 ds_qvps = utils.load_qvps(ff)
 
-#%% Plot QPVs interactive, with matplotlib backend (testing)
-# this has the same problem that the ticks are not right in the colorbar
-# I cannot pass the norm argument to the plotting function to correctly plot the colorbars
-# I raised an issue here: https://github.com/holoviz/hvplot/issues/1061
-# the temporal solution is to stack plots for each color interval, which takes more
-# time but results in correctly assigned values. Since the plot is saved with the
-# matplotlib backend, it does not take extra space because of the stack of plots like with bokeh
+#%% Plot QPVs interactive, with matplotlib backend (working) fix in holoviews/plotting/mpl/raster.py
+# this works with a manual fix in the holoviews files.
+# In Holoviews 1.17.1, add the following to line 192 in holoviews/plotting/mpl/raster.py:
+# if 'norm' in plot_kwargs: # vmin/vmax should now be exclusively in norm
+#          	plot_kwargs.pop('vmin', None)
+#          	plot_kwargs.pop('vmax', None)
+
 
 import panel as pn
 from bokeh.resources import INLINE
@@ -315,8 +315,8 @@ var_starting = ['DBZH', 'ZDR_OC', 'KDP_ML_corrected', "RHOHV_NC"]
 
 visdict14 = radarmet.visdict14
 
-# define a function for plotting a discrete colorbar with equal color ranges
-def cbar_hook(hv_plot, _, cmap_extend, ticklist, norm):
+# define a function for plotting a custom discrete colorbar
+def cbar_hook(hv_plot, _, cmap_extend, ticklist, norm, label):
     COLORS = cmap_extend
     BOUNDS = ticklist
     # norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
@@ -331,7 +331,7 @@ def cbar_hook(hv_plot, _, cmap_extend, ticklist, norm):
         ticks=ticklist[1:-1],
         # spacing='proportional',
         orientation='vertical',
-        # label='Discrete intervals, some other units',
+        label=label,
     )   
 
 
@@ -349,26 +349,19 @@ def update_plots(selected_day, selected_vars):
         cmap_list = [mpl.colors.rgb2hex(cc, keep_alpha=True) for cc in cmap.colors]
         cmap_extend = utils.get_discrete_cmap(ticks, cmap)
         ticklist = [-100]+list(ticks)+[100]
-        
-        
-        quadmesh = []
-        for n,cc in enumerate(cmap_list):
-            # select only the data in this interval of the colorbar
-            interval_data = selected_data[var].where(selected_data[var]>=ticklist[n]).where(selected_data[var]<ticklist[n+1])
-            
-            quadmesh.append(interval_data.hvplot.quadmesh(
-                x='time', y='z', title=var,
-                xlabel='Time', ylabel='Height (m)', colorbar=False,
-                width=500, height=250,
-                ).opts(
-                cmap=[cmap_list[n]],
-                color_levels=ticklist[n:n+2],
-                clim=(ticklist[n], ticklist[n+1]),
-                hooks=[partial(cbar_hook, cmap_extend=cmap_extend, ticklist=ticklist, norm=norm)],
-            ))
-        
-        quadmesh = reduce((lambda x, y: x * y), quadmesh)
-                       
+
+        quadmesh = selected_data[var].hvplot.quadmesh(
+            x='time', y='z', title=var,
+            xlabel='Time', ylabel='Height (m)', colorbar=False,
+            width=500, height=250, norm=norm,
+        ).opts(
+                cmap=cmap_extend,
+                color_levels=ticks.tolist(),
+                clim=(ticks[0], ticks[-1]),
+                hooks=[partial(cbar_hook, cmap_extend=cmap_extend, ticklist=ticklist, norm=norm, label=selected_data[var].units)],
+
+            )
+
         plots.append(quadmesh)
 
     nplots = len(plots)
@@ -377,7 +370,6 @@ def update_plots(selected_day, selected_vars):
                          )
     return gridplot
     # return pn.Row(*plots)
-
         
 
 # Convert the date range to a list of datetime objects
@@ -390,10 +382,10 @@ date_range_str = list(np.unique([str(date0.date()) for date0 in date_range]))[0:
 # Create widgets for variable selection and toggles
 selected_day_slider = pn.widgets.DiscreteSlider(name='Select Date', options=date_range_str, value=date_range_str[0])
 
-# selected_vars_selector = pn.widgets.CheckBoxGroup(name='Select Variables', 
-#                                                   value=var_starting, 
-#                                                   options=var_options,
-#                                                   inline=True)
+selected_vars_selector = pn.widgets.CheckBoxGroup(name='Select Variables', 
+                                                  value=var_starting, 
+                                                  options=var_options,
+                                                  inline=True)
 
 # this works but the file is so large that it is not loading in Firefox or Chrome
 # selected_vars_selector = pn.widgets.Select(name='Select Variables', 
@@ -428,17 +420,8 @@ layout = pn.Column(
 )
 
 
-# Display or save the plot as an HTML file
-# pn.serve(layout)
-
 layout.save("/user/jgiles/interactive_matplotlib.html", resources=INLINE, embed=True, 
             max_states=1000, max_opts=1000)
-
-# layout.save("/user/jgiles/interactive.html", resources=INLINE, embed=True, 
-#             states={"Select Date":date_range_str, "Select Variables": var_options}, 
-#             max_states=1000, max_opts=1000)
-
-
 
 #%% Plot QPVs interactive (working)
 import panel as pn
@@ -697,6 +680,7 @@ layout.save("/user/jgiles/interactive.html", resources=INLINE, embed=True,
 import xarray as xr
 import hvplot.xarray
 from bokeh.models import CategoricalColorMapper, ColorBar
+hv.extension("bokeh")
 
 COLORS = ["magenta", "green", "yellow", "orange", "red"]
 BOUNDS = [-273.15, -43, -23, -3, 27, 47]
