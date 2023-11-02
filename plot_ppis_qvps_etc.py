@@ -381,7 +381,7 @@ date_range = pd.to_datetime(ds_qvps.time.data)
 start_date = date_range.min().date()
 end_date = date_range.max().date()
 
-date_range_str = list(np.unique([str(date0.date()) for date0 in date_range]))[0:10]
+date_range_str = list(np.unique([str(date0.date()) for date0 in date_range]))
 
 # Create widgets for variable selection and toggles
 selected_day_slider = pn.widgets.DiscreteSlider(name='Select Date', options=date_range_str, value=date_range_str[0])
@@ -451,7 +451,7 @@ var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR', 'TH',
                # 'WRADH', 'SNRHC', 'URHOHV', 'SNRH',
                 'UPHIDP', 'KDP', 'RHOHV_NC', 'UPHIDP_OC']
 
-var_starting = ['DBZH', 'RHOHV_NC', 'ZDR_OC', "KDP_ML_corrected"]
+# var_starting = ['DBZH', 'RHOHV_NC', 'ZDR_OC', "KDP_ML_corrected"]
 var_starting1 = "ZDR_OC"
 var_starting2 = "KDP_ML_corrected"
 var_fix1 = "DBZH"
