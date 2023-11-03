@@ -308,8 +308,6 @@ ds_qvps = utils.load_qvps(ff)
 
 hv.extension("matplotlib")
 
-selday = "2015-01-02"
-
 var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR', 
                # 'TH','UPHIDP',  # not so relevant
 #               'UVRADH', 'UZDR',  'UWRADH', 'VRADH', 'SQIH', # not implemented yet in visdict14
@@ -419,7 +417,8 @@ end_date = date_range.max().date()
 date_range_str = list(np.unique([str(date0.date()) for date0 in date_range]))
 
 # Create widgets for variable selection and toggles
-selected_day_slider = pn.widgets.DiscreteSlider(name='Select Date', options=date_range_str, value=date_range_str[0])
+selected_day_slider = pn.widgets.DiscreteSlider(name='Select Date', options=date_range_str,
+                                                value=date_range_str[0], width=600)
 
 show_ML_lines_toggle = pn.widgets.Toggle(name='Show ML Lines', value=True)
 
@@ -448,8 +447,7 @@ plot_panel = pn.Row(update_plots(initial_day, initial_ML_lines, initial_min_entr
 # Create the Panel layout
 layout = pn.Column(
     selected_day_slider,
-    show_ML_lines_toggle,
-    show_min_entropy_toggle, 
+    pn.Row(show_ML_lines_toggle, show_min_entropy_toggle),
     plot_panel
 )
 
@@ -470,8 +468,6 @@ layout.save("/user/jgiles/interactive_matplotlib.html", resources=INLINE, embed=
 # only works for a short period of time (about 15 days), otherwise the file gets too big and it won't load in the browser
 
 hv.extension("matplotlib")
-
-selday = "2015-01-02"
 
 var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR', 
                # 'TH','UPHIDP',  # not so relevant
@@ -651,8 +647,6 @@ layout.save("/user/jgiles/interactive_matplotlib_variable_selector.html", resour
 
 hv.extension("matplotlib")
 
-selday = "2015-01-02"
-
 var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR', 
                # 'TH','UPHIDP',  # not so relevant
 #               'UVRADH', 'UZDR',  'UWRADH', 'VRADH', 'SQIH', # not implemented yet in visdict14
@@ -827,8 +821,6 @@ layout.save("/user/jgiles/interactive_matplotlib.html", resources=INLINE, embed=
 import panel as pn
 from bokeh.resources import INLINE
 
-selday = "2015-01-02"
-
 var_options = ['DBZH', 'RHOHV', 'ZDR_OC', 'KDP_ML_corrected',
                'UVRADH', 'UZDR', 'ZDR', 'UWRADH', 'TH', 'VRADH', 'SQIH',
                'WRADH', 'UPHIDP', 'KDP', 'SNRHC', 'SQIH',
@@ -923,8 +915,6 @@ from bokeh.resources import INLINE
 from bokeh.models import FixedTicker
 from bokeh.models import CategoricalColorMapper, ColorBar
 from bokeh.colors import Color
-
-selday = "2015-01-02"
 
 var_options = ['DBZH', 'RHOHV', 'ZDR_OC', 'KDP_ML_corrected',
                'UVRADH', 'UZDR', 'ZDR', 'UWRADH', 'TH', 'VRADH', 'SQIH',
