@@ -38,6 +38,11 @@ import hvplot.xarray
 import holoviews as hv
 hv.extension("bokeh", "matplotlib")
 
+import panel as pn
+from bokeh.resources import INLINE
+
+from functools import partial
+
 try:
     from Scripts.python.radar_processing_scripts import utils
     from Scripts.python.radar_processing_scripts import radarmet
@@ -301,16 +306,178 @@ ds_qvps = utils.load_qvps(ff)
 
 # Plots DBZH and RHOHV_NC fixed in left panels and selectable variables in right panels
 
-import panel as pn
-from bokeh.resources import INLINE
 hv.extension("matplotlib")
 
 selday = "2015-01-02"
 
-var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR', 'TH',
+var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR', 
+               # 'TH','UPHIDP',  # not so relevant
 #               'UVRADH', 'UZDR',  'UWRADH', 'VRADH', 'SQIH', # not implemented yet in visdict14
                # 'WRADH', 'SNRHC', 'URHOHV', 'SNRH',
-                'UPHIDP', 'KDP', 'RHOHV_NC', 'UPHIDP_OC']
+                'KDP', 'RHOHV_NC', 'UPHIDP_OC']
+
+
+vars_to_plot = ['DBZH', 'KDP_ML_corrected', 'KDP', 'ZDR_OC', 'RHOHV_NC', 
+                'UPHIDP_OC', 'ZDR', 'RHOHV' ]
+
+
+visdict14 = radarmet.visdict14
+
+# define a function for plotting a custom discrete colorbar
+def cbar_hook(hv_plot, _, cmap_extend, ticklist, norm, label):
+    COLORS = cmap_extend
+    BOUNDS = ticklist
+    # norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+    ax = hv_plot.handles["axis"]
+    fig = hv_plot.handles["fig"]
+    fig.subplots_adjust(right=0.9)
+    cbar_ax = fig.add_axes([0.93, 0.35, 0.02, 0.35])
+    fig.colorbar(
+        mpl.cm.ScalarMappable(cmap=cmap_extend, norm=norm),
+        cax=cbar_ax,
+        extend='both',
+        ticks=ticklist[1:-1],
+        # spacing='proportional',
+        orientation='vertical',
+        label=label,
+    )   
+
+
+# Define the function to update plots
+def update_plots(selected_day, show_ML_lines, show_min_entropy):
+    selected_data = ds_qvps.sel(time=selected_day)
+    available_vars = vars_to_plot
+
+    plots = []
+
+    for var in available_vars:
+        ticks = visdict14[var]["ticks"]
+        norm = utils.get_discrete_norm(ticks)
+        cmap = visdict14[var]["cmap"] # I need the cmap with extreme colors too here
+        cmap_list = [mpl.colors.rgb2hex(cc, keep_alpha=True) for cc in cmap.colors]
+        cmap_extend = utils.get_discrete_cmap(ticks, cmap)
+        ticklist = [-100]+list(ticks)+[100]
+
+        quadmesh = selected_data[var].hvplot.quadmesh(
+            x='time', y='z', title=var,
+            xlabel='Time', ylabel='Height (m)', colorbar=False,
+            width=500, height=250, norm=norm,
+        ).opts(
+                cmap=cmap_extend,
+                color_levels=ticks.tolist(),
+                clim=(ticks[0], ticks[-1]),
+                hooks=[partial(cbar_hook, cmap_extend=cmap_extend, ticklist=ticklist, norm=norm, label=selected_data[var].units)],
+
+            )
+
+        # Add line plots for height_ml_new_gia and height_ml_bottom_new_gia
+        if show_ML_lines:
+            # this parts works better and simpler with holoviews directly instead of hvplot
+            line1 = hv.Curve(
+                (selected_data.time, selected_data["height_ml_new_gia"]),
+                # line_color='black', line_width=2, line_dash='dashed', legend=False # bokeh naming?
+            ).opts(color='black', linewidth=2, show_legend=False)
+            line2 = hv.Curve(
+                (selected_data.time, selected_data["height_ml_bottom_new_gia"]),
+            ).opts(color='black', linewidth=2, show_legend=False)
+
+            quadmesh = (quadmesh * line1 * line2)
+
+        # Add shading for min_entropy when it's greater than 0.8
+        if show_min_entropy:
+            min_entropy_values = selected_data.min_entropy.dropna("z", how="all").interpolate_na(dim="z").compute()
+            
+            min_entropy_shading = min_entropy_values.hvplot.quadmesh(
+                x='time', y='z', 
+                xlabel='Time', ylabel='Height (m)', colorbar=False,
+                width=500, height=250,
+            ).opts(
+                    cmap=['#ffffff00', "#B5B1B1", '#ffffff00'],
+                    color_levels=[0, 0.8,1, 1.1],
+                    clim=(0, 1.1),
+                    alpha=0.8
+                )
+            quadmesh = (quadmesh * min_entropy_shading)
+
+            
+        plots.append(quadmesh)
+
+    nplots = len(plots)
+    gridplot = pn.Column(pn.Row(*plots[:round(nplots/3)]),
+                         pn.Row(*plots[round(nplots/3):round(nplots/3)*2]),
+                         pn.Row(*plots[round(nplots/3)*2:]),
+                         )
+    return gridplot
+    # return pn.Row(*plots)
+        
+
+# Convert the date range to a list of datetime objects
+date_range = pd.to_datetime(ds_qvps.time.data)
+start_date = date_range.min().date()
+end_date = date_range.max().date()
+
+date_range_str = list(np.unique([str(date0.date()) for date0 in date_range]))
+
+# Create widgets for variable selection and toggles
+selected_day_slider = pn.widgets.DiscreteSlider(name='Select Date', options=date_range_str, value=date_range_str[0])
+
+show_ML_lines_toggle = pn.widgets.Toggle(name='Show ML Lines', value=True)
+
+show_min_entropy_toggle = pn.widgets.Toggle(name='Show Entropy over 0.8', value=True) 
+
+@pn.depends(selected_day_slider.param.value, show_ML_lines_toggle, show_min_entropy_toggle)
+# Define the function to update plots based on widget values
+def update_plots_callback(event):
+    selected_day = str(selected_day_slider.value)
+    show_ML_lines = show_ML_lines_toggle.value
+    show_min_entropy = show_min_entropy_toggle.value 
+    plot = update_plots(selected_day, show_ML_lines, show_min_entropy)
+    plot_panel[0] = plot
+
+selected_day_slider.param.watch(update_plots_callback, 'value')
+show_ML_lines_toggle.param.watch(update_plots_callback, 'value')
+show_min_entropy_toggle.param.watch(update_plots_callback, 'value') 
+
+# Create the initial plot
+initial_day = str(start_date)
+initial_ML_lines = True
+initial_min_entropy = True 
+
+plot_panel = pn.Row(update_plots(initial_day, initial_ML_lines, initial_min_entropy))
+
+# Create the Panel layout
+layout = pn.Column(
+    selected_day_slider,
+    show_ML_lines_toggle,
+    show_min_entropy_toggle, 
+    plot_panel
+)
+
+
+layout.save("/user/jgiles/interactive_matplotlib.html", resources=INLINE, embed=True, 
+            max_states=1000, max_opts=1000)
+
+
+
+#%% Plot QPVs interactive, with matplotlib backend, variable selector (working) fix in holoviews/plotting/mpl/raster.py
+# this works with a manual fix in the holoviews files.
+# In Holoviews 1.17.1, add the following to line 192 in holoviews/plotting/mpl/raster.py:
+# if 'norm' in plot_kwargs: # vmin/vmax should now be exclusively in norm
+#          	plot_kwargs.pop('vmin', None)
+#          	plot_kwargs.pop('vmax', None)
+
+# Plots DBZH and RHOHV_NC fixed in left panels and selectable variables in right panels
+# only works for a short period of time (about 15 days), otherwise the file gets too big and it won't load in the browser
+
+hv.extension("matplotlib")
+
+selday = "2015-01-02"
+
+var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR', 
+               # 'TH','UPHIDP',  # not so relevant
+#               'UVRADH', 'UZDR',  'UWRADH', 'VRADH', 'SQIH', # not implemented yet in visdict14
+               # 'WRADH', 'SNRHC', 'URHOHV', 'SNRH',
+                'KDP', 'RHOHV_NC', 'UPHIDP_OC']
 
 var_starting1 = "ZDR_OC"
 var_starting2 = "KDP_ML_corrected"
@@ -340,7 +507,7 @@ def cbar_hook(hv_plot, _, cmap_extend, ticklist, norm, label):
 
 
 # Define the function to update plots
-def update_plots(selected_day, selected_var1, selected_var2):
+def update_plots(selected_day, selected_var1, selected_var2, show_ML_lines, show_min_entropy):
     selected_data = ds_qvps.sel(time=selected_day)
     available_vars = [ var_fix1, selected_var1, var_fix2, selected_var2 ]
 
@@ -366,6 +533,36 @@ def update_plots(selected_day, selected_var1, selected_var2):
 
             )
 
+        # Add line plots for height_ml_new_gia and height_ml_bottom_new_gia
+        if show_ML_lines:
+            # this parts works better and simpler with holoviews directly instead of hvplot
+            line1 = hv.Curve(
+                (selected_data.time, selected_data["height_ml_new_gia"]),
+                # line_color='black', line_width=2, line_dash='dashed', legend=False # bokeh naming?
+            ).opts(color='black', linewidth=2, show_legend=False)
+            line2 = hv.Curve(
+                (selected_data.time, selected_data["height_ml_bottom_new_gia"]),
+            ).opts(color='black', linewidth=2, show_legend=False)
+
+            quadmesh = (quadmesh * line1 * line2)
+
+        # Add shading for min_entropy when it's greater than 0.8
+        if show_min_entropy:
+            min_entropy_values = selected_data.min_entropy.dropna("z", how="all").interpolate_na(dim="z").compute()
+            
+            min_entropy_shading = min_entropy_values.hvplot.quadmesh(
+                x='time', y='z', 
+                xlabel='Time', ylabel='Height (m)', colorbar=False,
+                width=500, height=250,
+            ).opts(
+                    cmap=['#ffffff00', "#B5B1B1", '#ffffff00'],
+                    color_levels=[0, 0.8,1, 1.1],
+                    clim=(0, 1.1),
+                    alpha=0.8
+                )
+            quadmesh = (quadmesh * min_entropy_shading)
+
+            
         plots.append(quadmesh)
 
     nplots = len(plots)
@@ -389,47 +586,59 @@ selected_day_slider = pn.widgets.DiscreteSlider(name='Select Date', options=date
 var1_selector = pn.widgets.Select(name='Select Variable 1', 
                                                   value=var_starting1, 
                                                   options=var_options,
-                                                   # inline=True
+                                                  # inline=True
                                                   )
 
 var2_selector = pn.widgets.Select(name='Select Variable 2', 
                                                   value=var_starting2, 
                                                   options=var_options,
-                                                   # inline=True
+                                                  # inline=True
                                                   )
 
+show_ML_lines_toggle = pn.widgets.Toggle(name='Show ML Lines', value=True) 
+show_min_entropy_toggle = pn.widgets.Toggle(name='Show Entropy over 0.8', value=True) 
 
-@pn.depends(selected_day_slider.param.value, var1_selector.param.value, var2_selector.param.value)
+
+@pn.depends(selected_day_slider.param.value, var1_selector.param.value, var2_selector.param.value,
+            show_ML_lines_toggle, show_min_entropy_toggle) 
 # Define the function to update plots based on widget values
 def update_plots_callback(event):
     selected_day = str(selected_day_slider.value)
     selected_var1 = var1_selector.value
     selected_var2 = var2_selector.value
-    plot = update_plots(selected_day, selected_var1, selected_var2)
+    show_ML_lines = show_ML_lines_toggle.value
+    show_min_entropy = show_min_entropy_toggle.value
+    plot = update_plots(selected_day, selected_var1, selected_var2, show_ML_lines, show_min_entropy)
     plot_panel[0] = plot
 
 selected_day_slider.param.watch(update_plots_callback, 'value')
 var1_selector.param.watch(update_plots_callback, 'value')
 var2_selector.param.watch(update_plots_callback, 'value')
+show_ML_lines_toggle.param.watch(update_plots_callback, 'value')
+show_min_entropy_toggle.param.watch(update_plots_callback, 'value')
 
 # Create the initial plot
 initial_day = str(start_date)
 initial_var1 = var_starting1
 initial_var2 = var_starting2
-plot_panel = pn.Row(update_plots(initial_day, initial_var1, initial_var2))
+initial_ML_lines = True
+initial_min_entropy = True
+
+plot_panel = pn.Row(update_plots(initial_day, initial_var1, initial_var2, initial_ML_lines, initial_min_entropy))
 
 # Create the Panel layout
 layout = pn.Column(
     selected_day_slider,
     var1_selector,
     var2_selector,
+    show_ML_lines_toggle,
+    show_min_entropy_toggle,
     plot_panel
 )
 
 
-layout.save("/user/jgiles/interactive_matplotlib.html", resources=INLINE, embed=True, 
+layout.save("/user/jgiles/interactive_matplotlib_variable_selector.html", resources=INLINE, embed=True, 
             max_states=1000, max_opts=1000)
-
 
 
 #%% Plot QPVs interactive, with matplotlib backend (testing) fix in holoviews/plotting/mpl/raster.py
@@ -440,16 +649,16 @@ layout.save("/user/jgiles/interactive_matplotlib.html", resources=INLINE, embed=
 #          	plot_kwargs.pop('vmax', None)
 
 
-import panel as pn
-from bokeh.resources import INLINE
 hv.extension("matplotlib")
 
 selday = "2015-01-02"
 
-var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR', 'TH',
+var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR', 
+               # 'TH','UPHIDP',  # not so relevant
 #               'UVRADH', 'UZDR',  'UWRADH', 'VRADH', 'SQIH', # not implemented yet in visdict14
                # 'WRADH', 'SNRHC', 'URHOHV', 'SNRH',
-                'UPHIDP', 'KDP', 'RHOHV_NC', 'UPHIDP_OC']
+                'KDP', 'RHOHV_NC', 'UPHIDP_OC']
+var_options = ["ZDR_OC", "KDP_ML_corrected"]
 
 # var_starting = ['DBZH', 'RHOHV_NC', 'ZDR_OC', "KDP_ML_corrected"]
 var_starting1 = "ZDR_OC"
@@ -480,7 +689,7 @@ def cbar_hook(hv_plot, _, cmap_extend, ticklist, norm, label):
 
 
 # Define the function to update plots
-def update_plots(selected_day, selected_var1, selected_var2):
+def update_plots(selected_day, selected_var1, selected_var2, show_ML_lines, show_min_entropy):
     selected_data = ds_qvps.sel(time=selected_day)
     available_vars = [ var_fix1, selected_var1, var_fix2, selected_var2 ]
 
@@ -506,6 +715,36 @@ def update_plots(selected_day, selected_var1, selected_var2):
 
             )
 
+            
+        # Add line plots for height_ml_new_gia and height_ml_bottom_new_gia
+        if show_ML_lines:
+            # this parts works better and simpler with holoviews directly instead of hvplot
+            line1 = hv.Curve(
+                (selected_data.time, selected_data["height_ml_new_gia"]),
+                # line_color='black', line_width=2, line_dash='dashed', legend=False # bokeh naming?
+            ).opts(color='black', linewidth=2, show_legend=False)
+            line2 = hv.Curve(
+                (selected_data.time, selected_data["height_ml_bottom_new_gia"]),
+            ).opts(color='black', linewidth=2, show_legend=False)
+
+            quadmesh = (quadmesh * line1 * line2)
+
+        # Add shading for min_entropy when it's greater than 0.8
+        if show_min_entropy:
+            min_entropy_values = selected_data.min_entropy.dropna("z", how="all").interpolate_na(dim="z").compute()
+            
+            min_entropy_shading = min_entropy_values.hvplot.quadmesh(
+                x='time', y='z', 
+                xlabel='Time', ylabel='Height (m)', colorbar=False,
+                width=500, height=250,
+            ).opts(
+                    cmap=['#ffffff00', "#B5B1B1", '#ffffff00'],
+                    color_levels=[0, 0.8,1, 1.1],
+                    clim=(0, 1.1),
+                    alpha=0.8
+                )
+            quadmesh = (quadmesh * min_entropy_shading)
+            
         plots.append(quadmesh)
 
     nplots = len(plots)
@@ -521,7 +760,7 @@ date_range = pd.to_datetime(ds_qvps.time.data)
 start_date = date_range.min().date()
 end_date = date_range.max().date()
 
-date_range_str = list(np.unique([str(date0.date()) for date0 in date_range]))[0:10]
+date_range_str = list(np.unique([str(date0.date()) for date0 in date_range]))[0:2]
 
 # Create widgets for variable selection and toggles
 selected_day_slider = pn.widgets.DiscreteSlider(name='Select Date', options=date_range_str, value=date_range_str[0])
@@ -538,31 +777,44 @@ var2_selector = pn.widgets.Select(name='Select Variable 2',
                                                   # inline=True
                                                   )
 
+show_ML_lines_toggle = pn.widgets.Toggle(name='Show ML Lines', value=True)
+show_min_entropy_toggle = pn.widgets.Toggle(name='Show Entropy over 0.8', value=True)
 
-@pn.depends(selected_day_slider.param.value, var1_selector.param.value, var2_selector.param.value)
+
+@pn.depends(selected_day_slider.param.value, var1_selector.param.value, var2_selector.param.value,
+            show_ML_lines_toggle, show_min_entropy_toggle)
 # Define the function to update plots based on widget values
 def update_plots_callback(event):
     selected_day = str(selected_day_slider.value)
     selected_var1 = var1_selector.value
     selected_var2 = var2_selector.value
-    plot = update_plots(selected_day, selected_var1, selected_var2)
+    show_ML_lines = show_ML_lines_toggle.value
+    show_min_entropy = show_min_entropy_toggle.value
+    plot = update_plots(selected_day, selected_var1, selected_var2, show_ML_lines, show_min_entropy)
     plot_panel[0] = plot
 
 selected_day_slider.param.watch(update_plots_callback, 'value')
 var1_selector.param.watch(update_plots_callback, 'value')
 var2_selector.param.watch(update_plots_callback, 'value')
+show_ML_lines_toggle.param.watch(update_plots_callback, 'value')
+show_min_entropy_toggle.param.watch(update_plots_callback, 'value')
 
 # Create the initial plot
 initial_day = str(start_date)
 initial_var1 = var_starting1
 initial_var2 = var_starting2
-plot_panel = pn.Row(update_plots(initial_day, initial_var1, initial_var2))
+initial_ML_lines = True
+initial_min_entropy = True
+
+plot_panel = pn.Row(update_plots(initial_day, initial_var1, initial_var2, initial_ML_lines, initial_min_entropy))
 
 # Create the Panel layout
 layout = pn.Column(
     selected_day_slider,
     var1_selector,
     var2_selector,
+    show_ML_lines_toggle,
+    show_min_entropy_toggle,
     plot_panel
 )
 
