@@ -217,6 +217,14 @@ for ff in files:
     for coord in ["latitude", "longitude", "altitude", "elevation"]:
         if "time" in data[coord].dims:
             data.coords[coord] = data.coords[coord].min("time")
+            
+    # flip UPHIDP and KDP in UMD data
+    if "umd" in ff:
+        for vf in ["UPHIDP", "KDP"]: # Phase moments in UMD are flipped into the negatives
+            attrs = data[vf].attrs.copy()
+            data[vf] = data[vf]*-1
+            data[vf].attrs = attrs.copy()
+
 
 #%% Georeference
     swp = data.pipe(wrl.georef.georeference) 
