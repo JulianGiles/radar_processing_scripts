@@ -1732,10 +1732,11 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
         raise ValueError("!!!! ERROR: some issue when concatenating ERA5 data")
 
 #### KDP delta bump correction in the ML
-def KDP_ML_correction(ds, X_PHI="PHIDP_OC_MASKED", winlen=7, mlt="height_ml_new_gia", 
+def KDP_ML_correction(ds, X_PHI="PHIDP_OC_MASKED", winlen=7, min_periods=2, mlt="height_ml_new_gia", 
                       mlb="height_ml_bottom_new_gia", method="linear"):
     '''
-    Function to correct KDP in the melting layer due to PHIDP delta bump.
+    Function to correct KDP in the melting layer due to PHIDP delta bump. KDP calculation
+    uses Vulpiani et al 2012 method.
 
     Parameter
     ---------
@@ -1749,6 +1750,8 @@ def KDP_ML_correction(ds, X_PHI="PHIDP_OC_MASKED", winlen=7, mlt="height_ml_new_
         Name of the variable with PHIDP data. PHIDP should be offset corrected and masked for homogeneous values.
     winlen : int
         Size of window in range dimension for calculating KDP from PHIDP (Vulpiani method)
+    min_periods : int
+        minimum number of valid bins
     mlt : str
         Name of the variable/coordinate with melting layer top data.
     mlb : str
@@ -1767,7 +1770,7 @@ def KDP_ML_correction(ds, X_PHI="PHIDP_OC_MASKED", winlen=7, mlt="height_ml_new_
     # get where PHIDP has nan values
     nan = np.isnan(ds[X_PHI]) 
     # get PHIDP outside the ML
-    phi2 = ds[X_PHI].where((ds.z < ds.height_ml_bottom_new_gia) | (ds.z > ds.height_ml_new_gia))#.interpolate_na(dim='range',dask_gufunc_kwargs = "allow_rechunk")
+    phi2 = ds[X_PHI].where( (ds.z < ds[mlb]) | (ds.z > ds[mlt]) | ds[mlt].isnull() )#.interpolate_na(dim='range',dask_gufunc_kwargs = "allow_rechunk")
     # interpolate PHIDP in ML
     phi2 = phi2.chunk(dict(range=-1)).interpolate_na(dim='range', method=method)
     # restore originally nan values
@@ -1778,11 +1781,13 @@ def KDP_ML_correction(ds, X_PHI="PHIDP_OC_MASKED", winlen=7, mlt="height_ml_new_
     # print("range res [km]:", dr)
     # winlen in gates
     # TODO: window length in m
-    phidp_ml, kdp_ml = kdp_phidp_vulpiani(phi2, winlen, min_periods=3)
+    phidp_ml, kdp_ml = kdp_phidp_vulpiani(phi2, winlen, min_periods=min_periods)
     
     # assign to dataset
-    ds = ds.assign({"KDP_ML_corrected": (["time", "azimuth", "range"], kdp_ml.fillna(ds["KDP_CONV"]).values, KDP_attrs)})
-    
+    ds = ds.assign({"KDP_ML_corrected": (["time", "azimuth", "range"], 
+                                         kdp_ml.values, 
+                                         KDP_attrs)})
+        
     return ds
 
 
@@ -2177,7 +2182,7 @@ def kdp_phidp_vulpiani(ds, winlen, X_PHI=None, min_periods=2):
     ds : xarray.Dataset
         Dataset with differential phase values and specific differential phase or
     phidp, kdp : xarray.DataArray
-        DataArrays with differential phase values and specific differential phase
+        DataArrays with differential phase values (PHI_CONV) and specific differential phase (KDP_CONV)
     """
     if type(ds) is xr.DataArray:
     
