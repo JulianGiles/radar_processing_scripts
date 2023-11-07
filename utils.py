@@ -742,7 +742,7 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
     good = ml_clean(ds0, zh, dim=dim)
 
     # step 2
-    comb = ml_combine(good, zh, rho, dim=dim)
+    comb = ml_combine(good, zh, rho, dim=dim).fillna(0.) # 07/11/23: added fillna(0.) for cases where the filtering removes one of the ML gradients
     ds0 = ds0.assign(dict(comb=comb))
 
     # step 3 (and 8)
