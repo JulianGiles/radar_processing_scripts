@@ -65,8 +65,10 @@ warnings.filterwarnings('ignore')
 
 ## Load the data into an xarray dataset (ds)
 
-ff = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/*allmoms*"
-# ff = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/90gradstarng01/00/*allmoms*"
+min_height_key = "default" # default = 200, 90grads = 600, ANK = 400, GZT = 300
+
+ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-07-12/pro/vol5minng01/07/*allmoms*"
+# ff = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/90gradstarng01/07/*allmoms*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-10/2021-10-30/ess/90gradstarng01/00/*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-07/2021-07-24/ess/90gradstarng01/00/*"
 ds = utils.load_dwd_preprocessed(ff)
@@ -75,6 +77,12 @@ ds = utils.load_dwd_preprocessed(ff)
 if "dwd" in ff or "DWD" in ff:
     country="dwd"
     clowres0=True # this is for the ML detection algorithm
+    if "umd" in ff:
+        for vf in ["UPHIDP", "KDP"]: # Phase moments in UMD are flipped into the negatives
+            attrs = ds[vf].attrs.copy()
+            ds[vf] = ds[vf]*-1
+            ds[vf].attrs = attrs.copy()
+
 elif "dmi" in ff:
     country="dmi"
     clowres0=False
@@ -85,7 +93,7 @@ ds = ds.pipe(wrl.georef.georeference)
 
 ## Define minimum height of usable data
 
-min_height = utils.min_hgts["90grads"] + ds["altitude"].values
+min_height = utils.min_hgts[min_height_key] + ds["altitude"].values
 
 ## Get variable names
 
@@ -121,7 +129,7 @@ try:
                 # raise the custom exception to stop the loops
                 raise FileFound 
                 
-            except OSError:
+            except (OSError, ValueError):
                 pass
             
     # If no ZDR offset was loaded, print a message
@@ -221,8 +229,8 @@ if X_PHI in ds.data_vars:
     moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI: (-20, 180)}
     
     # Calculate ML
-    ds_qvp = utils.melting_layer_qvp_X_new(ds_qvp, moments=moments, 
-             dim="z", xwin=xwin0, ywin=ywin0, min_h=min_height, all_data=True, clowres=clowres0)
+    ds_qvp = utils.melting_layer_qvp_X_new(ds_qvp, moments=moments, dim="z", fmlh=0.3, 
+             xwin=xwin0, ywin=ywin0, min_h=min_height, all_data=True, clowres=clowres0)
     
     # Assign ML values to dataset
     
@@ -239,18 +247,22 @@ ds = utils.attach_ERA5_TEMP(ds, path=loc.join(utils.era5_dir.split("loc")))
 
 ## Discard possible erroneous ML values
 if "height_ml_new_gia" in ds_qvp:
+    ## First, filter out ML heights that are too high (above selected isotherm)
     isotherm = -1 # isotherm for the upper limit of possible ML values
     z_isotherm = ds_qvp.TEMP.isel(z=((ds_qvp["TEMP"]-isotherm)**2).argmin("z").compute())["z"]
     
     ds_qvp.coords["height_ml_new_gia"] = ds_qvp["height_ml_new_gia"].where(ds_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
     ds_qvp.coords["height_ml_bottom_new_gia"] = ds_qvp["height_ml_bottom_new_gia"].where(ds_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
     
-    ds = ds.assign_coords({'height_ml_new_gia': ds_qvp.height_ml_new_gia})
-    ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp.height_ml_bottom_new_gia})
+    # Then, check that ML top is over ML bottom
+    cond_top_over_bottom = ds_qvp.coords["height_ml_new_gia"] > ds_qvp.coords["height_ml_bottom_new_gia"] 
+    
+    ds = ds.assign_coords({'height_ml_new_gia': ds_qvp.height_ml_new_gia.where(cond_top_over_bottom)})
+    ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp.height_ml_bottom_new_gia.where(cond_top_over_bottom)})
 
 ## Fix KDP in the ML using PHIDP:
 if X_PHI in ds.data_vars:    
-    ds = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen=winlen0)
+    ds = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen=winlen0, min_periods=winlen0/2)
 
     ds_qvp = ds_qvp.assign({"KDP_ML_corrected": utils.compute_qvp(ds)["KDP_ML_corrected"]})
         
@@ -274,10 +286,15 @@ if X_PHI in ds.data_vars:
     min_trst_strati_qvp = min_trst_strati_qvp.swap_dims({"range":"z"}) # swap range dimension for height
     ds_qvp = ds_qvp.assign({"min_entropy": min_trst_strati_qvp})
 
-#%% Plot PPI
+#%% Plot simple PPI 
 
 tsel = "2015-09-30T08:04"
-datasel = ds.loc[{"time": tsel}].pipe(wrl.georef.georeference)
+if tsel == "":
+    datasel = ds
+else:
+    datasel = ds.loc[{"time": tsel}]
+    
+datasel = datasel.pipe(wrl.georef.georeference)
 
 # New Colormap
 colors = ["#2B2540", "#4F4580", "#5a77b1",
@@ -293,6 +310,31 @@ norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
 cmap = "miub2"
 datasel[mom][0].wrl.plot(x="x", y="y", cmap=cmap, norm=norm, xlim=(-25000,25000), ylim=(-25000,25000))
 
+#%% Plot simple QVP 
+
+tsel = ""
+if tsel == "":
+    datasel = ds_qvp
+else:
+    datasel = ds_qvp.loc[{"time": tsel}]
+    
+# New Colormap
+colors = ["#2B2540", "#4F4580", "#5a77b1",
+          "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
+
+
+mom = "DBZH"
+
+ticks = radarmet.visdict14[mom]["ticks"]
+cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
+cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
+norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
+cmap = "miub2"
+datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm)
+datasel["height_ml_new_gia"].plot(c="black")
+datasel["height_ml_bottom_new_gia"].plot(c="black")
+plt.show()
+
 #%% Load QVPs
 ff = "/automount/realpep/upload/jgiles/dwd/qvps/2015/*/*/pro/vol5minng01/07/*allmoms*"
 ds_qvps = utils.load_qvps(ff)
@@ -303,8 +345,6 @@ ds_qvps = utils.load_qvps(ff)
 # if 'norm' in plot_kwargs: # vmin/vmax should now be exclusively in norm
 #          	plot_kwargs.pop('vmin', None)
 #          	plot_kwargs.pop('vmax', None)
-
-# Plots DBZH and RHOHV_NC fixed in left panels and selectable variables in right panels
 
 hv.extension("matplotlib")
 
@@ -365,7 +405,7 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
                 color_levels=ticks.tolist(),
                 clim=(ticks[0], ticks[-1]),
                 hooks=[partial(cbar_hook, cmap_extend=cmap_extend, ticklist=ticklist, norm=norm, label=selected_data[var].units)],
-
+#!!! TO DO: format tick labels so that only the hour is shown: https://discourse.holoviz.org/t/how-to-the-format-of-datetime-x-axis-ticks-in-matplotlib-backend/6344
             )
 
         # Add line plots for height_ml_new_gia and height_ml_bottom_new_gia
