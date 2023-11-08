@@ -273,8 +273,8 @@ for ff in files:
                 #### Giagrande refinment
                 hdim = "z"
                 # get data iside the currently detected ML
-                cut_above = ml.where(ml["z"]<ml.mlh_top)
-                cut_above = cut_above.where(ml["z"]>ml.mlh_bottom)
+                cut_above = ml.where(ml["z"]<ml.height_ml)
+                cut_above = cut_above.where(ml["z"]>ml.height_ml_bottom)
                 
                 # get the heights with min RHOHV
                 min_height_ML = cut_above[X_RHO].idxmin(dim="z") 
