@@ -716,7 +716,7 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
     min_h : int, float
         Minimum height of usable data within the polarimetric profiles, in m. This is relative to
         sea level and not relative to the altitude of the radar (in accordance to the "z" coordinate 
-        from wradlib.georef.georeference_dataset). The default is 600. 
+        from wradlib.georef.georeference). The default is 600. 
 
     all_data : bool
         If True, include all normalized moments in the output dataset. If False, only output 
@@ -1644,7 +1644,7 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
 
     # We need the ds to be georeferenced in case it is not
     if "z" not in ds.coords:
-        ds = ds.pipe(wrl.georef.georeference_dataset)
+        ds = ds.pipe(wrl.georef.georeference)
 
     # get times of the radar files
     startdt0 = dt.datetime.utcfromtimestamp(int(ds.time[0].values)/1e9).date()
@@ -2293,7 +2293,7 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
     min_h : float, optional
         Minimum height of usable data within the polarimetric profiles, in m. This is relative to
         sea level and not relative to the altitude of the radar (in accordance to the "z" coordinate 
-        from wradlib.georef.georeference_dataset). The default is 500.
+        from wradlib.georef.georeference). The default is 500.
     timemode : str
         How to calculate the offset in case a time dimension is found. "step" calculates one offset
         per timestep. "all" calculates one offset for the whole ds. Default is "step"
@@ -2306,7 +2306,7 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
     """
     # We need the ds to be georeferenced in case it is not
     if "z" not in ds.coords:
-        ds = ds.pipe(wrl.georef.georeference_dataset)
+        ds = ds.pipe(wrl.georef.georeference)
     
     if mlbottom is None:
         try:
@@ -2457,7 +2457,7 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
     min_h : float, optional
         Minimum height of usable data within the polarimetric profiles, in m. This is relative to
         sea level and not relative to the altitude of the radar (in accordance to the "z" coordinate 
-        from wradlib.georef.georeference_dataset). The default is 1000. 
+        from wradlib.georef.georeference). The default is 1000. 
     zhmin : float, optional
         Threshold on :math:`Z_{H}` (in dBZ) related to light rain.
         The default is 5.
@@ -2499,7 +2499,7 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
     
     # We need the ds to be georeferenced in case it is not
     if "z" not in ds.coords:
-        ds = ds.pipe(wrl.georef.georeference_dataset)
+        ds = ds.pipe(wrl.georef.georeference)
     
     if mlbottom is None:
         try:
