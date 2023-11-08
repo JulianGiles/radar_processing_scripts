@@ -189,7 +189,7 @@ for ff in files:
         if "time" in data[coord].dims:
             data.coords[coord] = data.coords[coord].min("time")
 
-#%% Load noise corrected RHOHV if available
+#%% Load noise corrected RHOHV if available #!!! TO DO: load noise corrected rhohv only when it is good, not in turkish cases
     try:
         if "dwd" in ff:
             country="dwd"
@@ -241,9 +241,7 @@ for ff in files:
             print("Not all necessary variables found in the data.")
             sys.exit("Not all necessary variables found in the data.")
 
-        ### First we need to correct PHIDP and load noise corrected RHOHV (no corrected RHOHV for now)
-        # Load noise corrected RHOHV
-        # we do not have consistent corrected RHOHV for now, so just use uncorrected
+        ### First we need to correct PHIDP 
 
         # Check that PHIDP is in data, otherwise skip ML detection
         if X_PHI in data.data_vars:
