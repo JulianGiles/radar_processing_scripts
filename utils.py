@@ -521,7 +521,7 @@ def compute_qvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1} ):
     ds_qvp = ds.where(combined_mask).median("azimuth", keep_attrs=True)
 
     # assign coord z
-    ds_qvp = ds_qvp.assign_coords({"z": ds["z"].median("azimuth")})
+    ds_qvp = ds_qvp.assign_coords({"z": ds["z"].median("azimuth", keep_attrs=True)})
     
     ds_qvp = ds_qvp.swap_dims({"range":"z"}) # swap range dimension for height
     
@@ -2094,7 +2094,7 @@ def phidp_offset_detection(ds, phidp="PHIDP", rhohv="RHOHV", dbzh="DBZH", rhohvm
     return phidp_offset
 
 def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
-                     dbzhmin=0., min_height=0, window=7, fix_range=500.):
+                     dbzhmin=0., min_height=0, window=7, fix_range=500., rng=None,):
     r"""
     Calculate basic PHIDP processing including thresholding, smoothing and 
     offset correction. Attach results to the input dataset.
@@ -2119,6 +2119,11 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
         Number of range bins for PHIDP smoothing.
     fix_range : int
         Minimum eange from where to consider PHIDP values.
+    rng : float
+        range in m to calculate system phase offset. If None (default), it 
+        will be calculated according to window. It should be large enough to
+        allow sufficient data for offset identification (a value around 3000 
+        is usually enough)
 
     Returns
     ----------
@@ -2126,11 +2131,12 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
         xarray Dataset with the original data and processed PHIDP.
 
     """
-    # Calculate range for offset calculation
-    rng_offset = ds[X_PHI].range.diff("range").median().values * window
+    # Calculate range for offset calculation if rng is None
+    if rng is None:
+        rng = ds[X_PHI].range.diff("range").median().values * window
 
     phidp_offset = phidp_offset_detection(ds, phidp=X_PHI, rhohv=X_RHO, dbzh=X_DBZH, rhohvmin=rhohvmin,
-                                          dbzhmin=dbzhmin, min_height=min_height, rng=rng_offset, 
+                                          dbzhmin=dbzhmin, min_height=min_height, rng=rng, 
                                           center=True, min_periods=4)
 
     off = phidp_offset["PHIDP_OFFSET"]
