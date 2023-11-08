@@ -36,7 +36,7 @@ import cmweather
 import hvplot
 import hvplot.xarray
 import holoviews as hv
-hv.extension("bokeh", "matplotlib")
+# hv.extension("bokeh", "matplotlib") # better to put this each time this kind of plot is needed
 
 import panel as pn
 from bokeh.resources import INLINE
@@ -65,10 +65,10 @@ warnings.filterwarnings('ignore')
 
 ## Load the data into an xarray dataset (ds)
 
-min_height_key = "default" # default = 200, 90grads = 600, ANK = 400, GZT = 300
+min_height_key = "90grads" # default = 200, 90grads = 600, ANK = 400, GZT = 300
 
 ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-07-12/pro/vol5minng01/07/*allmoms*"
-# ff = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/90gradstarng01/07/*allmoms*"
+ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-06-02/pro/90gradstarng01/00/*allmoms*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-10/2021-10-30/ess/90gradstarng01/00/*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-07/2021-07-24/ess/90gradstarng01/00/*"
 ds = utils.load_dwd_preprocessed(ff)
@@ -76,7 +76,12 @@ ds = utils.load_dwd_preprocessed(ff)
 
 if "dwd" in ff or "DWD" in ff:
     country="dwd"
-    clowres0=True # this is for the ML detection algorithm
+    
+    if "vol5minng01" in ff:
+        clowres0=True # this is for the ML detection algorithm
+    else:
+        clowres0=False
+        
     if "umd" in ff:
         for vf in ["UPHIDP", "KDP"]: # Phase moments in UMD are flipped into the negatives
             attrs = ds[vf].attrs.copy()
@@ -165,31 +170,46 @@ except OSError:
 
 interpolation_method_ML = "linear" # for interpolating PHIDP in the ML
 
+phase_pross_params = {}
 
-phase_pross_params = {
-                        "dwd": {
-                            "window0": 7, # number of range bins for phidp smoothing (this one is quite important!)
-                            "winlen0": 7, # size of range window (bins) for the kdp-phidp calculations
-                            "xwin0": 9, # window size (bins) for the time rolling median smoothing in ML detection
-                            "ywin0": 1, # window size (bins) for the height rolling mean smoothing in ML detection
-                            "fix_range": 750, # range from where to consider phi values (dwd data is bad in the first bin)
-                        },
-                        "dmi": {
-                            "window0": 17,
-                            "winlen0": 21,
-                            "xwin0": 5,
-                            "ywin0": 5,
-                            "fix_range": 200,
-                        },
-}
+if country == "dwd":
+    if "vol5minng01" in ff:
+        phase_pross_params.update({
+            "window0": 7, # number of range bins for phidp smoothing (this one is quite important!)
+            "winlen0": 7, # size of range window (bins) for the kdp-phidp calculations
+            "xwin0": 9, # window size (bins) for the time rolling median smoothing in ML detection
+            "ywin0": 1, # window size (bins) for the height rolling mean smoothing in ML detection
+            "fix_range": 750, # range from where to consider phi values (dwd data is bad in the first bin)
+            "rng": None, # range for phidp offset correction, if None it is auto calculated based on window0
+        })
+    else:
+        phase_pross_params.update({
+            "window0": 17, # number of range bins for phidp smoothing (this one is quite important!)
+            "winlen0": 21, # size of range window (bins) for the kdp-phidp calculations
+            "xwin0": 5, # window size (bins) for the time rolling median smoothing in ML detection
+            "ywin0": 5, # window size (bins) for the height rolling mean smoothing in ML detection
+            "fix_range": 750, # range from where to consider phi values (dwd data is bad in the first bin)
+            "rng": 3000, # range for phidp offset correction, if None it is auto calculated based on window0
+        })
+
+elif country == "dmi":
+    phase_pross_params.update({
+        "window0": 17,
+        "winlen0": 21,
+        "xwin0": 5,
+        "ywin0": 5,
+        "fix_range": 200,
+        "rng": None, # range for phidp offset correction, if None it is auto calculated based on window0
+    })
+
 
 # Check that PHIDP is in data, otherwise skip ML detection
 if X_PHI in ds.data_vars:
     # Set parameters according to data
     
     # for param_name in phase_pross_params[country].keys():
-    #     globals()[param_name] = phase_pross_params[country][param_name]    
-    window0, winlen0, xwin0, ywin0, fix_range = phase_pross_params[country].values() # explicit alternative
+    #     globals()[param_name] = phase_pross_params[param_name]    
+    window0, winlen0, xwin0, ywin0, fix_range, rng = phase_pross_params.values() # explicit alternative
 
     # phidp may be already preprocessed (turkish case), then proceed directly to masking and then vulpiani
     if "UPHIDP" not in X_PHI:
@@ -201,7 +221,7 @@ if X_PHI in ds.data_vars:
 
     else:
         ds = utils.phidp_processing(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
-                             dbzhmin=0., min_height=0, window=window0, fix_range=fix_range)
+                             dbzhmin=0., min_height=0, window=window0, fix_range=fix_range, rng=rng)
     
         phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.95) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )
 
@@ -323,7 +343,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "DBZH"
+mom = "UPHIDP_OC"
 
 ticks = radarmet.visdict14[mom]["ticks"]
 cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
@@ -1106,7 +1126,7 @@ layout.save("/user/jgiles/interactive.html", resources=INLINE, embed=True,
 
 
 
-#%% TEST (shows the error with the values not correctly assign to colors)
+#%% TEST interactive plot (shows the error with the values not correctly assign to colors)
 import xarray as xr
 import hvplot.xarray
 from bokeh.models import CategoricalColorMapper, ColorBar
@@ -1161,15 +1181,15 @@ zdr_offset_whole_noML_all = utils.zdr_offset_detection_vps(ds, zdr="ZDR", dbzh=X
 
 
 # Temporary fix because I do not have ERA5 temp downloaded for after 2020
-zdr_offset_aboveML = utils.zdr_offset_detection_vps(ds.assign_coords({"fake_ml":ds.height_ml_bottom_new_gia+10000}).where(ds.z>ds.height_ml_new_gia), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="fake_ml", min_h=min_height, timemode="step").compute()
-zdr_offset_aboveML_all = utils.zdr_offset_detection_vps(ds.assign_coords({"fake_ml":ds.height_ml_bottom_new_gia+10000}).where(ds.z>ds.height_ml_new_gia), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="fake_ml", min_h=min_height, timemode="all").compute()
+# zdr_offset_aboveML = utils.zdr_offset_detection_vps(ds.assign_coords({"fake_ml":ds.height_ml_bottom_new_gia+10000}).where(ds.z>ds.height_ml_new_gia), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="fake_ml", min_h=min_height, timemode="step").compute()
+# zdr_offset_aboveML_all = utils.zdr_offset_detection_vps(ds.assign_coords({"fake_ml":ds.height_ml_bottom_new_gia+10000}).where(ds.z>ds.height_ml_new_gia), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="fake_ml", min_h=min_height, timemode="all").compute()
 
-zdr_offset_whole = utils.zdr_offset_detection_vps(ds.assign_coords({"fake_ml":ds.height_ml_bottom_new_gia+10000}), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="fake_ml", min_h=min_height, timemode="step").compute()
-zdr_offset_whole_all = utils.zdr_offset_detection_vps(ds.assign_coords({"fake_ml":ds.height_ml_bottom_new_gia+10000}), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="fake_ml", min_h=min_height, timemode="all").compute()
+# zdr_offset_whole = utils.zdr_offset_detection_vps(ds.assign_coords({"fake_ml":ds.height_ml_bottom_new_gia+10000}), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="fake_ml", min_h=min_height, timemode="step").compute()
+# zdr_offset_whole_all = utils.zdr_offset_detection_vps(ds.assign_coords({"fake_ml":ds.height_ml_bottom_new_gia+10000}), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="fake_ml", min_h=min_height, timemode="all").compute()
 
-cond_noML = ((ds.z>ds.height_ml_new_gia) + (ds.z<ds.height_ml_bottom_new_gia)).compute()
-zdr_offset_whole_noML = utils.zdr_offset_detection_vps(ds.assign_coords({"fake_ml":ds.height_ml_bottom_new_gia+10000}).where(cond_noML), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="fake_ml", min_h=min_height, timemode="step").compute()
-zdr_offset_whole_noML_all = utils.zdr_offset_detection_vps(ds.assign_coords({"fake_ml":ds.height_ml_bottom_new_gia+10000}), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="fake_ml", min_h=min_height, timemode="all").compute()
+# cond_noML = ((ds.z>ds.height_ml_new_gia) + (ds.z<ds.height_ml_bottom_new_gia)).compute()
+# zdr_offset_whole_noML = utils.zdr_offset_detection_vps(ds.assign_coords({"fake_ml":ds.height_ml_bottom_new_gia+10000}).where(cond_noML), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="fake_ml", min_h=min_height, timemode="step").compute()
+# zdr_offset_whole_noML_all = utils.zdr_offset_detection_vps(ds.assign_coords({"fake_ml":ds.height_ml_bottom_new_gia+10000}), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="fake_ml", min_h=min_height, timemode="all").compute()
 
 #%% Plot ZDR VP calibration 
 
