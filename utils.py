@@ -2094,7 +2094,7 @@ def phidp_offset_detection(ds, phidp="PHIDP", rhohv="RHOHV", dbzh="DBZH", rhohvm
     return phidp_offset
 
 def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
-                     dbzhmin=0., min_height=0, window=7, fix_range=500., rng=None,):
+                     dbzhmin=0., min_height=0, window=7, fix_range=500., rng=None, rng_min=3000.):
     r"""
     Calculate basic PHIDP processing including thresholding, smoothing and 
     offset correction. Attach results to the input dataset.
@@ -2118,12 +2118,16 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
     window : int
         Number of range bins for PHIDP smoothing.
     fix_range : int
-        Minimum eange from where to consider PHIDP values.
+        Minimum range from where to consider PHIDP values.
     rng : float
-        range in m to calculate system phase offset. If None (default), it 
+        Range in m to calculate system phase offset. If None (default), it 
         will be calculated according to window. It should be large enough to
         allow sufficient data for offset identification (a value around 3000 
         is usually enough)
+    rng_min : float
+        Minimum value of rng. If the value of rng (either passed by the user 
+        or calculated automatically) is lower than rng_min, then rng_min will be 
+        used instead.
 
     Returns
     ----------
@@ -2134,7 +2138,11 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
     # Calculate range for offset calculation if rng is None
     if rng is None:
         rng = ds[X_PHI].range.diff("range").median().values * window
+        
+    if rng < rng_min:
+        rng = rng_min
 
+    # Calculate phase offset
     phidp_offset = phidp_offset_detection(ds, phidp=X_PHI, rhohv=X_RHO, dbzh=X_DBZH, rhohvmin=rhohvmin,
                                           dbzhmin=dbzhmin, min_height=min_height, rng=rng, 
                                           center=True, min_periods=4)
