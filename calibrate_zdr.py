@@ -33,7 +33,7 @@ except FileNotFoundError:
     None
 
 
-# NEEDS WRADLIB 1.19 !! (OR GREATER?)
+# NEEDS WRADLIB 2.0.1 !! (OR GREATER?)
 
 import datatree as dttree
 import wradlib as wrl
