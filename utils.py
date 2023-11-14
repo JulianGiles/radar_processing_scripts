@@ -266,7 +266,14 @@ def smooth_data(data, kernel):
             res[i] = convolve(dat, kernel)
     return res
 
-
+def n_longest_consecutive(ds, dim='time'):
+    """
+    Calculates the number of values in the longest consecutive sequence of 
+    valid values along the specified dimension.
+    """
+    ds = ds.notnull().cumsum(dim=dim) - ds.notnull().cumsum(dim=dim).where(ds.isnull()).ffill(dim=dim).fillna(0)
+    return ds.max(dim=dim)
+     
 #### Loading functions
 def load_dwd_preprocessed(filepath):
     """
@@ -2437,7 +2444,7 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
 #### ZDR calibration from VPs. Adapted from Daniel Sanchez-Rivas (TowerPy) to xarray
 def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="median",
                         mlbottom=None, temp=None, min_h=1000, zhmin=5,
-                        zhmax=30, rhvmin=0.98, minbins=2, azmed=False, timemode="step"):
+                        zhmax=30, rhvmin=0.98, minbins=10, azmed=False, timemode="step"):
     r"""
     Calculate the offset on :math:`Z_{DR}` using vertical profiles. Only gates 
     below the melting layer bottom (i.e. the rain region below the melting layer)
@@ -2482,8 +2489,8 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
         Threshold on :math:`\rho_{HV}` (unitless) related to light rain.
         The default is 0.98.
     minbins : float, optional
-        Minimum number of :math:`Z_{DR}` bins related to light rain.
-        The default is 2.
+        Minimum number of consecutive :math:`Z_{DR}` bins related to light rain. This should
+        vary according to range resolution. The default is 10.
     azmed : bool
         If True, perform azimuthal median after filtering values and before offset calculation. Default is False
     timemode : str
@@ -2554,6 +2561,8 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
     if azmed:
         if "azimuth" in ds_zdr.dims:
             ds_zdr = ds_zdr.median("azimuth")
+        else:
+            raise KeyError("azimuth not found in dataset dimensions")
 
     if "time" in ds and timemode=="step":
         # Get dimensions to reduce (other than time)
@@ -2562,7 +2571,9 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
             dims_wotime.remove("time")
                             
         # Filter according to the minimum number of bins limit
-        ds_zdr = ds_zdr.where(ds_zdr.count(dim=dims_wotime)>minbins)
+        # ds_zdr = ds_zdr.where(ds_zdr.count(dim=dims_wotime)>minbins)
+        
+        ds_zdr = ds_zdr.where(n_longest_consecutive(ds_zdr, dim="range").compute() > minbins)
         
         # Calculate offset and others
         if mode=="median":
@@ -2600,7 +2611,8 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
                 
     else:
         # Filter according to the minimum number of bins limit
-        ds_zdr = ds_zdr.where(ds_zdr.count()>minbins)
+        # ds_zdr = ds_zdr.where(ds_zdr.count()>minbins)
+        ds_zdr = ds_zdr.where(n_longest_consecutive(ds_zdr, dim="range").compute() > minbins)
 
         # Calculate offset and others
         if mode=="median":
