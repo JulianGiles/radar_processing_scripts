@@ -71,16 +71,20 @@ dbzh_names = ["DBZH"] # same but for DBZH
 rhohv_names = ["RHOHV_NC", "RHOHV"] # same but for RHOHV
 zdr_names = ["ZDR"]
 
-min_hgt = 200 # minimum height above the radar to be considered when calculating ZDR offset
+clowres0=False # this is for the ML detection algorithm
+min_hgts = utils.min_hgts
+min_hgt = min_hgts["default"] # minimum height above the radar to be considered when calculating ZDR offset
 if "dwd" in path0 and "90grads" in path0:
     # for the VP we need to set a higher min height because there are several bins of unrealistic values
-    min_hgt = 600
+    min_hgt = min_hgts["90grads"]
+if "dwd" in path0 and "vol5minng01" in path0:
+    clowres0=True
 if "ANK" in path0:
     # for ANK we need higher min_hgt to avoid artifacts
-    min_hgt = 400
+    min_hgt = min_hgts["ANK"]
 if "GZT" in path0:
     # for GZT we need higher min_hgt to avoid artifacts
-    min_hgt = 300
+    min_hgt = min_hgts["GZT"]
 
 # get the files and check that it is not empty
 if "hd5" in path0 or "h5" in path0:
@@ -114,17 +118,6 @@ for cp in calib_types:
         print("Calibration method not implemented. Possible options are 1 or 2")
         sys.exit("Calibration method not implemented. Possible options are 1 or 2")
 
-# we define a funtion to look for loc inside a path string
-def find_loc(locs, path):
-    components = path.split(os.path.sep)
-    for element in locs:
-        for component in components:
-            if element.lower() in component.lower():
-                return element
-    return None
-
-locs = ["pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs"]
-
 # set the RHOHV correction location
 rhoncdir = "/rhohv_nc/" # subfolder where to find the noise corrected rhohv data
 rhoncfile = "*rhohv_nc_2percent*" # pattern to select the appropriate file (careful with the rhohv_nc_2percent)
@@ -150,18 +143,6 @@ def make_savedir(ff, name):
         os.makedirs(savepathdir)
     return savepath
 
-# define a function to split a string at a certain pattern and replace it (like in the function before but only returning the path)
-def edit_str(ff, replace, name):
-    """
-    ff: string of file path or whatever
-    replace: what string part to replace
-    name: new string to put
-    """
-
-    ff_parts = ff.split(replace)
-    newff = (name).join(ff_parts)
-    return newff
-
 
 # ERA5 folder
 if "jgiles" in files[0]:
@@ -180,35 +161,32 @@ for ff in files:
     else:
         data=xr.open_dataset(ff)
         
-    # fix time dim in case some value is NaT
-    if data.time.isnull().any():
-        data.coords["time"] = data["rtime"].min(dim="azimuth", skipna=True).compute()
+    # fix time dim and timje in coords
+    data = utils.fix_time_in_coords(data)
 
-    # take time out of the coords if necessary
-    for coord in ["latitude", "longitude", "altitude", "elevation"]:
-        if "time" in data[coord].dims:
-            data.coords[coord] = data.coords[coord].min("time")
+    if "umd" in ff:
+        print("Flipping phase moments in UMD")
+        for vf in ["UPHIDP", "KDP"]: # Phase moments in UMD are flipped into the negatives
+            attrs = data[vf].attrs.copy()
+            data[vf] = data[vf]*-1
+            data[vf].attrs = attrs.copy()
 
-#%% Load noise corrected RHOHV if available #!!! TO DO: load noise corrected rhohv only when it is good, not in turkish cases
+#%% Load noise corrected RHOHV if available
     try:
         if "dwd" in ff:
             country="dwd"
         elif "dmi" in ff:
             country="dmi"
-        rhoncpath = os.path.dirname(edit_str(ff, country, country+rhoncdir))
-        rho_nc = xr.open_mfdataset(rhoncpath+"/"+rhoncfile)
-        
-        # create RHOHV_NC variable
-        data = data.assign(rho_nc)
-        data["RHOHV_NC"].attrs["noise correction level"] = rho_nc.attrs["noise correction level"]
-        
+        rhoncpath = os.path.dirname(utils.edit_str(ff, country, country+rhoncdir))
+        data = utils.load_corrected_RHOHV(data, rhoncpath+"/"+rhoncfile)
+                
     except OSError:
         print("No noise corrected rhohv to load: "+rhoncpath+"/"+rhoncfile)
 
 #%% Load and attach temperature data (in case no ML is detected, and in case temperature comes from other source different than ERA5)
     
     # find loc and assign TEMP data accordingly    
-    loc = find_loc(locs, ff)
+    loc = utils.find_loc(utils.locs, ff)
     
     data = utils.attach_ERA5_TEMP(data, path=loc.join(era5_dir.split("loc")))
 
@@ -228,6 +206,13 @@ for ff in files:
         # get RHOHV name
         for X_RHO in rhohv_names:
             if X_RHO in data.data_vars:
+                if "_NC" in X_RHO:
+                    # Check that the corrected RHOHV does not have much higher STD than the original (50% more)
+                    # if that is the case we take it that the correction did not work well so we won't use it
+                    if (data["RHOHV"].std()*1.5 < data[X_RHO].std()).compute():
+                        # Change to the default RHOHV name 
+                        X_RHO = "RHOHV"
+
                 break
 
         # get ZDR name
@@ -247,7 +232,8 @@ for ff in files:
         if X_PHI in data.data_vars:
             
             # Calculate PHIDP offset
-            phidp_offset = utils.phidp_offset_detection(data, phidp=X_PHI)
+            phidp_offset = utils.phidp_offset_detection(data, phidp=X_PHI, rhohvmin=0.9, dbzhmin=0., 
+                                                        min_height=0, rng=3000, center=True, min_periods=4)
             off = phidp_offset["PHIDP_OFFSET"]
             start_range = phidp_offset["start_range"]
         
@@ -265,58 +251,43 @@ for ff in files:
             try:
                 # Calculate ML
                 moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI+"_OC": (-20, 180)}
-                ml = utils.melting_layer_qvp_X_new(data.where( (data[X_RHO]>0.7) & (data[X_DBZH] > 0) & (data[X_ZDR] > -1) ).median("azimuth", keep_attrs=True)\
-                                                   .assign_coords({"z":data["z"].median("azimuth", keep_attrs=True)})\
-                                                   .swap_dims({"range":"z"}), min_h=min_height,
-                                                   dim="z", moments=moments)
+                data_qvp = utils.compute_qvp(data, min_thresh = {X_RHO:0.7, X_DBZH:0, X_ZDR:-1} )
+
+                data_qvp = utils.melting_layer_qvp_X_new(data_qvp, min_h=min_height,
+                                                   dim="z", moments=moments, clowres=clowres0)
                 
-                #### Giagrande refinment
-                hdim = "z"
-                # get data iside the currently detected ML
-                cut_above = ml.where(ml["z"]<ml.height_ml)
-                cut_above = cut_above.where(ml["z"]>ml.height_ml_bottom)
-                
-                # get the heights with min RHOHV
-                min_height_ML = cut_above[X_RHO].idxmin(dim="z") 
-                
-                # cut the data below and above the previous value
-                new_cut_below_min_ML = ml.where(ml["z"] > min_height_ML)
-                new_cut_above_min_ML = ml.where(ml["z"] < min_height_ML)
-                
-                # Filter out values outside some RHOHV range
-                new_cut_below_min_ML_filter = new_cut_below_min_ML[X_RHO].where((new_cut_below_min_ML[X_RHO]>=0.97)&(new_cut_below_min_ML[X_RHO]<=1))
-                new_cut_above_min_ML_filter = new_cut_above_min_ML[X_RHO].where((new_cut_above_min_ML[X_RHO]>=0.97)&(new_cut_above_min_ML[X_RHO]<=1))            
-                
-                
-                ######### ML TOP Giangrande refinement
-                
-                notnull = new_cut_below_min_ML_filter.notnull() # this replaces nan for False and the rest for True
-                first_valid_height_after_ml = notnull.where(notnull).idxmax(dim=hdim) # get the first True value, i.e. first valid value
-                
-                ######### ML BOTTOM Giangrande refinement
-                # For this one, we need to flip the coordinate so that it is actually selecting the last valid index
-                notnull = new_cut_above_min_ML_filter.notnull() # this replaces nan for False and the rest for True
-                last_valid_height = notnull.where(notnull).isel({hdim:slice(None, None, -1)}).idxmax(dim=hdim) # get the first True value, i.e. first valid value (flipped)
-                
-                
-                ml = ml.assign_coords(height_ml_new_gia = ("time",first_valid_height_after_ml.data))
-                ml = ml.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data))
                 
                 # attach temperature data again, then filter ML heights above -1 C
-                ml = utils.attach_ERA5_TEMP(ml, path=loc.join(era5_dir.split("loc")))
+                data_qvp = utils.attach_ERA5_TEMP(data_qvp, path=loc.join(era5_dir.split("loc")))
                 
-                height_ml_new_gia_data = ml.height_ml_new_gia.where(ml.height_ml_new_gia<(ml["TEMP"]>-1).idxmin("z")).compute().data
-                height_ml_bottom_new_gia_data = ml.height_ml_bottom_new_gia.where(ml.height_ml_bottom_new_gia<(ml["TEMP"]>-1).idxmin("z")).compute().data
-        
-                # Add ML to data
-                data = data.assign_coords(height_ml_new_gia = ("time",height_ml_new_gia_data))
-                data = data.assign_coords(height_ml_bottom_new_gia = ("time", height_ml_bottom_new_gia_data))
+                ## Discard possible erroneous ML values
+                if "height_ml_new_gia" in data_qvp:
+                    ## First, filter out ML heights that are too high (above selected isotherm)
+                    isotherm = -1 # isotherm for the upper limit of possible ML values
+                    z_isotherm = data_qvp.TEMP.isel(z=((data_qvp["TEMP"]-isotherm)**2).argmin("z").compute())["z"]
+                    
+                    data_qvp.coords["height_ml_new_gia"] = data_qvp["height_ml_new_gia"].where(data_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
+                    data_qvp.coords["height_ml_bottom_new_gia"] = data_qvp["height_ml_bottom_new_gia"].where(data_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
+                    
+                    # Then, check that ML top is over ML bottom
+                    cond_top_over_bottom = data_qvp.coords["height_ml_new_gia"] > data_qvp.coords["height_ml_bottom_new_gia"] 
+                    
+                    # Assign final values
+                    data_qvp.coords["height_ml_new_gia"] = data_qvp["height_ml_new_gia"].where(cond_top_over_bottom).compute()
+                    data_qvp.coords["height_ml_bottom_new_gia"] = data_qvp["height_ml_bottom_new_gia"].where(cond_top_over_bottom).compute()
+
+                    data = data.assign_coords({'height_ml_new_gia': data_qvp.height_ml_new_gia.where(cond_top_over_bottom)})
+                    data = data.assign_coords({'height_ml_bottom_new_gia': data_qvp.height_ml_bottom_new_gia.where(cond_top_over_bottom)})
+
             except:
                 print("Calculating ML failed, skipping...")
         else:
             print(X_PHI+" not found in the data, skipping ML detection and below-ML offset")
         
         if 1 in calib_types:
+            # We ask for at least 1 km of consecutive ZDR values in each VP to be included in the calculation
+            minbins = int(1000 / data["range"].diff("range").median())
+            
             #### Calculate per timestep and full timespan (daily for dwd and dmi concat files)
             for timemode in ["step", "all"]:
                 # the the file name appendage for saving the file
@@ -324,7 +295,8 @@ for ff in files:
                 
                 if "height_ml_bottom_new_gia" in data:
                     # Calculate offset below ML
-                    zdr_offset = utils.zdr_offset_detection_vps(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, min_h=min_height, timemode=timemode).compute()
+                    zdr_offset = utils.zdr_offset_detection_vps(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, 
+                                                                min_h=min_height, timemode=timemode, minbins=minbins).compute()
             
                     # Copy encodings
                     zdr_offset["ZDR_offset"].encoding = data[X_ZDR].encoding
@@ -338,8 +310,9 @@ for ff in files:
                     filename = ("zdr_offset_belowML"+fn_app).join(savepath.split("allmoms"))
                     zdr_offset.to_netcdf(filename)
                 
-                # calculate offset below 3 degrees C
-                zdr_offset = utils.zdr_offset_detection_vps(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=3, min_h=min_height, timemode=timemode).compute()
+                # calculate offset below 1 degree C
+                zdr_offset = utils.zdr_offset_detection_vps(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=1, 
+                                                            min_h=min_height, timemode=timemode, minbins=minbins).compute()
         
                 # Copy encodings
                 zdr_offset["ZDR_offset"].encoding = data[X_ZDR].encoding
@@ -350,11 +323,12 @@ for ff in files:
                 
                 # save the arrays
                 savepath = make_savedir(ff, "VP")
-                filename = ("zdr_offset_below3C"+fn_app).join(savepath.split("allmoms"))
+                filename = ("zdr_offset_below1C"+fn_app).join(savepath.split("allmoms"))
                 zdr_offset.to_netcdf(filename)
     
                 # calculate offset above 0 degrees C
-                zdr_offset = utils.zdr_offset_detection_vps(data.where(data["TEMP"]<0), zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=-100, min_h=min_height, timemode=timemode).compute()
+                zdr_offset = utils.zdr_offset_detection_vps(data.where(data["TEMP"]<0), zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, 
+                                                            mlbottom=-100, min_h=min_height, timemode=timemode, minbins=minbins).compute()
         
                 # Copy encodings
                 zdr_offset["ZDR_offset"].encoding = data[X_ZDR].encoding
@@ -370,7 +344,8 @@ for ff in files:
     
     
                 # calculate offset for the whole column
-                zdr_offset = utils.zdr_offset_detection_vps(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=-100, min_h=min_height, timemode=timemode).compute()
+                zdr_offset = utils.zdr_offset_detection_vps(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=-100, 
+                                                            min_h=min_height, timemode=timemode, minbins=minbins).compute()
         
                 # Copy encodings
                 zdr_offset["ZDR_offset"].encoding = data[X_ZDR].encoding
@@ -408,26 +383,26 @@ for ff in files:
                 filename = ("zdr_offset_belowML").join(savepath.split("allmoms"))
                 zdr_offset.to_netcdf(filename)
 
-            # Calculate offset below 3 degrees C per timestep
-            zdr_offset = utils.zhzdr_lr_consistency(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=3, min_h=min_height, timemode="step")
+            # Calculate offset below 1 degree C per timestep
+            zdr_offset = utils.zhzdr_lr_consistency(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=1, min_h=min_height, timemode="step")
             
             # Copy encodings
             zdr_offset.encoding = data[X_ZDR].encoding
             
             # save the arrays
             savepath = make_savedir(ff, "LR_consistency")
-            filename = ("zdr_offset_below3C_timesteps").join(savepath.split("allmoms"))
+            filename = ("zdr_offset_below1C_timesteps").join(savepath.split("allmoms"))
             zdr_offset.to_netcdf(filename)
             
-            # Calculate offset below 3 degrees C for full timespan
-            zdr_offset = utils.zhzdr_lr_consistency(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=3, min_h=min_height, timemode="all")
+            # Calculate offset below 1 degree C for full timespan
+            zdr_offset = utils.zhzdr_lr_consistency(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=1, min_h=min_height, timemode="all")
             
             # Copy encodings
             zdr_offset.encoding = data[X_ZDR].encoding
             
             # save the arrays
             savepath = make_savedir(ff, "LR_consistency")
-            filename = ("zdr_offset_below3C").join(savepath.split("allmoms"))
+            filename = ("zdr_offset_below1C").join(savepath.split("allmoms"))
             zdr_offset.to_netcdf(filename)
 
 #%% print how much time did it take
