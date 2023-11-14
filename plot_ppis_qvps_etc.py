@@ -65,10 +65,10 @@ warnings.filterwarnings('ignore')
 
 ## Load the data into an xarray dataset (ds)
 
-min_height_key = "90grads" # default = 200, 90grads = 600, ANK = 400, GZT = 300
+min_height_key = "default" # default = 200, 90grads = 600, ANK = 400, GZT = 300
 
-ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-07-12/pro/vol5minng01/07/*allmoms*"
-ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-06-02/pro/90gradstarng01/00/*allmoms*"
+ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-06-02/pro/vol5minng01/07/*allmoms*"
+# ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-06-02/pro/90gradstarng01/00/*allmoms*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-10/2021-10-30/ess/90gradstarng01/00/*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-07/2021-07-24/ess/90gradstarng01/00/*"
 ds = utils.load_dwd_preprocessed(ff)
@@ -83,6 +83,7 @@ if "dwd" in ff or "DWD" in ff:
         clowres0=False
         
     if "umd" in ff:
+        print("Flipping phase moments in UMD")
         for vf in ["UPHIDP", "KDP"]: # Phase moments in UMD are flipped into the negatives
             attrs = ds[vf].attrs.copy()
             ds[vf] = ds[vf]*-1
@@ -221,7 +222,7 @@ if X_PHI in ds.data_vars:
 
     else:
         ds = utils.phidp_processing(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
-                             dbzhmin=0., min_height=0, window=window0, fix_range=fix_range, rng=rng)
+                             dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range, rng=rng)
     
         phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.95) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )
 
@@ -276,6 +277,10 @@ if "height_ml_new_gia" in ds_qvp:
     
     # Then, check that ML top is over ML bottom
     cond_top_over_bottom = ds_qvp.coords["height_ml_new_gia"] > ds_qvp.coords["height_ml_bottom_new_gia"] 
+    
+    # Assign final values
+    ds_qvp.coords["height_ml_new_gia"] = ds_qvp["height_ml_new_gia"].where(cond_top_over_bottom).compute()
+    ds_qvp.coords["height_ml_bottom_new_gia"] = ds_qvp["height_ml_bottom_new_gia"].where(cond_top_over_bottom).compute()
     
     ds = ds.assign_coords({'height_ml_new_gia': ds_qvp.height_ml_new_gia.where(cond_top_over_bottom)})
     ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp.height_ml_bottom_new_gia.where(cond_top_over_bottom)})
