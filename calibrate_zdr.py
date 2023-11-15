@@ -232,8 +232,11 @@ for ff in files:
         if X_PHI in data.data_vars:
             
             # Calculate PHIDP offset
+            min_periods = 4 # min radar bins for range rolling sum
+            if clowres0:
+                min_periods = 2
             phidp_offset = utils.phidp_offset_detection(data, phidp=X_PHI, rhohvmin=0.9, dbzhmin=0., 
-                                                        min_height=0, rng=3000, center=True, min_periods=4)
+                                                        min_height=0, rng=3000, center=True, min_periods=min_periods)
             off = phidp_offset["PHIDP_OFFSET"]
             start_range = phidp_offset["start_range"]
         
