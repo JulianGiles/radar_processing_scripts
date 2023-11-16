@@ -75,9 +75,9 @@ min_hgts = {
 # continue with the next one, and so on. Only the used offset will be outputted in the final file.
 # All items in zdrofffile will be tested in each zdroffdir to load the data.
 zdroffdir = ["/calibration/zdr/VP/", "/calibration/zdr/LR_consistency/"] # subfolder(s) where to find the zdr offset data
-zdrofffile = ["*zdr_offset_belowML_00*", "*zdr_offset_below3C_00*", "*zdr_offset_wholecol_00*",
-              "*zdr_offset_belowML_07*", "*zdr_offset_below3C_07*",
-              "*zdr_offset_belowML-*", "*zdr_offset_below3C-*"] # pattern to select the appropriate file (careful with the zdr_offset_belowML_timesteps)
+zdrofffile = ["*zdr_offset_belowML_00*",  "*zdr_offset_below1C_00*", "*zdr_offset_below3C_00*", "*zdr_offset_wholecol_00*",
+              "*zdr_offset_belowML_07*", "*zdr_offset_below1C_07*", "*zdr_offset_below3C_07*",
+              "*zdr_offset_belowML-*", "*zdr_offset_below1C-*", "*zdr_offset_below3C-*"] # pattern to select the appropriate file (careful with the zdr_offset_belowML_timesteps)
 
 # set the RHOHV correction location
 rhoncdir = "/rhohv_nc/" # subfolder where to find the noise corrected rhohv data
@@ -2359,6 +2359,10 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
     # filter data below ML and above min_h
     ds_fil = ds.where(ml_bottom)
     ds_fil = ds_fil.where(ds["z"]>min_h)
+    
+    # Define a function to filter zdr by dbzh and rhohv
+    def where_dbzh_rhohv(data, db0, db1, rhv=rhvmin):
+        return (data[zdr].where((data[dbzh]>=db0)&(data[dbzh]<db1)&(data[rhohv]>rhv)))
 
     if "time" in ds and timemode=="step":
         # Get dimensions to reduce (other than time)
@@ -2366,14 +2370,30 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
         while "time" in dims_wotime:
             dims_wotime.remove("time")
         
-        zdr_zh_20 = (ds_fil[zdr].where((ds_fil[dbzh]>=19)&(ds_fil[dbzh]<21)&(ds_fil[rhohv]>rhvmin))).median(dim=dims_wotime)
-        zdr_zh_22 = (ds_fil[zdr].where((ds_fil[dbzh]>=21)&(ds_fil[dbzh]<23)&(ds_fil[rhohv]>rhvmin))).median(dim=dims_wotime)
-        zdr_zh_24 = (ds_fil[zdr].where((ds_fil[dbzh]>=23)&(ds_fil[dbzh]<25)&(ds_fil[rhohv]>rhvmin))).median(dim=dims_wotime)
-        zdr_zh_26 = (ds_fil[zdr].where((ds_fil[dbzh]>=25)&(ds_fil[dbzh]<27)&(ds_fil[rhohv]>rhvmin))).median(dim=dims_wotime)
-        zdr_zh_28 = (ds_fil[zdr].where((ds_fil[dbzh]>=27)&(ds_fil[dbzh]<29)&(ds_fil[rhohv]>rhvmin))).median(dim=dims_wotime)
-        zdr_zh_30 = (ds_fil[zdr].where((ds_fil[dbzh]>=29)&(ds_fil[dbzh]<31)&(ds_fil[rhohv]>rhvmin))).median(dim=dims_wotime)
+        zdr_zh_20 = where_dbzh_rhohv(ds_fil, 19, 21).compute().median(dim=dims_wotime)
+        zdr_zh_22 = where_dbzh_rhohv(ds_fil, 21, 23).compute().median(dim=dims_wotime)
+        zdr_zh_24 = where_dbzh_rhohv(ds_fil, 23, 25).compute().median(dim=dims_wotime)
+        zdr_zh_26 = where_dbzh_rhohv(ds_fil, 25, 27).compute().median(dim=dims_wotime)
+        zdr_zh_28 = where_dbzh_rhohv(ds_fil, 27, 29).compute().median(dim=dims_wotime)
+        zdr_zh_30 = where_dbzh_rhohv(ds_fil, 29, 31).compute().median(dim=dims_wotime)
+        
+        # check that there are sufficient values in each interval (at least 30)
+        min_count=30
+        if where_dbzh_rhohv(ds_fil, 19, 21).count()<min_count:
+            zdr_zh_20 = zdr_zh_20*np.nan
+        if where_dbzh_rhohv(ds_fil, 21, 23).count()<min_count:
+            zdr_zh_22 = zdr_zh_22*np.nan
+        if where_dbzh_rhohv(ds_fil, 23, 25).count()<min_count:
+            zdr_zh_24 = zdr_zh_24*np.nan
+        if where_dbzh_rhohv(ds_fil, 25, 27).count()<min_count:
+            zdr_zh_26 = zdr_zh_26*np.nan
+        if where_dbzh_rhohv(ds_fil, 27, 29).count()<min_count:
+            zdr_zh_28 = zdr_zh_28*np.nan
+        if where_dbzh_rhohv(ds_fil, 29, 31).count()<min_count:
+            zdr_zh_30 = zdr_zh_30*np.nan
 
-        zdroffset = xr.concat([zdr_zh_20-.23, zdr_zh_22-.27, zdr_zh_24-.33, zdr_zh_26-.40, zdr_zh_28-.48, zdr_zh_30-.56], dim='dataarrays').sum(dim='dataarrays', skipna=True, keep_attrs=True)/6
+
+        zdroffset = xr.concat([zdr_zh_20-.23, zdr_zh_22-.27, zdr_zh_24-.33, zdr_zh_26-.40, zdr_zh_28-.48, zdr_zh_30-.56], dim='dataarrays').mean(dim='dataarrays', skipna=False, keep_attrs=True)
         
         # drop ML coordinates if present
         for coord in zdroffset.coords:
@@ -2381,14 +2401,29 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
                 zdroffset = zdroffset.drop_vars(coord)
 
     else:
-        zdr_zh_20 = (ds_fil[zdr].where((ds_fil[dbzh]>=19)&(ds_fil[dbzh]<21)&(ds_fil[rhohv]>rhvmin))).compute().median()
-        zdr_zh_22 = (ds_fil[zdr].where((ds_fil[dbzh]>=21)&(ds_fil[dbzh]<23)&(ds_fil[rhohv]>rhvmin))).compute().median()
-        zdr_zh_24 = (ds_fil[zdr].where((ds_fil[dbzh]>=23)&(ds_fil[dbzh]<25)&(ds_fil[rhohv]>rhvmin))).compute().median()
-        zdr_zh_26 = (ds_fil[zdr].where((ds_fil[dbzh]>=25)&(ds_fil[dbzh]<27)&(ds_fil[rhohv]>rhvmin))).compute().median()
-        zdr_zh_28 = (ds_fil[zdr].where((ds_fil[dbzh]>=27)&(ds_fil[dbzh]<29)&(ds_fil[rhohv]>rhvmin))).compute().median()
-        zdr_zh_30 = (ds_fil[zdr].where((ds_fil[dbzh]>=29)&(ds_fil[dbzh]<31)&(ds_fil[rhohv]>rhvmin))).compute().median()
+        zdr_zh_20 = where_dbzh_rhohv(ds_fil, 19, 21).compute().median()
+        zdr_zh_22 = where_dbzh_rhohv(ds_fil, 21, 23).compute().median()
+        zdr_zh_24 = where_dbzh_rhohv(ds_fil, 23, 25).compute().median()
+        zdr_zh_26 = where_dbzh_rhohv(ds_fil, 25, 27).compute().median()
+        zdr_zh_28 = where_dbzh_rhohv(ds_fil, 27, 29).compute().median()
+        zdr_zh_30 = where_dbzh_rhohv(ds_fil, 29, 31).compute().median()
+        
+        # check that there are sufficient values in each interval (at least 30)
+        min_count=30
+        if where_dbzh_rhohv(ds_fil, 19, 21).count()<min_count:
+            zdr_zh_20 = zdr_zh_20*np.nan
+        if where_dbzh_rhohv(ds_fil, 21, 23).count()<min_count:
+            zdr_zh_22 = zdr_zh_22*np.nan
+        if where_dbzh_rhohv(ds_fil, 23, 25).count()<min_count:
+            zdr_zh_24 = zdr_zh_24*np.nan
+        if where_dbzh_rhohv(ds_fil, 25, 27).count()<min_count:
+            zdr_zh_26 = zdr_zh_26*np.nan
+        if where_dbzh_rhohv(ds_fil, 27, 29).count()<min_count:
+            zdr_zh_28 = zdr_zh_28*np.nan
+        if where_dbzh_rhohv(ds_fil, 29, 31).count()<min_count:
+            zdr_zh_30 = zdr_zh_30*np.nan
 
-        zdroffset = xr.concat([zdr_zh_20-.23, zdr_zh_22-.27, zdr_zh_24-.33, zdr_zh_26-.40, zdr_zh_28-.48, zdr_zh_30-.56], dim='dataarrays', combine_attrs="override").sum(dim='dataarrays', skipna=True, keep_attrs=True)/6
+        zdroffset = xr.concat([zdr_zh_20-.23, zdr_zh_22-.27, zdr_zh_24-.33, zdr_zh_26-.40, zdr_zh_28-.48, zdr_zh_30-.56], dim='dataarrays', combine_attrs="override").mean(dim='dataarrays', skipna=False, keep_attrs=True)
         
         # restore time dim if present
         if "time" in ds:
