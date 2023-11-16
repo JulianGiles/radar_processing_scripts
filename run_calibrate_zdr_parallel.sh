@@ -26,10 +26,10 @@ dir=/p/scratch/detectrea/giles1/radar_data/dwd/
 counterfile=$dir/count_pro.txt
 
 # Set the type of calibration method
-calibtype=1
+calibtype=2
 
 # Create a list of all files that include *allmoms* in their name
-files=$(find $dir -name "*90gradstarng01*allmoms*pro*" -type f)
+files=$(find $dir -name "*vol5minng01*allmoms*pro*" -type f -not -path "*qvp*")
 
 count=0
 echo $count > $counterfile
