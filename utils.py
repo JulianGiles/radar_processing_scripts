@@ -21,6 +21,7 @@ import xradar as xd
 import sys
 import scipy
 import matplotlib as mpl
+import warnings
 
 #### Helper functions and definitions
 
@@ -183,7 +184,7 @@ def fix_flipped_phidp(ds, phidp_names=phidp_names):
             success = True
 
     if not success:
-        raise KeyError("PHIDP variable not found")
+        warnings.warn("PHIDP variable not found. Nothing was done")
         
     return ds
 
