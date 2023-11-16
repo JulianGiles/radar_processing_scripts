@@ -215,7 +215,7 @@ if X_PHI in ds.data_vars:
     # phidp may be already preprocessed (turkish case), then proceed directly to masking and then vulpiani
     if "UPHIDP" not in X_PHI:
         # mask 
-        phi_masked = ds[X_PHI].where((ds[X_RHO] >= 0.95) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )
+        phi_masked = ds[X_PHI].where((ds[X_RHO] >= 0.9) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )
         
         # rename X_PHI as offset corrected
         ds = ds.rename({X_PHI: X_PHI+"_OC"})
@@ -224,7 +224,7 @@ if X_PHI in ds.data_vars:
         ds = utils.phidp_processing(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                              dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range, rng=rng)
     
-        phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.95) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )
+        phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.9) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )
 
     # Assign phi_masked
     assign = { X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs) }
@@ -242,6 +242,9 @@ else:
 ## Compute QVP
 
 ds_qvp = utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1} )
+
+# filter out values close to the ground
+ds_qvp = ds_qvp.where(ds_qvp["z"]>min_height)
 
 ## Detect melting layer
 
