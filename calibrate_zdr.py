@@ -161,9 +161,10 @@ for ff in files:
     else:
         data=xr.open_dataset(ff)
         
-    # fix time dim and timje in coords
+    # fix time dim and time in coords
     data = utils.fix_time_in_coords(data)
 
+    # flip UPHIDP and KDP in UMD data
     if "umd" in ff:
         print("Flipping phase moments in UMD")
         for vf in ["UPHIDP", "KDP"]: # Phase moments in UMD are flipped into the negatives
