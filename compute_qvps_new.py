@@ -17,7 +17,7 @@ except FileNotFoundError:
     None
 
 
-# NEEDS WRADLIB 1.19 !! (OR GREATER?)
+# NEEDS WRADLIB 2.0 !! (OR GREATER?)
 
 import datatree as dttree
 import wradlib as wrl
@@ -58,14 +58,12 @@ overwrite = True # overwrite existing files?
 # The script will try to correct according to the first offset; if not available or nan it will 
 # continue with the next one, and so on. Only the used offset will be outputted in the final file.
 # All items in zdrofffile will be tested in each zdroffdir to load the data.
-zdroffdir = ["/calibration/zdr/VP/", "/calibration/zdr/LR_consistency/"] # subfolder(s) where to find the zdr offset data
-zdrofffile = ["*zdr_offset_belowML_00*", "*zdr_offset_below3C_00*", "*zdr_offset_wholecol_00*",
-              "*zdr_offset_belowML_07*", "*zdr_offset_below3C_07*",
-              "*zdr_offset_belowML-*", "*zdr_offset_below3C-*"] # pattern to select the appropriate file (careful with the zdr_offset_belowML_timesteps)
+zdroffdir = utils.zdroffdir
+zdrofffile = utils.zdrofffile
 
 # set the RHOHV correction location
-rhoncdir = "/rhohv_nc/" # subfolder where to find the noise corrected rhohv data
-rhoncfile = "*rhohv_nc_2percent*" # pattern to select the appropriate file (careful with the rhohv_nc_2percent)
+rhoncdir = utils.rhoncdir  # subfolder where to find the noise corrected rhohv data
+rhoncfile = utils.rhoncfile # pattern to select the appropriate file (careful with the rhohv_nc_2percent)
 
 # get the files and check that it is not empty
 if "hd5" in path0 or "h5" in path0:
@@ -84,26 +82,22 @@ if len(files)==0:
     print("No files meet the selection criteria.")
     sys.exit("No files meet the selection criteria.")
 
-# paths to files to load manually
-# 07 is the scan number for 12 degree elevation
-# path = "/home/jgiles/dwd/pulled_from_detect/*/*/2017-04-12/pro/vol5minng01/07/*allmoms*"
-# path = "/automount/ftp/jgiles/pulled_from_detect/*/*/*/tur/vol5minng01/07/*allmoms*"
-# files = sorted(glob.glob(path))
-
-min_hgt = 200 # minimum height above the radar to be considered when calculating ML and entropy 
+clowres0=False # this is for the ML detection algorithm
+min_hgts = utils.min_hgts
+min_hgt = min_hgts["default"] # minimum height above the radar to be considered when calculating ZDR offset
 if "dwd" in path0 and "90grads" in path0:
     # for the VP we need to set a higher min height because there are several bins of unrealistic values
-    min_hgt = 600
+    min_hgt = min_hgts["90grads"]
+if "dwd" in path0 and "vol5minng01" in path0:
+    clowres0=True
 if "ANK" in path0:
     # for ANK we need higher min_hgt to avoid artifacts
-    min_hgt = 400
+    min_hgt = min_hgts["ANK"]
 if "GZT" in path0:
     # for GZT we need higher min_hgt to avoid artifacts
-    min_hgt = 300
+    min_hgt = min_hgts["GZT"]
 
-
-# Use ERA5 temperature profile? If so, it does not use sounding data
-era5_temp = True
+# ERA5 folder
 if os.path.exists("/automount/ags/jgiles/ERA5/hourly/"):
     # then we are in local system
     era5_dir = "/automount/ags/jgiles/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
@@ -114,17 +108,6 @@ elif os.path.exists("/p/largedata2/detectdata/projects/A04/ERA5/hourly/"):
     # then we are in JSC
     era5_dir = "/p/largedata2/detectdata/projects/A04/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
 
-# download sounding data?
-download_sounding = False
-if era5_temp: download_sounding = False
-
-# Code for Sounding data (http://weather.uwyo.edu/upperair/sounding.html)
-rs_id = 10868 # Close to radar site. 10393 Lindenberg close to PRO, 10868 Munich close to Turkheim
-
-#!!!!!!!!!!!!! SOUNDING DOWNLOAD AND INCLUSION WAS DEPRECATED IN THIS NEW SCRIPT AND NOT IMPLEMENTED AGAIN 
-# save raw sounding data?
-save_raw_sounding = True
-sounding_savepath = "/automount/ags/jgiles/soundings_wyoming/"
 
 # names of variables
 phidp_names = ["UPHIDP", "PHIDP"] # names to look for the PHIDP variable, in order of preference
@@ -133,17 +116,6 @@ rhohv_names = ["RHOHV"] # same but for RHOHV
 zdr_names = ["ZDR"]
 th_names = ["TH", "DBZH"]
 
-
-# we define a funtion to look for loc inside a path string
-def find_loc(locs, path):
-    components = path.split(os.path.sep)
-    for element in locs:
-        for component in components:
-            if element.lower() in component.lower():
-                return element
-    return None
-
-locs = ["pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs"]
 
 # define a function to create save directory and return file save path
 def make_savedir(ff, name):
@@ -166,17 +138,6 @@ def make_savedir(ff, name):
         os.makedirs(savepathdir)
     return savepath
 
-# define a function to split a string at a certain pattern and replace it (like in the function before but only returning the path)
-def edit_str(ff, replace, name):
-    """
-    ff: string of file path or whatever
-    replace: what string part to replace
-    name: new string to put
-    """
-
-    ff_parts = ff.split(replace)
-    newff = (name).join(ff_parts)
-    return newff
 
 # in case KDP is not in the dataset we defined its attributes according to DWD data:
 KDP_attrs={'_Undetect': 0.0,
@@ -204,32 +165,33 @@ for ff in files:
 
     print("processing "+ff)
     if "dwd" in ff:
-        basepath=ff.split("dwd")
+        country="dwd"
         data=dttree.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset()
+    elif "dmi" in ff:
+        country="dmi"
+        data=xr.open_dataset(ff)
     else:
         data=xr.open_dataset(ff)
-        
-    # fix time dim in case some value is NaT
-    if data.time.isnull().any():
-        data.coords["time"] = data["rtime"].min(dim="azimuth", skipna=True).compute()
 
-    # take time out of the coords if necessary
-    for coord in ["latitude", "longitude", "altitude", "elevation"]:
-        if "time" in data[coord].dims:
-            data.coords[coord] = data.coords[coord].min("time")
-            
+    # fix time dim and time in coords
+    data = utils.fix_time_in_coords(data)
+
     # flip UPHIDP and KDP in UMD data
     if "umd" in ff:
+        print("Flipping phase moments in UMD")
         for vf in ["UPHIDP", "KDP"]: # Phase moments in UMD are flipped into the negatives
             attrs = data[vf].attrs.copy()
             data[vf] = data[vf]*-1
             data[vf].attrs = attrs.copy()
 
+    # flip PHIDP in case it is wrapping around the edges (case for turkish radars)
+    if country == "dmi":
+        data = utils.fix_flipped_phidp(data, phidp_names=phidp_names)
 
 #%% Georeference
     swp = data.pipe(wrl.georef.georeference) 
 
-#%% Check variable names and add corrections and calibrations
+#%% Check variable names and add corrections and calibrations 
     min_height = min_hgt+swp["altitude"].values
 
     # get PHIDP name
@@ -256,11 +218,21 @@ for ff in files:
         if X_TH in swp.data_vars:
             break
 
-    ### Load ZDR offset if available
-    if "dwd" in ff:
-        country="dwd"
-    elif "dmi" in ff:
-        country="dmi"
+#%% Load noise corrected RHOHV if available
+    try:
+        rhoncpath = os.path.dirname(utils.edit_str(ff, country, country+rhoncdir))
+        swp = utils.load_corrected_RHOHV(swp, rhoncpath+"/"+rhoncfile)
+
+        # Check that the corrected RHOHV does not have much higher STD than the original (50% more)
+        # if that is the case we take it that the correction did not work well so we won't use it
+        if not (swp[X_RHO].std()*1.5 < swp["RHOHV_NC"].std()).compute():
+            # Change the default RHOHV name to the corrected one
+            X_RHO = "RHOHV_NC"                    
+
+    except OSError:
+        print("No noise corrected rhohv to load: "+rhoncpath+"/"+rhoncfile)
+
+#%% Load ZDR offset if available
 
     # We define a custom exception to stop the next nexted loops as soon as a file is loaded
     class FileFound(Exception):
@@ -270,20 +242,12 @@ for ff in files:
         for zdrod in zdroffdir:
             for zdrof in zdrofffile:
                 try:
-                    zdroffsetpath = os.path.dirname(edit_str(ff, country, country+zdrod))
+                    zdroffsetpath = os.path.dirname(utils.edit_str(ff, country, country+zdrod))
                     if "/VP/" in zdrod and "/vol5minng01/" in ff:
                         elevnr = ff.split("/vol5minng01/")[-1][0:2]
-                        zdroffsetpath = edit_str(zdroffsetpath, "/vol5minng01/"+elevnr, "/90gradstarng01/00")
+                        zdroffsetpath = utils.edit_str(zdroffsetpath, "/vol5minng01/"+elevnr, "/90gradstarng01/00")
                         
-                    zdr_offset = xr.open_mfdataset(zdroffsetpath+"/"+zdrof)
-                    
-                    # check that the offset have a valid value. Otherwise skip
-                    if zdr_offset["ZDR_offset"].isnull().all():
-                        continue
-                    
-                    # create ZDR_OC variable
-                    swp = swp.assign({X_ZDR+"_OC": swp[X_ZDR]-zdr_offset["ZDR_offset"].values})
-                    swp[X_ZDR+"_OC"].attrs = swp[X_ZDR].attrs
+                    swp = utils.load_ZDR_offset(swp, X_ZDR, zdroffsetpath+"/"+zdrof)
                     
                     # Change the default ZDR name to the corrected one
                     X_ZDR = X_ZDR+"_OC"
@@ -299,28 +263,6 @@ for ff in files:
     except FileFound:
         pass
                 
-                            
-    ### Load noise corrected RHOHV if available
-    try:
-        if "dwd" in ff:
-            country="dwd"
-        elif "dmi" in ff:
-            country="dmi"
-        rhoncpath = os.path.dirname(edit_str(ff, country, country+rhoncdir))
-        rho_nc = xr.open_mfdataset(rhoncpath+"/"+rhoncfile)
-        
-        # create RHOHV_NC variable
-        swp = swp.assign(rho_nc)
-        swp["RHOHV_NC"].attrs["noise correction level"] = rho_nc.attrs["noise correction level"]
-        
-        # Check that the corrected RHOHV does not have much higher STD than the original (50% more)
-        # if that is the case we take it that the correction did not work well so we won't use it
-        if not (swp["RHOHV"].std()*1.5 < swp["RHOHV_NC"].std()).compute():
-            # Change the default RHOHV name to the corrected one
-            X_RHO = X_RHO+"_NC"
-            
-    except OSError:
-        print("No noise corrected rhohv to load: "+rhoncpath+"/"+rhoncfile)
 
 #%% Correct PHIDP 
     ################## Before entropy calculation we need to use the melting layer detection algorithm 
@@ -328,7 +270,7 @@ for ff in files:
     interpolation_method_ML = "linear" # for interpolating PHIDP in the ML
     
     # Check that PHIDP is in data, otherwise skip ML detection
-    if X_PHI in data.data_vars:
+    if X_PHI in ds.data_vars:
         # Set parameters according to data
         if "dwd" in ff:
             country="dwd"
@@ -343,90 +285,39 @@ for ff in files:
             winlen0=21 # size of range window (bins) for the kdp-phidp calculations
             xwin0=5 # window size (bins) for the time rolling median smoothing in ML detection
             ywin0=5 # window size (bins) for the height rolling mean smoothing in ML detection
-            fix_range = 200 # range from where to consider phi values (dwd data is bad in the first bin)
+            fix_range = 200 # range from where to consider phi values (dmi data is bad in the first bin)
 
         ######### Processing PHIDP
         #### fix PHIDP
-        # flip PHIDP in case it is wrapping around the edges (case for turkish radars)
-        if ds[X_PHI].notnull().any():
-            values_center = ((ds[X_PHI]>-50)*(ds[X_PHI]<50)).sum().compute()
-            values_sides = ((ds[X_PHI]>50)+(ds[X_PHI]<-50)).sum().compute()
-            if values_sides > values_center:
-                ds[X_PHI] = xr.where(ds[X_PHI]<=0, ds[X_PHI]+180, ds[X_PHI]-180, keep_attrs=True).compute()
         
         # filter
-        phi = ds[X_PHI].where((ds[X_RHO]>=0.9) & (ds[X_DBZH]>=0) & (ds["z"]>min_height) )
+        phi = ds[X_PHI].where((ds[X_RHO]>=0.9) & (ds[X_DBZH]>=0) & (ds["z"]>min_height) ) #!!! not sure why this is here
         
         # phidp may be already preprocessed (turkish case), then proceed directly to masking and then vulpiani
         if "UPHIDP" not in X_PHI:
             # mask 
-            phi_masked = phi.where((ds[X_RHO] >= 0.95) & (ds[X_DBZH] >= 0.))
+            phi_masked = ds[X_PHI].where((ds[X_RHO] >= 0.9) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )
+            
+            # rename X_PHI as offset corrected
+            ds = ds.rename({X_PHI: X_PHI+"_OC"})
         
         else:
             # calculate offset
-            rng_offset = phi.range.diff("range").median().values * window0
-            phidp_offset = phi.pipe(radarmet.phase_offset, rng=rng_offset, center=True, min_periods=4)
-            off = phidp_offset["PHIDP_OFFSET"]
-            start_range = phidp_offset["start_range"]
+            ds = utils.phidp_processing(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
+                                 dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range)
         
-            # apply offset
-            phi_fix = ds[X_PHI].copy()
-            off_fix = off.broadcast_like(phi_fix)
-            phi_fix = phi_fix.where(phi_fix.range >= start_range + fix_range).fillna(off_fix) - off
-        
-            # smooth range dim
-            window = window0 # window along range   <----------- this value is quite important for the quality of KDP, since phidp is very noisy
-            window2 = None # window along azimuth
-            phi_median = phi_fix.pipe(radarmet.xr_rolling, window, window2=window2, method='median', min_periods=round(window/2), skipna=False)
-    
-            # Apply additional smoothing
-            gkern = radarmet.gauss_kernel(window, window)
-            smooth_partial = partial(radarmet.smooth_data, kernel=gkern)
-            # phiclean = radarmet.smooth_data(phi_median[0], gkern)
-            phiclean = xr.apply_ufunc(smooth_partial, phi_median.compute(), 
-                                      input_core_dims=[["azimuth","range"]], output_core_dims=[["azimuth","range"]],
-                                      vectorize=True)
-    
-            # mask 
-            phi_masked = phiclean.where((ds[X_RHO] >= 0.95) & (ds[X_DBZH] >= 0.))
+            phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.9) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )   
+            
+        # Assign phi_masked
+        assign = { X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs) }
+        ds = ds.assign(assign)
         
         # derive KDP from PHIDP (Vulpiani)
-        winlen = winlen0 # windowlen 
         
-        phidp, kdp = radarmet.kdp_phidp_vulpiani(phi_masked, winlen, min_periods=winlen/2)
+        ds = utils.kdp_phidp_vulpiani(ds, winlen0, X_PHI+"_OC_MASKED", min_periods=winlen0/2)    
         
-        """
-        # deprecated
-        # min_periods = 7 # min number of vaid bins
-        kdp = radarmet.kdp_from_phidp(phi_masked, winlen, min_periods=winlen//2)
-        kdp1 = kdp.interpolate_na(dim='range')
-        
-        # derive PHIDP from KDP (convolution method)
-        winlen = winlen0
-        phidp = radarmet.phidp_from_kdp(kdp1, winlen)
-        """
-        
-        # assign new variables to dataset
-        if "UPHIDP" not in X_PHI:
-            assign = {
-              X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs),
-              "KDP_CONV": kdp.assign_attrs(KDP_attrs),
-              "PHI_CONV": phidp.assign_attrs(ds[X_PHI].attrs)
-              }
+        X_PHI = X_PHI+"_OC" # continue using offset corrected PHI
                 
-            ds = ds.assign(assign)
-        
-        else:
-            assign = {X_PHI+"_OC_SMOOTH": phi_median.assign_attrs(ds[X_PHI].attrs),
-              X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs),
-              "KDP_CONV": kdp.assign_attrs(KDP_attrs),
-              "PHI_CONV": phidp.assign_attrs(ds[X_PHI].attrs),
-            
-              X_PHI+"_OFFSET": off.assign_attrs(ds[X_PHI].attrs),
-              X_PHI+"_OC": phi_fix.assign_attrs(ds[X_PHI].attrs)}
-    
-            ds = ds.assign(assign)
-        
     else:
         print(X_PHI+" not found in the data, skipping ML detection")
     
@@ -434,40 +325,27 @@ for ff in files:
     try:
         ## Only data with a cross-correlation coefficient ρHV above 0.7 are used to calculate their azimuthal median at all ranges (from Trömel et al 2019).
         ## Also added further filtering (TH>0, ZDR>-1)
-        ds_qvp_ra = ds.where( (ds[X_RHO] > 0.7) & (ds[X_TH] > 0) & (ds[X_ZDR] > -1) ).median("azimuth", keep_attrs=True)
-        ds_qvp_ra = ds_qvp_ra.assign_coords({"z": ds["z"].median("azimuth")})
-        
-        ds_qvp_ra = ds_qvp_ra.swap_dims({"range":"z"}) # swap range dimension for height
+        ds_qvp_ra = utils.compute_qvp(ds, min_thresh={"RHOHV":0.7, "TH":0, "ZDR":-1} )
         
         # filter out values close to the ground
         ds_qvp_ra2 = ds_qvp_ra.where(ds_qvp_ra["z"]>min_height)
+
     except KeyError:
         # in case some of the variables is not present (for example in turkish data without polarimetry)
-        ds_qvp_ra = ds.where(  (ds[X_TH] > 0) ).median("azimuth", keep_attrs=True)
-        ds_qvp_ra = ds_qvp_ra.assign_coords({"z": ds["z"].median("azimuth")})
-        
-        ds_qvp_ra = ds_qvp_ra.swap_dims({"range":"z"}) # swap range dimension for height
+        ds_qvp_ra = utils.compute_qvp(ds, min_thresh={"TH":0} )
 
 #%% Detect melting layer
     if X_PHI in data.data_vars:
         if country=="dwd":
             moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI+"_OC": (-20, 180)}
-            clowres0=True
         elif country=="dmi":
             if X_PHI+"_OC" in ds.data_vars:
                 moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI+"_OC": (-20, 180)}
             else:
                 moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI: (-20, 180)}
-            clowres0=False
 
-        dim = 'z'
-        thres = 0.02 # gradient values over thres are kept. Lower is more permissive
-        xwin = xwin0 # value for the time median smoothing
-        ywin = ywin0 # value for the height mean smoothing (1 for Cband)
-        fmlh = 0.3
-         
-        ds_qvp_ra = utils.melting_layer_qvp_X_new(ds_qvp_ra2, moments=moments, 
-                 dim=dim, thres=thres, xwin=xwin, ywin=ywin, fmlh=fmlh, min_h=min_height, all_data=True, clowres=clowres0)
+        ds_qvp_ra = utils.melting_layer_qvp_X_new(ds_qvp_ra2, moments=moments, dim="z", fmlh=0.3, 
+                 xwin=xwin0, ywin=ywin0, min_h=min_height, all_data=True, clowres=clowres0)
     
         #### Assign ML values to dataset
         
@@ -477,9 +355,28 @@ for ff in files:
         ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp_ra.height_ml_bottom_new_gia})
     
 #%% Attach ERA5 temperature profile
-    loc = find_loc(locs, ff)
+    loc = utils.find_loc(utils.locs, ff)
     ds_qvp_ra = utils.attach_ERA5_TEMP(ds_qvp_ra, path=loc.join(era5_dir.split("loc")))
  
+#%% Discard possible erroneous ML values
+    if "height_ml_new_gia" in ds_qvp_ra:
+        ## First, filter out ML heights that are too high (above selected isotherm)
+        isotherm = -1 # isotherm for the upper limit of possible ML values
+        z_isotherm = ds_qvp_ra.TEMP.isel(z=((ds_qvp_ra["TEMP"]-isotherm)**2).argmin("z").compute())["z"]
+        
+        ds_qvp_ra.coords["height_ml_new_gia"] = ds_qvp_ra["height_ml_new_gia"].where(ds_qvp_ra["height_ml_new_gia"]<=z_isotherm.values).compute()
+        ds_qvp_ra.coords["height_ml_bottom_new_gia"] = ds_qvp_ra["height_ml_bottom_new_gia"].where(ds_qvp_ra["height_ml_new_gia"]<=z_isotherm.values).compute()
+        
+        # Then, check that ML top is over ML bottom
+        cond_top_over_bottom = ds_qvp_ra.coords["height_ml_new_gia"] > ds_qvp_ra.coords["height_ml_bottom_new_gia"] 
+        
+        # Assign final values
+        ds_qvp_ra.coords["height_ml_new_gia"] = ds_qvp_ra["height_ml_new_gia"].where(cond_top_over_bottom).compute()
+        ds_qvp_ra.coords["height_ml_bottom_new_gia"] = ds_qvp_ra["height_ml_bottom_new_gia"].where(cond_top_over_bottom).compute()
+        
+        ds = ds.assign_coords({'height_ml_new_gia': ds_qvp_ra.height_ml_new_gia.where(cond_top_over_bottom)})
+        ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp_ra.height_ml_bottom_new_gia.where(cond_top_over_bottom)})
+
 #%% Fix KDP in the ML using PHIDP:
     if X_PHI in data.data_vars:    
        
