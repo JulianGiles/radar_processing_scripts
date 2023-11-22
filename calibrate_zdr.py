@@ -65,6 +65,7 @@ start_time = time.time()
 #%% Set paths and options
 path0 = sys.argv[1]
 calib_type = int(sys.argv[2]) # Like the numbers from the description above. Can be a multiple digit integer for simultaneous calculations
+overwrite = True # overwrite existing files?
 
 phidp_names = ["UPHIDP", "PHIDP"] # names to look for the PHIDP variable, in order of preference
 dbzh_names = ["DBZH"] # same but for DBZH
@@ -155,6 +156,11 @@ elif "giles1" in files[0]:
 #%% Load data
 
 for ff in files:
+    # check if the resulting calib file already exists before starting
+    savepath = make_savedir(ff, "")
+    if len(os.listdir(os.path.dirname(savepath))) != 0 and not overwrite:
+        continue
+
     print("processing "+ff)
     if "dwd" in ff:
         data=dttree.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset()
