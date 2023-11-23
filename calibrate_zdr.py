@@ -157,8 +157,19 @@ elif "giles1" in files[0]:
 
 for ff in files:
     # check if the resulting calib file already exists before starting
-    savepath = make_savedir(ff, "")
-    if len(os.listdir(os.path.dirname(savepath))) != 0 and not overwrite:
+    calib_1 = True # by default we compute as if overwrite is True
+    calib_2 = True
+    if not overwrite:        
+        if 1 in calib_types:
+            savepath = make_savedir(ff, "VP")
+            if len(os.listdir(os.path.dirname(savepath))) != 0:
+                calib_1 = False
+        if 2 in calib_types:
+            savepath = make_savedir(ff, "LR_consistency")
+            if len(os.listdir(os.path.dirname(savepath))) != 0:
+                calib_2 = False
+    
+    if all((not calib_1, not calib_2)):
         continue
 
     print("processing "+ff)
@@ -294,7 +305,7 @@ for ff in files:
         else:
             print(X_PHI+" not found in the data, skipping ML detection and below-ML offset")
         
-        if 1 in calib_types:
+        if 1 in calib_types and calib_1:
             # We ask for at least 1 km of consecutive ZDR values in each VP to be included in the calculation
             minbins = int(1000 / data["range"].diff("range").median())
             
@@ -369,7 +380,7 @@ for ff in files:
                 filename = ("zdr_offset_wholecol"+fn_app).join(savepath.split("allmoms"))
                 zdr_offset.to_netcdf(filename)
 
-        if 2 in calib_types:
+        if 2 in calib_types and calib_2:
             if "height_ml_bottom_new_gia" in data:
                 # Calculate offset below ML per timestep
                 zdr_offset = utils.zhzdr_lr_consistency(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, min_h=min_height, timemode="step")
