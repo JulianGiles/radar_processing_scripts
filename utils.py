@@ -2462,7 +2462,7 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
             plt.ylabel(r'$Z_{DR}$', fontsize=15)
             plt.grid(which='both', color='black', linestyle=':', alpha=0.5)
             if "time" in ds and timemode=="step":
-                plt.legend(title=r'$\Delta Z_{DR}$: '+str(np.round(zdroffset.values[plot_timestep].values,3))+'dB')
+                plt.legend(title=r'$\Delta Z_{DR}$: '+str(np.round(zdroffset.values[plot_timestep],3))+'dB')
             else:
                 plt.legend(title=r'$\Delta Z_{DR}$: '+str(np.round(zdroffset.values,3))+'dB')
         
