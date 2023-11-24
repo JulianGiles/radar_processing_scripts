@@ -67,7 +67,7 @@ warnings.filterwarnings('ignore')
 
 min_height_key = "default" # default = 200, 90grads = 600, ANK = 400, GZT = 300
 
-ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-06-02/pro/vol5minng01/07/*allmoms*"
+ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/pro/vol5minng01/07/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-06-02/pro/90gradstarng01/00/*allmoms*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-10/2021-10-30/ess/90gradstarng01/00/*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-07/2021-07-24/ess/90gradstarng01/00/*"
@@ -1537,6 +1537,48 @@ corr = xr.corr(zdroffsets["VP whole col"], rca_pro.rca_dr.where(zdroffsets["VP w
 plt.scatter(zdroffsets["ZH-ZDR below 1C"], rca_pro.rca_dr.where(zdroffsets["ZH-ZDR below 1C"]))
 
 corr = xr.corr(zdroffsets["ZH-ZDR below 1C"], rca_pro.rca_dr.where(zdroffsets["ZH-ZDR below 1C"]), dim="time").compute()
+
+#%% Compare ZDR offset intra-daily variability
+
+selday = "2019-09-09"
+
+# Plot timestep offsets
+VPzdroff_below1c_ts.loc[{"time":selday}].ZDR_offset.plot(label=
+                                                         "VP below 1C. Daily offset: "+
+                                                         str(np.round(VPzdroff_below1c.loc[{"time":selday}].ZDR_offset.values, 2)) +
+                                                         ", STD: "+
+                                                         str(np.round(VPzdroff_below1c.loc[{"time":selday}].ZDR_std_from_offset.values, 2))
+                                                         )
+VPzdroff_belowML_ts.loc[{"time":selday}].ZDR_offset.plot(label=
+                                                         "VP below ML. Daily offset: "+
+                                                         str(np.round(VPzdroff_belowML.loc[{"time":selday}].ZDR_offset.values, 2)) +
+                                                         ", STD: "+
+                                                         str(np.round(VPzdroff_belowML.loc[{"time":selday}].ZDR_std_from_offset.values, 2))
+                                                         )
+VPzdroff_wholecol_ts.loc[{"time":selday}].ZDR_offset.plot(label=
+                                                          "VP whole col. Daily offset: "+
+                                                          str(np.round(VPzdroff_wholecol.loc[{"time":selday}].ZDR_offset.values, 2)) +
+                                                          ", STD: "+
+                                                          str(np.round(VPzdroff_wholecol.loc[{"time":selday}].ZDR_std_from_offset.values, 2))
+                                                          )
+LRzdroff_below1c_ts.loc[{"time":selday}].ZDR_offset.plot(label=
+                                                         "ZH-ZDR below 1C. Daily offset: "+
+                                                         str(np.round(LRzdroff_below1c.loc[{"time":selday}].ZDR_offset.values, 2)) +
+                                                         ", STD: "+
+                                                         str(np.round(LRzdroff_below1c_ts.loc[{"time":selday}].ZDR_offset.std().values, 2))
+                                                         )
+LRzdroff_belowML_ts.loc[{"time":selday}].ZDR_offset.plot(label=
+                                                         "ZH-ZDR below ML. Daily offset: "+
+                                                         str(np.round(LRzdroff_belowML.loc[{"time":selday}].ZDR_offset.values, 2)) +
+                                                         ", STD: "+
+                                                         str(np.round(LRzdroff_belowML_ts.loc[{"time":selday}].ZDR_offset.std().values, 2))
+                                                         )
+ax = plt.gca()
+ax.set_xlim(LRzdroff_belowML_ts.loc[{"time":selday}].time[0], LRzdroff_belowML_ts.loc[{"time":selday}].time[-1])
+plt.legend(fontsize=7)
+
+
+
 
 #%% Check noise correction for RHOHV
 
