@@ -1320,33 +1320,58 @@ fig.colorbar(figvp, cax=cbar_ax, extend="both")
 
 #%% Timeseries of ZDR offsets
 
-loc0 = "umd"
+loc0 = "pro"
 
 ## Load
-f_VPzdroff_below3c = "/automount/realpep/upload/jgiles/dwd/calibration/zdr/VP/20*/*/*/"+loc0+"/90gradstarng01/00/*_zdr_offset_below3C_00*"
+f_VPzdroff_below1c = "/automount/realpep/upload/jgiles/dwd/calibration/zdr/VP/20*/*/*/"+loc0+"/90gradstarng01/00/*_zdr_offset_below1C_00*"
 f_VPzdroff_belowML = "/automount/realpep/upload/jgiles/dwd/calibration/zdr/VP/20*/*/*/"+loc0+"/90gradstarng01/00/*_zdr_offset_belowML_00*"
 f_VPzdroff_wholecol = "/automount/realpep/upload/jgiles/dwd/calibration/zdr/VP/20*/*/*/"+loc0+"/90gradstarng01/00/*_zdr_offset_wholecol_00*"
 
-f_LRzdroff_below3c = "/automount/realpep/upload/jgiles/dwd/calibration/zdr/LR_consistency/20*/*/*/"+loc0+"/vol5minng01/07/*_zdr_offset_below3C_07*"
+f_LRzdroff_below1c = "/automount/realpep/upload/jgiles/dwd/calibration/zdr/LR_consistency/20*/*/*/"+loc0+"/vol5minng01/07/*_zdr_offset_below1C_07*"
 f_LRzdroff_belowML = "/automount/realpep/upload/jgiles/dwd/calibration/zdr/LR_consistency/20*/*/*/"+loc0+"/vol5minng01/07/*_zdr_offset_belowML_07*"
 
-VPzdroff_below3c = xr.open_mfdataset(f_VPzdroff_below3c)
+VPzdroff_below1c = xr.open_mfdataset(f_VPzdroff_below1c)
 VPzdroff_belowML = xr.open_mfdataset(f_VPzdroff_belowML)
 VPzdroff_wholecol = xr.open_mfdataset(f_VPzdroff_wholecol)
 
-LRzdroff_below3c = xr.open_mfdataset(f_LRzdroff_below3c)
-LRzdroff_below3c = LRzdroff_below3c.where(abs(LRzdroff_below3c["ZDR_offset"])>0.00049) # special filtering since the NA values are set to a fix float close to zero
+LRzdroff_below1c = xr.open_mfdataset(f_LRzdroff_below1c)
+LRzdroff_below1c = LRzdroff_below1c.where(abs(LRzdroff_below1c["ZDR_offset"])>0.00049) # special filtering since the NA values are set to a fix float close to zero
 LRzdroff_belowML = xr.open_mfdataset(f_LRzdroff_belowML)
 LRzdroff_belowML = LRzdroff_belowML.where(abs(LRzdroff_belowML["ZDR_offset"])>0.00049) # special filtering since the NA values are set to a fix float close to zero
 
+# normalize time dim to days
+VPzdroff_below1c.coords["time"] = VPzdroff_below1c.indexes["time"].normalize()
+VPzdroff_belowML.coords["time"] = VPzdroff_belowML.indexes["time"].normalize()
+VPzdroff_wholecol.coords["time"] = VPzdroff_wholecol.indexes["time"].normalize()
+
+LRzdroff_below1c.coords["time"] = LRzdroff_below1c.indexes["time"].normalize()
+LRzdroff_belowML.coords["time"] = LRzdroff_belowML.indexes["time"].normalize()
+
+
+## Load per-timestep versions
+f_VPzdroff_below1c_ts = "/automount/realpep/upload/jgiles/dwd/calibration/zdr/VP/20*/*/*/"+loc0+"/90gradstarng01/00/*_zdr_offset_below1C_times*"
+f_VPzdroff_belowML_ts = "/automount/realpep/upload/jgiles/dwd/calibration/zdr/VP/20*/*/*/"+loc0+"/90gradstarng01/00/*_zdr_offset_belowML_times*"
+f_VPzdroff_wholecol_ts = "/automount/realpep/upload/jgiles/dwd/calibration/zdr/VP/20*/*/*/"+loc0+"/90gradstarng01/00/*_zdr_offset_wholecol_times*"
+
+f_LRzdroff_below1c_ts = "/automount/realpep/upload/jgiles/dwd/calibration/zdr/LR_consistency/20*/*/*/"+loc0+"/vol5minng01/07/*_zdr_offset_below1C_times*"
+f_LRzdroff_belowML_ts = "/automount/realpep/upload/jgiles/dwd/calibration/zdr/LR_consistency/20*/*/*/"+loc0+"/vol5minng01/07/*_zdr_offset_belowML_times*"
+
+VPzdroff_below1c_ts = xr.open_mfdataset(f_VPzdroff_below1c_ts)
+VPzdroff_belowML_ts = xr.open_mfdataset(f_VPzdroff_belowML_ts)
+VPzdroff_wholecol_ts = xr.open_mfdataset(f_VPzdroff_wholecol_ts)
+
+LRzdroff_below1c_ts = xr.open_mfdataset(f_LRzdroff_below1c_ts)
+LRzdroff_below1c_ts = LRzdroff_below1c_ts.where(abs(LRzdroff_below1c_ts["ZDR_offset"])>0.00049) # special filtering since the NA values are set to a fix float close to zero
+LRzdroff_belowML_ts = xr.open_mfdataset(f_LRzdroff_belowML_ts)
+LRzdroff_belowML_ts = LRzdroff_belowML_ts.where(abs(LRzdroff_belowML_ts["ZDR_offset"])>0.00049) # special filtering since the NA values are set to a fix float close to zero
 
 ## Plot
 
-VPzdroff_below3c["ZDR_offset"].plot.scatter(x="time", s=1, edgecolors=None, linewidths=0, label="VP below 3C")
+VPzdroff_below1c["ZDR_offset"].plot.scatter(x="time", s=1, edgecolors=None, linewidths=0, label="VP below 1C")
 VPzdroff_belowML["ZDR_offset"].plot.scatter(x="time", s=1, edgecolors=None, linewidths=0, label="VP below ML")
 VPzdroff_wholecol["ZDR_offset"].plot.scatter(x="time", s=1, edgecolors=None, linewidths=0, label="VP whole col")
 
-LRzdroff_below3c["ZDR_offset"].plot.scatter(x="time", s=1, edgecolors=None, linewidths=0, label="ZH-ZDR below 3C")
+LRzdroff_below1c["ZDR_offset"].plot.scatter(x="time", s=1, edgecolors=None, linewidths=0, label="ZH-ZDR below 1C")
 LRzdroff_belowML["ZDR_offset"].plot.scatter(x="time", s=1, edgecolors=None, linewidths=0, label="ZH-ZDR below ML")
 
 # plt.legend()
@@ -1360,19 +1385,42 @@ plt.title(loc0.upper())
 
 
 ## Plot interactively
+
+# Filter by min number of VPs/QVPs? if so set minvp > 0
+minvp = 8
+
 # put everything in the same dataset
-zdroffsets = xr.merge([VPzdroff_below3c["ZDR_offset"].rename("VP below 3C"), 
-                       VPzdroff_belowML["ZDR_offset"].rename("VP below ML"),
-                       VPzdroff_wholecol["ZDR_offset"].rename("VP whole col"), 
-                       LRzdroff_below3c["ZDR_offset"].rename("ZH-ZDR below 3C"),
-                       LRzdroff_belowML["ZDR_offset"].rename("ZH-ZDR below ML"),
-                       ],)
+if minvp > 0:   
+    zdroffsets = xr.merge([VPzdroff_below1c["ZDR_offset"].rename("VP below 1C").where(
+                                VPzdroff_below1c_ts["ZDR_offset"].resample({"time":"D"}).count()>=minvp
+                                ), 
+                           VPzdroff_belowML["ZDR_offset"].rename("VP below ML").where(
+                                VPzdroff_belowML_ts["ZDR_offset"].resample({"time":"D"}).count()>=minvp
+                                                       ),
+                           VPzdroff_wholecol["ZDR_offset"].rename("VP whole col").where(
+                                VPzdroff_wholecol_ts["ZDR_offset"].resample({"time":"D"}).count()>=minvp
+                                                       ),
+                           LRzdroff_below1c["ZDR_offset"].rename("ZH-ZDR below 1C").where(
+                                LRzdroff_below1c_ts["ZDR_offset"].resample({"time":"D"}).count()>=minvp
+                                                       ),
+                           LRzdroff_belowML["ZDR_offset"].rename("ZH-ZDR below ML").where(
+                                LRzdroff_belowML_ts["ZDR_offset"].resample({"time":"D"}).count()>=minvp
+                                                       ),
+                           ],)
+else:
+    zdroffsets = xr.merge([VPzdroff_below1c["ZDR_offset"].rename("VP below 1C"), 
+                           VPzdroff_belowML["ZDR_offset"].rename("VP below ML"),
+                           VPzdroff_wholecol["ZDR_offset"].rename("VP whole col"), 
+                           LRzdroff_below1c["ZDR_offset"].rename("ZH-ZDR below 1C"),
+                           LRzdroff_belowML["ZDR_offset"].rename("ZH-ZDR below ML"),
+                           ],)
+    
 # add also rolling median of the offsets
 zdroffsets_rollmed = xr.merge([
-                       zdroffsets["VP below 3C"].compute().interpolate_na("time").rolling(time=31, center=True, min_periods=10).median().rename("VP below 3C rolling median"), 
+                       zdroffsets["VP below 1C"].compute().interpolate_na("time").rolling(time=31, center=True, min_periods=10).median().rename("VP below 1C rolling median"), 
                        zdroffsets["VP below ML"].compute().interpolate_na("time").rolling(time=31, center=True, min_periods=10).median().rename("VP below ML rolling median"),
                        zdroffsets["VP whole col"].compute().interpolate_na("time").rolling(time=31, center=True, min_periods=10).median().rename("VP whole col rolling median"), 
-                       zdroffsets["ZH-ZDR below 3C"].compute().interpolate_na("time").rolling(time=31, center=True, min_periods=10).median().rename("ZH-ZDR below 3C rolling median"),
+                       zdroffsets["ZH-ZDR below 1C"].compute().interpolate_na("time").rolling(time=31, center=True, min_periods=10).median().rename("ZH-ZDR below 1C rolling median"),
                        zdroffsets["ZH-ZDR below ML"].compute().interpolate_na("time").rolling(time=31, center=True, min_periods=10).median().rename("ZH-ZDR below ML rolling median"),
                        ],)
 
@@ -1380,13 +1428,13 @@ zdroffsets_rollmed = xr.merge([
 
 # Create an interactive scatter plot from the combined Dataset
 scatter = zdroffsets.hvplot.scatter(x='time', 
-                                    y=['VP below 3C', 'VP below ML', 'VP whole col', 
-                                       'ZH-ZDR below 3C', 'ZH-ZDR below ML'],
+                                    y=['VP below 1C', 'VP below ML', 'VP whole col', 
+                                       'ZH-ZDR below 1C', 'ZH-ZDR below ML'],
                                     width=1000, height=400, size=1, muted_alpha=0)
 
 lines = zdroffsets_rollmed.hvplot.line(x='time', 
-                                    y=['VP below 3C rolling median', 'VP below ML rolling median', 'VP whole col rolling median', 
-                                       'ZH-ZDR below 3C rolling median', 'ZH-ZDR below ML rolling median'],
+                                    y=['VP below 1C rolling median', 'VP below ML rolling median', 'VP whole col rolling median', 
+                                       'ZH-ZDR below 1C rolling median', 'ZH-ZDR below ML rolling median'],
                                     width=1000, height=400, muted_alpha=0)
 
 # Combine both plots
@@ -1440,6 +1488,55 @@ plt.title("")
 plt.ylabel("ZDR offsets")    
 plt.ylim(-0.3,0.3)
 
+#%% Compare ZDR calibrations to RCA from Veli
+f_rca_pro = "/automount/agradar/velibor/data/rca/cal_rca_pro.nc"
+
+rca_pro = xr.open_dataset(f_rca_pro)
+# normalize time
+rca_pro.coords["time"] = rca_pro.indexes["time"].normalize()
+
+## Plot
+
+## Scatter over time plot
+# Create an interactive scatter plot from the combined Dataset
+scatter = zdroffsets.hvplot.scatter(x='time', 
+                                    y=['VP below 1C', 'VP below ML', 'VP whole col', 
+                                       'ZH-ZDR below 1C', 'ZH-ZDR below ML'],
+                                    width=1000, height=400, size=1, muted_alpha=0)
+scatter2 = rca_pro.hvplot.scatter(x='time', 
+                                    y=["rca_dr"],
+                                    width=1000, height=400, size=1, muted_alpha=0)
+lines = zdroffsets_rollmed.hvplot.line(x='time', 
+                                    y=['VP below 1C rolling median', 'VP below ML rolling median', 'VP whole col rolling median', 
+                                       'ZH-ZDR below 1C rolling median', 'ZH-ZDR below ML rolling median'],
+                                    width=1000, height=400, muted_alpha=0)
+
+# Combine both plots
+overlay = (scatter * scatter2 * lines)
+# overlay=lines
+
+# Customize the plot (add titles, labels, etc.)
+overlay.opts(title="ZDR offsets and 31 day centered rolling median (10 day min, interpolated where NaN)", xlabel="Time", ylabel="ZDR offsets", show_grid=True)
+
+# Save the interactive plot to an HTML file
+hv.save(overlay, "/user/jgiles/interactive_plot.html")
+
+
+## Scatter of ZDR calibrations vs RCA
+
+plt.scatter(zdroffsets["VP below ML"], rca_pro.rca_dr.where(zdroffsets["VP below ML"]))
+
+corr = xr.corr(zdroffsets["VP below ML"], rca_pro.rca_dr.where(zdroffsets["VP below ML"]), dim="time").compute()
+
+
+plt.scatter(zdroffsets["VP whole col"], rca_pro.rca_dr.where(zdroffsets["VP whole col"]))
+
+corr = xr.corr(zdroffsets["VP whole col"], rca_pro.rca_dr.where(zdroffsets["VP whole col"]), dim="time").compute()
+
+
+plt.scatter(zdroffsets["ZH-ZDR below 1C"], rca_pro.rca_dr.where(zdroffsets["ZH-ZDR below 1C"]))
+
+corr = xr.corr(zdroffsets["ZH-ZDR below 1C"], rca_pro.rca_dr.where(zdroffsets["ZH-ZDR below 1C"]), dim="time").compute()
 
 #%% Check noise correction for RHOHV
 
