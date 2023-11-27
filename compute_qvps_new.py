@@ -250,7 +250,7 @@ for ff in files:
                     # raise the custom exception to stop the loops
                     raise FileFound 
                     
-                except OSError:
+                except (OSError, ValueError):
                     pass
                 
         # If no ZDR offset was loaded, print a message
