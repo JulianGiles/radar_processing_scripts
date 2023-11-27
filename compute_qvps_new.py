@@ -139,11 +139,6 @@ def make_savedir(ff, name):
     return savepath
 
 
-# in case KDP is not in the dataset we defined its attributes according to DWD data:
-KDP_attrs={'_Undetect': 0.0,
- 'units': 'degrees per kilometer',
- 'long_name': 'Specific differential phase HV',
- 'standard_name': 'radar_specific_differential_phase_hv'}
 #%% Load data
 
 for ff in files:
@@ -335,14 +330,11 @@ for ff in files:
         ds_qvp_ra = utils.compute_qvp(ds, min_thresh={"TH":0} )
 
 #%% Detect melting layer
-    if X_PHI in data.data_vars:
+    if X_PHI in ds.data_vars:
         if country=="dwd":
-            moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI+"_OC": (-20, 180)}
+            moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI: (-20, 180)}
         elif country=="dmi":
-            if X_PHI+"_OC" in ds.data_vars:
-                moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI+"_OC": (-20, 180)}
-            else:
-                moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI: (-20, 180)}
+            moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI: (-20, 180)}
 
         ds_qvp_ra = utils.melting_layer_qvp_X_new(ds_qvp_ra2, moments=moments, dim="z", fmlh=0.3, 
                  xwin=xwin0, ywin=ywin0, min_h=min_height, all_data=True, clowres=clowres0)
@@ -378,49 +370,14 @@ for ff in files:
         ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp_ra.height_ml_bottom_new_gia.where(cond_top_over_bottom)})
 
 #%% Fix KDP in the ML using PHIDP:
-    if X_PHI in data.data_vars:    
-       
-        # discard possible erroneous ML values
-        isotherm = -1 # isotherm for the upper limit of possible ML values
-        z_isotherm = ds_qvp_ra.TEMP.isel(z=((ds_qvp_ra["TEMP"]-isotherm)**2).argmin("z").compute())["z"]
+    if X_PHI in ds.data_vars:    
         
-        ds_qvp_ra.coords["height_ml_new_gia"] = ds_qvp_ra["height_ml_new_gia"].where(ds_qvp_ra["height_ml_new_gia"]<=z_isotherm.values).compute()
-        ds_qvp_ra.coords["height_ml_bottom_new_gia"] = ds_qvp_ra["height_ml_bottom_new_gia"].where(ds_qvp_ra["height_ml_new_gia"]<=z_isotherm.values).compute()
-        
-        # PHIDP delta bump correction
-        # get where PHIDP has nan values
-        nan = np.isnan(ds[X_PHI+"_OC_MASKED"]) 
-        # get PHIDP outside the ML
-        phi2 = ds[X_PHI+"_OC_MASKED"].where((ds.z < ds_qvp_ra.height_ml_bottom_new_gia) | (ds.z > ds_qvp_ra.height_ml_new_gia))#.interpolate_na(dim='range',dask_gufunc_kwargs = "allow_rechunk")
-        # interpolate PHIDP in ML
-        phi2 = phi2.chunk(dict(range=-1)).interpolate_na(dim='range', method=interpolation_method_ML)
-        # restore originally nan values
-        phi2 = xr.where(nan, np.nan, phi2)
-        
-        # Derive KPD from the new PHIDP
-        # dr = phi2.range.diff('range').median('range').values / 1000.
-        # print("range res [km]:", dr)
-        # winlen in gates
-        # TODO: window length in m
-        winlen = winlen0
-        phidp_ml, kdp_ml = radarmet.kdp_phidp_vulpiani(phi2, winlen, min_periods=3)
-        
-        # assign to datasets
-        ds = ds.assign({"KDP_ML_corrected": (["time", "azimuth", "range"], kdp_ml.fillna(ds["KDP_CONV"]).values, KDP_attrs)})
-        
-        #### Optional filtering:
-        #ds["KDP_ML_corrected"] = ds.KDP_ML_corrected.where((ds.KDP_ML_corrected >= 0.0) & (ds.KDP_ML_corrected <= 3)) 
-        
-        ds = ds.assign_coords({'height': ds.z})
-        
-        kdp_ml_qvp = ds["KDP_ML_corrected"].where( (ds[X_RHO] > 0.7) & (ds[X_TH] > 0) & (ds[X_ZDR] > -1) ).median("azimuth", keep_attrs=True)
-        kdp_ml_qvp = kdp_ml_qvp.assign_coords({"z": ds["z"].median("azimuth")})
-        kdp_ml_qvp = kdp_ml_qvp.swap_dims({"range":"z"}) # swap range dimension for height
-        ds_qvp_ra = ds_qvp_ra.assign({"KDP_ML_corrected": kdp_ml_qvp})
-    
+        ds = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen=winlen0, min_periods=winlen0/2)
+
+        ds_qvp_ra = ds_qvp_ra.assign({"KDP_ML_corrected": utils.compute_qvp(ds)["KDP_ML_corrected"]})
     
 #%% Classification of stratiform events based on entropy
-    if X_PHI in data.data_vars:    
+    if X_PHI in ds.data_vars:    
         
         # calculate linear values for ZH and ZDR
         ds = ds.assign({"DBZH_lin": wrl.trafo.idecibel(ds[X_DBZH]), "ZDR_lin": wrl.trafo.idecibel(ds[X_ZDR]) })
@@ -439,7 +396,6 @@ for ff in files:
         min_trst_strati_qvp = min_trst_strati_qvp.swap_dims({"range":"z"}) # swap range dimension for height
         ds_qvp_ra = ds_qvp_ra.assign({"min_entropy": min_trst_strati_qvp})
         
-    
                         
 #%% Save dataset      
     # save file
