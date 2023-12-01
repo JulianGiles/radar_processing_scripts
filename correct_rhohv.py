@@ -81,14 +81,8 @@ for ff in files:
     else:
         data=xr.open_dataset(ff)
         
-    # fix time dim in case some value is NaT
-    if data.time.isnull().any():
-        data.coords["time"] = data["rtime"].min(dim="azimuth", skipna=True).compute()
-
-    # take time out of the coords if necessary
-    for coord in ["latitude", "longitude", "altitude", "elevation"]:
-        if "time" in data[coord].dims:
-            data.coords[coord] = data.coords[coord].median("time")
+    # fix time dim and time in coords
+    data = utils.fix_time_in_coords(data)
     
 
 #%% Calculate RHOHV correction
