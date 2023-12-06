@@ -364,8 +364,16 @@ datasel["height_ml_bottom_new_gia"].plot(c="black")
 plt.show()
 
 #%% Load QVPs
-ff = "/automount/realpep/upload/jgiles/dwd/qvps/2015/*/*/pro/vol5minng01/07/*allmoms*"
+# Load only events with ML detected (pre-condition for stratiform)
+ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2015/*/*/pro/vol5minng01/07/ML_detected.txt"
+ff_ML_glob = glob.glob(ff_ML)
+
+ff = [glob.glob(os.path.dirname(fp)+"/*allmoms*")[0] for fp in ff_ML_glob ]
 ds_qvps = utils.load_qvps(ff)
+
+# Load all events
+# ff = "/automount/realpep/upload/jgiles/dwd/qvps/2015/*/*/pro/vol5minng01/07/*allmoms*"
+# ds_qvps = utils.load_qvps(ff)
 
 #%% Plot QPVs interactive, with matplotlib backend (working) fix in holoviews/plotting/mpl/raster.py
 # this works with a manual fix in the holoviews files.
@@ -424,8 +432,13 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
         cmap_extend = utils.get_discrete_cmap(ticks, cmap)
         ticklist = [-100]+list(ticks)+[100]
 
+        subtitle = var
+        if var == "ZDR_OC":
+            # for the plot of ZDR_OC, put the value of the offset in the subtitle
+            subtitle = var+" (Offset: "+str(np.round((selected_data["ZDR"]-selected_data["ZDR_OC"]).compute().median().values,3))+")"
+
         quadmesh = selected_data[var].hvplot.quadmesh(
-            x='time', y='z', title=var,
+            x='time', y='z', title=subtitle,
             xlabel='Time', ylabel='Height (m)', colorbar=False,
             width=500, height=250, norm=norm,
         ).opts(
