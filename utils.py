@@ -134,7 +134,7 @@ def fix_time_in_coords(ds):
     ds : xarray.DataArray or xarray.Dataset    
     """
     
-    # It may happen that some time value is missing or that time values are repeated, fix that using info in rtime
+    # It may happen that some time value is missing or that time values are repeated, attempt to fix that using info in rtime
     if ds["time"].isnull().any() or (ds["time"].diff("time").compute().astype(int) == 0).any() :
         ds.coords["time"] = ds.rtime.min(dim="azimuth", skipna=True).compute()    
         
@@ -142,6 +142,9 @@ def fix_time_in_coords(ds):
     for coord in ["latitude", "longitude", "altitude", "elevation"]:
         if "time" in ds[coord].dims:
             ds.coords[coord] = ds.coords[coord].median("time")
+            
+    # in case there are still duplicate timesteps, attemp to reduce the time dim
+    ds = reduce_duplicate_timesteps(ds)
     
     return ds
 
