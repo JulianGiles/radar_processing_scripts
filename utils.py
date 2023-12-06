@@ -478,10 +478,14 @@ def load_qvps(filepath):
     Parameter
     ---------
     filepath : str
-            Location of the file or path with wildcards to find files using glob
+            Location of the file or path with wildcards to find files using glob or list of filepaths
     """
-    # collect files
-    files = sorted(glob.glob(filepath))
+    # check if filepath is a list
+    if isinstance(filepath, list):
+        files = sorted(filepath)
+    else:
+    # if not, collect files
+        files = sorted(glob.glob(filepath))
 
     if len(files)==1:
         qvps = xr.open_mfdataset(files)
