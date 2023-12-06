@@ -145,6 +145,82 @@ def fix_time_in_coords(ds):
     
     return ds
 
+def reduce_duplicate_timesteps(ds):
+    """
+    Reduce duplicate time values by combining the data variables available at each timestep. In 
+    case there are duplicate data vars (same name in the duplicate time value) then remove the duplicates, 
+    otherwise keep all variables by renaming them with _n, with n = 2,... starting from the second 
+    one with the same name.
+    
+    Originally made for handling turkish radar datasets.
+
+    Parameter
+    ---------
+    ds : xarray.Dataset    
+    """
+    # Check if there are duplicate time values
+    if (ds.time.diff("time").astype(int)==0).any():
+    
+        # Create a new dummy dataset to concatenate the reduced data
+        ds_reduced = xr.zeros_like(ds.isel(time=[0]))
+        
+        for tt in sorted(set(ds.time.values)):
+            # Make a list for the selected variables
+            reduced_vars = []
+    
+            # Select data for the current timestep
+            ds_time = ds.sel(time=tt)
+            
+            # If time is not a dimension anymore
+            if "time" not in ds_time.dims:
+                # then just add the current ds 
+                ds_reduced = xr.concat([ds_reduced, ds_time], dim="time")
+
+            else:
+                # for each variable, 
+                for vv in ds_time.data_vars:
+                    # start by removing NA
+                    ds_time_nona = ds_time[vv].dropna("time", how="all")
+                    
+                    if len(ds_time_nona["time"]) == 1:
+                        # if the array got reduced to only 1 timestep, then attach it to reduced_vars
+                        reduced_vars.append(ds_time_nona.copy())
+                    
+                    else:
+                        # if there are still more than 1 timestep, divide them into separate variables
+                        for itt in range(len(ds_time.time)):
+                            count = 0
+                            if itt == 0:
+                                # set the first one as the "pristine" variable
+                                reduced_vars.append(ds_time_nona.isel(time=[itt]).copy())
+                                count+=1
+                            else:
+                                for ivv in range(count):
+                                    ivv+=ivv # we need to sum 1 because we are going backwards
+                                    if ds_time_nona.isel(time=[itt]).equals(reduced_vars[-ivv]):
+                                        # if it is equal to any of the already selected arrays, ignore it
+                                        break 
+                                    else:
+                                        # if it is not equal to previous arrays, append it as a variant of that variable
+                                        reduced_vars.append(ds_time_nona.isel(time=[itt]).rename(vv+"_"+str(count)).copy())
+                                        count+=1
+                                
+                # Merge all variables into a single dataset
+                reduced_vars_ds = xr.merge(reduced_vars)
+                
+                # Add the current timestep data to the new dataset
+                ds_reduced = xr.concat([ds_reduced, reduced_vars_ds], dim="time")
+                
+        # delete the dummy data from the first timestep
+        # Here I could also use .drop_isel but there is a bug and it does not work https://github.com/pydata/xarray/issues/6605
+        ds_reduced = ds_reduced.drop_duplicates("time", keep="last")
+        
+        return ds_reduced
+    
+    else: # in case there are no duplicate timesteps, just return ds
+        return ds
+
+
 def align(ds):
     """
     Reduce and align dataset coordinates
