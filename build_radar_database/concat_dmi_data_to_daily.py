@@ -56,6 +56,7 @@ dwd = xr.open_dataset("/automount/ags/jgiles/turkey_test/ras07-vol5minng01_sweep
 # display(dwd)
 
 # update 05/12/23: there seems to be an issue with preferred_chunks in the new xarray version, so we just drop it
+# update 06/12/23: the issue is apparently fixed in the latest xarray version
 drop = ["preferred_chunks", "szip", "zstd", "source", "chunksizes", "bzip2", "blosc", "shuffle", "fletcher32", "original_shape", "coordinates", "contiguous"]
 dwd_enc = {k: {key: v.encoding[key] for key in v.encoding if key not in drop} for k, v in dwd.data_vars.items() if v.ndim == 3}
 
