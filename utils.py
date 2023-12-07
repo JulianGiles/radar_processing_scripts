@@ -135,7 +135,7 @@ def fix_time_in_coords(ds):
     """
     
     # It may happen that some time value is missing or that time values are repeated, attempt to fix that using info in rtime
-    if ds["time"].isnull().any() or (ds["time"].diff("time").compute().astype(int) == 0).any() :
+    if ds["time"].isnull().any() or (ds["time"].diff("time").compute().astype(int) <= 0).any() :
         ds.coords["time"] = ds.rtime.min(dim="azimuth", skipna=True).compute()    
         
     # if some coord has dimension time, reduce using median
