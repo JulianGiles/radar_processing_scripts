@@ -127,7 +127,7 @@ def edit_str(ff, replace, name):
 
 def fix_time_in_coords(ds):
     """
-    Reduce time dimension in dataset coordinates
+    Fix time coord issues and reduce time dimension if present in dataset coordinates where it is not needed
 
     Parameter
     ---------
