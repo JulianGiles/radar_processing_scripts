@@ -77,12 +77,16 @@ if len(files)==0:
 for ff in files:
     print("processing "+ff)
     if "dwd" in ff:
-        data=dttree.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset()
+        # data=dttree.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset()
+        data = utils.load_dwd_preprocessed(ff) # this already loads the first elev available in the files and fixes time coord
+    elif "dmi" in ff:
+        # data=xr.open_dataset(ff)
+        data = utils.load_dmi_preprocessed(ff) # this loads DMI file and flips phidp and fixes time coord
     else:
-        data=xr.open_dataset(ff)
+        raise NotImplementedError("Only DWD or DMI data supported at the moment")
         
     # fix time dim and time in coords
-    data = utils.fix_time_in_coords(data)
+    # data = utils.fix_time_in_coords(data)
     
 
 #%% Calculate RHOHV correction
