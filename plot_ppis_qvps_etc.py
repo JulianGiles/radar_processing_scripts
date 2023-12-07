@@ -365,7 +365,7 @@ plt.show()
 
 #%% Load QVPs
 # Load only events with ML detected (pre-condition for stratiform)
-ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2015/*/*/pro/vol5minng01/07/ML_detected.txt"
+ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2020/*/*/tur/vol5minng01/07/ML_detected.txt"
 ff_ML_glob = glob.glob(ff_ML)
 
 ff = [glob.glob(os.path.dirname(fp)+"/*allmoms*")[0] for fp in ff_ML_glob ]
@@ -1694,7 +1694,7 @@ f_LRzdroff_below1c_ts_glob = selected_paths[0].copy()
 f_LRzdroff_belowML_ts_glob = selected_paths[1].copy()
 
 # In case there is repeated time values, get the list of the dates to recompute
-# list_to_recomp = [os.path.dirname("".join(pp.split("/calibration/zdr/LR_consistency"))) for pp in f_LRzdroff_below1c_ts_glob if (xr.open_dataset(pp).time.diff("time").astype(int)==0).any()]
+# list_to_recomp = [os.path.dirname("".join(pp.split("/calibration/zdr/LR_consistency"))) for pp in f_LRzdroff_below1c_ts_glob if (xr.open_dataset(pp).time.diff("time").astype(int)<=0).any()]
 # with open(r'/user/jgiles/recomp_svs.txt', 'w') as fp:
 #     for item in list_to_recomp:
 #         # write each item on a new line
