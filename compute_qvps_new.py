@@ -295,6 +295,9 @@ for ff in files:
             
             # rename X_PHI as offset corrected
             ds = ds.rename({X_PHI: X_PHI+"_OC"})
+
+            # Assign phi_masked
+            assign = { X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI+"_OC"].attrs) }
         
         else:
             # calculate offset
@@ -302,9 +305,10 @@ for ff in files:
                                  dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range)
         
             phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.9) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )   
+
+            # Assign phi_masked
+            assign = { X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs) }
             
-        # Assign phi_masked
-        assign = { X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs) }
         ds = ds.assign(assign)
         
         # derive KDP from PHIDP (Vulpiani)
