@@ -29,6 +29,7 @@ import gc
 from dask.diagnostics import ProgressBar
 import cordex as cx
 import wradlib as wrl
+import glob
 
 import warnings
 #ignore by message
@@ -151,19 +152,64 @@ data["TSMP"] = xr.open_mfdataset('/automount/ags/jgiles/TSMP/rcsm_TSMP-ERA5-eval
 
 # data["TSMP"] = data["TSMP"].assign( xr.open_mfdataset('/automount/ags/jgiles/TSMP/rcsm_TSMP-ERA5-eval_IBG3/o.data_v01/*/*WT*',
 #                              chunks={"time":1000}) )
-data["TSMP"]["time"] = data["TSMP"].get_index("time").shift(-1.5, "H") # shift the values forward to the start of the interval
+data["TSMP"]["time"] = data["TSMP"].get_index("time").shift(-1.5, "h") # shift the values forward to the start of the interval
 
 
 data["TSMP-Ben"] = xr.open_mfdataset('/automount/ags/jgiles/4BenCharlotte/TSMP/twsa_tsmp_europe_era5_1990_2021.nc')
 
 #### RADKLIM
-data["RADKLIM"] = xr.open_mfdataset("/automount/ags/jgiles/RADKLIM/*/*.nc")
+print("Loading RADKLIM...")
+data["RADKLIM"] = xr.open_mfdataset("/automount/ags/jgiles/RADKLIM/20*/*.nc")
 
 
 #### TWS reanalysis (Anne Springer)
 print("Loading Springer-Rean...")
 data["Springer-Rean"] = xr.open_mfdataset("/automount/ags/jgiles/springer_reanalysis/clmoas_scenario0033_ensMean.TWS.updateMat.200301-201908_monthly.nc")
 data["Springer-Rean-grid"] = xr.open_mfdataset("/automount/ags/jgiles/springer_reanalysis/CORDEX0.11_grid_424x412.nc")
+
+#### GPCC
+print("Loading GPCC...")
+data["GPCC"] = xr.open_mfdataset("/automount/ags/jgiles/GPCC/full_data_monthly_v2022/025/*.nc")
+data["GPCC"] = data["GPCC"].isel(lat=slice(None, None, -1))
+
+#### GPROF
+print("Loading GPROF...")
+
+gprof_files = sorted(glob.glob("/automount/ags/jgiles/GPM_L3/GPM_3GPROFGPMGMI.07/20*/*HDF5"))
+
+# We need to extract the time dimension from the metadata on each file
+# we create a function for that
+def extract_time(ds):
+    # Split the string into key-value pairs
+    pairs = [pair.split('=') for pair in ds.FileHeader.strip().split(';\n') if pair]
+    
+    # Create a dictionary from the key-value pairs
+    result_dict = dict((key, value) for key, value in pairs)
+    
+    # Extract time and set as dim
+    date_time = pd.to_datetime(result_dict["StartGranuleDateTime"])
+    
+    # Add it to ds as dimension
+    ds = ds.assign_coords(time=date_time).expand_dims("time")
+    
+    return ds
+
+gprof_attrs= xr.open_mfdataset(gprof_files, engine="h5netcdf", phony_dims='sort', preprocess=extract_time)
+
+# We create another function for adding the time dim to the dataset
+def add_tdim(ds):
+    return ds.expand_dims("time")
+data["GPROF"] = xr.open_mfdataset(gprof_files, engine="h5netcdf", group="Grid", 
+                                  concat_dim="time", combine="nested", preprocess=add_tdim)
+
+data["GPROF"] = data["GPROF"].assign_coords({"time": gprof_attrs.time})
+
+# We need to transform the data from mm/h to mm/month
+days_in_month = [31,28,31,30,31,30,31,31,30,31,30,31]
+days_in_month_ds = xr.DataArray([ days_in_month[mindex] for mindex in data["GPROF"].time.dt.month.values-1], dims=["time"], coords= data["GPROF"].time.coords)
+for vv in ["surfacePrecipitation", "convectivePrecipitation", "frozenPrecipitation"]:    
+    data["GPROF"][vv] = data["GPROF"][vv]*days_in_month_ds*24
+    data["GPROF"][vv] = data["GPROF"][vv].assign_attrs(units="mm", Units="mm")
 
 
 #%% Get common period
