@@ -105,6 +105,7 @@ def preprocess_imerg(ds):
     # function to transform to accumulated monthly values
     days_in_month = [31,28,31,30,31,30,31,31,30,31,30,31]
     ds["precipitation"] = ds["precipitation"]*days_in_month[ds.time.values[0].month-1]*24
+    ds["precipitation"] = ds["precipitation"].assign_attrs(units="mm", Units="mm")
     return ds
 data["IMERG"] = xr.open_mfdataset('/automount/ags/jgiles/IMERG/global_monthly/3B-MO.MS.MRG.3IMERG.*.V06B.HDF5.nc4', preprocess=preprocess_imerg)\
                 .transpose('time', 'lat', 'lon', ...) # * 24*30 # convert to mm/month (approx)
@@ -115,6 +116,8 @@ def preprocess_imerg_europe(ds):
     # I dont remember exactly the names of the variables, check again
     ds["precipitationCal"] = ds["precipitationCal"]*0.5 # values come in mm/h but the timestep is 30 min, so we have to divide by 2
     ds["precipitationUncal"] = ds["precipitationUncal"]*0.5 # values come in mm/h but the timestep is 30 min, so we have to divide by 2
+    ds["precipitationCal"] = ds["precipitationCal"].assign_attrs(units="mm", Units="mm")
+    ds["precipitationUncal"] = ds["precipitationUncal"].assign_attrs(units="mm", Units="mm")
     return ds
 data["IMERG_europe"] = xr.open_mfdataset('/automount/ags/jgiles/IMERG/europe/concat_files/*.nc4').transpose('time', 'lat', 'lon', ...)
 
@@ -132,6 +135,7 @@ def preprocess_era5_totprec(ds):
     # function to transform to accumulated monthly values
     days_in_month = [31,28,31,30,31,30,31,31,30,31,30,31]
     ds["tp"] = ds["tp"]*days_in_month[pd.Timestamp(ds.time.values[0]).month-1]*1000
+    ds["tp"] = ds["tp"].assign_attrs(units="mm", Units="mm")
     return ds
 data["ERA5"] = xr.open_mfdataset('/automount/ags/jgiles/ERA5/monthly_averaged/single_level_vars/total_precipitation/total_precipitation_*', 
                                  preprocess=preprocess_era5_totprec)
@@ -171,6 +175,7 @@ data["Springer-Rean-grid"] = xr.open_mfdataset("/automount/ags/jgiles/springer_r
 print("Loading GPCC...")
 data["GPCC"] = xr.open_mfdataset("/automount/ags/jgiles/GPCC/full_data_monthly_v2022/025/*.nc")
 data["GPCC"] = data["GPCC"].isel(lat=slice(None, None, -1))
+data["GPCC"]["precip"] = data["GPCC"]["precip"].assign_attrs(units="mm", Units="mm")
 
 #### GPROF
 print("Loading GPROF...")
