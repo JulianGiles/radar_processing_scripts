@@ -8,7 +8,7 @@
 dir=/automount/realpep/upload/jgiles/dmi/
 
 # Which location to process
-loc=AFY
+loc=GZT
 
 max_attempts=5  # Maximum number of restart attempts
 max_execution_time=120  # Maximum execution time in seconds
@@ -67,8 +67,10 @@ for file in $files; do
             kill $script_pid
             echo "Script exceeded time limit. Killing and retrying..."
             # clean the created folder
-            if [ -d "$dir$file_path" ]; then
-                rm -r "$dir/qvps/$file_path" # clean the created folder
+            newfolder="${file/${dir}/${dir}qvps/}"
+            newfolder=$(dirname "$newfolder")
+            if [ -d "$newfolder" ]; then
+                rm -r "$newfolder" # clean the created folder
             fi
 
             ((attempt++))
