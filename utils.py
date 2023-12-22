@@ -165,7 +165,7 @@ def reduce_duplicate_timesteps(ds):
     if (ds.time.diff("time").astype(int)==0).any():
     
         # Create a new dummy dataset to concatenate the reduced data
-        ds_reduced = xr.zeros_like(ds.isel(time=[0]))
+        ds_reduced = ds.isel(time=[0]).copy()
         
         for tt in sorted(set(ds.time.values)):
             # Make a list for the selected variables
