@@ -188,6 +188,10 @@ def reduce_duplicate_timesteps(ds):
                     if len(ds_time_nona["time"]) == 1:
                         # if the array got reduced to only 1 timestep, then attach it to reduced_vars
                         reduced_vars.append(ds_time_nona.copy())
+                        
+                    elif len(ds_time_nona["time"]) == 0:
+                        # if the array got reduced to 0 timestep, then skip
+                        continue
                     
                     else:
                         # if there are still more than 1 timestep, divide them into separate variables
