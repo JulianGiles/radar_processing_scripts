@@ -262,7 +262,9 @@ def fix_flipped_phidp(ds, phidp_names=phidp_names):
                 values_center = ((ds[X_PHI]>-50)*(ds[X_PHI]<50)).sum().compute()
                 values_sides = ((ds[X_PHI]>50)+(ds[X_PHI]<-50)).sum().compute()
                 if values_sides > values_center:
+                    attrs = ds[X_PHI].attrs.copy()
                     ds[X_PHI] = xr.where(ds[X_PHI]<=0, ds[X_PHI]+180, ds[X_PHI]-180, keep_attrs=True).compute()
+                    ds[X_PHI].attrs = attrs
             
             success = True
 
