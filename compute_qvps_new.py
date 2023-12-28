@@ -52,7 +52,7 @@ start_time = time.time()
 
 # path0 = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/" # For testing
 path0 = sys.argv[1] # read path from console
-overwrite = True # overwrite existing files?
+overwrite = False # overwrite existing files?
 
 # Set the possible ZDR calibrations locations to include (in order of priority)
 # The script will try to correct according to the first offset; if not available or nan it will 
@@ -114,7 +114,7 @@ phidp_names = ["UPHIDP", "PHIDP"] # names to look for the PHIDP variable, in ord
 dbzh_names = ["DBZH"] # same but for DBZH
 rhohv_names = ["RHOHV"] # same but for RHOHV
 zdr_names = ["ZDR"]
-th_names = ["TH", "DBZH"]
+th_names = ["TH", "DBTH", "DBZH"]
 
 
 # define a function to create save directory and return file save path
@@ -161,15 +161,12 @@ for ff in files:
     print("processing "+ff)
     if "dwd" in ff:
         country="dwd"
-        data=dttree.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset()
+        data = utils.load_dwd_preprocessed(ff) # this already loads the first elev available in the files and fixes time coord
     elif "dmi" in ff:
         country="dmi"
-        data=xr.open_dataset(ff)
+        data = utils.load_dmi_preprocessed(ff) # this loads DMI file and flips phidp and fixes time coord
     else:
         data=xr.open_dataset(ff)
-
-    # fix time dim and time in coords
-    data = utils.fix_time_in_coords(data)
 
     # flip UPHIDP and KDP in UMD data
     if "umd" in ff:
@@ -178,10 +175,6 @@ for ff in files:
             attrs = data[vf].attrs.copy()
             data[vf] = data[vf]*-1
             data[vf].attrs = attrs.copy()
-
-    # flip PHIDP in case it is wrapping around the edges (case for turkish radars)
-    if country == "dmi":
-        data = utils.fix_flipped_phidp(data, phidp_names=phidp_names)
 
 #%% Georeference
     swp = data.pipe(wrl.georef.georeference) 
@@ -321,17 +314,12 @@ for ff in files:
         print(X_PHI+" not found in the data, skipping ML detection")
     
 #%% Compute QVP
-    try:
-        ## Only data with a cross-correlation coefficient ρHV above 0.7 are used to calculate their azimuthal median at all ranges (from Trömel et al 2019).
-        ## Also added further filtering (TH>0, ZDR>-1)
-        ds_qvp_ra = utils.compute_qvp(ds, min_thresh={"RHOHV":0.7, "TH":0, "ZDR":-1} )
-        
-        # filter out values close to the ground
-        ds_qvp_ra2 = ds_qvp_ra.where(ds_qvp_ra["z"]>min_height)
-
-    except KeyError:
-        # in case some of the variables is not present (for example in turkish data without polarimetry)
-        ds_qvp_ra = utils.compute_qvp(ds, min_thresh={"TH":0} )
+    ## Only data with a cross-correlation coefficient ρHV above 0.7 are used to calculate their azimuthal median at all ranges (from Trömel et al 2019).
+    ## Also added further filtering (TH>0, ZDR>-1)
+    ds_qvp_ra = utils.compute_qvp(ds, min_thresh={X_RHO:0.7, X_TH:0, X_ZDR:-1} )
+    
+    # filter out values close to the ground
+    ds_qvp_ra2 = ds_qvp_ra.where(ds_qvp_ra["z"]>min_height)
 
 #%% Detect melting layer
     if X_PHI in ds.data_vars:
