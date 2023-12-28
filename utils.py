@@ -30,7 +30,7 @@ phidp_names = ["UPHIDP", "PHIDP"] # names to look for the PHIDP variable, in ord
 dbzh_names = ["DBZH"] # same but for DBZH
 rhohv_names = ["RHOHV"] # same but for RHOHV
 zdr_names = ["ZDR"]
-th_names = ["TH", "DBZH"]
+th_names = ["TH", "DBTH", "DBZH"]
 
 # function to get the names of variables from the dataset
 def get_names(ds, phidp_names=phidp_names, dbzh_names=dbzh_names, rhohv_names=rhohv_names,
