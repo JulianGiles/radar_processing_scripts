@@ -365,7 +365,7 @@ plt.show()
 
 #%% Load QVPs
 # Load only events with ML detected (pre-condition for stratiform)
-ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2020/*/*/tur/vol5minng01/07/ML_detected.txt"
+ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2018/*/*/umd/vol5minng01/07/ML_detected.txt"
 ff_ML_glob = glob.glob(ff_ML)
 
 ff = [glob.glob(os.path.dirname(fp)+"/*allmoms*")[0] for fp in ff_ML_glob ]
@@ -394,6 +394,11 @@ var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR',
 vars_to_plot = ['DBZH', 'KDP_ML_corrected', 'KDP', 'ZDR_OC', 'RHOHV_NC', 
                 'UPHIDP_OC', 'ZDR', 'RHOHV' ]
 
+# add missing units for PHIDP variables in turkish data (this was fixed on 28/12/23 but previous calculations have missing units)
+for vv in ds_qvps.data_vars:
+    if "PHIDP" in vv:
+        if "units" not in ds_qvps[vv].attrs:
+            ds_qvps[vv].attrs["units"] = "degrees"
 
 visdict14 = radarmet.visdict14
 
