@@ -5,7 +5,7 @@
 dir=/automount/realpep/upload/jgiles/dmi/
 
 # Which location to process
-loc=SVS
+loc=HTY
 
 max_attempts=5  # Maximum number of restart attempts
 max_execution_time=700  # Maximum execution time in seconds
