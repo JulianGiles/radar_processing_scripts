@@ -166,6 +166,8 @@ try:
 except OSError:
     print("No noise corrected rhohv to load: "+rhoncpath+"/"+rhoncfile)
 
+except ValueError:
+    print("ValueError with corrected rhohv: "+rhoncpath+"/"+rhoncfile)        
 
 ## Phase processing
 
@@ -1874,3 +1876,79 @@ otherdata.DBZH[0].plot()
 # check raw metadata
 mydataraw = dttree.open_datatree(glob.glob("/automount/realpep/upload/RealPEP-SPP/newdata/2022-Nov-new/pro/2016/2016-05-27/pro/vol5minng01/05/*dbzh*")[0])
 otherdataraw = dttree.open_datatree(glob.glob("/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2016/2016-05/2016-05-27/pro/vol5minng01/05/*dbzh*")[0])
+
+#%% Testing how to get rid of the noise close to the ground in turkish data
+# first load and compute some file using compute_qvps_new.py
+# /automount/realpep/upload/jgiles/dmi/2016/2016-01/2016-01-28/HTY/MON_YAZ_C/8.0/MON_YAZ_C-allmoms-8.0-20162016-012016-01-28-HTY-h5netcdf.nc
+
+# plot qvp of one variable and also PPI at one timestep
+vv="VRADH"
+ds_qvp_ra[vv].plot(x="time") ; plt.title(vv)
+swp[vv][-15].plot() ; plt.title(vv)
+
+# Try decluttering with Gabella approach
+clmap = wrl.classify.filter_gabella(swp["DBZH"][-15])
+
+# I tried to filter the noise with VRADH but it is not optimal
+swp[vv][-15].where(abs(swp[vv][-15])>0.1).plot(vmin=-5, vmax=5, cmap="RdBu") ; plt.title(vv)
+
+# So far compute_qvp() only filters minimum thresholds, so as a workaround I added the abs value as a new variable
+ds2 = ds.assign({"VRADH_abs": abs(ds["VRADH"])})
+ds_qvp_ra2 = utils.compute_qvp(ds2, min_thresh={X_RHO:0.7, X_TH:0, X_ZDR:-1, "VRADH_abs":0.5} )
+ds_qvp_ra2[vv].plot(x="time") ; plt.title(vv)
+
+# a histogram
+swp[vv].where(abs(swp[vv])>0.3).plot(bins=100) ; plt.title(vv)
+
+# So far VRADH looks like a good candidate for filtering but I still did not find an optimal implementation
+# I tried despeckle but it is not useful (only useful for isolated pixels at higher altitudes)
+
+# There is some potential in filtering the values by looking at the median or std
+swp[vv][-15].median("range").plot()
+swp[vv][-15].std("range").plot()
+swp["DBZH"][-15].median("range").plot()
+swp["DBZH"][-15].std("range").plot()
+
+
+# Try with adding more conds to the qvp calculation 
+def compute_qvp_count(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1} ):
+    """
+    Computes QVP by doing the azimuthal median from the values of an 
+    xarray Dataset, thresholded by min_thresh.
+
+    Parameter
+    ---------
+    ds : xarray.Dataset 
+            Dataset 
+    min_thresh : dict
+            dictionary where the keys are variable names and the values are
+            the minimum values of each variable, for thresholding.
+
+    Return
+    ------
+    ds_qvp : xarray.Dataset
+        Dataset with the thresholded data reduced to a QVP with dim z (and time if available)
+    """
+    # Georeference if not
+    if "z" not in ds:
+        ds = ds.pipe(wrl.georef.georeference)
+
+    # Create a combined filter mask for all conditions in the dictionary
+    combined_mask = None
+    for var_name, threshold in min_thresh.items():
+        if var_name in ds:
+            condition = ds[var_name] > threshold
+            if combined_mask is None:
+                combined_mask = condition
+            else:
+                combined_mask &= condition    
+
+    ds_qvp = ds.where(combined_mask).median("azimuth", keep_attrs=True)
+    ds_count = ds.where(combined_mask).count("azimuth", keep_attrs=True)
+    # assign coord z
+    ds_qvp = ds_qvp.assign_coords({"z": ds["z"].median("azimuth", keep_attrs=True)})
+    ds_count = ds_count.assign_coords({"z": ds["z"].median("azimuth", keep_attrs=True)})
+    ds_qvp = ds_qvp.swap_dims({"range":"z"}) # swap range dimension for height
+    ds_count = ds_count.swap_dims({"range":"z"}) # swap range dimension for height
+
+    return ds_qvp, ds_count
