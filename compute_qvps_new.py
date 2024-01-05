@@ -281,22 +281,21 @@ for ff in files:
         ######### Processing PHIDP
         #### fix PHIDP
         
-        # filter
-        phi = ds[X_PHI].where((ds[X_RHO]>=0.9) & (ds[X_DBZH]>=0) & (ds["z"]>min_height) ) #!!! not sure why this is here
         
-        # phidp may be already preprocessed (turkish case), then proceed directly to masking and then vulpiani
+        # phidp may be already preprocessed (turkish case), then only offset-correct (no smoothing) and then vulpiani
         if "UPHIDP" not in X_PHI:
-            # mask 
-            phi_masked = ds[X_PHI].where((ds[X_RHO] >= 0.9) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )
-            
-            # rename X_PHI as offset corrected
-            ds = ds.rename({X_PHI: X_PHI+"_OC"})
+            # calculate phidp offset
+            ds = utils.phidp_offset_correction(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
+                                 dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range)
+        
+            phi_masked = ds[X_PHI+"_OC"].where((ds[X_RHO] >= 0.9) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )   
 
             # Assign phi_masked
-            assign = { X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI+"_OC"].attrs) }
+            assign = { X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs) }
+
         
         else:
-            # calculate offset
+            # process phidp (offset and smoothing)
             ds = utils.phidp_processing(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                                  dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range)
         
