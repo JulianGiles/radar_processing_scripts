@@ -3132,7 +3132,7 @@ def get_discrete_cmap(ticks, colors, bad="white", over=None, under=None):
         colormap or sequence of colors
     bad : color
     over : color
-    under : color
+    under : colors
 
     Returns
     -------
@@ -3153,7 +3153,7 @@ def get_discrete_cmap(ticks, colors, bad="white", over=None, under=None):
     return cmap
 
 
-def get_discrete_norm(ticks):
+def get_discrete_norm(ticks, clip=False, extend="both"):
     """Return discrete boundary norm.
 
     Parameters
@@ -3161,11 +3161,38 @@ def get_discrete_norm(ticks):
     ticks : sequence
         sequence of ticks
 
+    Keyword Arguments from matplotlib.colors.BoundaryNorm
+    ----------
+    clip : bool, optional
+        If clip is ``True``, out of range values are mapped to 0 if they
+        are below ``boundaries[0]`` or mapped to ``ncolors - 1`` if they
+        are above ``boundaries[-1]``.
+
+        If clip is ``False``, out of range values are mapped to -1 if
+        they are below ``boundaries[0]`` or mapped to *ncolors* if they are
+        above ``boundaries[-1]``. These are then converted to valid indices
+        by `Colormap.__call__`.
+
+    extend : {'neither', 'both', 'min', 'max'}, default: 'both'
+        Extend the number of bins to include one or both of the
+        regions beyond the boundaries.  For example, if ``extend``
+        is 'min', then the color to which the region between the first
+        pair of boundaries is mapped will be distinct from the first
+        color in the colormap, and by default a
+        `~matplotlib.colorbar.Colorbar` will be drawn with
+        the triangle extension on the left or lower end.
+
     Returns
     -------
     matplotlib.colors.BoundaryNorm
     """
-    return mpl.colors.BoundaryNorm(ticks, len(ticks) - 1)
+    if extend == "neither":
+        ncols = len(ticks) - 1
+    elif extend == "both":
+        ncols = len(ticks) + 1
+    else:
+        ncols = len(ticks)
+    return mpl.colors.BoundaryNorm(ticks, ncols, clip=clip, extend=extend)
 
 
 #### Operations with cartesian grid
