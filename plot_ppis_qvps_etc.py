@@ -214,13 +214,13 @@ if X_PHI in ds.data_vars:
     #     globals()[param_name] = phase_pross_params[param_name]    
     window0, winlen0, xwin0, ywin0, fix_range, rng = phase_pross_params.values() # explicit alternative
 
-    # phidp may be already preprocessed (turkish case), then proceed directly to masking and then vulpiani
+    # phidp may be already preprocessed (turkish case), then only offset-correct (no smoothing) and then vulpiani
     if "UPHIDP" not in X_PHI:
-        # mask 
-        phi_masked = ds[X_PHI].where((ds[X_RHO] >= 0.9) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )
-        
-        # rename X_PHI as offset corrected
-        ds = ds.rename({X_PHI: X_PHI+"_OC"})
+        # calculate phidp offset
+        ds = utils.phidp_offset_correction(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
+                             dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range)
+    
+        phi_masked = ds[X_PHI+"_OC"].where((ds[X_RHO] >= 0.9) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )   
 
     else:
         ds = utils.phidp_processing(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
@@ -243,7 +243,7 @@ else:
 
 ## Compute QVP
 
-ds_qvp = utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1} )
+ds_qvp = utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5} )
 
 # filter out values close to the ground
 ds_qvp = ds_qvp.where(ds_qvp["z"]>min_height)
@@ -1882,15 +1882,25 @@ otherdataraw = dttree.open_datatree(glob.glob("/automount/realpep/upload/RealPEP
 # /automount/realpep/upload/jgiles/dmi/2016/2016-01/2016-01-28/HTY/MON_YAZ_C/8.0/MON_YAZ_C-allmoms-8.0-20162016-012016-01-28-HTY-h5netcdf.nc
 
 # plot qvp of one variable and also PPI at one timestep
-vv="VRADH"
-ds_qvp_ra[vv].plot(x="time") ; plt.title(vv)
-swp[vv][-15].plot() ; plt.title(vv)
+vv="RHOHV_NC"
+ticks = radarmet.visdict14[vv]["ticks"]
+norm = utils.get_discrete_norm(ticks)
+cmap = radarmet.visdict14[vv]["cmap"]
+
+ds_qvp_ra[vv].plot(x="time", cmap=cmap, norm=norm) ; plt.title(vv)
+swp[vv][-15].plot(cmap=cmap, norm=norm) ; plt.title(vv)
+
+# What if we filter with SQIH and SNRH
+swp[vv][-15].where(swp["SQIH"][-15]>0.5).plot(cmap=cmap, norm=norm) ; plt.title(vv) # only SQIH
+swp[vv][-15].where(swp["SNRH"][-15]>10).plot(cmap=cmap, norm=norm) ; plt.title(vv) # only SNRH
+swp[vv][-15].where(swp["SQIH"][-15]>0.5).where(swp["SNRH"][-15]>10).plot(cmap=cmap, norm=norm) ; plt.title(vv) # both
+
 
 # Try decluttering with Gabella approach
 clmap = wrl.classify.filter_gabella(swp["DBZH"][-15])
 
 # I tried to filter the noise with VRADH but it is not optimal
-swp[vv][-15].where(abs(swp[vv][-15])>0.1).plot(vmin=-5, vmax=5, cmap="RdBu") ; plt.title(vv)
+swp[vv][-15].where(abs(swp[vv][-15])>0.1).plot(cmap=cmap, norm=norm) ; plt.title(vv)
 
 # So far compute_qvp() only filters minimum thresholds, so as a workaround I added the abs value as a new variable
 ds2 = ds.assign({"VRADH_abs": abs(ds["VRADH"])})
