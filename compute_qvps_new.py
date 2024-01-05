@@ -219,6 +219,9 @@ for ff in files:
 
     except OSError:
         print("No noise corrected rhohv to load: "+rhoncpath+"/"+rhoncfile)
+        
+    except ValueError:
+        print("ValueError with corrected rhohv: "+rhoncpath+"/"+rhoncfile)        
 
 #%% Load ZDR offset if available
 
