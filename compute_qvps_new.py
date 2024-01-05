@@ -289,10 +289,6 @@ for ff in files:
                                  dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range)
         
             phi_masked = ds[X_PHI+"_OC"].where((ds[X_RHO] >= 0.9) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )   
-
-            # Assign phi_masked
-            assign = { X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs) }
-
         
         else:
             # process phidp (offset and smoothing)
@@ -301,8 +297,8 @@ for ff in files:
         
             phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.9) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )   
 
-            # Assign phi_masked
-            assign = { X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs) }
+        # Assign phi_masked
+        assign = { X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs) }
             
         ds = ds.assign(assign)
         
@@ -318,7 +314,7 @@ for ff in files:
 #%% Compute QVP
     ## Only data with a cross-correlation coefficient ρHV above 0.7 are used to calculate their azimuthal median at all ranges (from Trömel et al 2019).
     ## Also added further filtering (TH>0, ZDR>-1)
-    ds_qvp_ra = utils.compute_qvp(ds, min_thresh={X_RHO:0.7, X_TH:0, X_ZDR:-1} )
+    ds_qvp_ra = utils.compute_qvp(ds, min_thresh={X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5} )
     
     # filter out values close to the ground
     ds_qvp_ra2 = ds_qvp_ra.where(ds_qvp_ra["z"]>min_height)
