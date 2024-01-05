@@ -2190,6 +2190,73 @@ def phidp_offset_detection(ds, phidp="PHIDP", rhohv="RHOHV", dbzh="DBZH", rhohvm
     phidp_offset = phi.pipe(phase_offset, rng=rng, **kwargs)
     return phidp_offset
 
+def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
+                     dbzhmin=0., min_height=0, window=7, fix_range=500., rng=None, rng_min=3000.):
+    r"""
+    Calculate PHIDP offset and attach results to the input dataset.
+
+    Parameters
+    ----------
+    ds : xarray Dataset
+        Dataset with PHIDP, RHOHV, DBZH and z (height) coord.
+    X_PHI : str
+        Name of the variable for PHIDP data in ds.
+    X_RHO : str
+        Name of the variable for RHOHV data in ds.
+    X_DBZH : str
+        Name of the variable for DBZH data in ds.
+    rhohvmin : float
+        Minimum value for filtering RHOHV.
+    dbzhmin : float
+        Minimum value for filtering DBZH.
+    min_height : float
+        Minimum height for filtering the z coordinate.
+    fix_range : int
+        Minimum range from where to consider PHIDP values.
+    window : int
+        Number of range bins used in calculating rng in case rng=None.
+    rng : float
+        Range in m to calculate system phase offset. If None (default), it 
+        will be calculated according to window. It should be large enough to
+        allow sufficient data for offset identification (a value around 3000 
+        is usually enough)
+    rng_min : float
+        Minimum value of rng. If the value of rng (either passed by the user 
+        or calculated automatically) is lower than rng_min, then rng_min will be 
+        used instead.
+
+    Returns
+    ----------
+    ds : xarray Dataset
+        xarray Dataset with the original data and offset corrected PHIDP.
+
+    """
+    # Calculate range for offset calculation if rng is None
+    if rng is None:
+        rng = ds[X_PHI].range.diff("range").median().values * window
+        
+    if rng < rng_min:
+        rng = rng_min
+
+    # Calculate phase offset
+    phidp_offset = phidp_offset_detection(ds, phidp=X_PHI, rhohv=X_RHO, dbzh=X_DBZH, rhohvmin=rhohvmin,
+                                          dbzhmin=dbzhmin, min_height=min_height, rng=rng, 
+                                          center=True, min_periods=4)
+
+    off = phidp_offset["PHIDP_OFFSET"]
+    start_range = phidp_offset["start_range"]
+
+    # apply offset
+    phi_fix = ds[X_PHI].copy()
+    off_fix = off.broadcast_like(phi_fix)
+    phi_fix = phi_fix.where(phi_fix["range"] >= start_range + fix_range).fillna(off_fix) - off
+
+    assign = {X_PHI+"_OFFSET": off.assign_attrs(ds[X_PHI].attrs),
+              X_PHI+"_OC": phi_fix.assign_attrs(ds[X_PHI].attrs)}
+
+    return ds.assign(assign)
+
+
 def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
                      dbzhmin=0., min_height=0, window=7, fix_range=500., rng=None, rng_min=3000.):
     r"""
@@ -2228,7 +2295,7 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
 
     Returns
     ----------
-    ds_offset : xarray Dataset
+    ds : xarray Dataset
         xarray Dataset with the original data and processed PHIDP.
 
     """
