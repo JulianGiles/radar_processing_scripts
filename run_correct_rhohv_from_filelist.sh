@@ -8,7 +8,7 @@ dir=/automount/realpep/upload/jgiles/dmi/
 input_file="${dir}to_recompute_rhonc.txt"
 
 max_attempts=5  # Maximum number of restart attempts
-max_execution_time=600  # Maximum execution time in seconds
+max_execution_time=700  # Maximum execution time in seconds
 
 # Loop through each file in the list
 while IFS= read -r file; do
