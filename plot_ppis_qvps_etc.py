@@ -60,6 +60,7 @@ os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = "eyJ0eXAiOiJKV1QiLCJvcmlnaW4iOiJF
 import warnings
 warnings.filterwarnings('ignore')
 
+# To be able to plot again in the Spyder panel, run this: %matplotlib inline
 
 #%% Load and process data
 
@@ -358,8 +359,9 @@ mom = "UPHIDP_OC"
 ticks = radarmet.visdict14[mom]["ticks"]
 cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
 cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
-norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
+# norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
 cmap = "miub2"
+norm = utils.get_discrete_norm(ticks, cmap, extend="both")
 datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm)
 datasel["height_ml_new_gia"].plot(c="black")
 datasel["height_ml_bottom_new_gia"].plot(c="black")
@@ -368,7 +370,27 @@ plt.show()
 #%% Load QVPs
 # Load only events with ML detected (pre-condition for stratiform)
 ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2018/*/*/umd/vol5minng01/07/ML_detected.txt"
+ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2018/*/*/AFY/*/*/ML_detected.txt"
 ff_ML_glob = glob.glob(ff_ML)
+
+# create a function to only select the elevation closer to 10 for each date
+from collections import defaultdict
+def get_closest_elevation(paths):
+    elevation_dict = defaultdict(list)
+    for path in paths:
+        parts = path.split('/')
+        date = parts[-5]
+        elevation = float(parts[-2])
+        elevation_dict[date].append((elevation, path))
+
+    result_paths = []
+    for date, elevations in elevation_dict.items():
+        closest_elevation_path = min(elevations, key=lambda x: abs(x[0] - 10))[1]
+        result_paths.append(closest_elevation_path)
+
+    return result_paths
+
+ff_ML_glob = get_closest_elevation(ff_ML_glob)
 
 ff = [glob.glob(os.path.dirname(fp)+"/*allmoms*")[0] for fp in ff_ML_glob ]
 ds_qvps = utils.load_qvps(ff)
@@ -394,7 +416,7 @@ var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR',
 
 
 vars_to_plot = ['DBZH', 'KDP_ML_corrected', 'KDP', 'ZDR_OC', 'RHOHV_NC', 
-                'UPHIDP_OC', 'ZDR', 'RHOHV' ]
+                'PHIDP_OC', 'ZDR', 'RHOHV' ]
 
 # add missing units for PHIDP variables in turkish data (this was fixed on 28/12/23 but previous calculations have missing units)
 for vv in ds_qvps.data_vars:
@@ -433,11 +455,11 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
 
     for var in available_vars:
         ticks = visdict14[var]["ticks"]
-        norm = utils.get_discrete_norm(ticks)
         cmap = visdict14[var]["cmap"] # I need the cmap with extreme colors too here
         cmap_list = [mpl.colors.rgb2hex(cc, keep_alpha=True) for cc in cmap.colors]
         cmap_extend = utils.get_discrete_cmap(ticks, cmap)
         ticklist = [-100]+list(ticks)+[100]
+        norm = utils.get_discrete_norm(ticks, cmap_extend)
 
         subtitle = var
         if var == "ZDR_OC":
@@ -599,11 +621,11 @@ def update_plots(selected_day, selected_var1, selected_var2, show_ML_lines, show
 
     for var in available_vars:
         ticks = visdict14[var]["ticks"]
-        norm = utils.get_discrete_norm(ticks)
         cmap = visdict14[var]["cmap"] # I need the cmap with extreme colors too here
         cmap_list = [mpl.colors.rgb2hex(cc, keep_alpha=True) for cc in cmap.colors]
         cmap_extend = utils.get_discrete_cmap(ticks, cmap)
         ticklist = [-100]+list(ticks)+[100]
+        norm = utils.get_discrete_norm(ticks, cmap_extend)
 
         quadmesh = selected_data[var].hvplot.quadmesh(
             x='time', y='z', title=var,
@@ -779,11 +801,11 @@ def update_plots(selected_day, selected_var1, selected_var2, show_ML_lines, show
 
     for var in available_vars:
         ticks = visdict14[var]["ticks"]
-        norm = utils.get_discrete_norm(ticks)
         cmap = visdict14[var]["cmap"] # I need the cmap with extreme colors too here
         cmap_list = [mpl.colors.rgb2hex(cc, keep_alpha=True) for cc in cmap.colors]
         cmap_extend = utils.get_discrete_cmap(ticks, cmap)
         ticklist = [-100]+list(ticks)+[100]
+        norm = utils.get_discrete_norm(ticks, cmap_extend)
 
         quadmesh = selected_data[var].hvplot.quadmesh(
             x='time', y='z', title=var,
@@ -1224,8 +1246,8 @@ zdr_offset_whole_noML_all = utils.zdr_offset_detection_vps(ds, zdr="ZDR", dbzh=X
 # Plot a moment VP, isotherms, ML bottom and calculated ZDR offset for different regions (below ML, in ML, above ML)
 mom = "RHOHV_NC"
 visdict14 = radarmet.visdict14
-norm = utils.get_discrete_norm(visdict14[mom]["ticks"])
 cmap = utils.get_discrete_cmap(visdict14[mom]["ticks"], visdict14[mom]["cmap"]) #mpl.cm.get_cmap("HomeyerRainbow")
+norm = utils.get_discrete_norm(visdict14[mom]["ticks"], cmap)
 templevels = [-100]
 date = ds.time[0].values.astype('datetime64[D]').astype(str)
 
@@ -1276,8 +1298,8 @@ fig.colorbar(figvp, cax=cbar_ax, extend="both")
 # Plot a moment VP, isotherms, ML bottom and calculated ZDR offset for different regions (below ML, in ML, above ML)
 mom = "RHOHV"
 visdict14 = radarmet.visdict14
-norm = utils.get_discrete_norm(visdict14[mom]["ticks"])
 cmap = utils.get_discrete_cmap(visdict14[mom]["ticks"], visdict14[mom]["cmap"]) #mpl.cm.get_cmap("HomeyerRainbow")
+norm = utils.get_discrete_norm(visdict14[mom]["ticks"], cmap)
 templevels = [-100]
 date = ds.time[0].values.astype('datetime64[D]').astype(str)
 
