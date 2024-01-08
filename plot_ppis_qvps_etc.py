@@ -295,7 +295,7 @@ if "height_ml_new_gia" in ds_qvp:
 if X_PHI in ds.data_vars:    
     ds = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen=winlen0, min_periods=winlen0/2)
 
-    ds_qvp = ds_qvp.assign({"KDP_ML_corrected": utils.compute_qvp(ds)["KDP_ML_corrected"]})
+    ds_qvp = ds_qvp.assign({"KDP_ML_corrected": utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5})["KDP_ML_corrected"]})
         
 ## Classification of stratiform events based on entropy
 if X_PHI in ds.data_vars:    
@@ -393,7 +393,7 @@ def get_closest_elevation(paths):
 ff_ML_glob = get_closest_elevation(ff_ML_glob)
 
 ff = [glob.glob(os.path.dirname(fp)+"/*allmoms*")[0] for fp in ff_ML_glob ]
-ds_qvps = utils.load_qvps(ff)
+ds_qvps = utils.load_qvps(ff, fillna=True)
 
 # Load all events
 # ff = "/automount/realpep/upload/jgiles/dwd/qvps/2015/*/*/pro/vol5minng01/07/*allmoms*"
