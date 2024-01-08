@@ -477,7 +477,8 @@ def load_dmi_raw(filepath): # THIS IS NOT IMPLEMENTED YET # !!!
     
     return fix_flipped_phidp(fix_time_in_coords(dmidata))
 
-def load_qvps(filepath):
+def load_qvps(filepath, fillna=False, 
+              fillna_vars={"ZDR_OC": "ZDR", "RHOHV_NC": "RHOHV", "UPHIDP_OC": "UPHIDP", "PHIDP_OC": "PHIDP"}):
     """
     Load DWD or DMI QVP data.
 
@@ -485,6 +486,22 @@ def load_qvps(filepath):
     ---------
     filepath : str
             Location of the file or path with wildcards to find files using glob or list of filepaths
+
+    Keyword Arguments
+    -----------------
+    fillna : bool
+        If True, attempt to fill empty corrected variables with their non-corrected counterparts. 
+        E.g.: Fill empty ZDR_OC with the values from ZDR, empty RHOHV_NC with RHOHV, etc. 
+        Default is False
+    fillna_vars : dict
+        Dictionary of variables to attempt to fill in case they are empty. The keys indicate the 
+        variable to attempt to fill and the value indicate the filler variable.
+
+    Return
+    ------
+    qvps : xarray.Dataset
+        Dataset with time-concatenated QVPs
+
     """
     # check if filepath is a list
     if isinstance(filepath, list):
@@ -516,6 +533,14 @@ def load_qvps(filepath):
         except: 
             # if the above fails, just combine everything and fill the holes with nan (Turkish case)
             qvps = xr.open_mfdataset(files, combine="nested", concat_dim="time")
+    
+    if fillna:
+        assign = dict()
+        for vv in fillna_vars.keys():
+            if vv in qvps:
+                assign[vv] = qvps[vv].fillna(qvps[fillna_vars[vv]])
+                
+        qvps = qvps.assign(assign)
     
     return qvps
 
