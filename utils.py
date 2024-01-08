@@ -3220,13 +3220,16 @@ def get_discrete_cmap(ticks, colors, bad="white", over=None, under=None):
     return cmap
 
 
-def get_discrete_norm(ticks, clip=False, extend="both"):
+def get_discrete_norm(ticks, cmap, clip=False, extend=None):
     """Return discrete boundary norm.
 
     Parameters
     ----------
     ticks : sequence
         sequence of ticks
+    cmap : colormap or number of colors
+        If number of colors, then it is directly passed to mpl.colors.BoundaryNorm. If
+        colormap, then the number of colors is inferred.
 
     Keyword Arguments from matplotlib.colors.BoundaryNorm
     ----------
@@ -3240,25 +3243,56 @@ def get_discrete_norm(ticks, clip=False, extend="both"):
         above ``boundaries[-1]``. These are then converted to valid indices
         by `Colormap.__call__`.
 
-    extend : {'neither', 'both', 'min', 'max'}, default: 'both'
+    extend : {None, 'neither', 'both', 'min', 'max'}, default: 'both'
         Extend the number of bins to include one or both of the
         regions beyond the boundaries.  For example, if ``extend``
         is 'min', then the color to which the region between the first
         pair of boundaries is mapped will be distinct from the first
         color in the colormap, and by default a
         `~matplotlib.colorbar.Colorbar` will be drawn with
-        the triangle extension on the left or lower end.
+        the triangle extension on the left or lower end. If extend is None,
+        it is inferred from ticks and cmap.
 
     Returns
     -------
     matplotlib.colors.BoundaryNorm
     """
-    if extend == "neither":
-        ncols = len(ticks) - 1
-    elif extend == "both":
-        ncols = len(ticks) + 1
+    if type(cmap) is int:
+        ncols = cmap
+        # set ncols
+        if extend is None:
+            raise KeyError("If cmap is the number of colors, then extend must be set explicitly (None not possible)")
+
     else:
-        ncols = len(ticks)
+        try:
+            if type(cmap) is str:
+                cmap0 = mpl.colormaps.get_cmap(cmap)
+                cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
+            # try to infer if over and under color values are set (different than the extreme colormap values)
+            has_over = False
+            has_under = False
+            ncols = cmap.N
+            if (cmap.get_over() != cmap.colors[-1]).all():
+                has_over = True
+                ncols = ncols + 1
+            if (cmap.get_under() != cmap.colors[0]).all():
+                has_under = True
+                ncols = ncols + 1
+                
+            if extend is None:
+                # set extend
+                if has_over:
+                    extend = "max"
+                    if has_under:
+                        extend="both"
+                elif has_under:
+                    extend = "min"
+                else:
+                    extend = "neither"
+                
+        except:
+            raise ValueError("Something went wrong when building the discrete norm")
+        
     return mpl.colors.BoundaryNorm(ticks, ncols, clip=clip, extend=extend)
 
 
