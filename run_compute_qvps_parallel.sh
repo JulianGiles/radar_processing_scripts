@@ -12,7 +12,8 @@
 #SBATCH --nodes=4
 #SBATCH --cpus-per-task=6
 #SBATCH --ntasks-per-node=8
-#SBATCH --time=14:00:00
+#SBATCH --time=24:00:00
+#SBATCH --job-name=compute_qvps_pro
 #SBATCH --output=compute_qvps_pro.out
 #SBATCH --error=compute_qvps_pro.err
 #SBATCH --open-mode=append
