@@ -14,7 +14,7 @@ max_attempts=5  # Maximum number of restart attempts
 max_execution_time=120  # Maximum execution time in seconds
 
 # Create a list of all files that include *allmoms* in their name
-files=$(find $dir -name "*allmoms*$loc*" -type f -not -path "*qvp*"  -not -path "*WIND*" -not -path "*SURVEILLANCE*" -not -path "*RHI1*")
+files=$(find $dir -name "*allmoms*$loc*" -type f -not -path "*qvp*"  -not -path "*WIND*" -not -path "*SURVEILLANCE*" -not -path "*RHI1*" | sort -u)
 
 # Loop through each file in the list
 for file in $files; do
