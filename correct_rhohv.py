@@ -92,7 +92,7 @@ for ff in files:
     
     # check if the QVP file already exists before starting
     savepath = make_savedir(ff, "")
-    if os.path.exists(savepath) and not overwrite:
+    if os.path.exists(("rhohv_nc").join(savepath.split("allmoms"))) and not overwrite:
         continue
 
     print("processing "+ff)
