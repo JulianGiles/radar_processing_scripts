@@ -52,6 +52,7 @@ start_time = time.time()
 # path="/automount/realpep/upload/jgiles/dmi//2016/2016-05/2016-05-22/AFY/VOL_B/7.0/*h5*" # for QVPs: /home/jgiles/
 
 path0 = sys.argv[1]
+overwrite = False # overwrite existing files?
 
 if "hd5" in path0 or "h5" in path0:
     files=[path0]
@@ -64,7 +65,7 @@ else:
     sys.exit("Country code not found in path.")
 
 
-dbzh_names = ["DBZH"] # same but for DBZH
+dbzh_names = ["DBZH"] # names to look for the DBZH variable, in order of preference
 rhohv_names = ["RHOHV"] # same but for RHOHV
 
 # get the files and check that it is not empty
@@ -72,9 +73,36 @@ if len(files)==0:
     print("No files meet the selection criteria.")
     sys.exit("No files meet the selection criteria.")
 
+# define a function to create save directory and return file save path
+def make_savedir(ff, name):
+    """
+    ff: filepath of the original file
+    name: name for the particular folder inside 
+    """
+    if "dwd" in ff:
+        country="dwd"
+    elif "dmi" in ff:
+        country="dmi"
+    else:
+        print("Country code not found in path")
+        sys.exit("Country code not found in path.")
+
+    ff_parts = ff.split(country)
+    savepath = (country+"/rhohv_nc/"+name+"/").join(ff_parts)
+    savepathdir = os.path.dirname(savepath)
+    if not os.path.exists(savepathdir):
+        os.makedirs(savepathdir)
+    return savepath
+
 #%% Load data
 
 for ff in files:
+    
+    # check if the QVP file already exists before starting
+    savepath = make_savedir(ff, "")
+    if os.path.exists(savepath) and not overwrite:
+        continue
+
     print("processing "+ff)
     if "dwd" in ff:
         # data=dttree.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset()
@@ -161,12 +189,6 @@ for ff in files:
         print("Country code not found in path")
         sys.exit("Country code not found in path.")
     
-    ff_parts = ff.split(country)
-    savepath = (country+"/rhohv_nc/").join(ff_parts)
-    savepathdir = os.path.dirname(savepath)
-    if not os.path.exists(savepathdir):
-        os.makedirs(savepathdir)
-
     # copy encoding from DWD to reduce file size
     rho_nc_out["RHOHV_NC"].encoding = data[X_RHO].encoding
     rho_nc_out2["RHOHV_NC"].encoding = data[X_RHO].encoding
@@ -174,6 +196,7 @@ for ff in files:
         rho_nc_out["SNRH"].encoding = data["SNRHC"].encoding
         rho_nc_out2["SNRH"].encoding = data["SNRHC"].encoding
     else:
+        ff_parts = ff.split(country)
         rho_nc_dwd = xr.open_dataset(ff_parts[0]+"dwd/rhohv_nc/2015/2015-01/2015-01-01/pro/90gradstarng01/00/ras07-90gradstarng01_sweeph5onem_rhohv_nc_00-2015010100042300-pro-10392-hd5", engine="netcdf4")
         rho_nc_out["SNRH"].encoding = rho_nc_dwd["SNRH"].encoding
         rho_nc_out2["SNRH"].encoding = rho_nc_dwd["SNRH"].encoding
