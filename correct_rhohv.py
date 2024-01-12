@@ -54,6 +54,8 @@ start_time = time.time()
 path0 = sys.argv[1]
 overwrite = False # overwrite existing files?
 
+dwd_rhohv_nc_reference_file = "/automount/realpep/upload/jgiles/reference_files/reference_dwd_rhohv_nc_file/ras07-90gradstarng01_sweeph5onem_rhohv_nc_00-2015010100042300-pro-10392-hd5"
+
 if "hd5" in path0 or "h5" in path0:
     files=[path0]
 elif "dwd" in path0:
@@ -196,8 +198,7 @@ for ff in files:
         rho_nc_out["SNRH"].encoding = data["SNRHC"].encoding
         rho_nc_out2["SNRH"].encoding = data["SNRHC"].encoding
     else:
-        ff_parts = ff.split(country)
-        rho_nc_dwd = xr.open_dataset(ff_parts[0]+"dwd/rhohv_nc/2015/2015-01/2015-01-01/pro/90gradstarng01/00/ras07-90gradstarng01_sweeph5onem_rhohv_nc_00-2015010100042300-pro-10392-hd5", engine="netcdf4")
+        rho_nc_dwd = xr.open_dataset(dwd_rhohv_nc_reference_file, engine="netcdf4")
         rho_nc_out["SNRH"].encoding = rho_nc_dwd["SNRH"].encoding
         rho_nc_out2["SNRH"].encoding = rho_nc_dwd["SNRH"].encoding
 
