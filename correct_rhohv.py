@@ -56,6 +56,9 @@ overwrite = False # overwrite existing files?
 
 dwd_rhohv_nc_reference_file = "/automount/realpep/upload/jgiles/reference_files/reference_dwd_rhohv_nc_file/ras07-90gradstarng01_sweeph5onem_rhohv_nc_00-2015010100042300-pro-10392-hd5"
 
+dbzh_names = ["DBZH"] # names to look for the DBZH variable, in order of preference
+rhohv_names = ["RHOHV"] # same but for RHOHV
+
 if "hd5" in path0 or "h5" in path0:
     files=[path0]
 elif "dwd" in path0:
@@ -65,10 +68,6 @@ elif "dmi" in path0:
 else:
     print("Country code not found in path")
     sys.exit("Country code not found in path.")
-
-
-dbzh_names = ["DBZH"] # names to look for the DBZH variable, in order of preference
-rhohv_names = ["RHOHV"] # same but for RHOHV
 
 # get the files and check that it is not empty
 if len(files)==0:
