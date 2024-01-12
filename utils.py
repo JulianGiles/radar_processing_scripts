@@ -368,12 +368,15 @@ def load_dwd_preprocessed(filepath):
 
     Parameter
     ---------
-    filepath : str
-            Location of the file or path with wildcards to find files using glob. 
+    filepath : str, list
+            Location of the file or path with wildcards to find files using glob or list of paths
     """
     
     # collect files
-    files = sorted(glob.glob(filepath))
+    if type(filepath) is list:
+        files = sorted(filepath)
+    else:
+        files = sorted(glob.glob(filepath))
     
     # open files
     dwddata = []
@@ -399,12 +402,15 @@ def load_dwd_raw(filepath):
 
     Parameter
     ---------
-    filepath : str
-            Location of the file or path with wildcards to find files using glob
+    filepath : str, list
+            Location of the file or path with wildcards to find files using glob or list of paths
     """
     
     # collect files
-    files = sorted(glob.glob(filepath))
+    if type(filepath) is list:
+        files = sorted(filepath)
+    else:
+        files = sorted(glob.glob(filepath))
     
     # extract list of moments 
     moments = set(fp.split("_")[-2] for fp in files)
@@ -441,11 +447,14 @@ def load_dmi_preprocessed(filepath):
 
     Parameter
     ---------
-    filepath : str
-            Location of the file or path with wildcards to find files using glob
+    filepath : str, list
+            Location of the file or path with wildcards to find files using glob or list of paths
     """
     # collect files
-    files = sorted(glob.glob(filepath))
+    if type(filepath) is list:
+        files = sorted(filepath)
+    else:
+        files = sorted(glob.glob(filepath))
     
     # open files
     if len(files) == 1:
@@ -462,12 +471,15 @@ def load_dmi_raw(filepath): # THIS IS NOT IMPLEMENTED YET # !!!
 
     Parameter
     ---------
-    filepath : str
-            Location of the file or path with wildcards to find files using glob
+    filepath : str, list
+            Location of the file or path with wildcards to find files using glob or list of paths
     """
     raise NotImplementedError()
     # collect files
-    files = sorted(glob.glob(filepath))
+    if type(filepath) is list:
+        files = sorted(filepath)
+    else:
+        files = sorted(glob.glob(filepath))
     
     # open files
     if len(files) == 1:
