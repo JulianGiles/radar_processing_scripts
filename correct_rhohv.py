@@ -115,10 +115,19 @@ for ff in files:
     for nn,rhon in enumerate(rho_nc[0]):
         merged = xr.merge(rhon)
         rhonc_snrh = xr.DataArray(merged.RHOHV_NC.values.flatten(), coords={"SNRH":merged.SNRH.values.flatten()})
-        fits.append(float(rhonc_snrh.where((0<rhonc_snrh.SNRH)&(rhonc_snrh.SNRH<20)&(rhonc_snrh>0.7)).polyfit("SNRH", deg=1, skipna=True).polyfit_coefficients[0].values))
+        try:
+            fits.append(float(rhonc_snrh.where((0<rhonc_snrh.SNRH)&(rhonc_snrh.SNRH<20)&(rhonc_snrh>0.7)).polyfit("SNRH", deg=1, skipna=True).polyfit_coefficients[0].values))
+        except:
+            # if it does not work, just attach nan
+            fits.append(np.nan)
     
     # checking which fit has the slope closest to zero
-    bci = np.abs(np.array(fits)).argmin()
+    try:
+        bci = np.nanargmin(np.abs(np.array(fits)))
+    except ValueError:
+        # if all slopes are nan, no correction is good enough, abort
+        print("Could not calculate noise correction (possibly due to not enough data points). Aborting...")
+        continue
 
     # get the best noise correction level according to bci
     ncl = np.arange(-45, -15, 1)[bci]
