@@ -4,9 +4,17 @@
 Created on Wed Mar  1 09:43:05 2023
 
 @author: jgiles
-"""
 
-# NEEDS WRADLIB 1.19 !! (OR GREATER?)
+This script takes all dwd radar files from a folder (for one elevation) and
+merges them into a single file combining all moments along all timesteps. 
+Then saves the resulting dataset into a new file with the same naming
+style but with "allmoms" instead of the moment name. Additionally, it saves
+either a true.txt or false.txt file alongside, if the data fulfills certain 
+condition, as an attempt to check if there is actually something interesting
+in that period of data.
+"""
+#### Loads packages
+# NEEDS WRADLIB 2.0 !! (OR GREATER?)
 
 import datatree as dttree
 import numpy as np
@@ -29,6 +37,7 @@ except ModuleNotFoundError:
     import utils
     # import colormap_generator
 
+#### Computation
 
 # DWD scan strategy for sorting elevations
 scan_elevs = np.array([5.5, 4.5, 3.5, 2.5, 1.5, 0.5, 8.0, 12.0, 17.0, 25.0])
@@ -66,17 +75,21 @@ name = ll[0].split("_")
 name[-2]="allmoms"
 dtree.load().to_netcdf("_".join(name))
   
-# make a list of "valid" timesteps (those with dbzh > 5 in at least 1% of the bins) 
-# this is only to somehow try to reduce the amount of data to check later, not very well tested 
-valid = (ds["DBZH"]>5).sum(dim=("azimuth", "range")).compute() > ds["DBZH"][0].count().compute()*0.01
-valid = valid.time.where(valid, drop=True)
-
-# save the list as a txt file named true if there is any value, otherwise false
-if len(valid)>0:
-    np.savetxt(path+"/true.txt", valid.values.astype(str), fmt="%s")
-else:
-    np.savetxt(path+"/false.txt", valid.values.astype(str), fmt="%s")
-
+#### EXTRA
+try:
+    # make a list of "valid" timesteps (those with dbzh > 5 in at least 1% of the bins) 
+    # this is only to somehow try to reduce the amount of data to check later, not very well tested 
+    valid = (ds["DBZH"]>5).sum(dim=("azimuth", "range")).compute() > ds["DBZH"][0].count().compute()*0.01
+    valid = valid.time.where(valid, drop=True)
+    
+    # save the list as a txt file named true if there is any value, otherwise false
+    if len(valid)>0:
+        np.savetxt(path+"/true.txt", valid.values.astype(str), fmt="%s")
+    else:
+        np.savetxt(path+"/false.txt", valid.values.astype(str), fmt="%s")
+except:
+    pass # if it did not work just do nothing
+    
 ## To load the datatree
 # ds_rel = utils.load_dwd_preprocessed("_".join(name))
 
