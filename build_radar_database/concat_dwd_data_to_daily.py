@@ -9,107 +9,78 @@ Created on Wed Mar  1 09:43:05 2023
 # NEEDS WRADLIB 1.19 !! (OR GREATER?)
 
 import datatree as dttree
-import wradlib as wrl
 import numpy as np
 import sys
 import glob
-import xarray as xr
 
 import warnings
 warnings.filterwarnings('ignore')
 
-# scan strategy for sorting elevations
+import os
+try:
+    os.chdir('/home/jgiles/')
+except FileNotFoundError:
+    None
+
+try:
+    from Scripts.python.radar_processing_scripts import utils
+    # from Scripts.python.radar_processing_scripts import colormap_generator
+except ModuleNotFoundError:
+    import utils
+    # import colormap_generator
+
+
+# DWD scan strategy for sorting elevations
 scan_elevs = np.array([5.5, 4.5, 3.5, 2.5, 1.5, 0.5, 8.0, 12.0, 17.0, 25.0])
 
 # get list of files in the folder
 path = sys.argv[1]
-ll = sorted(glob.glob(path+"/ras*hd5"))
 
-# extract list of moments 
-moments = set(fp.split("_")[-2] for fp in ll)
-
-# discard "allmoms" from the set if it exists
-moments.discard("allmoms")
-
-try:
-    # for every moment, open all files in folder (all timesteps) per moment into a dataset
-    vardict = {} # a dict for putting a dataset per moment
-    for mom in moments:
-        
-        # print("       Processing "+mom)
-        
-        # open the odim files (single moment and elevation, several timesteps)
-        llmom = sorted(glob.glob(path+"/ras*_"+mom+"_*hd5"))
-        
-        # # there is a bug with the current implementation of xradar. Re check this in future releases
-        # # Looks like now it works with a temporary fix in the files
-        vardict[mom] = wrl.io.open_odim_mfdataset(llmom)
-        
-        # It may happen that some time value is missing, fix that using info in rtime
-        if vardict[mom]["time"].isnull().any():
-            vardict[mom].coords["time"] = vardict[mom].rtime.min(dim="azimuth", skipna=True).compute()    
-            
-        # if some coord has dimension time, reduce using median
-        for coord in ["latitude", "longitude", "altitude", "elevation"]:
-            if "time" in vardict[mom][coord].dims:
-                vardict[mom].coords[coord] = vardict[mom].coords[coord].median("time")
-        
-        # the old method seems to still work fine (however, not recommended to use)
-        # vardict[mom] = wrl.io.open_odim(llmom, loader="h5py", chunks={})[0].data
-except OSError:
-    pathparts = [ xx if len(xx)==8 and "20" in xx else None for xx in llmom[0].split("/") ]
-    pathparts.sort(key=lambda e: (e is None, e))
-    date = pathparts[0]
-    print(date+" "+mom+": Error opening files. Some file is corrupt or truncated.")
-    sys.exit("Script terminated early. "+date+" "+mom+": Error opening files. Some file is corrupt or truncated.")
-
-# create an empty radar volume and put the previous data inside
-vol = wrl.io.RadarVolume()
-vol.append(xr.merge(vardict.values()))
+# Load the files. This loading function already takes care of not loading a 
+# concatenated daily file if it already exists (if "allmoms" is in the name)
+# and also aligns coordinates and fixes some expected typical issues when doing so.
+ds = utils.load_dwd_raw(path+"/ras*hd5")
 
 # Create a datatree
 dtree = dttree.DataTree(name="root")
 
-# for every elevation in the volume (there is only 1)
-for i, sw in enumerate(vol):
-    
-    # dim0 = list(set(sw.dims) & {"azimuth", "elevation"})[0]
-    
-    # check and fix how the angle variable is named
-    if "fixed_angle" in sw:
-        # rename the variable
-        sw = sw.rename({"fixed_angle": "sweep_fixed_angle"}) 
-        
-    # get the sweep number according to the scan strategy
-    try:
-        ii = int(np.where(scan_elevs == round(float(sw.attrs["fixed_angle"]),1))[0])
-    except:
-        ii = 0
+# check and fix how the angle variable is named if necessary
+if "fixed_angle" in ds:
+    # rename the variable
+    ds = ds.rename({"fixed_angle": "sweep_fixed_angle"}) 
 
-    # Put the data in the data tree
-    dttree.DataTree(sw, name=f"sweep_{ii}", parent=dtree)
-    
+# get the sweep number according to the scan strategy
+try:
+    ii = int(np.where(scan_elevs == round(float(ds["sweep_fixed_angle"]),1))[0])
+except:
+    ii = 0
+
+# Put the data in the data tree
+dttree.DataTree(ds, name=f"sweep_{ii}", parent=dtree)
+
+# Get the file list just for the naming of the output file
+ll = sorted(glob.glob(path+"/ras*hd5"))
 
 # Save the datatree as netcdf 
 name = ll[0].split("_")
-name[2]="allmoms"
+name[-2]="allmoms"
 dtree.load().to_netcdf("_".join(name))
   
-# make a list of valid timesteps (those with dbzh > 5 in at least 1% of the bins)  
-valid = (vardict["dbzh"]["DBZH"][:]>5).sum(dim=("azimuth", "range")).compute() > vardict["dbzh"]["DBZH"][0].count().compute()*0.01
+# make a list of "valid" timesteps (those with dbzh > 5 in at least 1% of the bins) 
+# this is only to somehow try to reduce the amount of data to check later, not very well tested 
+valid = (ds["DBZH"]>5).sum(dim=("azimuth", "range")).compute() > ds["DBZH"][0].count().compute()*0.01
 valid = valid.time.where(valid, drop=True)
 
 # save the list as a txt file named true if there is any value, otherwise false
 if len(valid)>0:
-    np.savetxt(path+"true.txt", valid.values.astype(str), fmt="%s")
+    np.savetxt(path+"/true.txt", valid.values.astype(str), fmt="%s")
 else:
-    np.savetxt(path+"false.txt", valid.values.astype(str), fmt="%s")
+    np.savetxt(path+"/false.txt", valid.values.astype(str), fmt="%s")
 
+## To load the datatree
+# ds_rel = utils.load_dwd_preprocessed("_".join(name))
 
+## to load the datatree raw
+# ds_rel = dttree.open_datatree("_".join(name))
 
-# # to load the datatree
-# vol_reload = dttree.open_datatree("_".join(name))
-
-# vol_reload["sweep_1"].ds # get as dataset
-# swp = vol_reload["sweep_1"].to_dataset() # get a sweep
-    
+# swp = ds_rel["sweep_1"].to_dataset()  # get a sweep as xarray dataset    
