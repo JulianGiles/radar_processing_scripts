@@ -540,7 +540,7 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
         # Some files do not have TEMP data, fill with nan
         first_file = xr.open_mfdataset(files[0]) 
         first_file_z = first_file.z.copy()
-        def fix_coords(ds, align_z, fix_TEMP):
+        def fix_coords(ds, align_z=True, fix_TEMP=True):
             if align_z:
                 ds.coords["z"] = first_file_z
             ds = ds.where(ds["time"].notnull(), drop=True)
@@ -550,7 +550,7 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
             return ds
             
         try:
-            qvps = xr.open_mfdataset(files, preprocess=fix_coords)
+            qvps = xr.open_mfdataset(files, preprocess=partial(fix_coords, align_z=align_z, fix_TEMP=fix_TEMP))
         except: 
             if align_z:
                 print("Aligning z coord may have failed, attempting to load without alignment...")
