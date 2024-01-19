@@ -354,7 +354,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "UPHIDP_OC"
+mom = "RHOHV"
 
 ticks = radarmet.visdict14[mom]["ticks"]
 cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
@@ -366,11 +366,12 @@ datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm)
 datasel["height_ml_new_gia"].plot(c="black")
 datasel["height_ml_bottom_new_gia"].plot(c="black")
 plt.show()
+plt.close()
 
 #%% Load QVPs
 # Load only events with ML detected (pre-condition for stratiform)
 ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2018/*/*/umd/vol5minng01/07/ML_detected.txt"
-ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2018/*/*/AFY/*/*/ML_detected.txt"
+ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2018/*/*/GZT/*/*/ML_detected.txt"
 ff_ML_glob = glob.glob(ff_ML)
 
 # create a function to only select the elevation closer to 10 for each date
@@ -393,7 +394,10 @@ def get_closest_elevation(paths):
 ff_ML_glob = get_closest_elevation(ff_ML_glob)
 
 ff = [glob.glob(os.path.dirname(fp)+"/*allmoms*")[0] for fp in ff_ML_glob ]
-ds_qvps = utils.load_qvps(ff, fillna=True)
+
+alignz = False
+if "dwd" in ff_ML: alignz = True
+ds_qvps = utils.load_qvps(ff, align_z=alignz, fix_TEMP=True, fillna=True)
 
 # Load all events
 # ff = "/automount/realpep/upload/jgiles/dwd/qvps/2015/*/*/pro/vol5minng01/07/*allmoms*"
@@ -407,6 +411,8 @@ ds_qvps = utils.load_qvps(ff, fillna=True)
 #          	plot_kwargs.pop('vmax', None)
 
 hv.extension("matplotlib")
+
+max_height = 16000 # max height for the qvp plots (necessary because of random high points and because of dropna in the z dim)
 
 var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR', 
                # 'TH','UPHIDP',  # not so relevant
@@ -448,7 +454,7 @@ def cbar_hook(hv_plot, _, cmap_extend, ticklist, norm, label):
 
 # Define the function to update plots
 def update_plots(selected_day, show_ML_lines, show_min_entropy):
-    selected_data = ds_qvps.sel(time=selected_day)
+    selected_data = ds_qvps.sel(time=selected_day, z=slice(0, max_height)).dropna("z", how="all")
     available_vars = vars_to_plot
 
     plots = []
@@ -469,11 +475,12 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
         quadmesh = selected_data[var].hvplot.quadmesh(
             x='time', y='z', title=subtitle,
             xlabel='Time', ylabel='Height (m)', colorbar=False,
-            width=500, height=250, norm=norm,
+            width=500, height=250, norm=norm, ylim=(None, max_height),
         ).opts(
                 cmap=cmap_extend,
                 color_levels=ticks.tolist(),
                 clim=(ticks[0], ticks[-1]),
+                xformatter = mpl.dates.DateFormatter('%H:%M'), # put only the hour in the x-axis
                 hooks=[partial(cbar_hook, cmap_extend=cmap_extend, ticklist=ticklist, norm=norm, label=selected_data[var].units)],
 #!!! TO DO: format tick labels so that only the hour is shown: https://discourse.holoviz.org/t/how-to-the-format-of-datetime-x-axis-ticks-in-matplotlib-backend/6344
             )
