@@ -489,7 +489,7 @@ def load_dmi_raw(filepath): # THIS IS NOT IMPLEMENTED YET # !!!
     
     return fix_flipped_phidp(fix_time_in_coords(dmidata))
 
-def load_qvps(filepath, fillna=False, 
+def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False, 
               fillna_vars={"ZDR_OC": "ZDR", "RHOHV_NC": "RHOHV", "UPHIDP_OC": "UPHIDP", "PHIDP_OC": "PHIDP"}):
     """
     Load DWD or DMI QVP data.
@@ -501,6 +501,14 @@ def load_qvps(filepath, fillna=False,
 
     Keyword Arguments
     -----------------
+    align_z : bool
+        If True and loading multiple files, align the z coord to the values of the first
+        file. This is mean to avoid broadcasting due to random fluctuations (noise) i
+        in the coordinate. If loading QVPs from multiple elevation angles, align_z should
+        be False to avoid erroneous alignment.
+    fix_TEMP : bool
+        If True and loading multiple files, add empty (nan) TEMP coordinate in case it 
+        is not present in the file.
     fillna : bool
         If True, attempt to fill empty corrected variables with their non-corrected counterparts. 
         E.g.: Fill empty ZDR_OC with the values from ZDR, empty RHOHV_NC with RHOHV, etc. 
@@ -528,23 +536,28 @@ def load_qvps(filepath, fillna=False,
         # there are slight differences (noise) in z coord sometimes so we have to align all datasets
         # since the time coord has variable length, we cannot use join="override" so we define a function to copy
         # the z coord from the first dataset into the rest with preprocessing
-        # There are also some time values missing, ignore those
+        # There could also be some time values missing, ignore those
         # Some files do not have TEMP data, fill with nan
         first_file = xr.open_mfdataset(files[0]) 
         first_file_z = first_file.z.copy()
-        def fix_z_and_time(ds):
-            ds.coords["z"] = first_file_z
+        def fix_coords(ds, align_z, fix_TEMP):
+            if align_z:
+                ds.coords["z"] = first_file_z
             ds = ds.where(ds["time"].notnull(), drop=True)
-            if "TEMP" not in ds.coords:
+            if "TEMP" not in ds.coords and fix_TEMP:
                 ds.coords["TEMP"] = xr.full_like( ds["DBZH"], np.nan ).compute()
                 
             return ds
             
         try:
-            qvps = xr.open_mfdataset(files, preprocess=fix_z_and_time)
+            qvps = xr.open_mfdataset(files, preprocess=fix_coords)
         except: 
-            # if the above fails, just combine everything and fill the holes with nan (Turkish case)
-            qvps = xr.open_mfdataset(files, combine="nested", concat_dim="time")
+            if align_z:
+                print("Aligning z coord may have failed, attempting to load without alignment...")
+            try:
+                qvps = xr.open_mfdataset(files, combine="nested", concat_dim="time")
+            except:
+                qvps = xr.open_mfdataset(files)
     
     if fillna:
         assign = dict()
