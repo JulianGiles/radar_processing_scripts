@@ -64,6 +64,9 @@ locs = ["pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs"]
 #### Get QVP file list
 path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/*allmoms*"
 path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
+# Load only events with ML detected (pre-condition for stratiform)
+path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps/20*/*/*/umd/vol5minng01/07/ML_detected.txt"
+# path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/2016/*/*/ANK/*/*/ML_detected.txt"
 # path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
 # path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/*/*/*/ANK/*/*/*allmoms*"
 # path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_singlefile/ML_detected/ANK/*/12*/*allmoms*"
@@ -79,14 +82,14 @@ path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/pr
 #     path_qvps.append(os.path.dirname(ff)+"/*allmoms*")
 
 
-if isinstance(path_qvps, str):
-    files = sorted(glob.glob(path_qvps))
-elif len(path_qvps)==1:    
-    files = sorted(glob.glob(path_qvps[0]))
-else:
-    files = []
-    for fglob in path_qvps:
-        files.extend(glob.glob(fglob))
+# if isinstance(path_qvps, str):
+#     files = sorted(glob.glob(path_qvps))
+# elif len(path_qvps)==1:    
+#     files = sorted(glob.glob(path_qvps[0]))
+# else:
+#     files = []
+#     for fglob in path_qvps:
+#         files.extend(glob.glob(fglob))
 
 #### Set variable names
 X_DBZH = "DBZH"
@@ -94,45 +97,41 @@ X_RHOHV = "RHOHV_NC"
 X_ZDR = "ZDR_OC"
 X_KDP = "KDP_ML_corrected"
 
-if "dwd" in files[0]:
+if "dwd" in path_qvps:
     country="dwd"
     X_TH = "TH"
-elif "dmi" in files[0]:
+elif "dmi" in path_qvps:
     country="dmi"
     X_TH = "DBZH"
 
-# Load QVPs
 
-if len(files)==1:
-    qvps = xr.open_mfdataset(files)
-else:
-    # there are slight differences (noise) in z coord sometimes so we have to align all datasets
-    # since the time coord has variable length, we cannot use join="override" so we define a function to copy
-    # the z coord from the first dataset into the rest with preprocessing
-    # There are also some time values missing, ignore those
-    # Some files do not have TEMP data, fill with nan
-    first_file = xr.open_mfdataset(files[0]) 
-    first_file_z = first_file.z.copy()
-    def fix_z_and_time(ds):
-        ds.coords["z"] = first_file_z
-        ds = ds.where(ds["time"].notnull(), drop=True)
-        if "TEMP" not in ds.coords:
-            ds.coords["TEMP"] = xr.full_like( ds["DBZH"], np.nan ).compute()
-            
-        return ds
-        
-    try:
-        qvps = xr.open_mfdataset(files, preprocess=fix_z_and_time)
-    except: 
-        # if the above fails, just combine everything and fill the holes with nan (Turkish case)
-        qvps = xr.open_mfdataset(files, combine="nested", concat_dim="time")
+ff_glob = glob.glob(path_qvps)
 
+if "dmi" in path_qvps:
+    # create a function to only select the elevation closer to 10 for each date
+    from collections import defaultdict
+    def get_closest_elevation(paths):
+        elevation_dict = defaultdict(list)
+        for path in paths:
+            parts = path.split('/')
+            date = parts[-5]
+            elevation = float(parts[-2])
+            elevation_dict[date].append((elevation, path))
+    
+        result_paths = []
+        for date, elevations in elevation_dict.items():
+            closest_elevation_path = min(elevations, key=lambda x: abs(x[0] - 10))[1]
+            result_paths.append(closest_elevation_path)
+    
+        return result_paths
+    
+    ff_glob = get_closest_elevation(ff_glob)
 
-# Fill missing values in ZDR_OC and RHOHV_NC with the uncorrected variables
-if X_ZDR == "ZDR_OC":
-    qvps[X_ZDR] = qvps[X_ZDR].where(qvps[X_ZDR].notnull(), qvps["ZDR"])
-if X_RHOHV == "RHOHV_NC":
-    qvps[X_RHOHV] = qvps[X_RHOHV].where(qvps[X_RHOHV].notnull(), qvps["RHOHV"])
+ff = [glob.glob(os.path.dirname(fp)+"/*allmoms*")[0] for fp in ff_glob ]
+
+alignz = False
+if "dwd" in path_qvps: alignz = True
+qvps = utils.load_qvps(ff, align_z=alignz, fix_TEMP=False, fillna=False)
 
 
 # # Load daily data
@@ -192,10 +191,10 @@ if X_RHOHV == "RHOHV_NC":
 #%% Filters (conditions for stratiform)
 # Filter only stratiform events (min entropy >= 0.8) and ML detected
 # with ProgressBar():
-#     qvps_strat = qvps.where( (qvps["min_entropy"]>=0.8) & (qvps.height_ml_bottom_new_gia.notnull(), drop=True).compute()
+#     qvps_strat = qvps.where( (qvps["min_entropy"]>=0.8) & (qvps.height_ml_bottom_new_gia.notnull()), drop=True).compute()
 
 # Filter only stratiform events (min entropy >= 0.8 and ML detected)
-qvps_strat = qvps.where( (qvps["min_entropy"]>=0.8) & (qvps.height_ml_bottom_new_gia.notnull()), drop=True)
+qvps_strat = qvps.where( (qvps["min_entropy"]>=0.8).compute() & (qvps.height_ml_bottom_new_gia.notnull()).compute(), drop=True)
 # Filter relevant values
 qvps_strat_fil = qvps_strat.where((qvps_strat[X_TH] > 0 )&
                                   (qvps_strat[X_KDP] > -0.1)&
@@ -298,7 +297,7 @@ try: # check if exists, if not, create it
 except NameError:
     stats = {}
 
-stats[find_loc(locs, files[0])] = {"values_sfc": values_sfc.compute().copy(),
+stats[find_loc(locs, ff[0])] = {"values_sfc": values_sfc.compute().copy(),
                                    "values_snow": values_snow.compute().copy(),
                                    "values_rain": values_rain.compute().copy(),
                                    "values_ML_max": values_ML_max.compute().copy(),
@@ -317,7 +316,7 @@ stats[find_loc(locs, files[0])] = {"values_sfc": values_sfc.compute().copy(),
 
 #%% CFADs Plot
 
-# adjustment from K to C (disables now because I know that all qvps have ERA5 data)
+# adjustment from K to C (disabled now because I know that all qvps have ERA5 data)
 adjtemp = 0
 # if (qvps_strat_fil["TEMP"]>100).any(): #if there is any temp value over 100, we assume the units are Kelvin
 #     print("at least one TEMP value > 100 found, assuming TEMP is in K and transforming to C")
