@@ -371,27 +371,28 @@ plt.close()
 #%% Load QVPs
 # Load only events with ML detected (pre-condition for stratiform)
 ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2018/*/*/umd/vol5minng01/07/ML_detected.txt"
-ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2018/*/*/GZT/*/*/ML_detected.txt"
+ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2016/*/*/ANK/*/*/ML_detected.txt"
 ff_ML_glob = glob.glob(ff_ML)
 
-# create a function to only select the elevation closer to 10 for each date
-from collections import defaultdict
-def get_closest_elevation(paths):
-    elevation_dict = defaultdict(list)
-    for path in paths:
-        parts = path.split('/')
-        date = parts[-5]
-        elevation = float(parts[-2])
-        elevation_dict[date].append((elevation, path))
-
-    result_paths = []
-    for date, elevations in elevation_dict.items():
-        closest_elevation_path = min(elevations, key=lambda x: abs(x[0] - 10))[1]
-        result_paths.append(closest_elevation_path)
-
-    return result_paths
-
-ff_ML_glob = get_closest_elevation(ff_ML_glob)
+if "dmi" in ff_ML:
+    # create a function to only select the elevation closer to 10 for each date
+    from collections import defaultdict
+    def get_closest_elevation(paths):
+        elevation_dict = defaultdict(list)
+        for path in paths:
+            parts = path.split('/')
+            date = parts[-5]
+            elevation = float(parts[-2])
+            elevation_dict[date].append((elevation, path))
+    
+        result_paths = []
+        for date, elevations in elevation_dict.items():
+            closest_elevation_path = min(elevations, key=lambda x: abs(x[0] - 10))[1]
+            result_paths.append(closest_elevation_path)
+    
+        return result_paths
+    
+    ff_ML_glob = get_closest_elevation(ff_ML_glob)
 
 ff = [glob.glob(os.path.dirname(fp)+"/*allmoms*")[0] for fp in ff_ML_glob ]
 
