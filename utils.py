@@ -3,7 +3,7 @@
 """
 Created on Fri Mar 24 08:38:01 2023
 
-@author: jgiles
+@author: Julian Alberto Giles
 
 Various utilities for processing weather radar data.
 """
@@ -2936,114 +2936,237 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
     return ds_offset
 
 
-# This is not implemented yet
-# ZDR calibration from QVPs. Adapted from Daniel Sanchez-Rivas (TowerPy) to xarray
-# def offsetdetection_qvps(self, pol_profs, mlyr=None, min_h=0., max_h=5.,
-#                          zhmin=0, zhmax=20, rhvmin=0.985, minbins=4,
-#                          zdr_0=0.182, stats=False):
-#     r"""
-#     Calculate the offset on :math:`Z_{DR}` using QVPs, acoording to [1]_.
+### ZDR calibration from QVPs. Adapted from Daniel Sanchez-Rivas (TowerPy) to xarray
+def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="median",
+                        mlbottom=None, temp=None, zdr_0=0.182, min_h=1000, zhmin=0,
+                        zhmax=20, rhvmin=0.98, minbins=10, azmed=True, timemode="step"):
+    r"""
+    Calculate the offset on :math:`Z_{DR}` using QVPs, acoording to [1]_.  Only gates 
+    below the melting layer bottom (i.e. the rain region below the melting layer)
+    or below the given temperature level are included in the method.
 
-#     Parameters
-#     ----------
-#     pol_profs : dict
-#         Profiles of polarimetric variables.
-#     mlyr : class
-#         Melting layer class containing the top and bottom boundaries of
-#         the ML.
-#     min_h : float, optional
-#         Minimum height of usable data within the polarimetric profiles.
-#         The default is 0.
-#     max_h : float, optional
-#         Maximum height of usable data within the polarimetric profiles.
-#         The default is 3.
-#     zhmin : float, optional
-#         Threshold on :math:`Z_{H}` (in dBZ) related to light rain.
-#         The default is 0.
-#     zhmax : float, optional
-#         Threshold on :math:`Z_{H}` (in dBZ) related to light rain.
-#         The default is 20.
-#     rhvmin : float, optional
-#         Threshold on :math:`\rho_{HV}` (unitless) related to light rain.
-#         The default is 0.985.
-#     minbins : float, optional
-#         Consecutive bins of :math:`Z_{DR}` related to light rain.
-#         The default is 3.
-#     zdr_0 : float, optional
-#         Intrinsic value of :math:`Z_{DR}` in light rain at ground level.
-#         Defaults to 0.182.
-#     stats : dict, optional
-#         If True, the function returns stats related to the computation of
-#         the :math:`Z_{DR}` offset. The default is False.
+    Parameters
+    ----------
+    ds : xarray Dataset
+        Dataset with the vertical scan. ZDR, DBZH and RHOHV are needed. Dimensions 
+        should include "azimuth" and "range"
+    zdr : str
+        Name of the variable in ds for differential reflectivity data. Default is "ZDR".
+    dbzh : str
+        Name of the variable in ds for horizontal reflectivity data (in dB). Default is "DBZH".
+    rhohv : str
+        Name of the variable in ds for cross-correlation coefficient data. Default is "RHOHV".
+    mode : str
+        Method for calculating the offset from the distribution of ZDR values in light rain.
+        Can be either "median" or "mean". Default is "median".
+    mlbottom : str, int or float
+        If str: name of the ML bottom variable in ds. If None, it is assumed to 
+        be "height_ml_bottom_new_gia" or "height_ml_bottom" (in that order). 
+        If int or float: we assume the ML bottom is not available and we take the given
+        int value as the temperature level from which to consider radar bins.
+        Only gates below the melting layer bottom (i.e. the rain
+        region below the melting layer) are included in the method.
+    temp : str, optional
+        Name of the temperature variable in ds. Only necessary if mlbottom is int.
+        If None is given and mlbottom is int or float, the default name "TEMP" is used.
+    zdr_0 : float, optional
+        Intrinsic value of :math:`Z_{DR}` in light rain at ground level.
+        Defaults to 0.182.
+    min_h : float, optional
+        Minimum height of usable data within the polarimetric profiles, in m. This is relative to
+        sea level and not relative to the altitude of the radar (in accordance to the "z" coordinate 
+        from wradlib.georef.georeference). The default is 1000. 
+    zhmin : float, optional
+        Threshold on :math:`Z_{H}` (in dBZ) related to light rain.
+        The default is 0.
+    zhmax : float, optional
+        Threshold on :math:`Z_{H}` (in dBZ) related to light rain.
+        The default is 20.
+    rhvmin : float, optional
+        Threshold on :math:`\rho_{HV}` (unitless) related to light rain.
+        The default is 0.98.
+    minbins : float, optional
+        Minimum number of consecutive :math:`Z_{DR}` bins related to light rain. This should
+        vary according to range resolution. The default is 10.
+    azmed : bool
+        If True, perform azimuthal median after filtering values and before offset calculation. 
+        Default is True (QVP-like)
+    timemode : str
+        How to calculate the offset in case a time dimension is found. "step" calculates one offset
+        per timestep. "all" calculates one offset for the whole ds. Default is "step"
 
-#     Notes
-#     -----
-#     1. Based on the method described in [1]
+    Returns
+    ----------
+    ds_offset : xarray Dataset
+        xarray Dataset with the detected offset and related satatistics.
 
-#     References
-#     ----------
-#     .. [1] Sanchez-Rivas, D. and Rico-Ramirez, M. A. (2022): "Calibration
-#         of radar differential reflectivity using quasi-vertical profiles",
-#         Atmos. Meas. Tech., 15, 503–520,
-#         https://doi.org/10.5194/amt-15-503-2022
-#     """
-#     if mlyr is None:
-#         mlvl = 5
-#         mlyr_thickness = 0.5
-#         mlyr_bottom = mlvl - mlyr_thickness
-#     else:
-#         mlvl = mlyr.ml_top
-#         mlyr_thickness = mlyr.ml_thickness
-#         mlyr_bottom = mlyr.ml_bottom
-#     if np.isnan(mlyr_bottom):
-#         boundaries_idx = [find_nearest(pol_profs.georef['profiles_height [km]'], min_h),
-#                           find_nearest(pol_profs.georef['profiles_height [km]'],
-#                                        mlvl-mlyr_thickness)]
-#     else:
-#         boundaries_idx = [find_nearest(pol_profs.georef['profiles_height [km]'], min_h),
-#                           find_nearest(pol_profs.georef['profiles_height [km]'],
-#                                        mlyr_bottom)]
-#     if boundaries_idx[1] <= boundaries_idx[0]:
-#         boundaries_idx = [np.nan]
-#     if np.isnan(mlvl) and np.isnan(mlyr_bottom):
-#         boundaries_idx = [np.nan]
+    Notes
+    -----
+    1. Based on the method described in [1]
+    2. Adapted from Daniel Sanchez-Rivas (TowerPy) [2] to xarray by Julian Giles.
 
-#     maxheight = find_nearest(pol_profs.georef['profiles_height [km]'],
-#                              max_h)
+    References
+    ----------
+    .. [1] Sanchez-Rivas, D. and Rico-Ramirez, M. A. (2022): "Calibration
+        of radar differential reflectivity using quasi-vertical profiles",
+        Atmos. Meas. Tech., 15, 503–520,
+        https://doi.org/10.5194/amt-15-503-2022
+    .. [2] Sanchez-Rivas, D., and Rico-Ramirez, M. A. (2023). Towerpy: 
+        An open-source toolbox for processing polarimetric weather radar data. 
+        Environmental Modelling & Software, 167, 105746. 
+        https://doi.org/10.1016/j.envsoft.2023.105746
+    """
+    # We need the ds to be georeferenced in case it is not
+    if "z" not in ds.coords:
+        ds = ds.pipe(wrl.georef.georeference)
+    
+    if mlbottom is None:
+        try:
+            ml_bottom = ds["z"] < ds["height_ml_bottom_new_gia"]
+        except KeyError:
+            try:
+                ml_bottom = ds["z"] < ds["height_ml_bottom"]
+            except KeyError:
+                raise KeyError("Melting layer bottom not found in ds. Provide melting layer bottom or temperature level.")
+            except:
+                raise RuntimeError("Something went wrong when looking for ML variable")
+        except:
+            raise RuntimeError("Something went wrong when looking for ML variable")
+    elif type(mlbottom) is str:
+        ml_bottom = ds["z"] < ds[mlbottom]
+    elif type(mlbottom) in [float, int]:
+        if type(temp) is str:
+            ml_bottom = ds[temp] > mlbottom
+        elif temp is None:
+            try:
+                ml_bottom = ds["TEMP"] > mlbottom
+            except KeyError:
+                raise KeyError("temp is not given and could not be found by default")
+        else:
+            raise TypeError("temp must be str or None")
+    else:
+        raise TypeError("mlbottom must be str, int or None")
+    
+    # get ZDR data and filter values below ML and above min_h
+    ds_zdr = ds[zdr]
+    ds_zdr = ds_zdr.where(ml_bottom)
+    ds_zdr = ds_zdr.where(ds["z"]>min_h)
+    
+    # Filter according to DBZH and RHOHV limits
+    ds_zdr = ds_zdr.where(ds[dbzh]>zhmin).where(ds[dbzh]<zhmax).where(ds[rhohv]>rhvmin)
 
-#     if any(np.isnan(boundaries_idx)):
-#         self.zdr_offset = 0
-#     else:
-#         profs = copy.deepcopy(pol_profs.qvps)
-#         calzdr_qvps = {k: v[boundaries_idx[0]:boundaries_idx[1]]
-#                        for k, v in profs.items()}
+    # Azimuth median before computing?
+    if azmed:
+        if "azimuth" in ds_zdr.dims:
+            ds_zdr = ds_zdr.median("azimuth")
+        else:
+            raise KeyError("azimuth not found in dataset dimensions")
 
-#         calzdr_qvps['ZDR [dB]'][calzdr_qvps['ZH [dBZ]'] < zhmin] = np.nan
-#         calzdr_qvps['ZDR [dB]'][calzdr_qvps['ZH [dBZ]'] > zhmax] = np.nan
-#         calzdr_qvps['ZDR [dB]'][calzdr_qvps['rhoHV [-]'] < rhvmin] = np.nan
-#         if np.count_nonzero(~np.isnan(calzdr_qvps['ZDR [dB]'])) <= minbins:
-#             calzdr_qvps['ZDR [dB]'] *= np.nan
-#         calzdr_qvps['ZDR [dB]'][calzdr_qvps['rhoHV [-]']>maxheight]=np.nan
+    if "time" in ds and timemode=="step":
+        # Get dimensions to reduce (other than time)
+        dims_wotime = [kk for kk in ds_zdr.dims]
+        while "time" in dims_wotime:
+            dims_wotime.remove("time")
+                            
+        # Filter according to the minimum number of bins limit
+        # ds_zdr = ds_zdr.where(ds_zdr.count(dim=dims_wotime)>minbins)
+        
+        ds_zdr = ds_zdr.where(n_longest_consecutive(ds_zdr, dim="range").compute() > minbins)
+        
+        # Calculate offset and others
+        if mode=="median":
+            zdr_offset = ds_zdr.median(dim=dims_wotime).assign_attrs(
+                {"long_name":"ZDR offset from QVP method (median)", 
+                 "standard_name":"ZDR_offset_from_qvp",
+                 "units": "dB"}
+                ) - zdr_0
+        elif mode=="mean":
+            zdr_offset = ds_zdr.mean(dim=dims_wotime).assign_attrs(
+                {"long_name":"ZDR offset from QVP method (mean)", 
+                 "standard_name":"ZDR_offset_from_qvp",
+                 "units": "dB"}
+                ) - zdr_0
+        else:
+            raise KeyError("mode must be either 'median' or 'mean'")
 
-#         with warnings.catch_warnings():
-#             warnings.simplefilter("ignore", category=RuntimeWarning)
-#             calzdrqvps_mean = np.nanmean(calzdr_qvps['ZDR [dB]'])
-#             calzdrqvps_max = np.nanmax(calzdr_qvps['ZDR [dB]'])
-#             calzdrqvps_min = np.nanmin(calzdr_qvps['ZDR [dB]'])
-#             calzdrqvps_std = np.nanstd(calzdr_qvps['ZDR [dB]'])
-#             calzdrqvps_sem = np.nanstd(calzdr_qvps['ZDR [dB]'])/np.sqrt(len(calzdr_qvps['ZDR [dB]']))
+        zdr_max = ds_zdr.max(dim=dims_wotime).assign_attrs(
+            {"long_name":"ZDR max from offset calculation", 
+             "standard_name":"ZDR_max_from_offset_calculation"}
+            )
+        zdr_min = ds_zdr.min(dim=dims_wotime).assign_attrs(
+            {"long_name":"ZDR min from offset calculation", 
+             "standard_name":"ZDR_min_from_offset_calculation"}
+            )
+        zdr_std = ds_zdr.std(dim=dims_wotime).assign_attrs(
+            {"long_name":"ZDR standard deviation from offset calculation", 
+             "standard_name":"ZDR_std_from_offset_calculation"}
+            )
+        zdr_sem = ( zdr_std / ds_zdr.count(dim=dims_wotime)**(1/2) ).assign_attrs(
+            {"long_name":"ZDR standard error of the mean from offset calculation", 
+             "standard_name":"ZDR_sem_from_offset_calculation"}
+            )
 
-#         if not np.isnan(calzdrqvps_mean):
-#             self.zdr_offset = calzdrqvps_mean - zdr_0
-#         else:
-#             self.zdr_offset = 0
+                
+    else:
+        # Filter according to the minimum number of bins limit
+        # ds_zdr = ds_zdr.where(ds_zdr.count()>minbins)
+        ds_zdr = ds_zdr.where(n_longest_consecutive(ds_zdr, dim="range").compute() > minbins)
 
-#         if stats:
-#             self.zdr_offset_stats = {'offset_max': calzdrqvps_max,
-#                                      'offset_min': calzdrqvps_min,
-#                                      'offset_std': calzdrqvps_std,
-#                                      'offset_sem': calzdrqvps_sem,
-#                                      }
+        # Calculate offset and others
+        if mode=="median":
+            zdr_offset = ds_zdr.compute().median().assign_attrs(
+                {"long_name":"ZDR offset from QVP method (median)", 
+                 "standard_name":"ZDR_offset_from_qvp",
+                 "units": "dB"}
+                ) - zdr_0
+        elif mode=="mean":
+            zdr_offset = ds_zdr.compute().mean().assign_attrs(
+                {"long_name":"ZDR offset from QVP method (mean)", 
+                 "standard_name":"ZDR_offset_from_qvp",
+                 "units": "dB"}
+                ) - zdr_0
+        else:
+            raise KeyError("mode must be either 'median' or 'mean'")
+
+        zdr_max = ds_zdr.compute().max().assign_attrs(
+            {"long_name":"ZDR max from offset calculation", 
+             "standard_name":"ZDR_max_from_offset_calculation"}
+            )
+        zdr_min = ds_zdr.compute().min().assign_attrs(
+            {"long_name":"ZDR min from offset calculation", 
+             "standard_name":"ZDR_min_from_offset_calculation"}
+            )
+        zdr_std = ds_zdr.compute().std().assign_attrs(
+            {"long_name":"ZDR standard deviation from offset calculation", 
+             "standard_name":"ZDR_std_from_offset_calculation"}
+            )
+        zdr_sem = ( zdr_std / ds_zdr.compute().count()**(1/2) ).assign_attrs(
+            {"long_name":"ZDR standard error of the mean from offset calculation", 
+             "standard_name":"ZDR_sem_from_offset_calculation"}
+            )
+
+            
+    # Merge results in a dataset
+    ds_offset = xr.Dataset({"ZDR_offset": zdr_offset,
+                            "ZDR_max_from_offset": zdr_max,
+                            "ZDR_min_from_offset": zdr_min,
+                            "ZDR_std_from_offset": zdr_std,
+                            "ZDR_sem_from_offset": zdr_sem}
+                           )
+
+    # restore time dim if present
+    if "time" in ds and "time" not in ds_offset:
+        ds_offset = ds_offset.expand_dims("time")
+        ds_offset["time"] = np.atleast_1d(ds.coords["time"][0]) # put the first time value as coord
+
+    # drop ML coordinates if present
+    for coord in ds_offset.coords:
+        if "_ml" in coord:
+            ds_offset = ds_offset.drop_vars(coord)
+
+
+    return ds_offset
+
 
 #### Full variables correction, melting layer detection, KDP derivation, entropy calculation and QVP derivation for a PPI
 
