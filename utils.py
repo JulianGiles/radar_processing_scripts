@@ -2490,12 +2490,12 @@ def zhzdr_lr_consistency_old(ZH, ZDR, RHO, TMP, rhohv_th=0.99, tmp_th=5, plot_co
     
     return zdroffset
 
-def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99, min_h=500, 
+def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99, min_h=500, band="C",
                          mlbottom=None, temp=None, timemode="step", plot_correction=False, plot_timestep=0):
     """
     Improved function for
     ZH-ZDR Consistency in light rain, for ZDR calibration
-    AR p.155-156
+    Ryzhkov and Zrnic p.155-156
     
     ds : xarray Dataset
         Dataset with ZDR, DBZH and RHOHV.
@@ -2522,6 +2522,10 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
         Minimum height of usable data within the polarimetric profiles, in m. This is relative to
         sea level and not relative to the altitude of the radar (in accordance to the "z" coordinate 
         from wradlib.georef.georeference). The default is 500.
+    band : str, list
+        Frequency band to select the reference values according to Ryzhkov and Zrnic. Possible 
+        values are: "S", "C" or "X". Alternatively, a custom list with 6 reference values 
+        can be passed and will be used instead. E.g.: band=[.23, .27, .32, .38, .46, .55]
     timemode : str
         How to calculate the offset in case a time dimension is found. "step" calculates one offset
         per timestep. "all" calculates one offset for the whole ds. Default is "step"
@@ -2532,6 +2536,21 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
         be plotted. By default the first timestep (index=0) is plotted.
     
     """
+    
+    # Set the climatological values according to the book for each band for 20<Zh<30
+    clim_values = {
+        "S": [.23, .27, .32, .38, .46, .55],
+        "C": [.23, .27, .33, .40, .48, .56],
+        "X": [.23, .28, .33, .41, .49, .58]
+        }
+    
+    if type(band) is str:
+        ref_vals = clim_values[band]
+    elif type(band) is list:
+        ref_vals = band
+    else:
+        raise ValueError("Keyword argument 'band' is not str nor list.")
+    
     # We need the ds to be georeferenced in case it is not
     if "z" not in ds.coords:
         ds = ds.pipe(wrl.georef.georeference)
@@ -2600,7 +2619,7 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
             zdr_zh_30 = zdr_zh_30*np.nan
 
 
-        zdroffset = xr.concat([zdr_zh_20-.23, zdr_zh_22-.27, zdr_zh_24-.33, zdr_zh_26-.40, zdr_zh_28-.48, zdr_zh_30-.56], dim='dataarrays').mean(dim='dataarrays', skipna=False, keep_attrs=True)
+        zdroffset = xr.concat([zdr_zh_20-ref_vals[0], zdr_zh_22-ref_vals[1], zdr_zh_24-ref_vals[2], zdr_zh_26-ref_vals[3], zdr_zh_28-ref_vals[4], zdr_zh_30-ref_vals[5]], dim='dataarrays').mean(dim='dataarrays', skipna=False, keep_attrs=True)
         
         # drop ML coordinates if present
         for coord in zdroffset.coords:
@@ -2630,7 +2649,7 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
         if where_dbzh_rhohv(ds_fil, 29, 31).count()<min_count:
             zdr_zh_30 = zdr_zh_30*np.nan
 
-        zdroffset = xr.concat([zdr_zh_20-.23, zdr_zh_22-.27, zdr_zh_24-.33, zdr_zh_26-.40, zdr_zh_28-.48, zdr_zh_30-.56], dim='dataarrays', combine_attrs="override").mean(dim='dataarrays', skipna=False, keep_attrs=True)
+        zdroffset = xr.concat([zdr_zh_20-ref_vals[0], zdr_zh_22-ref_vals[1], zdr_zh_24-ref_vals[2], zdr_zh_26-ref_vals[3], zdr_zh_28-ref_vals[4], zdr_zh_30-ref_vals[5]], dim='dataarrays', combine_attrs="override").mean(dim='dataarrays', skipna=False, keep_attrs=True)
         
         # restore time dim if present
         if "time" in ds:
