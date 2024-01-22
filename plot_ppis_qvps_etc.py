@@ -31,6 +31,8 @@ from dask.diagnostics import ProgressBar
 from xhistogram.xarray import histogram
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+import cartopy
+from cartopy import crs as ccrs
 import xradar as xd
 import cmweather
 import hvplot
@@ -319,7 +321,7 @@ if X_PHI in ds.data_vars:
 
 #%% Plot simple PPI 
 
-tsel = "2015-09-30T08:04"
+tsel = "2015-03-11T10"
 if tsel == "":
     datasel = ds
 else:
@@ -332,18 +334,31 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "KDP"
+mom = "RHOHV"
 
 ticks = radarmet.visdict14[mom]["ticks"]
 cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
 cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
 norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
 cmap = "miub2"
-datasel[mom][0].wrl.plot(x="x", y="y", cmap=cmap, norm=norm, xlim=(-25000,25000), ylim=(-25000,25000))
+
+plot_over_map = False
+
+if not plot_over_map:
+    # plot simple PPI
+    datasel[mom][0].wrl.plot(x="x", y="y", cmap=cmap, norm=norm, xlim=(-25000,25000), ylim=(-25000,25000))
+elif plot_over_map:
+    # plot PPI with map coordinates
+    fig = plt.figure(figsize=(10, 10))
+    datasel[mom][0].wrl.vis.plot(fig=fig, cmap=cmap, norm=norm, crs=ccrs.Mercator(central_longitude=float(datasel["longitude"])))
+    ax = plt.gca()
+    ax.add_feature(cartopy.feature.COASTLINE, linestyle='-', linewidth=1, alpha=0.4)
+    ax.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4)
+    ax.gridlines(draw_labels=True)
 
 #%% Plot simple QVP 
 
-tsel = ""
+tsel = "2015-03-11"
 if tsel == "":
     datasel = ds_qvp
 else:
@@ -371,7 +386,7 @@ plt.close()
 #%% Load QVPs
 # Load only events with ML detected (pre-condition for stratiform)
 ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2018/*/*/umd/vol5minng01/07/ML_detected.txt"
-ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2016/*/*/ANK/*/*/ML_detected.txt"
+ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2016/*/*/HTY/*/*/ML_detected.txt"
 ff_ML_glob = glob.glob(ff_ML)
 
 if "dmi" in ff_ML:
