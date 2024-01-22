@@ -2766,6 +2766,7 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
     Notes
     -----
     1. Based on the method described in [1]_ and [2]_
+    2. Adapted from Daniel Sanchez-Rivas (TowerPy) [3] to xarray by Julian Giles.
 
     References
     ----------
@@ -2777,6 +2778,10 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
         of radar differential reflectivity using quasi-vertical profiles",
         Atmos. Meas. Tech., 15, 503–520,
         https://doi.org/10.5194/amt-15-503-2022
+    .. [3] Sanchez-Rivas, D., and Rico-Ramirez, M. A. (2023). Towerpy: 
+        An open-source toolbox for processing polarimetric weather radar data. 
+        Environmental Modelling & Software, 167, 105746. 
+        https://doi.org/10.1016/j.envsoft.2023.105746
     """
     
     # We need the ds to be georeferenced in case it is not
