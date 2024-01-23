@@ -71,11 +71,13 @@ warnings.filterwarnings('ignore')
 min_height_key = "default" # default = 200, 90grads = 600, ANK = 400, GZT = 300
 
 ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/pro/vol5minng01/07/*allmoms*"
+ff = '/automount/realpep/upload/jgiles/dmi/2015/2015-03/2015-03-11/HTY/MON_YAZ_C/8.0/MON_YAZ_C-allmoms-8.0-20152015-032015-03-11-HTY-h5netcdf.nc'
 # ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-06-02/pro/90gradstarng01/00/*allmoms*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-10/2021-10-30/ess/90gradstarng01/00/*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-07/2021-07-24/ess/90gradstarng01/00/*"
-ds = utils.load_dwd_preprocessed(ff)
+# ds = utils.load_dwd_preprocessed(ff)
 # ds = utils.load_dwd_raw(ff)
+ds = utils.load_dmi_preprocessed(ff)
 
 if "dwd" in ff or "DWD" in ff:
     country="dwd"
@@ -130,7 +132,37 @@ try:
                     elevnr = ff.split("/vol5minng01/")[-1][0:2]
                     zdroffsetpath = utils.edit_str(zdroffsetpath, "/vol5minng01/"+elevnr, "/90gradstarng01/00")
                     
-                ds = utils.load_ZDR_offset(ds, X_ZDR, zdroffsetpath+"/"+zdrof)
+                ds = utils.load_ZDR_offset(ds, X_ZDR, zdroffsetpath+"/"+zdrof, zdr_oc_name=X_ZDR+"_OC")
+                
+                # if the offset comes from LR ZH-ZDR consistency, check it against
+                # the QVP method (if available) and choose the best one based on how 
+                # many negative values remain
+                if "LR_consistency" in zdrod:
+                    for zdrof2 in zdrofffile:
+                        try:
+                            zdrod2 = [pp for pp in zdroffdir if "QVP" in pp][0]
+                            zdroffsetpath_qvp = os.path.dirname(utils.edit_str(ff, country, country+zdrod2))
+                            ds_qvpoc = utils.load_ZDR_offset(ds, X_ZDR, zdroffsetpath_qvp+"/"+zdrof2, zdr_oc_name=X_ZDR+"_OC")
+                            
+                            # calculate the count of negative values after each correction
+                            neg_count_ds_lroc = (ds[X_ZDR+"_OC"].where(ds[X_RHO]>0.99) < 0).sum().compute()
+                            neg_count_ds_qvpoc = (ds_qvpoc[X_ZDR+"_OC"].where(ds_qvpoc[X_RHO]>0.99) < 0).sum().compute()
+                            
+                            if neg_count_ds_lroc > neg_count_ds_qvpoc:
+                                # continue with the correction with less negative values
+                                ds = ds_qvpoc
+                                                            
+                            break
+                        except (OSError, ValueError):
+                            pass
+                
+                # calculate the count of negative values before and after correction
+                neg_count_ds = (ds[X_ZDR].where(ds[X_RHO]>0.99) < 0).sum().compute()
+                neg_count_ds_oc = (ds[X_ZDR+"_OC"].where(ds[X_RHO]>0.99) < 0).sum().compute()
+                
+                if neg_count_ds_oc > neg_count_ds and abs((ds[X_ZDR] - ds[X_ZDR+"_OC"]).compute().median()) < 0.2:
+                    # if the correction introduces more negative values and the offset is lower than 0.2, then do not correct
+                    ds[X_ZDR+"_OC"] = ds[X_ZDR]
                 
                 # Change the default ZDR name to the corrected one
                 X_ZDR = X_ZDR+"_OC"
@@ -334,7 +366,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "RHOHV"
+mom = "ZDR"
 
 ticks = radarmet.visdict14[mom]["ticks"]
 cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
@@ -342,7 +374,7 @@ cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(tic
 norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
 cmap = "miub2"
 
-plot_over_map = False
+plot_over_map = True
 
 if not plot_over_map:
     # plot simple PPI
@@ -358,7 +390,7 @@ elif plot_over_map:
 
 #%% Plot simple QVP 
 
-tsel = "2015-03-11"
+tsel = ""
 if tsel == "":
     datasel = ds_qvp
 else:
@@ -369,7 +401,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "RHOHV"
+mom = "ZDR_OC"
 
 ticks = radarmet.visdict14[mom]["ticks"]
 cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
