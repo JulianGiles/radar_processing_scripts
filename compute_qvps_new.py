@@ -227,7 +227,37 @@ for ff in files:
                         elevnr = ff.split("/vol5minng01/")[-1][0:2]
                         zdroffsetpath = utils.edit_str(zdroffsetpath, "/vol5minng01/"+elevnr, "/90gradstarng01/00")
                         
-                    swp = utils.load_ZDR_offset(swp, X_ZDR, zdroffsetpath+"/"+zdrof)
+                    swp = utils.load_ZDR_offset(swp, X_ZDR, zdroffsetpath+"/"+zdrof, zdr_oc_name=X_ZDR+"_OC")
+                    
+                    # if the offset comes from LR ZH-ZDR consistency, check it against
+                    # the QVP method (if available) and choose the best one based on how 
+                    # many negative values remain
+                    if "LR_consistency" in zdrod:
+                        for zdrof2 in zdrofffile:
+                            try:
+                                zdrod2 = [pp for pp in zdroffdir if "QVP" in pp][0]
+                                zdroffsetpath_qvp = os.path.dirname(utils.edit_str(ff, country, country+zdrod2))
+                                swp_qvpoc = utils.load_ZDR_offset(swp, X_ZDR, zdroffsetpath_qvp+"/"+zdrof2, zdr_oc_name=X_ZDR+"_OC")
+                                
+                                # calculate the count of negative values after each correction
+                                neg_count_swp_lroc = (swp[X_ZDR+"_OC"].where(swp[X_RHO]>0.99) < 0).sum().compute()
+                                neg_count_swp_qvpoc = (swp_qvpoc[X_ZDR+"_OC"].where(swp_qvpoc[X_RHO]>0.99) < 0).sum().compute()
+                                
+                                if neg_count_swp_lroc > neg_count_swp_qvpoc:
+                                    # continue with the correction with less negative values
+                                    swp = swp_qvpoc
+                                                                
+                                break
+                            except (OSError, ValueError):
+                                pass
+                    
+                    # calculate the count of negative values before and after correction
+                    neg_count_swp = (swp[X_ZDR].where(swp[X_RHO]>0.99) < 0).sum().compute()
+                    neg_count_swp_oc = (swp[X_ZDR+"_OC"].where(swp[X_RHO]>0.99) < 0).sum().compute()
+                    
+                    if neg_count_swp_oc > neg_count_swp and abs((swp[X_ZDR] - swp[X_ZDR+"_OC"]).compute().median()) < 0.2:
+                        # if the correction introduces more negative values and the offset is lower than 0.2, then do not correct
+                        swp[X_ZDR+"_OC"] = swp[X_ZDR]
                     
                     # Change the default ZDR name to the corrected one
                     X_ZDR = X_ZDR+"_OC"
@@ -242,7 +272,6 @@ for ff in files:
         print("No zdr offset to load: "+zdroffsetpath+"/"+zdrof)
     except FileFound:
         pass
-                
 
 #%% Correct PHIDP 
     ################## Before entropy calculation we need to use the melting layer detection algorithm 
