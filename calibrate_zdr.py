@@ -15,13 +15,15 @@ Script for calculating ZDR calibration from different methods.
 
 1. “Bird bathing” with vertically pointing radar
 
-2. Using light rain as a natural calibrator 
+2. Using light rain as a natural calibrator (fitting curve)
 
-3. NOT IMPLEMENTED! Using dry aggregated snow as a natural calibrator with intrinsic ZDR of 0.1 – 0.2 dB
+3. Using light rain as a natural calibrator (QVP method)
 
-4. NOT IMPLEMENTED! Bragg scattering with intrinsic ZDR equal to 0 dB
+4. NOT IMPLEMENTED! Using dry aggregated snow as a natural calibrator with intrinsic ZDR of 0.1 – 0.2 dB
 
-5. NOT IMPLEMENTED! Ground clutter, if stable
+5. NOT IMPLEMENTED! Bragg scattering with intrinsic ZDR equal to 0 dB
+
+6. NOT IMPLEMENTED! Ground clutter, if stable
 
 """
 
@@ -104,7 +106,7 @@ calib_types = split_digits(calib_type)
 
 # check that all calib_types are implemented
 for cp in calib_types:
-    if cp not in [1,2]:
+    if cp not in [1,2,3]:
         print("Calibration method not implemented. Possible options are 1 or 2")
         sys.exit("Calibration method not implemented. Possible options are 1 or 2")
 
@@ -148,6 +150,7 @@ for ff in files:
     # check if the resulting calib file already exists before starting
     calib_1 = True # by default we compute as if overwrite is True
     calib_2 = True
+    calib_3 = True
     if not overwrite:        
         if 1 in calib_types:
             savepath = make_savedir(ff, "VP")
@@ -157,8 +160,12 @@ for ff in files:
             savepath = make_savedir(ff, "LR_consistency")
             if len(os.listdir(os.path.dirname(savepath))) != 0:
                 calib_2 = False
+        if 3 in calib_types:
+            savepath = make_savedir(ff, "QVP")
+            if len(os.listdir(os.path.dirname(savepath))) != 0:
+                calib_3 = False
     
-    if all((not calib_1, not calib_2)):
+    if all((not calib_1, not calib_2, not calib_3)):
         continue
 
     print("processing "+ff)
@@ -202,8 +209,8 @@ for ff in files:
     
     data = utils.attach_ERA5_TEMP(data, path=loc.join(era5_dir.split("loc")))
 
-#%% Calculate ZDR offset method 1 or 2
-    if 1 in calib_types or 2 in calib_types:
+#%% Calculate ZDR offset method 1, 2 or 3
+    if 1 in calib_types or 2 in calib_types or 3 in calib_types:
         min_height = min_hgt+data["altitude"].values
 
         # get PHIDP name
@@ -420,6 +427,48 @@ for ff in files:
             filename = ("zdr_offset_below1C").join(savepath.split("allmoms"))
             zdr_offset.to_netcdf(filename)
 
+        if 3 in calib_types and calib_3:
+            # We ask for at least 1 km of consecutive ZDR values in each VP to be included in the calculation
+            minbins = int(1000 / data["range"].diff("range").median())
+            
+            #### Calculate per timestep and full timespan (daily for dwd and dmi concat files)
+            for timemode in ["step", "all"]:
+                # the the file name appendage for saving the file
+                fn_app = ["_timesteps" if timemode=="step" else "" ][0]
+                
+                if "height_ml_bottom_new_gia" in data:
+                    # Calculate offset below ML
+                    zdr_offset = utils.zdr_offset_detection_qvps(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, azmed=False,
+                                                                min_h=min_height, timemode=timemode, minbins=minbins).compute()
+            
+                    # Copy encodings
+                    zdr_offset["ZDR_offset"].encoding = data[X_ZDR].encoding
+                    zdr_offset["ZDR_max_from_offset"].encoding = data[X_ZDR].encoding
+                    zdr_offset["ZDR_min_from_offset"].encoding = data[X_ZDR].encoding
+                    zdr_offset["ZDR_std_from_offset"].encoding = data[X_ZDR].encoding
+                    zdr_offset["ZDR_sem_from_offset"].encoding = data[X_RHO].encoding
+                    
+                    # save the arrays
+                    savepath = make_savedir(ff, "QVP")
+                    filename = ("zdr_offset_belowML"+fn_app).join(savepath.split("allmoms"))
+                    zdr_offset.to_netcdf(filename)
+                
+                # calculate offset below 1 degree C
+                zdr_offset = utils.zdr_offset_detection_qvps(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=1, azmed=False,
+                                                            min_h=min_height, timemode=timemode, minbins=minbins).compute()
+        
+                # Copy encodings
+                zdr_offset["ZDR_offset"].encoding = data[X_ZDR].encoding
+                zdr_offset["ZDR_max_from_offset"].encoding = data[X_ZDR].encoding
+                zdr_offset["ZDR_min_from_offset"].encoding = data[X_ZDR].encoding
+                zdr_offset["ZDR_std_from_offset"].encoding = data[X_ZDR].encoding
+                zdr_offset["ZDR_sem_from_offset"].encoding = data[X_RHO].encoding
+                
+                # save the arrays
+                savepath = make_savedir(ff, "QVP")
+                filename = ("zdr_offset_below1C"+fn_app).join(savepath.split("allmoms"))
+                zdr_offset.to_netcdf(filename)
+                    
 #%% print how much time did it take
 total_time = time.time() - start_time
 print(f"Script took {total_time/60:.2f} minutes to run.")
