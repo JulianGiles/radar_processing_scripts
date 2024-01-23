@@ -72,10 +72,10 @@ min_hgts = {
 }
 
 # Set the possible ZDR calibrations locations to include (in order of priority)
-# The script will try to correct according to the first offset; if not available or nan it will 
+# The idea is to use a script that will try to correct according to the first offset; if not available or nan it will 
 # continue with the next one, and so on. Only the used offset will be outputted in the final file.
 # All items in zdrofffile will be tested in each zdroffdir to load the data.
-zdroffdir = ["/calibration/zdr/VP/", "/calibration/zdr/LR_consistency/"] # subfolder(s) where to find the zdr offset data
+zdroffdir = ["/calibration/zdr/VP/", "/calibration/zdr/LR_consistency/", "/calibration/zdr/QVP/"] # subfolder(s) where to find the zdr offset data
 zdrofffile = ["*zdr_offset_belowML_00*",  "*zdr_offset_below1C_00*", "*zdr_offset_below3C_00*", "*zdr_offset_wholecol_00*",
               "*zdr_offset_belowML_07*", "*zdr_offset_below1C_07*", "*zdr_offset_below3C_07*",
               "*zdr_offset_belowML-*", "*zdr_offset_below1C-*", "*zdr_offset_below3C-*"] # pattern to select the appropriate file (careful with the zdr_offset_belowML_timesteps)
@@ -572,20 +572,22 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
 
 #### Loading ZDR offsets and RHOHV noise corrected
 
-def load_ZDR_offset(ds, X_ZDR, zdr_off_path, zdr_off_name="ZDR_offset"):
+def load_ZDR_offset(ds, X_ZDR, zdr_off_path, zdr_off_name="ZDR_offset", zdr_oc_name="ZDR_OC"):
     """
     Load ZDR offset and attach it to ds.
 
     Parameter
     ---------
     ds : xarray.Dataset or xarray.Dataarray
-            Dataset with including ZDR
+            Dataset with ZDR data.
     X_ZDR : str
-            Name of the ZDR variable
+            Name of the ZDR variable.
     zdr_off_path : str
-            Location of the file or path with wildcards
+            Location of the file or path with wildcards.
     zdr_off_name : str
-            Name of the ZDR variable in the offset data file
+            Name of the ZDR variable in the offset data file.
+    zdr_oc_name : str
+            Name of the new offset-corrected ZDR variable in the output dataset.
 
     Return
     ------
@@ -600,8 +602,8 @@ def load_ZDR_offset(ds, X_ZDR, zdr_off_path, zdr_off_name="ZDR_offset"):
         raise ValueError("ZDR offset selected has no valid values")
     else:
         # create ZDR_OC variable
-        ds = ds.assign({X_ZDR+"_OC": ds[X_ZDR]-zdr_offset[zdr_off_name].values})
-        ds[X_ZDR+"_OC"].attrs = ds[X_ZDR].attrs
+        ds = ds.assign({zdr_oc_name: ds[X_ZDR]-zdr_offset[zdr_off_name].values})
+        ds[zdr_oc_name].attrs = ds[X_ZDR].attrs
         return ds
 
 
