@@ -663,9 +663,9 @@ def compute_qvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1} ):
         if var_name in ds:
             condition = ds[var_name] > threshold
             if combined_mask is None:
-                combined_mask = condition
+                combined_mask = condition.compute()
             else:
-                combined_mask &= condition    
+                combined_mask &= condition.compute()    
                 
     ds_qvp = ds.where(combined_mask).median("azimuth", keep_attrs=True)
 
