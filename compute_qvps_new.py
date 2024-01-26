@@ -200,9 +200,12 @@ for ff in files:
         rhoncpath = os.path.dirname(utils.edit_str(ff, country, country+rhoncdir))
         swp = utils.load_corrected_RHOHV(swp, rhoncpath+"/"+rhoncfile)
 
-        # Check that the corrected RHOHV does not have much higher STD than the original (50% more)
+        # Check that the corrected RHOHV does not have higher STD than the original (1 + std_margin)
         # if that is the case we take it that the correction did not work well so we won't use it
-        if not (swp[X_RHO].std()*1.5 < swp["RHOHV_NC"].std()).compute():
+        std_margin = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_margin), otherwise use RHOHV
+        min_rho = 0.6 # min RHOHV value for filtering. Only do this test with the highest values to avoid wrong results
+
+        if ( swp["RHOHV_NC"].where(swp["RHOHV_NC"]>min_rho).std() < swp[X_RHO].where(swp[X_RHO]>min_rho).std()*(1+std_margin) ).compute():
             # Change the default RHOHV name to the corrected one
             X_RHO = "RHOHV_NC"                    
 

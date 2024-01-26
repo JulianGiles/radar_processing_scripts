@@ -226,11 +226,14 @@ for ff in files:
         for X_RHO in rhohv_names:
             if X_RHO in data.data_vars:
                 if "_NC" in X_RHO:
-                    # Check that the corrected RHOHV does not have much higher STD than the original (50% more)
+                    # Check that the corrected RHOHV does not have higher STD than the original (1 + std_margin)
                     # if that is the case we take it that the correction did not work well so we won't use it
-                    if (data["RHOHV"].std()*1.5 < data[X_RHO].std()).compute():
-                        # Change to the default RHOHV name 
-                        X_RHO = "RHOHV"
+                    std_margin = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_margin), otherwise use RHOHV
+                    min_rho = 0.6 # min RHOHV value for filtering. Only do this test with the highest values to avoid wrong results
+            
+                    if ( data["RHOHV"].where(data["RHOHV"]>min_rho).std()*(1+std_margin) < data[X_RHO].where(data[X_RHO]>min_rho).std() ).compute():
+                        # Change the default RHOHV name to the corrected one
+                        X_RHO = "RHOHV"                    
 
                 break
 
