@@ -93,7 +93,7 @@ path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps/20*/*/*/umd/vol5minng01/0
 
 #### Set variable names
 X_DBZH = "DBZH"
-X_RHOHV = "RHOHV_NC"
+X_RHO = "RHOHV_NC" # if RHOHV_NC is set here, it is then checked agains the original RHOHV in the next cell
 X_ZDR = "ZDR_OC"
 X_KDP = "KDP_ML_corrected"
 
@@ -193,13 +193,50 @@ qvps = utils.load_qvps(ff, align_z=alignz, fix_TEMP=False, fillna=False)
 # with ProgressBar():
 #     qvps_strat = qvps.where( (qvps["min_entropy"]>=0.8) & (qvps.height_ml_bottom_new_gia.notnull()), drop=True).compute()
 
+# Check that RHOHV_NC is actually better (less std) than RHOHV, otherwise just use RHOHV, on a per-day basis
+std_margin = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_margin), otherwise use RHOHV
+min_rho = 0.6 # min RHOHV value for filtering. Only do this test with the highest values to avoid wrong results
+
+if "_NC" in X_RHO:
+    # Check that the corrected RHOHV does not have higher STD than the original (1 + std_margin)
+    # if that is the case we take it that the correction did not work well so we won't use it
+    cond_rhohv = (
+                    qvps[X_RHO].where(qvps[X_RHO]>min_rho).resample({"time":"D"}).std(dim=("time", "z")) < \
+                    qvps["RHOHV"].where(qvps["RHOHV"]>min_rho).resample({"time":"D"}).std(dim=("time", "z"))*(1+std_margin) 
+                    ).compute()
+    
+    # create an xarray.Dataarray with the valid timesteps
+    valid_dates = cond_rhohv.where(cond_rhohv, drop=True).time.dt.date
+    valid_datetimes = [date.values in valid_dates for date in qvps.time.dt.date]
+    valid_datetimes_xr = xr.DataArray(valid_datetimes, coords={"time": qvps["time"]})
+    
+    # Redefine RHOHV_NC: keep it in the valid datetimes, put RHOHV in the rest
+    qvps[X_RHO] = qvps[X_RHO].where(valid_datetimes_xr, qvps["RHOHV"])
+    
+
+# Conditions to clean ML height values
+max_change = 400 # set a maximum value of ML height change from one timestep to another (in m)
+max_std = 200 # set a maximum value of ML std from one timestep to another (in m)
+time_window = 5 # set timestep window for the std computation (centered)
+min_period = 3 # set minimum number of valid ML values in the window (centered)
+
+cond_ML_bottom_change = abs(qvps["height_ml_bottom_new_gia"].diff("time").compute())<max_change
+cond_ML_bottom_std = qvps["height_ml_bottom_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
+# cond_ML_bottom_minlen = qvps["height_ml_bottom_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
+
+cond_ML_top_change = abs(qvps["height_ml_new_gia"].diff("time").compute())<max_change
+cond_ML_top_std = qvps["height_ml_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
+# cond_ML_top_minlen = qvps["height_ml_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
+
+allcond = cond_ML_bottom_change * cond_ML_bottom_std * cond_ML_top_change * cond_ML_top_std
+
 # Filter only stratiform events (min entropy >= 0.8 and ML detected)
-qvps_strat = qvps.where( (qvps["min_entropy"]>=0.8).compute() & (qvps.height_ml_bottom_new_gia.notnull()).compute(), drop=True)
+qvps_strat = qvps.where( (qvps["min_entropy"]>=0.8).compute() & allcond, drop=True)
 # Filter relevant values
 qvps_strat_fil = qvps_strat.where((qvps_strat[X_TH] > 0 )&
                                   (qvps_strat[X_KDP] > -0.1)&
                                   (qvps_strat[X_KDP] < 3)&
-                                  (qvps_strat[X_RHOHV] > 0.7)&
+                                  (qvps_strat[X_RHO] > 0.7)&
                                   (qvps_strat[X_ZDR] > -1) &
                                   (qvps_strat[X_ZDR] < 3))
 
@@ -428,9 +465,9 @@ if country=="dwd":
 # plot CFTDs retreivals
 # We assume that everything above ML is frozen and everything below is liquid
 
-IWC = "iwc_zdr_zh_kdp" # iwc_zh_t or iwc_zdr_zh_kdp
-LWC = "lwc_kdp" # lwc_zh_zdr or lwc_zh_zdr2 or lwc_kdp
-Dm_ice = "Dm_ice_zh_kdp" # Dm_ice_zh or Dm_ice_zh_kdp
+IWC = "iwc_zh_t" # iwc_zh_t or iwc_zdr_zh_kdp
+LWC = "lwc_zh_zdr" # lwc_zh_zdr (adjusted for Germany) or lwc_zh_zdr2 (S-band) or lwc_kdp
+Dm_ice = "Dm_ice_zh" # Dm_ice_zh or Dm_ice_zh_kdp
 Dm_rain = "Dm_rain_zdr3" # Dm_rain_zdr, Dm_rain_zdr2 or Dm_rain_zdr3
 Nt_ice = "Nt_ice_zh_iwc" # Nt_ice_zh_iwc
 Nt_rain = "Nt_rain_zh_zdr" # Nt_rain_zh_zdr
@@ -488,19 +525,22 @@ def plot_qvp(data, momname="DBZH", tloc=slice("2015-01-01", "2020-12-31"), plot_
     mom=momname
     if "_" in momname:
         mom= momname.split("_")[0]
-    norm = radarmet.get_discrete_norm(visdict14[mom]["ticks"])
+    # norm = radarmet.get_discrete_norm(visdict14[mom]["ticks"])
     # cmap = mpl.cm.get_cmap("HomeyerRainbow")
     # cmap = get_discrete_cmap(visdict14["DBZH"]["ticks"], 'HomeyerRainbow')
-    cmap = visdict14[mom]["cmap"]
+    ticks = radarmet.visdict14[mom]["ticks"]
+    # cmap = visdict14[mom]["cmap"]
+    cmap = "miub2"
+    norm = utils.get_discrete_norm(ticks, cmap, extend="both")
 
     data[momname].loc[{"time":tloc}].dropna("z", how="all").plot(x="time", cmap=cmap, norm=norm, extend="both", **kwargs)
     
     if plot_ml:
         try:
             data.loc[{"time":tloc}].height_ml_bottom_new_gia.plot(color="black")
-            data.loc[{"time":tloc}].height_ml_bottom_new_gia.plot(color="white",ls=":")
+            # data.loc[{"time":tloc}].height_ml_bottom_new_gia.plot(color="white",ls=":")
             data.loc[{"time":tloc}].height_ml_new_gia.plot(color="black")
-            data.loc[{"time":tloc}].height_ml_new_gia.plot(color="white",ls=":")
+            # data.loc[{"time":tloc}].height_ml_new_gia.plot(color="white",ls=":")
         except KeyError:
             print("No ML in data")
     if plot_entropy:
@@ -510,25 +550,25 @@ def plot_qvp(data, momname="DBZH", tloc=slice("2015-01-01", "2020-12-31"), plot_
             print("Plotting entropy failed")
     plt.title(mom)
 
-qvps_fix = qvps.copy()
-qvps_fix["KDP_ML_corrected"] = qvps_fix["KDP_ML_corrected"].where(qvps_fix.height_ml_new_gia.notnull(),  qvps_fix["KDP_CONV"])
+qvps_fix = qvps.copy().where(allcond)
+# qvps_fix["KDP_ML_corrected"] = qvps_fix["KDP_ML_corrected"].where(qvps_fix.height_ml_new_gia.notnull(),  qvps_fix["KDP_CONV"])
 with mpl.rc_context({'font.size': 10}):
-    plot_qvp(qvps_fix, "KDP_ML_corrected", tloc="2017-07-25", plot_ml=True, plot_entropy=True, ylim=(qvps.altitude,10000))
+    plot_qvp(qvps_fix, "ZDR_OC", tloc="2020-07-15", plot_ml=True, plot_entropy=True, ylim=(qvps.altitude,10000))
 
 
 qvps_strat_fil_notime = qvps_strat_fil.copy()
 qvps_strat_fil_notime = qvps_strat_fil_notime.reset_index("time")
-plot_qvp(qvps_strat_fil_notime, "KDP_ML_corrected", plot_ml=True, plot_entropy=True, ylim=(2000,10000))
+plot_qvp(qvps_strat_fil_notime, "ZDR_OC", tloc="2020-07-15", plot_ml=True, plot_entropy=True, ylim=(qvps.altitude,10000))
 
 #%% Statistics histograms
 import ridgeplot
 
-ridge_vars = [X_DBZH, X_ZDR, X_RHOHV, X_KDP]
+ridge_vars = [X_DBZH, X_ZDR, X_RHO, X_KDP]
 
 vars_ticks = {X_DBZH: np.arange(0, 46, 1), 
                 X_ZDR: np.arange(-0.5, 2.1, 0.1),
                 X_KDP: np.arange(-0.1, 0.52, 0.02),
-                X_RHOHV: np.arange(0.9, 1.004, 0.004)
+                X_RHO: np.arange(0.9, 1.004, 0.004)
                 }
 
 bins = {"ML_thickness": np.arange(0,1200,50),
