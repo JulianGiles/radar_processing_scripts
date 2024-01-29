@@ -65,7 +65,7 @@ locs = ["pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs"]
 path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/*allmoms*"
 path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
 # Load only events with ML detected (pre-condition for stratiform)
-path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps/20*/*/*/umd/vol5minng01/07/ML_detected.txt"
+path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
 # path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/2016/*/*/ANK/*/*/ML_detected.txt"
 # path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
 # path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/*/*/*/ANK/*/*/*allmoms*"
@@ -74,22 +74,6 @@ path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps/20*/*/*/umd/vol5minng01/0
 # path_qvps = ["/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*",
 #              "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/14*/*allmoms*"]
 
-# ## Special selection of dates based on ML_detected.txt or some other criteria (works but still quite slow)
-# special_selection = "/automount/realpep/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/ML*"
-# path_special = glob.glob(special_selection)
-# path_qvps = []
-# for ff in path_special:
-#     path_qvps.append(os.path.dirname(ff)+"/*allmoms*")
-
-
-# if isinstance(path_qvps, str):
-#     files = sorted(glob.glob(path_qvps))
-# elif len(path_qvps)==1:    
-#     files = sorted(glob.glob(path_qvps[0]))
-# else:
-#     files = []
-#     for fglob in path_qvps:
-#         files.extend(glob.glob(fglob))
 
 #### Set variable names
 X_DBZH = "DBZH"
@@ -351,7 +335,7 @@ stats[find_loc(locs, ff[0])] = {"values_sfc": values_sfc.compute().copy(),
 #     for xx in stats[ll].keys():
 #         stats[ll][xx].to_netcdf("/automount/realpep/upload/jgiles/radar_stats/stratiform/"+ll+"_"+xx+".nc")
 
-#%% CFADs Plot
+#%% CFTDs Plot
 
 # adjustment from K to C (disabled now because I know that all qvps have ERA5 data)
 adjtemp = 0
@@ -462,7 +446,7 @@ if country=="dwd":
     ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
 
 
-# plot CFTDs retreivals
+#%% CFTDs retreivals Plot
 # We assume that everything above ML is frozen and everything below is liquid
 
 IWC = "iwc_zh_t" # iwc_zh_t or iwc_zdr_zh_kdp
