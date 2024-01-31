@@ -833,8 +833,7 @@ def ml_height_top_new(ds, moment='comb_dy', dim='height',skipna=True, drop=True)
 def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), PHIDP=(-90.,-70.)), dim='height', thres=0.02, xwin=5, ywin=5, fmlh=0.3, min_h=600, all_data=False, clowres=False):
     '''
     Function to detect the melting layer based on wolfensberger et al 2016 (https://doi.org/10.1002/qj.2672) 
-    and refined for delta bump removing by K. Mühlbauer and further refined by T. Scharbach. Giangrande refinement
-    is also calculated and included in separate variables.
+    refined by T. Scharbach. Giangrande refinement is also calculated and included in separate variables.
 
     Parameter
     ---------
@@ -2208,7 +2207,7 @@ def phase_offset(phioff, method=None, rng=3000.0, npix=None, **kwargs):
 def phidp_offset_detection(ds, phidp="PHIDP", rhohv="RHOHV", dbzh="DBZH", rhohvmin=0.9,
                            dbzhmin=0., min_height=0., rng=3000., **kwargs):
     r"""
-    Calculate the offset on PHIDP.
+    Calculate the offset on PHIDP. Wrapper around phase_offset.
 
     Parameters
     ----------
