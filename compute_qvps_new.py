@@ -205,7 +205,7 @@ for ff in files:
         std_margin = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_margin), otherwise use RHOHV
         min_rho = 0.6 # min RHOHV value for filtering. Only do this test with the highest values to avoid wrong results
 
-        if ( swp["RHOHV_NC"].where(swp["RHOHV_NC"]>min_rho).std() < swp[X_RHO].where(swp[X_RHO]>min_rho).std()*(1+std_margin) ).compute():
+        if ( swp["RHOHV_NC"].where(swp["RHOHV_NC"]>min_rho * (swp["z"]>min_height)).std() < swp[X_RHO].where(swp[X_RHO]>min_rho * (swp["z"]>min_height)).std()*(1+std_margin) ).compute():
             # Change the default RHOHV name to the corrected one
             X_RHO = "RHOHV_NC"                    
 
@@ -243,8 +243,8 @@ for ff in files:
                                 swp_qvpoc = utils.load_ZDR_offset(swp, X_ZDR, zdroffsetpath_qvp+"/"+zdrof2, zdr_oc_name=X_ZDR+"_OC")
                                 
                                 # calculate the count of negative values after each correction
-                                neg_count_swp_lroc = (swp[X_ZDR+"_OC"].where(swp[X_RHO]>0.99) < 0).sum().compute()
-                                neg_count_swp_qvpoc = (swp_qvpoc[X_ZDR+"_OC"].where(swp_qvpoc[X_RHO]>0.99) < 0).sum().compute()
+                                neg_count_swp_lroc = (swp[X_ZDR+"_OC"].where(swp[X_RHO]>0.99 * (swp["z"]>min_height)) < 0).sum().compute()
+                                neg_count_swp_qvpoc = (swp_qvpoc[X_ZDR+"_OC"].where(swp_qvpoc[X_RHO]>0.99 * (swp["z"]>min_height)) < 0).sum().compute()
                                 
                                 if neg_count_swp_lroc > neg_count_swp_qvpoc:
                                     # continue with the correction with less negative values
@@ -255,8 +255,8 @@ for ff in files:
                                 pass
                     
                     # calculate the count of negative values before and after correction
-                    neg_count_swp = (swp[X_ZDR].where(swp[X_RHO]>0.99) < 0).sum().compute()
-                    neg_count_swp_oc = (swp[X_ZDR+"_OC"].where(swp[X_RHO]>0.99) < 0).sum().compute()
+                    neg_count_swp = (swp[X_ZDR].where(swp[X_RHO]>0.99 * (swp["z"]>min_height)) < 0).sum().compute()
+                    neg_count_swp_oc = (swp[X_ZDR+"_OC"].where(swp[X_RHO]>0.99 * (swp["z"]>min_height)) < 0).sum().compute()
                     
                     if neg_count_swp_oc > neg_count_swp and abs((swp[X_ZDR] - swp[X_ZDR+"_OC"]).compute().median()) < 0.2:
                         # if the correction introduces more negative values and the offset is lower than 0.2, then do not correct
@@ -309,14 +309,14 @@ for ff in files:
             ds = utils.phidp_offset_correction(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                                  dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range)
         
-            phi_masked = ds[X_PHI+"_OC"].where((ds[X_RHO] >= 0.9) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )   
+            phi_masked = ds[X_PHI+"_OC"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["z"]>min_height) )   
         
         else:
             # process phidp (offset and smoothing)
             ds = utils.phidp_processing(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                                  dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range)
         
-            phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.9) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )   
+            phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["z"]>min_height) )   
 
         # Assign phi_masked
         assign = { X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs) }
