@@ -16,7 +16,7 @@ modes=("90gradstarng01" "pcpng01" "vol5minng01")
 elevs=("00" "01" "02" "03" "04" "05" "06" "07" "08" "09")
 
 
-for file in ${path}${location}/*${location}.tar; do
+for file in ${path}*${location}.tar; do
     if [ -f "$file" ]; then
 
         # extract year, month, day, and location from the file name
