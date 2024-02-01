@@ -70,8 +70,9 @@ warnings.filterwarnings('ignore')
 
 min_height_key = "default" # default = 200, 90grads = 600, ANK = 400, GZT = 300
 
-ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/pro/vol5minng01/07/*allmoms*"
-ff = '/automount/realpep/upload/jgiles/dmi/2015/2015-03/2015-03-11/HTY/MON_YAZ_C/8.0/MON_YAZ_C-allmoms-8.0-20152015-032015-03-11-HTY-h5netcdf.nc'
+ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-08-31/tur/vol5minng01/07/*allmoms*"
+ff = "/automount/realpep/upload/jgiles/dmi/2019/2019-09/2019-09-15/SVS/VOL_B/10.0/VOL_B-allmoms-10.0-2019-09-15-SVS-h5netcdf.nc"
+# ff = '/automount/realpep/upload/jgiles/dmi/2016/2016-08/2016-08-05/AFY/VOL_B/7.0/VOL_B-allmoms-7.0-20162016-082016-08-05-AFY-h5netcdf.nc'
 # ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-06-02/pro/90gradstarng01/00/*allmoms*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-10/2021-10-30/ess/90gradstarng01/00/*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-07/2021-07-24/ess/90gradstarng01/00/*"
@@ -110,6 +111,34 @@ min_height = utils.min_hgts[min_height_key] + ds["altitude"].values
 
 X_DBZH, X_PHI, X_RHO, X_ZDR, X_TH = utils.get_names(ds)
 
+## Load noise corrected RHOHV
+
+# Define the rhohv corrected paths and file names or take them from the default
+
+rhoncdir = utils.rhoncdir
+rhoncfile = utils.rhoncfile
+
+try:
+    rhoncpath = os.path.dirname(utils.edit_str(ff, country, country+rhoncdir))
+    
+    ds = utils.load_corrected_RHOHV(ds, rhoncpath+"/"+rhoncfile)
+          
+    # Check that the corrected RHOHV does not have higher STD than the original (1 + std_margin)
+    # if that is the case we take it that the correction did not work well so we won't use it
+    std_margin = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_margin), otherwise use RHOHV
+    min_rho = 0.6 # min RHOHV value for filtering. Only do this test with the highest values to avoid wrong results
+
+    if ( ds["RHOHV_NC"].where(ds["RHOHV_NC"]>min_rho * (ds["z"]>min_height)).std() < ds[X_RHO].where(ds[X_RHO]>min_rho * (ds["z"]>min_height)).std()*(1+std_margin) ).compute():
+        # Change the default RHOHV name to the corrected one
+        X_RHO = "RHOHV_NC"                    
+
+
+except OSError:
+    print("No noise corrected rhohv to load: "+rhoncpath+"/"+rhoncfile)
+
+except ValueError:
+    print("ValueError with corrected rhohv: "+rhoncpath+"/"+rhoncfile)        
+
 ## Load ZDR offset
 
 # We define a custom exception to stop the next nexted loops as soon as a file is loaded
@@ -145,8 +174,8 @@ try:
                             ds_qvpoc = utils.load_ZDR_offset(ds, X_ZDR, zdroffsetpath_qvp+"/"+zdrof2, zdr_oc_name=X_ZDR+"_OC")
                             
                             # calculate the count of negative values after each correction
-                            neg_count_ds_lroc = (ds[X_ZDR+"_OC"].where(ds[X_RHO]>0.99) < 0).sum().compute()
-                            neg_count_ds_qvpoc = (ds_qvpoc[X_ZDR+"_OC"].where(ds_qvpoc[X_RHO]>0.99) < 0).sum().compute()
+                            neg_count_ds_lroc = (ds[X_ZDR+"_OC"].where(ds[X_RHO]>0.99 * (ds["z"]>min_height)) < 0).sum().compute()
+                            neg_count_ds_qvpoc = (ds_qvpoc[X_ZDR+"_OC"].where(ds_qvpoc[X_RHO]>0.99 * (ds["z"]>min_height)) < 0).sum().compute()
                             
                             if neg_count_ds_lroc > neg_count_ds_qvpoc:
                                 # continue with the correction with less negative values
@@ -157,8 +186,8 @@ try:
                             pass
                 
                 # calculate the count of negative values before and after correction
-                neg_count_ds = (ds[X_ZDR].where(ds[X_RHO]>0.99) < 0).sum().compute()
-                neg_count_ds_oc = (ds[X_ZDR+"_OC"].where(ds[X_RHO]>0.99) < 0).sum().compute()
+                neg_count_ds = (ds[X_ZDR].where(ds[X_RHO]>0.99 * (ds["z"]>min_height)) < 0).sum().compute()
+                neg_count_ds_oc = (ds[X_ZDR+"_OC"].where(ds[X_RHO]>0.99 * (ds["z"]>min_height)) < 0).sum().compute()
                 
                 if neg_count_ds_oc > neg_count_ds and abs((ds[X_ZDR] - ds[X_ZDR+"_OC"]).compute().median()) < 0.2:
                     # if the correction introduces more negative values and the offset is lower than 0.2, then do not correct
@@ -177,32 +206,6 @@ try:
     print("No zdr offset to load: "+zdroffsetpath+"/"+zdrof)
 except FileFound:
     pass
-
-
-## Load noise corrected RHOHV
-
-# Define the rhohv corrected paths and file names or take them from the default
-
-rhoncdir = utils.rhoncdir
-rhoncfile = utils.rhoncfile
-
-
-try:
-    rhoncpath = os.path.dirname(utils.edit_str(ff, country, country+rhoncdir))
-    
-    ds = utils.load_corrected_RHOHV(ds, rhoncpath+"/"+rhoncfile)
-    
-    # Check that the corrected RHOHV does not have much higher STD than the original (50% more)
-    # if that is the case we take it that the correction did not work well so we won't use it
-    if not (ds[X_RHO].std()*1.5 < ds["RHOHV_NC"].std()).compute():
-        # Change the default RHOHV name to the corrected one
-        X_RHO = X_RHO+"_NC"
-        
-except OSError:
-    print("No noise corrected rhohv to load: "+rhoncpath+"/"+rhoncfile)
-
-except ValueError:
-    print("ValueError with corrected rhohv: "+rhoncpath+"/"+rhoncfile)        
 
 ## Phase processing
 
@@ -255,13 +258,13 @@ if X_PHI in ds.data_vars:
         ds = utils.phidp_offset_correction(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                              dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range)
     
-        phi_masked = ds[X_PHI+"_OC"].where((ds[X_RHO] >= 0.9) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )   
+        phi_masked = ds[X_PHI+"_OC"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["z"]>min_height) )   
 
     else:
         ds = utils.phidp_processing(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                              dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range, rng=rng)
     
-        phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.9) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )
+        phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["z"]>min_height) )
 
     # Assign phi_masked
     assign = { X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs) }
@@ -353,7 +356,7 @@ if X_PHI in ds.data_vars:
 
 #%% Plot simple PPI 
 
-tsel = "2015-03-11T10"
+tsel = "2017-08-31T20:03"
 if tsel == "":
     datasel = ds
 else:
@@ -366,7 +369,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "ZDR"
+mom = "KDP_ML_corrected"
 
 ticks = radarmet.visdict14[mom]["ticks"]
 cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
@@ -374,7 +377,7 @@ cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(tic
 norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
 cmap = "miub2"
 
-plot_over_map = True
+plot_over_map = False
 
 if not plot_over_map:
     # plot simple PPI
@@ -388,13 +391,17 @@ elif plot_over_map:
     ax.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4)
     ax.gridlines(draw_labels=True)
 
+plt.title(mom+". "+tsel)
+
 #%% Plot simple QVP 
 
-tsel = ""
+max_height = 16000 # max height for the qvp plots
+
+tsel = ""# slice("2017-08-31T19","2017-08-31T22")
 if tsel == "":
-    datasel = ds_qvp
+    datasel = ds_qvp.loc[{"z": slice(0, max_height)}]
 else:
-    datasel = ds_qvp.loc[{"time": tsel}]
+    datasel = ds_qvp.loc[{"time": tsel, "z": slice(0, max_height)}]
     
 # New Colormap
 colors = ["#2B2540", "#4F4580", "#5a77b1",
@@ -410,15 +417,42 @@ cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(tic
 cmap = "miub2"
 norm = utils.get_discrete_norm(ticks, cmap, extend="both")
 datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm)
+plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only the hour in the x-axis
 datasel["height_ml_new_gia"].plot(c="black")
 datasel["height_ml_bottom_new_gia"].plot(c="black")
+plt.gca().set_ylabel("height over sea level")
+plt.title(mom)
 plt.show()
 plt.close()
 
+#%% Plot QVP as lines 
+
+tsel = slice("2017-08-31T20","2017-08-31T21")
+if tsel == "":
+    datasel = ds_qvp
+else:
+    datasel = ds_qvp.loc[{"time": tsel}]
+
+
+mom = "UPHIDP_OC"
+
+cmap0 = mpl.colormaps.get_cmap("Blues")
+cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(datasel.time))), N=len(datasel.time)+1)
+
+from cycler import cycler
+rc_cycle = {"axes.prop_cycle": cycler(color=cmap.colors)}
+with plt.rc_context(rc_cycle):
+    datasel[mom].plot.line(x="z", hue="time", add_legend=False)
+
+plt.title(mom)
+plt.show()
+plt.close()
+
+
 #%% Load QVPs
 # Load only events with ML detected (pre-condition for stratiform)
-ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2018/*/*/umd/vol5minng01/07/ML_detected.txt"
-ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2016/*/*/HTY/*/*/ML_detected.txt"
+ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2016/*/*/tur/vol5minng01/07/ML_detected.txt"
+ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2019/*/*/SVS/*/*/ML_detected.txt"
 ff_ML_glob = glob.glob(ff_ML)
 
 if "dmi" in ff_ML:
@@ -1954,88 +1988,99 @@ otherdata.DBZH[0].plot()
 mydataraw = dttree.open_datatree(glob.glob("/automount/realpep/upload/RealPEP-SPP/newdata/2022-Nov-new/pro/2016/2016-05-27/pro/vol5minng01/05/*dbzh*")[0])
 otherdataraw = dttree.open_datatree(glob.glob("/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2016/2016-05/2016-05-27/pro/vol5minng01/05/*dbzh*")[0])
 
-#%% Testing how to get rid of the noise close to the ground in turkish data
-# first load and compute some file using compute_qvps_new.py
-# /automount/realpep/upload/jgiles/dmi/2016/2016-01/2016-01-28/HTY/MON_YAZ_C/8.0/MON_YAZ_C-allmoms-8.0-20162016-012016-01-28-HTY-h5netcdf.nc
+#%% Check ZDR offsets that come in the turkish data
+# We need to load the raw files for this
 
-# plot qvp of one variable and also PPI at one timestep
-vv="RHOHV_NC"
-ticks = radarmet.visdict14[vv]["ticks"]
-norm = utils.get_discrete_norm(ticks)
-cmap = radarmet.visdict14[vv]["cmap"]
+dmipath = sorted(glob.glob("/automount/realpep/upload/jgiles/dmi_raw/2019/2019-09/2019-09-15/SVS/*"))
 
-ds_qvp_ra[vv].plot(x="time", cmap=cmap, norm=norm) ; plt.title(vv)
-swp[vv][-15].plot(cmap=cmap, norm=norm) ; plt.title(vv)
+# Read attributes of files
+radarid = []
+dtime = []
+taskname = []
+elevation = []
+nrays_expected = []
+nrays_written = []
+nbins = []
+rlastbin = []
+binlength = []
+horbeamwidth = []
+fpath = []
+sweep_number = []
+zdr_offset = []
 
-# What if we filter with SQIH and SNRH
-swp[vv][-15].where(swp["SQIH"][-15]>0.5).plot(cmap=cmap, norm=norm) ; plt.title(vv) # only SQIH
-swp[vv][-15].where(swp["SNRH"][-15]>10).plot(cmap=cmap, norm=norm) ; plt.title(vv) # only SNRH
-swp[vv][-15].where(swp["SQIH"][-15]>0.5).where(swp["SNRH"][-15]>10).plot(cmap=cmap, norm=norm) ; plt.title(vv) # both
+for f in dmipath:
+    # print(".", end="")
+    # Read metadata
+    try:
+        m = xd.io.backends.iris.IrisRawFile(f, loaddata=False)
+    except ValueError:
+        # some files may be empty, ignore them
+        print("ignoring empty file: "+f)
+        continue
+    except EOFError:
+        # some files may be corrupt, ignore them
+        print("ignoring corrupt file: "+f)
+        continue
+    except OSError:
+        # some files give NULL value error, ignore them
+        print("ignoring NULL file: "+f)
+        continue
+    # Extract info
+    fname = os.path.basename(f).split(".")[0]
+    radarid_ = fname[0:3]
+    dtimestr = fname[3:]
+    dtime_ = dt.datetime.strptime(dtimestr, "%y%m%d%H%M%S")
+    taskname_ = m.product_hdr["product_configuration"]["task_name"].strip()
+    nbins_ = m.nbins
+    rlastbin_ = m.ingest_header["task_configuration"]["task_range_info"]["range_last_bin"]/100
+    binlength_ = m.ingest_header["task_configuration"]["task_range_info"]["step_output_bins"]/100
+    horbeamwidth_ = round(m.ingest_header["task_configuration"]["task_misc_info"]["horizontal_beam_width"], 2)
+    zdr_offset_ = m.ingest_header["task_configuration"]["task_calib_info"]["zdr_bias"]
+    for i in range(10):
+        try:
+            nrays_expected_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["number_rays_file_expected"]
+            nrays_written_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["number_rays_file_written"]    
+            elevation_ = round(m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["fixed_angle"], 2)
+            sweep_number_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["sweep_number"]
+            break
+        except KeyError:
+            try:
+                nrays_expected_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["number_rays_file_expected"]
+                nrays_written_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["number_rays_file_written"]    
+                elevation_ = round(m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["fixed_angle"], 2)
+                sweep_number_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["sweep_number"]
+                break
+            except KeyError:
+                continue
+    # Append to list
+    radarid.append(radarid_)
+    dtime.append(dtime_)
+    taskname.append(taskname_)
+    elevation.append(elevation_)
+    nbins.append(nbins_)
+    rlastbin.append(rlastbin_)
+    binlength.append(binlength_)
+    #nrays_expected.append(nrays_expected_)
+    #nrays_written.append(nrays_written_)
+    fpath.append(f)
+    horbeamwidth.append(horbeamwidth_)   
+    sweep_number.append(sweep_number_)
+    zdr_offset.append(zdr_offset_)
 
-
-# Try decluttering with Gabella approach
-clmap = wrl.classify.filter_gabella(swp["DBZH"][-15])
-
-# I tried to filter the noise with VRADH but it is not optimal
-swp[vv][-15].where(abs(swp[vv][-15])>0.1).plot(cmap=cmap, norm=norm) ; plt.title(vv)
-
-# So far compute_qvp() only filters minimum thresholds, so as a workaround I added the abs value as a new variable
-ds2 = ds.assign({"VRADH_abs": abs(ds["VRADH"])})
-ds_qvp_ra2 = utils.compute_qvp(ds2, min_thresh={X_RHO:0.7, X_TH:0, X_ZDR:-1, "VRADH_abs":0.5} )
-ds_qvp_ra2[vv].plot(x="time") ; plt.title(vv)
-
-# a histogram
-swp[vv].where(abs(swp[vv])>0.3).plot(bins=100) ; plt.title(vv)
-
-# So far VRADH looks like a good candidate for filtering but I still did not find an optimal implementation
-# I tried despeckle but it is not useful (only useful for isolated pixels at higher altitudes)
-
-# There is some potential in filtering the values by looking at the median or std
-swp[vv][-15].median("range").plot()
-swp[vv][-15].std("range").plot()
-swp["DBZH"][-15].median("range").plot()
-swp["DBZH"][-15].std("range").plot()
-
-
-# Try with adding more conds to the qvp calculation 
-def compute_qvp_count(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1} ):
-    """
-    Computes QVP by doing the azimuthal median from the values of an 
-    xarray Dataset, thresholded by min_thresh.
-
-    Parameter
-    ---------
-    ds : xarray.Dataset 
-            Dataset 
-    min_thresh : dict
-            dictionary where the keys are variable names and the values are
-            the minimum values of each variable, for thresholding.
-
-    Return
-    ------
-    ds_qvp : xarray.Dataset
-        Dataset with the thresholded data reduced to a QVP with dim z (and time if available)
-    """
-    # Georeference if not
-    if "z" not in ds:
-        ds = ds.pipe(wrl.georef.georeference)
-
-    # Create a combined filter mask for all conditions in the dictionary
-    combined_mask = None
-    for var_name, threshold in min_thresh.items():
-        if var_name in ds:
-            condition = ds[var_name] > threshold
-            if combined_mask is None:
-                combined_mask = condition
-            else:
-                combined_mask &= condition    
-
-    ds_qvp = ds.where(combined_mask).median("azimuth", keep_attrs=True)
-    ds_count = ds.where(combined_mask).count("azimuth", keep_attrs=True)
-    # assign coord z
-    ds_qvp = ds_qvp.assign_coords({"z": ds["z"].median("azimuth", keep_attrs=True)})
-    ds_count = ds_count.assign_coords({"z": ds["z"].median("azimuth", keep_attrs=True)})
-    ds_qvp = ds_qvp.swap_dims({"range":"z"}) # swap range dimension for height
-    ds_count = ds_count.swap_dims({"range":"z"}) # swap range dimension for height
-
-    return ds_qvp, ds_count
+# put attributes in a dataframe
+from collections import OrderedDict
+df = pd.DataFrame(OrderedDict(
+                  {"radarid": radarid,
+                   "datetime": dtime,
+                   "taskname": taskname,
+                   "elevation": elevation,
+                   #"nrays_expected": nrays_expected,
+                   #"nrays_written": nrays_written,
+                   "nbins": nbins,
+                   "rlastbin": rlastbin,
+                   "binlength": binlength,
+                   "horbeamwidth": horbeamwidth,
+                   "fpath": fpath,
+                    "sweep_number": sweep_number,
+                    "zdr_offset": zdr_offset
+                  }))
