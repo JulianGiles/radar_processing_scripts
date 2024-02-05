@@ -243,8 +243,8 @@ for ff in files:
                                 swp_qvpoc = utils.load_ZDR_offset(swp, X_ZDR, zdroffsetpath_qvp+"/"+zdrof2, zdr_oc_name=X_ZDR+"_OC")
                                 
                                 # calculate the count of negative values after each correction
-                                neg_count_swp_lroc = (swp[X_ZDR+"_OC"].where(swp[X_RHO]>0.99 * (swp["z"]>min_height)) < 0).sum().compute()
-                                neg_count_swp_qvpoc = (swp_qvpoc[X_ZDR+"_OC"].where(swp_qvpoc[X_RHO]>0.99 * (swp["z"]>min_height)) < 0).sum().compute()
+                                neg_count_swp_lroc = (swp[X_ZDR+"_OC"].where((swp[X_RHO]>0.99) * (swp["z"]>min_height)) < 0).sum().compute()
+                                neg_count_swp_qvpoc = (swp_qvpoc[X_ZDR+"_OC"].where((swp_qvpoc[X_RHO]>0.99) * (swp["z"]>min_height)) < 0).sum().compute()
                                 
                                 if neg_count_swp_lroc > neg_count_swp_qvpoc:
                                     # continue with the correction with less negative values
@@ -255,8 +255,8 @@ for ff in files:
                                 pass
                     
                     # calculate the count of negative values before and after correction
-                    neg_count_swp = (swp[X_ZDR].where(swp[X_RHO]>0.99 * (swp["z"]>min_height)) < 0).sum().compute()
-                    neg_count_swp_oc = (swp[X_ZDR+"_OC"].where(swp[X_RHO]>0.99 * (swp["z"]>min_height)) < 0).sum().compute()
+                    neg_count_swp = (swp[X_ZDR].where((swp[X_RHO]>0.99) * (swp["z"]>min_height)) < 0).sum().compute()
+                    neg_count_swp_oc = (swp[X_ZDR+"_OC"].where((swp[X_RHO]>0.99) * (swp["z"]>min_height)) < 0).sum().compute()
                     
                     if neg_count_swp_oc > neg_count_swp and abs((swp[X_ZDR] - swp[X_ZDR+"_OC"]).compute().median()) < 0.2:
                         # if the correction introduces more negative values and the offset is lower than 0.2, then do not correct
