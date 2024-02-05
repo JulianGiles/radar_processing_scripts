@@ -80,6 +80,11 @@ zdrofffile = ["*zdr_offset_belowML_00*",  "*zdr_offset_below1C_00*", "*zdr_offse
               "*zdr_offset_belowML_07*", "*zdr_offset_below1C_07*", "*zdr_offset_below3C_07*",
               "*zdr_offset_belowML-*", "*zdr_offset_below1C-*", "*zdr_offset_below3C-*"] # pattern to select the appropriate file (careful with the zdr_offset_belowML_timesteps)
 
+# like the previous one but for timestep-based correction
+zdrofffile_ts = ["*zdr_offset_belowML_timesteps_00*",  "*zdr_offset_below1C_timesteps_00*", "*zdr_offset_below3C_timesteps_00*", "*zdr_offset_wholecol_timesteps_00*",
+              "*zdr_offset_belowML_timesteps_07*", "*zdr_offset_below1C_timesteps_07*", "*zdr_offset_below3C_timesteps_07*",
+              "*zdr_offset_belowML_timesteps-*", "*zdr_offset_below1C_timesteps-*", "*zdr_offset_below3C_timesteps-*"] # pattern to select the appropriate file (careful with the zdr_offset_belowML_timesteps)
+
 # set the RHOHV correction location
 rhoncdir = "/rhohv_nc/" # subfolder where to find the noise corrected rhohv data
 rhoncfile = "*rhohv_nc_2percent*" # pattern to select the appropriate file (careful with the rhohv_nc_2percent)
@@ -602,7 +607,10 @@ def load_ZDR_offset(ds, X_ZDR, zdr_off_path, zdr_off_name="ZDR_offset", zdr_oc_n
         raise ValueError("ZDR offset selected has no valid values")
     else:
         # create ZDR_OC variable
-        ds = ds.assign({zdr_oc_name: ds[X_ZDR]-zdr_offset[zdr_off_name].values})
+        if len(zdr_offset[zdr_off_name].values) > 1:
+            ds = ds.assign({zdr_oc_name: ds[X_ZDR]-zdr_offset[zdr_off_name]})
+        else:
+            ds = ds.assign({zdr_oc_name: ds[X_ZDR]-zdr_offset[zdr_off_name].values})
         ds[zdr_oc_name].attrs = ds[X_ZDR].attrs
         return ds
 
