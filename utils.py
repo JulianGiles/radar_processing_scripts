@@ -2213,7 +2213,7 @@ def phase_offset(phioff, method=None, rng=3000.0, npix=None, **kwargs):
 
 #### PHIDP processing
 def phidp_offset_detection(ds, phidp="PHIDP", rhohv="RHOHV", dbzh="DBZH", rhohvmin=0.9,
-                           dbzhmin=0., min_height=0., rng=3000., **kwargs):
+                           dbzhmin=0., min_height=0., rng=3000., azmedian=False, **kwargs):
     r"""
     Calculate the offset on PHIDP. Wrapper around phase_offset.
 
@@ -2234,8 +2234,14 @@ def phidp_offset_detection(ds, phidp="PHIDP", rhohv="RHOHV", dbzh="DBZH", rhohvm
     min_height : float
         Minimum height for filtering the z coordinate.
     rng : float
-        range in m to calculate system phase offset
-    kwargs: additional keyword arguments to pass to the rolling sum in phase_offset
+        range in m to calculate system phase offset.
+    azmedian : bool, int
+        If True, compute the median in the azimuth dimension to reduce the offset 
+        to a single value per PPI. Default is False. Alternatively, an integer
+        can be passed to compute a rolling median of window size azmedian over 
+        the azimuth dimension to smooth out the resulting offsets. Possible NaN
+        values are filled with the median over all azimuths.
+    kwargs: additional keyword arguments to pass to the rolling sum in phase_offset.
 
     Returns
     ----------
@@ -2247,10 +2253,28 @@ def phidp_offset_detection(ds, phidp="PHIDP", rhohv="RHOHV", dbzh="DBZH", rhohvm
     phi = ds[phidp].where((ds[rhohv]>=rhohvmin) & (ds[dbzh]>=dbzhmin) & (ds["z"]>min_height) )
     # calculate offset
     phidp_offset = phi.pipe(phase_offset, rng=rng, **kwargs)
+    # reduce to one value per PPI
+    if azmedian is True:
+        # if azmedian is True, take the median of all azimuths
+        phidp_offset["PHIDP_OFFSET"] = phidp_offset["PHIDP_OFFSET"].compute().median("azimuth")
+    elif type(azmedian) is int:
+        # if azmedian is an integer, run a rolling median over azimuth with window size azmedian
+        if azmedian & 1: # azmedian is odd
+            pass
+        else: # if azmedian is even, add 1
+            azmedian = azmedian +1
+        azwindow = azmedian
+        azhalfwindow = int(azwindow/2) # we need to pad the edges of the array with "wrap" so the median wraps around
+        azthirdwindow = int(azwindow/3) # at least a third of azwindow must ve valid values
+        phidp_offset["PHIDP_OFFSET"] = phidp_offset["PHIDP_OFFSET"].compute().pad({"azimuth":azhalfwindow}, mode="wrap")\
+                .rolling(azimuth=azwindow, center=True, min_periods=azthirdwindow)\
+                .median("azimuth", skipna=True).isel(azimuth=slice(azhalfwindow, -azhalfwindow))\
+                .fillna(phidp_offset["PHIDP_OFFSET"].compute().median("azimuth")) # fill remaining NaN with the median of all
+    
     return phidp_offset
 
 def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
-                     dbzhmin=0., min_height=0, window=7, fix_range=500., rng=None, rng_min=3000.):
+                     dbzhmin=0., min_height=0, window=7, fix_range=500., rng=None, rng_min=3000., azmedian=False):
     r"""
     Calculate PHIDP offset and attach results to the input dataset.
 
@@ -2283,6 +2307,8 @@ def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rh
         Minimum value of rng. If the value of rng (either passed by the user 
         or calculated automatically) is lower than rng_min, then rng_min will be 
         used instead.
+    azmedian : bool, int
+        Passed to phidp_offset_detection. Default is False.
 
     Returns
     ----------
@@ -2299,7 +2325,7 @@ def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rh
 
     # Calculate phase offset
     phidp_offset = phidp_offset_detection(ds, phidp=X_PHI, rhohv=X_RHO, dbzh=X_DBZH, rhohvmin=rhohvmin,
-                                          dbzhmin=dbzhmin, min_height=min_height, rng=rng, 
+                                          dbzhmin=dbzhmin, min_height=min_height, rng=rng, azmedian=azmedian,
                                           center=True, min_periods=4)
 
     off = phidp_offset["PHIDP_OFFSET"]
@@ -2317,7 +2343,8 @@ def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rh
 
 
 def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
-                     dbzhmin=0., min_height=0, window=7, fix_range=500., rng=None, rng_min=3000.):
+                     dbzhmin=0., min_height=0, window=7, window2 = 3, fix_range=500., rng=None, rng_min=3000., 
+                     azmedian=False):
     r"""
     Calculate basic PHIDP processing including thresholding, smoothing and 
     offset correction. Attach results to the input dataset.
@@ -2340,6 +2367,8 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
         Minimum height for filtering the z coordinate.
     window : int
         Number of range bins for PHIDP smoothing.
+    window2 : int
+        Number of azimuth bins for PHIDP smoothing.
     fix_range : int
         Minimum range from where to consider PHIDP values.
     rng : float
@@ -2351,6 +2380,8 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
         Minimum value of rng. If the value of rng (either passed by the user 
         or calculated automatically) is lower than rng_min, then rng_min will be 
         used instead.
+    azmedian : bool, int
+        Passed to phidp_offset_detection. Default is False.
 
     Returns
     ----------
@@ -2367,7 +2398,7 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
 
     # Calculate phase offset
     phidp_offset = phidp_offset_detection(ds, phidp=X_PHI, rhohv=X_RHO, dbzh=X_DBZH, rhohvmin=rhohvmin,
-                                          dbzhmin=dbzhmin, min_height=min_height, rng=rng, 
+                                          dbzhmin=dbzhmin, min_height=min_height, rng=rng, azmedian=azmedian,
                                           center=True, min_periods=4)
 
     off = phidp_offset["PHIDP_OFFSET"]
@@ -2379,7 +2410,6 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
     phi_fix = phi_fix.where(phi_fix["range"] >= start_range + fix_range).fillna(off_fix) - off
 
     # smooth range dim
-    window2 = None # window along azimuth
     phi_median = phi_fix.pipe(xr_rolling, window, window2=window2, method='median', min_periods=round(window/2), skipna=False)
 
     # Apply additional smoothing
