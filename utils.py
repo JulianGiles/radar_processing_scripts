@@ -2410,7 +2410,7 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
     phi_fix = phi_fix.where(phi_fix["range"] >= start_range + fix_range).fillna(off_fix) - off
 
     # smooth range dim
-    phi_median = phi_fix.pipe(xr_rolling, window, window2=window2, method='median', min_periods=round(window/2), skipna=False)
+    phi_median = phi_fix.where((ds[X_RHO]>=rhohvmin) & (ds[X_DBZH]>=dbzhmin) & (ds["z"]>min_height) ).pipe(xr_rolling, window, window2=window2, method='median', min_periods=round(window/2), skipna=False)
 
     # Apply additional smoothing
     gkern = gauss_kernel(window, window)
