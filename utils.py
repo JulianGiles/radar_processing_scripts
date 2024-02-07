@@ -250,7 +250,7 @@ def align(ds):
 
 def fix_flipped_phidp(ds, phidp_names=phidp_names):
     """
-    Flip PHIDP in case it is wrapping around the edges (case for turkish radars).
+    Flip PHIDP in case it is wrapping around the edges.
 
     Parameter
     ---------
@@ -394,7 +394,7 @@ def load_dwd_preprocessed(filepath):
             raise TypeError("More than one dataset inside the datatree. Currently not supported")
         
         # get dataset and fix time coordinate
-        dwddata.append(fix_time_in_coords(dwd0.descendants[0].to_dataset()))
+        dwddata.append(fix_flipped_phidp(fix_time_in_coords(dwd0.descendants[0].to_dataset())))
             
     if len(dwddata) == 1:
         return dwddata[0]
@@ -434,7 +434,7 @@ def load_dwd_raw(filepath):
             
             vardict[mom] = xr.open_mfdataset(llmom, engine="odim", combine="nested", concat_dim="time", preprocess=align) 
             
-            vardict[mom] = fix_time_in_coords(vardict[mom])
+            vardict[mom] = fix_flipped_phidp(fix_time_in_coords(vardict[mom]))
             
     except OSError:
         pathparts = [ xx if len(xx)==8 and "20" in xx else None for xx in llmom[0].split("/") ]
