@@ -291,6 +291,7 @@ for ff in files:
             xwin0=9 # window size (bins) for the time rolling median smoothing in ML detection
             ywin0=1 # window size (bins) for the height rolling mean smoothing in ML detection
             fix_range = 750 # range from where to consider phi values (dwd data is bad in the first bin)
+            rng = 3000, # range for phidp offset correction, if None it is auto calculated based on window0
         elif "dmi" in ff:
             country="dmi"
             window0=17 # number of range bins for phidp smoothing (this one is quite important!)
@@ -298,6 +299,7 @@ for ff in files:
             xwin0=5 # window size (bins) for the time rolling median smoothing in ML detection
             ywin0=5 # window size (bins) for the height rolling mean smoothing in ML detection
             fix_range = 200 # range from where to consider phi values (dmi data is bad in the first bin)
+            rng = None, # range for phidp offset correction, if None it is auto calculated based on window0
 
         ######### Processing PHIDP
         #### fix PHIDP
@@ -307,14 +309,14 @@ for ff in files:
         if "UPHIDP" not in X_PHI:
             # calculate phidp offset
             ds = utils.phidp_offset_correction(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
-                                 dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range)
+                                 dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range, azmedian=True)
         
             phi_masked = ds[X_PHI+"_OC"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["z"]>min_height) )   
         
         else:
             # process phidp (offset and smoothing)
             ds = utils.phidp_processing(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
-                                 dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range)
+                                 dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range, rng=rng, azmedian=True)
         
             phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["z"]>min_height) )   
 
