@@ -120,6 +120,7 @@ rhoncdir = utils.rhoncdir
 rhoncfile = utils.rhoncfile
 
 try:
+    print("Loading noise corrected RHOHV")
     rhoncpath = os.path.dirname(utils.edit_str(ff, country, country+rhoncdir))
     
     ds = utils.load_corrected_RHOHV(ds, rhoncpath+"/"+rhoncfile)
@@ -135,10 +136,10 @@ try:
 
 
 except OSError:
-    print("No noise corrected rhohv to load: "+rhoncpath+"/"+rhoncfile)
+    print("No noise corrected RHOHV to load: "+rhoncpath+"/"+rhoncfile)
 
 except ValueError:
-    print("ValueError with corrected rhohv: "+rhoncpath+"/"+rhoncfile)        
+    print("ValueError with corrected RHOHV: "+rhoncpath+"/"+rhoncfile)        
 
 ## Load ZDR offset
 
@@ -158,6 +159,7 @@ if zdr_offset_perts:
 # Load the offsets
 
 try:
+    print("Loading ZDR offsets")
     for zdrod in zdroffdir:
         for zdrof in zdrofffile:
             try:
@@ -191,6 +193,7 @@ try:
                             
                             if neg_count_ds_lroc > neg_count_ds_qvpoc:
                                 # continue with the correction with less negative values
+                                print("Changing daily ZDR offset from LR_consistency to QVP")
                                 ds = ds_qvpoc
                                                             
                             break
@@ -221,6 +224,7 @@ try:
             # No ZDR timestep-based offsets were loaded, print a message
             print("No timestep-based zdr offsets to load")
         else:
+            print("Merging valid ZDR offsets (timestep mode)")
             for zdrod in zdroffdir:
                 # For the offset from each method, we merge all variants to have as many values as possible.
                 # In the end, for each entry of the dictionary, we have a final xarray dataarray (instead of the list)
