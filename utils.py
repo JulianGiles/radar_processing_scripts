@@ -669,6 +669,9 @@ def compute_qvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1} ):
     combined_mask = None
     for var_name, threshold in min_thresh.items():
         if var_name in ds:
+            if ds[var_name].count().compute() == 0:
+                # if all values are NaN, skip this variable
+                continue
             condition = ds[var_name] > threshold
             if combined_mask is None:
                 combined_mask = condition.compute()
