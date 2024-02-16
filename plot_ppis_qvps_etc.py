@@ -72,7 +72,7 @@ zdr_offset_perts = True # offset correct zdr per timesteps? if False, correct wi
 min_height_key = "default" # default = 200, 90grads = 600, ANK = 400, GZT = 300
 
 ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-08-31/tur/vol5minng01/07/*allmoms*"
-ff = "/automount/realpep/upload/jgiles/dmi/2019/2019-09/2019-09-14/SVS/VOL_B/10.0/VOL_B-allmoms-10.0-2019-09-14-SVS-h5netcdf.nc"
+ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-03-11/HTY/MON_YAZ_C/8.0/*allmoms*"
 # ff = '/automount/realpep/upload/jgiles/dmi/2016/2016-08/2016-08-05/AFY/VOL_B/7.0/VOL_B-allmoms-7.0-20162016-082016-08-05-AFY-h5netcdf.nc'
 # ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-06-02/pro/90gradstarng01/00/*allmoms*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-10/2021-10-30/ess/90gradstarng01/00/*"
@@ -416,11 +416,11 @@ if X_PHI in ds.data_vars:
 
 #%% Plot simple PPI 
 
-tsel = "2017-08-31T20:03"
+tsel = "2015-03-11T07:03"
 if tsel == "":
     datasel = ds
 else:
-    datasel = ds.loc[{"time": tsel}]
+    datasel = ds.sel({"time": tsel}, method="nearest")
     
 datasel = datasel.pipe(wrl.georef.georeference)
 
@@ -429,7 +429,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "KDP_ML_corrected"
+mom = "ZDR"
 xylims = 40000 # xlim and ylim (from -xylims to xylims)
 
 ticks = radarmet.visdict14[mom]["ticks"]
@@ -442,17 +442,17 @@ plot_over_map = False
 
 if not plot_over_map:
     # plot simple PPI
-    datasel[mom][0].wrl.plot(x="x", y="y", cmap=cmap, norm=norm, xlim=(-xylims,xylims), ylim=(-xylims,xylims))
+    datasel[mom].wrl.plot(x="x", y="y", cmap=cmap, norm=norm, xlim=(-xylims,xylims), ylim=(-xylims,xylims))
 elif plot_over_map:
     # plot PPI with map coordinates
     fig = plt.figure(figsize=(10, 10))
-    datasel[mom][0].wrl.vis.plot(fig=fig, cmap=cmap, norm=norm, crs=ccrs.Mercator(central_longitude=float(datasel["longitude"])))
+    datasel[mom].wrl.vis.plot(fig=fig, cmap=cmap, norm=norm, crs=ccrs.Mercator(central_longitude=float(datasel["longitude"])))
     ax = plt.gca()
     ax.add_feature(cartopy.feature.COASTLINE, linestyle='-', linewidth=1, alpha=0.4)
     ax.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4)
     ax.gridlines(draw_labels=True)
 
-plt.title(mom+". "+tsel)
+plt.title(mom+". "+str(datasel.time.values).split(".")[0])
 
 #%% Plot simple QVP 
 
@@ -469,7 +469,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "ZDR_OC"
+mom = "ZDR"
 
 ticks = radarmet.visdict14[mom]["ticks"]
 cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
@@ -477,7 +477,7 @@ cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(tic
 # norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
 cmap = "miub2"
 norm = utils.get_discrete_norm(ticks, cmap, extend="both")
-datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm)
+datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm, figsize=(7,3))
 plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only the hour in the x-axis
 datasel["height_ml_new_gia"].plot(c="black")
 datasel["height_ml_bottom_new_gia"].plot(c="black")
