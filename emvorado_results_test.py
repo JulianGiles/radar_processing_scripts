@@ -787,25 +787,36 @@ ani.save("test.mp4", writer='ffmpeg', fps=5)
 
 
 #%% Plot composites over Germany
+proj = ccrs.PlateCarree(central_longitude=0.0)
 
-comp_tsmp = xr.open_mfdataset("/home/jgiles/emvorado-offline-results/output_no-obs-all-network/*/radarout/dbzcmp_sim_*.grb2", engine = "cfgrib", concat_dim="time", combine="nested")
+# Set rotated pole
+# Euro-CORDEX rotated pole coordinates RotPole (198.0; 39.25) 
+rp = ccrs.RotatedPole(pole_longitude=198.0,
+                      pole_latitude=39.25,
+                      globe=ccrs.Globe(semimajor_axis=6370000,
+                                       semiminor_axis=6370000))
 
-seltime = "2017-10-02 21:00"
+comp_tsmp = xr.open_mfdataset("/automount/realpep/upload/jgiles/ICON_EMVORADO_test/det/radout/dbzcmp_sim_*.grb2", engine = "cfgrib", concat_dim="time", combine="nested")
+
+comp_tsmp["time"] = comp_tsmp["valid_time"]
+
+seltime = "2022-08-14T19:00:00"
 nelev = 0
 
 comp_plot = comp_tsmp.DBZCMP_SIM.sel({"time": seltime})[nelev]
 
 # plot single timestep
-cmap = get_discrete_cmap(visdict14["DBZH"]["ticks"], 'HomeyerRainbow')
-f, ax1 = plt.subplots(1, 1, figsize=(5.5, 4), subplot_kw=dict(projection=ccrs.PlateCarree()))
-plot = comp_plot.where(comp_plot>-999).plot(x="longitude", y="latitude", levels=visdict14["DBZH"]["ticks"], cmap=cmap, extend="both")
+# cmap = get_discrete_cmap(visdict14["DBZH"]["ticks"], 'HomeyerRainbow')
+f, ax1 = plt.subplots(1, 1, figsize=(5.5, 4), subplot_kw=dict(projection=proj))
+# plot = comp_plot.where(comp_plot>-999).plot(x="longitude", y="latitude", levels=visdict14["DBZH"]["ticks"], cmap=cmap, extend="both", transform=rp)
+plot = comp_plot.where(comp_plot>-999).plot(ax=ax1, x="longitude", y="latitude")
 
-plt.gca().set_extent([4.5, 16, 46, 56])
+# plt.gca().set_extent([4.5, 16, 46, 56]) # Germany
+plt.gca().set_extent([4.5, 40, 34, 56])
 plot.axes.coastlines()
 plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"})
 plot.axes.add_feature(cfeature.BORDERS, linestyle='-', linewidth=1, alpha=0.7) #countries
 plt.title(seltime)
-
 
 
 # make a movie
