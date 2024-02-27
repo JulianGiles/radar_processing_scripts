@@ -15,7 +15,7 @@ except FileNotFoundError:
     None
 
 
-# NEEDS WRADLIB 1.19 !! (OR GREATER?)
+# NEEDS WRADLIB 2.0.2 !! (OR GREATER)
 
 import datatree as dttree
 import wradlib as wrl
@@ -334,6 +334,46 @@ stats[find_loc(locs, ff[0])] = {"values_sfc": values_sfc.compute().copy(),
 # for ll in stats.keys():
 #     for xx in stats[ll].keys():
 #         stats[ll][xx].to_netcdf("/automount/realpep/upload/jgiles/radar_stats/stratiform/"+ll+"_"+xx+".nc")
+
+#%% Statistics for Raquel
+
+#### Scatterplots:
+MLmaxZH = values_ML_max["DBZH"]
+ZHrain = values_rain["DBZH"] # not exactly the same definition, but close
+deltaZH = MLmaxZH - ZHrain
+MLminRHOHV = values_ML_min["RHOHV_NC"]
+
+MLdepth = ML_thickness
+
+# plot scatterplot (2d hist)
+# plot1
+binsx = np.linspace(0.8, 1, 41)
+binsy = np.linspace(-10, 20, 61)
+deltaZHcurve = 4.27 + 6.89*(1-binsx) + 341*(1-binsx)**2 # curve from Ryzhkov
+
+utils.hist_2d(MLminRHOHV.compute(), deltaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+plt.plot(binsx, deltaZHcurve, c="black")
+
+# plot2
+binsy = np.linspace(0, 1000, 26)
+MLdepthcurve = -0.64 + 30.8*(1-binsx) - 315*(1-binsx)**2 + 1115*(1-binsx)**3 # curve from Ryzhkov
+
+utils.hist_2d(MLminRHOHV.compute(), MLdepth.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+plt.plot(binsx, MLdepthcurve*1000, c="black") # multiply curve by 1000 to change from km to m
+
+#### Values:
+maxZHheight = qvps_ML["DBZH"].idxmax("z") # (2)
+HmaxZH = qvps_ML["height_ml_bottom_new_gia"] + 0.8*MLdepth # (2)
+HMLtopZH = qvps_ML["height_ml_bottom_new_gia"] + 1.6*MLdepth # (3)
+
+qvps_aboveML = qvps_strat_fil.where( (qvps_strat_fil["z"] > qvps_strat_fil["height_ml_new_gia"]) & \
+                                    (qvps_strat_fil["z"] < 6000) , drop=True)
+vertgradZHaboveML = qvps_aboveML["DBZH"].differentiate("z").median("z") 
+
+ZHmax = values_ML_max["DBZH"].mean().compute()
+
+Hb = qvps_ML["height_ml_bottom_new_gia"].mean().compute()
+Ht = qvps_ML["height_ml_new_gia"].mean().compute()
 
 #%% CFTDs Plot
 
