@@ -275,10 +275,45 @@ def unfold_phidp(ds, phidp_names=phidp_names):
             success = True
 
     if not success:
-        warnings.warn("PHIDP variable not found. Nothing was done")
+        warnings.warn("unfold_phidp: PHIDP variable not found. Nothing was done")
         
     return ds
 
+def fix_flipped_phidp(ds, phidp_names=phidp_names, range_name="range", tolerance = 0.1):
+    """
+    Flip PHIDP in case it is inverted. The function looks for the sign of the differences
+    in PHIDP along the range coord. If there are more negative than positive differences 
+    (within some tolerance) it is assumed that PHIDP generally decreases with range, 
+    then it is multiplied by -1.
+
+    Parameter
+    ---------
+    ds : xarray.DataArray or xarray.Dataset    
+    phidp_names : list of PHIDP variable names to look for in the dataset
+    range_name : str name of the range coordinate
+    tolerance : float tolerance value to not apply the fix. The count of negative 
+                differences must be higher than the count of positives *(1+tolerance) 
+    """
+    success = False # define a variable to check if some PHIDP variable was found
+    
+    for phi in phidp_names:
+        if phi in ds.data_vars:
+            X_PHI = phi
+
+            if ds[X_PHI].notnull().any():
+                positive_diffs = (ds[X_PHI].diff(range_name)>0).sum().compute()            
+                negative_diffs = (ds[X_PHI].diff(range_name)<0).sum().compute()  
+                if negative_diffs > positive_diffs*(1+tolerance):
+                    attrs = ds[X_PHI].attrs.copy()
+                    ds[X_PHI] = ds[X_PHI]*-1
+                    ds[X_PHI].attrs = attrs.copy()
+                                
+            success = True
+
+    if not success:
+        warnings.warn("fix_flipped_phidp: PHIDP variable not found. Nothing was done")
+        
+    return ds
 
 def xr_rolling(da, window, window2=None, method="mean", min_periods=2, rangepad="fill", **kwargs):
     """Apply rolling function `method` to 2D datasets
