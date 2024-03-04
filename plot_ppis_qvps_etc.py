@@ -281,7 +281,7 @@ if country == "dwd":
             "xwin0": 9, # window size (bins) for the time rolling median smoothing in ML detection
             "ywin0": 1, # window size (bins) for the height rolling mean smoothing in ML detection
             "fix_range": 750, # range from where to consider phi values (dwd data is bad in the first bin)
-            "rng": None, # range for phidp offset correction, if None it is auto calculated based on window0
+            "rng": 3000, # range for phidp offset correction, if None it is auto calculated based on window0
             "azmedian": True, # reduce the phidp offset by applying median along the azimuths?
         })
         if "/tur/" in ff:
@@ -475,7 +475,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "KDP_ML_corrected"
+mom = "UPHIDP_OC"
 
 ticks = radarmet.visdict14[mom]["ticks"]
 cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
