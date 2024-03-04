@@ -150,20 +150,20 @@ for ff in files:
     print("processing "+ff)
     if "dwd" in ff:
         country="dwd"
-        data = utils.load_dwd_preprocessed(ff) # this already loads the first elev available in the files and fixes time coord
+        data = utils.load_dwd_preprocessed(ff) # this already loads the first elev available in the files and fixes time coord ahd phidp unfolding and flipping
     elif "dmi" in ff:
         country="dmi"
-        data = utils.load_dmi_preprocessed(ff) # this loads DMI file and flips phidp and fixes time coord
+        data = utils.load_dmi_preprocessed(ff) # this loads DMI file and flips and unfolds phidp and fixes time coord
     else:
         data=xr.open_dataset(ff)
 
     # flip UPHIDP and KDP in UMD data
-    if "umd" in ff:
-        print("Flipping phase moments in UMD")
-        for vf in ["UPHIDP", "KDP"]: # Phase moments in UMD are flipped into the negatives
-            attrs = data[vf].attrs.copy()
-            data[vf] = data[vf]*-1
-            data[vf].attrs = attrs.copy()
+    # if "umd" in ff: # this is now done automatically with the loading functions
+    #     print("Flipping phase moments in UMD")
+    #     for vf in ["UPHIDP", "KDP"]: # Phase moments in UMD are flipped into the negatives
+    #         attrs = data[vf].attrs.copy()
+    #         data[vf] = data[vf]*-1
+    #         data[vf].attrs = attrs.copy()
 
 #%% Georeference
     swp = data.pipe(wrl.georef.georeference) 
