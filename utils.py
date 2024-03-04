@@ -248,15 +248,17 @@ def align(ds):
     ds["time"] = np.unique(ds["time"]) # in case there are duplicate times
     return ds.set_coords(["sweep_mode", "sweep_number", "prt_mode", "follow_mode", "sweep_fixed_angle"])
 
-def unfold_phidp(ds, phidp_names=phidp_names):
+def unfold_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names):
     """
     Unfold PHIDP in case it is wrapping around the edge values, it should be defined between -180 and 180.
     The unfolding is done for the whole of ds (not per ray or per PPI).
+    Only pixels with RHOHV>0.7 are taken into consideration.
 
     Parameter
     ---------
     ds : xarray.DataArray or xarray.Dataset    
     phidp_names : list of PHIDP variable names to look for in the dataset
+    rhohv_names : list of RHOHV variable names to look for in the dataset
     """
     success = False # define a variable to check if some PHIDP variable was found
     
@@ -265,12 +267,17 @@ def unfold_phidp(ds, phidp_names=phidp_names):
             X_PHI = phi
 
             if ds[X_PHI].notnull().any():
-                values_center = ((ds[X_PHI]>-50)*(ds[X_PHI]<50)).sum().compute()
-                values_sides = ((ds[X_PHI]>50)+(ds[X_PHI]<-50)).sum().compute()
-                if values_sides > values_center:
-                    attrs = ds[X_PHI].attrs.copy()
-                    ds[X_PHI] = xr.where(ds[X_PHI]<=0, ds[X_PHI]+180, ds[X_PHI]-180, keep_attrs=True).compute()
-                    ds[X_PHI].attrs = attrs
+                for X_RHO in rhohv_names: # only take pixels with rhohv>0.7 to avoid noise
+                    if X_RHO in ds.data_vars:
+                        ds_phi = ds[X_PHI].where(ds[X_RHO]>0.7).isel({"range":slice(4,None)}) # we also take out the first bins
+                        values_center = ((ds_phi>-50)*(ds_phi<50)).sum().compute()
+                        values_sides = ((ds_phi>50)+(ds_phi<-50)).sum().compute()
+                        if values_sides > values_center:
+                            attrs = ds[X_PHI].attrs.copy()
+                            ds[X_PHI] = xr.where(ds[X_PHI]<=0, ds[X_PHI]+180, ds[X_PHI]-180, keep_attrs=True).compute()
+                            ds[X_PHI].attrs = attrs
+                            print(X_PHI+" was unfolded")
+                        break
             
             success = True
 
@@ -279,37 +286,60 @@ def unfold_phidp(ds, phidp_names=phidp_names):
         
     return ds
 
-def fix_flipped_phidp(ds, phidp_names=phidp_names, range_name="range", tolerance = 0.1):
+def fix_flipped_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, range_name="range", 
+                      tolerance = 0.05, fix_range=3000., flip_kdp=True):
     """
     Flip PHIDP in case it is inverted. The function looks for the sign of the differences
     in PHIDP along the range coord. If there are more negative than positive differences 
     (within some tolerance) it is assumed that PHIDP generally decreases with range, 
-    then it is multiplied by -1.
+    then it is multiplied by -1. Only pixels with RHOHV>0.7 are taken into consideration.
 
     Parameter
     ---------
     ds : xarray.DataArray or xarray.Dataset    
     phidp_names : list of PHIDP variable names to look for in the dataset
+    rhohv_names : list of RHOHV variable names to look for in the dataset
     range_name : str name of the range coordinate
     tolerance : float tolerance value to not apply the fix. The count of negative 
                 differences must be higher than the count of positives *(1+tolerance) 
+    fix_range : float
+        Minimum range from where to consider PHIDP values.
+    flip_kdp : bool
+        If True, test also "KDP" for flipping if there is a majority of negative values.
+        Only flips if PHIDP was flipped.
     """
-    success = False # define a variable to check if some PHIDP variable was found
+    success = False # define a bool to check if some PHIDP variable was found
+    flip_kdp_trigger = False # define a bool to trigger kdp testing and flipping
     
     for phi in phidp_names:
         if phi in ds.data_vars:
             X_PHI = phi
 
             if ds[X_PHI].notnull().any():
-                positive_diffs = (ds[X_PHI].diff(range_name)>0).sum().compute()            
-                negative_diffs = (ds[X_PHI].diff(range_name)<0).sum().compute()  
-                if negative_diffs > positive_diffs*(1+tolerance):
-                    attrs = ds[X_PHI].attrs.copy()
-                    ds[X_PHI] = ds[X_PHI]*-1
-                    ds[X_PHI].attrs = attrs.copy()
+                for X_RHO in rhohv_names: # only take pixels with rhohv>0.7 to avoid noise
+                    if X_RHO in ds.data_vars:
+                        ds_phi = ds[X_PHI].where(ds[X_RHO]>0.7).where(ds[range_name]>=fix_range)
+                        positive_diffs = (ds_phi.diff(range_name)).sum().compute()            
+                        negative_diffs = (ds_phi.diff(range_name)).sum().compute()  
+                        if negative_diffs > positive_diffs*(1+tolerance):
+                            attrs = ds[X_PHI].attrs.copy()
+                            ds[X_PHI] = ds[X_PHI]*-1
+                            ds[X_PHI].attrs = attrs.copy()
+                            print(X_PHI+" was flipped")
+                            if flip_kdp:
+                                flip_kdp_trigger = True
+                        break
                                 
             success = True
-
+    if "KDP" in ds.data_vars and flip_kdp_trigger:
+        ds_kdp = ds["KDP"].where(ds[X_RHO]>0.7).where(ds[range_name]>=fix_range)
+        kdp_pos = (ds_kdp>0).sum().compute()
+        kdp_neg = (ds_kdp<0).sum().compute()
+        if kdp_neg > kdp_pos*(1+tolerance):
+            attrs = ds["KDP"].attrs.copy()
+            ds["KDP"] = ds["KDP"]*-1
+            ds["KDP"].attrs = attrs.copy()
+            print("KDP"+" was flipped")
     if not success:
         warnings.warn("fix_flipped_phidp: PHIDP variable not found. Nothing was done")
         
@@ -2220,7 +2250,7 @@ def phase_offset(phioff, method=None, rng=3000.0, npix=None, **kwargs):
 
     # find at least N pixels in
     # phib_sum_N = phib_sum.where(phib_sum >= npix)
-    phib_sum_N = xr.where(phib_sum <= npix, phib_sum, npix)
+    phib_sum_N = xr.where(phib_sum <= npix, phib_sum, npix).where(phib)
 
     # get start range of first N consecutive precip bins
     start_range = (
@@ -2253,7 +2283,7 @@ def phase_offset(phioff, method=None, rng=3000.0, npix=None, **kwargs):
 
 #### PHIDP processing
 def phidp_offset_detection(ds, phidp="PHIDP", rhohv="RHOHV", dbzh="DBZH", rhohvmin=0.9,
-                           dbzhmin=0., min_height=0., rng=3000., azmedian=False, **kwargs):
+                           dbzhmin=0., dphid_inithresh=10, min_height=0., rng=3000., azmedian=False, **kwargs):
     r"""
     Calculate the offset on PHIDP. Wrapper around phase_offset.
 
@@ -2271,6 +2301,10 @@ def phidp_offset_detection(ds, phidp="PHIDP", rhohv="RHOHV", dbzh="DBZH", rhohvm
         Minimum value for filtering RHOHV.
     dbzhmin : float
         Minimum value for filtering DBZH.
+    dphid_inithresh : float
+        Threshold value for filtering out initial high variability of PHIDP. Initial 
+        (first 4) bins are masked out if their azimuthal-median range-differentiate
+        values are higher than dphid_inithresh in module.
     min_height : float
         Minimum height for filtering the z coordinate.
     rng : float
@@ -2290,7 +2324,10 @@ def phidp_offset_detection(ds, phidp="PHIDP", rhohv="RHOHV", dbzh="DBZH", rhohvm
 
     """
     # filter
-    phi = ds[phidp].where((ds[rhohv]>=rhohvmin) & (ds[dbzh]>=dbzhmin) & (ds["z"]>min_height) )
+    diff_filter0 = abs(ds[phidp].median("azimuth").differentiate("range")*1000) < dphid_inithresh
+    diff_filter1 = ds['range'] >= ds['range'][4]
+    diff_filter = diff_filter0 | diff_filter1
+    phi = ds[phidp].where((ds[rhohv]>=rhohvmin) & (ds[dbzh]>=dbzhmin) & (ds["z"]>min_height) & diff_filter )
     # calculate offset
     phidp_offset = phi.pipe(phase_offset, rng=rng, **kwargs)
     # reduce to one value per PPI
@@ -2366,7 +2403,7 @@ def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rh
     # Calculate phase offset
     phidp_offset = phidp_offset_detection(ds, phidp=X_PHI, rhohv=X_RHO, dbzh=X_DBZH, rhohvmin=rhohvmin,
                                           dbzhmin=dbzhmin, min_height=min_height, rng=rng, azmedian=azmedian,
-                                          center=True, min_periods=4)
+                                          min_periods=3)
 
     off = phidp_offset["PHIDP_OFFSET"]
     start_range = phidp_offset["start_range"]
@@ -2439,7 +2476,7 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
     # Calculate phase offset
     phidp_offset = phidp_offset_detection(ds, phidp=X_PHI, rhohv=X_RHO, dbzh=X_DBZH, rhohvmin=rhohvmin,
                                           dbzhmin=dbzhmin, min_height=min_height, rng=rng, azmedian=azmedian,
-                                          center=True, min_periods=4)
+                                          min_periods=3)
 
     off = phidp_offset["PHIDP_OFFSET"]
     start_range = phidp_offset["start_range"]
