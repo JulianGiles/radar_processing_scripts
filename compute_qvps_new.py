@@ -291,7 +291,7 @@ for ff in files:
             xwin0=9 # window size (bins) for the time rolling median smoothing in ML detection
             ywin0=1 # window size (bins) for the height rolling mean smoothing in ML detection
             fix_range = 750 # range from where to consider phi values (dwd data is bad in the first bin)
-            rng = 3000, # range for phidp offset correction, if None it is auto calculated based on window0
+            rng = 3000., # range for phidp offset correction, if None it is auto calculated based on window0
         elif "dmi" in ff:
             country="dmi"
             window0=17 # number of range bins for phidp smoothing (this one is quite important!)
@@ -299,7 +299,7 @@ for ff in files:
             xwin0=5 # window size (bins) for the time rolling median smoothing in ML detection
             ywin0=5 # window size (bins) for the height rolling mean smoothing in ML detection
             fix_range = 200 # range from where to consider phi values (dmi data is bad in the first bin)
-            rng = None, # range for phidp offset correction, if None it is auto calculated based on window0
+            rng = 3000., # range for phidp offset correction, if None it is auto calculated based on window0
 
         ######### Processing PHIDP
         #### fix PHIDP
