@@ -16,7 +16,7 @@ except FileNotFoundError:
     None
 
 
-# NEEDS WRADLIB 1.19 !! (OR GREATER?)
+# NEEDS WRADLIB 2.0.2 !! (OR GREATER?)
 
 import datatree as dttree
 import wradlib as wrl
@@ -68,18 +68,18 @@ warnings.filterwarnings('ignore')
 
 ## Load the data into an xarray dataset (ds)
 
-zdr_offset_perts = True # offset correct zdr per timesteps? if False, correct with daily offset
+zdr_offset_perts = False # offset correct zdr per timesteps? if False, correct with daily offset
 min_height_key = "default" # default = 200, 90grads = 600, ANK = 400, GZT = 300
 
-ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-08-31/tur/vol5minng01/07/*allmoms*"
-ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-03-11/HTY/MON_YAZ_C/8.0/*allmoms*"
+ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/tur/vol5minng01/07/*allmoms*"
+# ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-03-11/HTY/MON_YAZ_C/8.0/*allmoms*"
 # ff = '/automount/realpep/upload/jgiles/dmi/2016/2016-08/2016-08-05/AFY/VOL_B/7.0/VOL_B-allmoms-7.0-20162016-082016-08-05-AFY-h5netcdf.nc'
 # ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-06-02/pro/90gradstarng01/00/*allmoms*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-10/2021-10-30/ess/90gradstarng01/00/*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-07/2021-07-24/ess/90gradstarng01/00/*"
-# ds = utils.load_dwd_preprocessed(ff)
+ds = utils.load_dwd_preprocessed(ff)
 # ds = utils.load_dwd_raw(ff)
-ds = utils.load_dmi_preprocessed(ff)
+# ds = utils.load_dmi_preprocessed(ff)
 
 if "dwd" in ff or "DWD" in ff:
     country="dwd"
@@ -89,12 +89,12 @@ if "dwd" in ff or "DWD" in ff:
     else:
         clowres0=False
         
-    if "umd" in ff:
-        print("Flipping phase moments in UMD")
-        for vf in ["UPHIDP", "KDP"]: # Phase moments in UMD are flipped into the negatives
-            attrs = ds[vf].attrs.copy()
-            ds[vf] = ds[vf]*-1
-            ds[vf].attrs = attrs.copy()
+    # if "umd" in ff: # this is now done automatically with the loading functions
+    #     print("Flipping phase moments in UMD")
+    #     for vf in ["UPHIDP", "KDP"]: # Phase moments in UMD are flipped into the negatives
+    #         attrs = ds[vf].attrs.copy()
+    #         ds[vf] = ds[vf]*-1
+    #         ds[vf].attrs = attrs.copy()
 
 elif "dmi" in ff:
     country="dmi"
@@ -282,7 +282,11 @@ if country == "dwd":
             "ywin0": 1, # window size (bins) for the height rolling mean smoothing in ML detection
             "fix_range": 750, # range from where to consider phi values (dwd data is bad in the first bin)
             "rng": None, # range for phidp offset correction, if None it is auto calculated based on window0
+            "azmedian": True, # reduce the phidp offset by applying median along the azimuths?
         })
+        if "/tur/" in ff:
+            # special case for tur, take the 5-ray rolling mean of the phidp offset (to handle bias induced by antennas)
+            phase_pross_params["azmedian"] = 5
     else:
         phase_pross_params.update({
             "window0": 17, # number of range bins for phidp smoothing (this one is quite important!)
@@ -291,6 +295,7 @@ if country == "dwd":
             "ywin0": 5, # window size (bins) for the height rolling mean smoothing in ML detection
             "fix_range": 750, # range from where to consider phi values (dwd data is bad in the first bin)
             "rng": 3000, # range for phidp offset correction, if None it is auto calculated based on window0
+            "azmedian": True, # reduce the phidp offset by applying median along the azimuths?
         })
 
 elif country == "dmi":
@@ -301,6 +306,7 @@ elif country == "dmi":
         "ywin0": 5,
         "fix_range": 200,
         "rng": None, # range for phidp offset correction, if None it is auto calculated based on window0
+        "azmedian": True, # reduce the phidp offset by applying median along the azimuths?
     })
 
 
@@ -310,19 +316,19 @@ if X_PHI in ds.data_vars:
     
     # for param_name in phase_pross_params[country].keys():
     #     globals()[param_name] = phase_pross_params[param_name]    
-    window0, winlen0, xwin0, ywin0, fix_range, rng = phase_pross_params.values() # explicit alternative
+    window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian = phase_pross_params.values() # explicit alternative
 
     # phidp may be already preprocessed (turkish case), then only offset-correct (no smoothing) and then vulpiani
     if "UPHIDP" not in X_PHI:
         # calculate phidp offset
         ds = utils.phidp_offset_correction(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
-                             dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range, azmedian=True)
+                             dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range, azmedian=azmedian)
     
         phi_masked = ds[X_PHI+"_OC"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["z"]>min_height) )   
 
     else:
         ds = utils.phidp_processing(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
-                             dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range, rng=rng, azmedian=True)
+                             dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range, rng=rng, azmedian=azmedian)
     
         phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["z"]>min_height) )
 
@@ -416,7 +422,7 @@ if X_PHI in ds.data_vars:
 
 #%% Plot simple PPI 
 
-tsel = "2015-03-11T07:03"
+tsel = "2017-07-25T14:00"
 if tsel == "":
     datasel = ds
 else:
@@ -429,7 +435,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "ZDR"
+mom = "UPHIDP_OC"
 xylims = 40000 # xlim and ylim (from -xylims to xylims)
 
 ticks = radarmet.visdict14[mom]["ticks"]
@@ -469,7 +475,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "ZDR"
+mom = "KDP_ML_corrected"
 
 ticks = radarmet.visdict14[mom]["ticks"]
 cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
