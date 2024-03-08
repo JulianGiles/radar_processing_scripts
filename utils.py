@@ -3283,6 +3283,140 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
 
     return ds_offset
 
+#### Attenuation correction
+
+def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, aa = 4, bb = 3,
+                            dbzh = "DBZH", zdr = "ZDR", phidp = "UPHIDP_OC", ML_bot = "height_ml_bottom_new_gia", 
+                            temp = "TEMP", ltemp = 3, lz = 2000):
+    r'''
+    
+    Corrects attenuation in ZH and ZDR.
+    Below the melting layer bottom:
+    ZH_corr_below = ZH + alpha*PHIDP
+    ZDR_corr_below = ZDR + beta*PHIDP
+    
+    From the melting layer bottom up:
+    ZH_corr_above = ZH + aa*ZH_corr_below_lastval
+    ZDR_corr_above = ZDR + bb*ZDR_corr_below_lastval
+
+    X band:
+    alpha = 0.28; beta = 0.05 #dB/deg
+
+    C band:
+    alpha = 0.08; beta = 0.02 #dB/deg
+
+    For BoXPol and JuXPol:
+    alpha = 0.25
+    
+    From https://doi.org/10.1002/qj.3366 :
+    aa = 4
+    bb = 3
+    
+    Parameters
+    ----------
+    ds : xarray Dataset
+        Dataset with ZH and/or ZDR. 
+    alpha : float
+        alpha value for the linear attenuation correction
+    beta : float
+        beta value for the linear attenuation correction
+    aa : float
+        Multiplier value for the linear attenuation correction below the melting layer bottom
+    bb : float
+        Multiplier value for the linear attenuation correction above the melting layer bottom
+    dbzh : str
+        Name(s) of the variable(s) with ZH to correct. A list of strings can be used to pass more than one name.
+    zdr : str
+        Name(s) of the variable(s) with ZDR to correct. A list of strings can be used to pass more than one name.
+    phidp : str
+        Name of the variable with PHIDP data. A list of strings can be used to pass more 
+        than one name, but only the first valid name is used.
+    ML_bot : str
+        Name of the variable with melting layer bottom height information. A list of 
+        strings can be used to pass more than one name, but only the first valid name is used.
+    temp : str
+        Name of the variable with temperature information. A list of 
+        strings can be used to pass more than one name, but only the first valid name is used.
+        Temperature data is used to estimate the ML bottom only where ML_bot is not valid.
+    ltemp : float
+        Value of the temperature level to use as ML bottom.
+    lz : float
+        Height value to use as ML bottom. lz is only used where ML_bot and ltemp are not valid.
+
+    Returns
+    ----------
+    ds : xarray Dataset
+        Dataset with the original variables plus their attenuation corrected versions
+
+    '''
+    # first check that ds is georeferenced
+    if "z" not in ds:
+        ds = ds.pipe(wrl.georef.georeference)
+    
+    # check that phidp variable exists in ds (necessary condition)
+    if isinstance(phidp, str):
+        phidp = [phidp]
+    for phidpn in phidp:
+        if phidpn in ds:
+            phidp = phidpn
+            break
+    if not isinstance(phidp, str):
+        raise KeyError("phidp definition is not in the dataset")
+        
+    # filter below ML
+    if isinstance(ML_bot, str):
+        ML_bot = [ML_bot]
+
+    cond_belowML = xr.full_like(ds[phidp], np.nan) # dummy empty array
+    for ML_botn in ML_bot:
+        if ML_botn in ds:
+            ML_bot = ML_botn
+            cond_belowML = (ds["z"]<ds[ML_bot]).where(ds[ML_bot].notnull())
+            # ds_belowML = ds.where(ds["z"]<ds[ML_bot])
+            break
+    
+    # filter below ltemp
+    if isinstance(temp, str):
+        temp = [temp]
+
+    cond_belowltemp = xr.full_like(ds[phidp], np.nan) # dummy empty array
+    for tempn in temp:
+        if tempn in ds:
+            temp = tempn
+            cond_belowltemp = (ds[temp]>ltemp).where(ds[temp].notnull())
+            # ds_belowltemp = ds.where(ds[temp]>ltemp)
+            break
+    
+    # filter below lz
+    cond_belowlz = ds["z"]<lz
+    # ds_belowlz = ds.where(ds["z"]<lz)
+    
+    # combine conditions
+    cond_comb = cond_belowML.fillna(cond_belowltemp).fillna(cond_belowlz)    
+             
+    # apply conditions
+    ds_below = ds.where(cond_comb)
+    
+    # Make the correction
+    if "range" in ds.dims:
+        rdim = "range"
+    else:
+        rdim = "z"
+        
+    if isinstance(dbzh, str): # check dbzh
+        dbzh = [dbzh]
+    for dbzhn in dbzh:
+        if dbzhn in ds:
+            ds[dbzhn+"_AC"] = ds[dbzhn]+ (alpha*ds_below[phidp]).ffill(rdim) * xr.where(cond_comb, 1, aa)
+            
+    if isinstance(zdr, str): # check zdr
+        zdr = [zdr]
+    for zdrn in zdr:
+        if zdrn in ds:
+            ds[zdrn+"_AC"] = ds[zdrn]+ (beta*ds_below[phidp]).ffill(rdim) * xr.where(cond_comb, 1, bb)
+    
+    return ds
+
 
 #### Full variables correction, melting layer detection, KDP derivation, entropy calculation and QVP derivation for a PPI
 
