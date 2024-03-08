@@ -182,13 +182,13 @@ for ff in files:
     # fix time dim and time in coords
     # data = utils.fix_time_in_coords(data)
 
-    # flip UPHIDP and KDP in UMD data
-    if "umd" in ff:
-        print("Flipping phase moments in UMD")
-        for vf in ["UPHIDP", "KDP"]: # Phase moments in UMD are flipped into the negatives
-            attrs = data[vf].attrs.copy()
-            data[vf] = data[vf]*-1
-            data[vf].attrs = attrs.copy()
+    # # flip UPHIDP and KDP in UMD data
+    # if "umd" in ff:
+    #     print("Flipping phase moments in UMD")
+    #     for vf in ["UPHIDP", "KDP"]: # Phase moments in UMD are flipped into the negatives
+    #         attrs = data[vf].attrs.copy()
+    #         data[vf] = data[vf]*-1
+    #         data[vf].attrs = attrs.copy()
 
 #%% Load noise corrected RHOHV if available
     try:
