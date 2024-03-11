@@ -3285,7 +3285,7 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
 
 #### Attenuation correction
 
-def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, aa = 4, bb = 3,
+def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, aa = 1, bb = 1,
                             dbzh = "DBZH", zdr = "ZDR", phidp = "UPHIDP_OC", ML_bot = "height_ml_bottom_new_gia", 
                             temp = "TEMP", ltemp = 3, lz = 2000):
     r'''
@@ -3309,21 +3309,21 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, aa = 4, bb = 3,
     alpha = 0.25
     
     From https://doi.org/10.1002/qj.3366 :
-    aa = 4
-    bb = 3
+    aa = 2
+    bb = 1.1
     
     Parameters
     ----------
     ds : xarray Dataset
         Dataset with ZH and/or ZDR. 
     alpha : float
-        alpha value for the linear attenuation correction
+        alpha value for the linear attenuation correction (in liquid phase)
     beta : float
-        beta value for the linear attenuation correction
+        beta value for the linear attenuation correction (in liquid phase)
     aa : float
-        Multiplier value for the linear attenuation correction below the melting layer bottom
+        Multiplier value for the linear attenuation correction in the ML and above
     bb : float
-        Multiplier value for the linear attenuation correction above the melting layer bottom
+        Multiplier value for the linear attenuation correction in the ML and above
     dbzh : str
         Name(s) of the variable(s) with ZH to correct. A list of strings can be used to pass more than one name.
     zdr : str
