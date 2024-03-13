@@ -3285,9 +3285,11 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
 
 #### Attenuation correction
 
-def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, aa = 1, bb = 1,
-                            dbzh = "DBZH", zdr = "ZDR", phidp = "UPHIDP_OC", ML_bot = "height_ml_bottom_new_gia", 
-                            temp = "TEMP", ltemp = 3, lz = 2000):
+def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.08, betaml = 0.02,
+                            dbzh = "DBZH", zdr = "ZDR", phidp = "UPHIDP_OC", 
+                            ML_bot = "height_ml_bottom_new_gia", ML_top = "height_ml_new_gia", 
+                            temp = "TEMP", temp_mlbot = 3, temp_mltop = 0, z_mlbot = 2000, dz_ml = 500,
+                            interpolate_deltabump = True ):
     r'''
     
     Corrects attenuation in ZH and ZDR.
@@ -3295,9 +3297,11 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, aa = 1, bb = 1,
     ZH_corr_below = ZH + alpha*PHIDP
     ZDR_corr_below = ZDR + beta*PHIDP
     
-    From the melting layer bottom up:
-    ZH_corr_above = ZH + aa*ZH_corr_below_lastval
-    ZDR_corr_above = ZDR + bb*ZDR_corr_below_lastval
+    In the melting layer:
+    ZH_corr_in = ZH + alphaml*PHIDP
+    ZDR_corr_in = ZDR + betaml*PHIDP
+    
+    Above the ML: the last correction values in the ML are propagated
 
     X band:
     alpha = 0.28; beta = 0.05 #dB/deg
@@ -3308,9 +3312,9 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, aa = 1, bb = 1,
     For BoXPol and JuXPol:
     alpha = 0.25
     
-    From https://doi.org/10.1002/qj.3366 :
-    aa = 2
-    bb = 1.1
+    From https://doi.org/10.1002/qj.3366 (X-band):
+    alphaml = 0.6 (2 times the value below ML)
+    betaml = 0.06 (1.1 times the value below ML)
     
     Parameters
     ----------
@@ -3320,9 +3324,9 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, aa = 1, bb = 1,
         alpha value for the linear attenuation correction (in liquid phase)
     beta : float
         beta value for the linear attenuation correction (in liquid phase)
-    aa : float
+    alphaml : float
         Multiplier value for the linear attenuation correction in the ML and above
-    bb : float
+    betaml : float
         Multiplier value for the linear attenuation correction in the ML and above
     dbzh : str
         Name(s) of the variable(s) with ZH to correct. A list of strings can be used to pass more than one name.
@@ -3334,14 +3338,23 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, aa = 1, bb = 1,
     ML_bot : str
         Name of the variable with melting layer bottom height information. A list of 
         strings can be used to pass more than one name, but only the first valid name is used.
+    ML_top : str
+        Name of the variable with melting layer top height information. A list of 
+        strings can be used to pass more than one name, but only the first valid name is used.
     temp : str
         Name of the variable with temperature information. A list of 
         strings can be used to pass more than one name, but only the first valid name is used.
         Temperature data is used to estimate the ML bottom only where ML_bot is not valid.
-    ltemp : float
+    temp_mlbot : float
         Value of the temperature level to use as ML bottom.
-    lz : float
-        Height value to use as ML bottom. lz is only used where ML_bot and ltemp are not valid.
+    temp_mltop : float
+        Value of the temperature level to use as ML bottom.
+    z_mlbot : float
+        Height value to use as ML bottom. This is only used where ML_bot and temp_mlbot are not valid.
+    dz_ml : float
+        ML thickness value. This is only used where ML_top and temp_mltop are not valid.
+    interpolate_deltabump : bool
+        If True (default), interpolate phidp within the ML to avoid the typical delta bump signature.
 
     Returns
     ----------
@@ -3352,6 +3365,12 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, aa = 1, bb = 1,
     # first check that ds is georeferenced
     if "z" not in ds:
         ds = ds.pipe(wrl.georef.georeference)
+
+    # check if we have range dim (PPI) or z dim (QVP)
+    if "range" in ds.dims:
+        rdim = "range"
+    else:
+        rdim = "z"
     
     # check that phidp variable exists in ds (necessary condition)
     if isinstance(phidp, str):
@@ -3359,6 +3378,7 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, aa = 1, bb = 1,
     for phidpn in phidp:
         if phidpn in ds:
             phidp = phidpn
+            ds_phidp = ds[phidp]
             break
     if not isinstance(phidp, str):
         raise KeyError("phidp definition is not in the dataset")
@@ -3367,53 +3387,93 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, aa = 1, bb = 1,
     if isinstance(ML_bot, str):
         ML_bot = [ML_bot]
 
-    cond_belowML = xr.full_like(ds[phidp], np.nan) # dummy empty array
+    cond_belowML = xr.full_like(ds_phidp, np.nan) # dummy empty array
     for ML_botn in ML_bot:
         if ML_botn in ds:
             ML_bot = ML_botn
             cond_belowML = (ds["z"]<ds[ML_bot]).where(ds[ML_bot].notnull())
-            # ds_belowML = ds.where(ds["z"]<ds[ML_bot])
             break
     
-    # filter below ltemp
+    # filter below temp_mlbot
     if isinstance(temp, str):
         temp = [temp]
 
-    cond_belowltemp = xr.full_like(ds[phidp], np.nan) # dummy empty array
+    cond_below_temp_mlbot = xr.full_like(ds_phidp, np.nan) # dummy empty array
     for tempn in temp:
         if tempn in ds:
             temp = tempn
-            cond_belowltemp = (ds[temp]>ltemp).where(ds[temp].notnull())
-            # ds_belowltemp = ds.where(ds[temp]>ltemp)
+            cond_below_temp_mlbot = (ds[temp]>temp_mlbot).where(ds[temp].notnull())
             break
     
-    # filter below lz
-    cond_belowlz = ds["z"]<lz
-    # ds_belowlz = ds.where(ds["z"]<lz)
+    # filter below z_mlbot
+    cond_below_z_mlbot = ds["z"]<z_mlbot
     
     # combine conditions
-    cond_comb = cond_belowML.fillna(cond_belowltemp).fillna(cond_belowlz)    
+    cond_below_comb = cond_belowML.fillna(cond_below_temp_mlbot).fillna(cond_below_z_mlbot)    
              
-    # apply conditions
-    ds_below = ds.where(cond_comb)
     
+    #### filter above and inside ML
+    # start with the opposite of cond_below_comb 
+    cond_inabove = (cond_below_comb==0).where(cond_below_comb.notnull()) 
+    
+    # filter above ML
+    if isinstance(ML_top, str):
+        ML_top = [ML_top]
+
+    cond_aboveML = xr.full_like(ds_phidp, np.nan) # dummy empty array
+    for ML_topn in ML_top:
+        if ML_topn in ds:
+            ML_top = ML_topn
+            cond_aboveML = (ds["z"]>ds[ML_top]).where(ds[ML_top].notnull())
+            break
+
+    # filter above temp_mltop
+    if isinstance(temp, str):
+        temp = [temp]
+
+    cond_above_temp_mltop = xr.full_like(ds_phidp, np.nan) # dummy empty array
+    for tempn in temp:
+        if tempn in ds:
+            temp = tempn
+            cond_above_temp_mltop = (ds[temp]<temp_mltop).where(ds[temp].notnull())
+            # ds_belowltemp = ds.where(ds[temp]>temp_mlbot)
+            break
+    
+    # filter above cond_below_comb + dz_ml
+    cond_above_dz_ml0 = xr.full_like(ds_phidp, 1.).where(ds_phidp.notnull())*ds["z"] # expand z through time
+    cond_above_dz_ml1 = cond_above_dz_ml0.where(cond_inabove) # take only z that is above the ML bottom
+    cond_above_dz_ml2 = cond_above_dz_ml1.min(rdim)+dz_ml # get the min z value per ray and add + dz_ml
+    cond_above_dz_ml = cond_above_dz_ml0 >= cond_above_dz_ml2 # take only z values above cond_above_dz_ml2
+    
+    # combine conditions
+    cond_above_comb = cond_aboveML.fillna(cond_above_temp_mltop).fillna(cond_above_dz_ml)    
+    
+    # get condition for in ML
+    cond_in = (cond_above_comb==0).where(cond_above_comb.notnull()) * (cond_below_comb==0).where(cond_below_comb.notnull())
+
+    #### Interpolate the delta bump
+    if interpolate_deltabump:
+        ds_phidp = ds_phidp.where(cond_in==0).where(ds_phidp.notnull()).interpolate_na(rdim)
+    
+    #### Apply the conditions
+    ds_phidp_below = ds_phidp.where(cond_below_comb)
+    ds_phidp_in = ds_phidp.where(cond_in)
+
     # Make the correction
-    if "range" in ds.dims:
-        rdim = "range"
-    else:
-        rdim = "z"
         
     if isinstance(dbzh, str): # check dbzh
         dbzh = [dbzh]
     for dbzhn in dbzh:
         if dbzhn in ds:
-            ds[dbzhn+"_AC"] = ds[dbzhn]+ (alpha*ds_below[phidp]).ffill(rdim) * xr.where(cond_comb, 1, aa)
+            dbzh_corr = (alpha*ds_phidp_below).fillna(alphaml*ds_phidp_in).ffill(rdim)
+            ds[dbzhn+"_AC"] = ds[dbzhn] + dbzh_corr
             
     if isinstance(zdr, str): # check zdr
         zdr = [zdr]
     for zdrn in zdr:
         if zdrn in ds:
-            ds[zdrn+"_AC"] = ds[zdrn]+ (beta*ds_below[phidp]).ffill(rdim) * xr.where(cond_comb, 1, bb)
+            zdr_corr = (beta*ds_phidp_below).fillna(betaml*ds_phidp_in).ffill(rdim)
+            ds[zdrn+"_AC"] = ds[zdrn] + zdr_corr
     
     return ds
 
