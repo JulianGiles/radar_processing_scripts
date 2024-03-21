@@ -89,6 +89,81 @@ zdrofffile_ts = ["*zdr_offset_belowML_timesteps_00*",  "*zdr_offset_below1C_time
 rhoncdir = "/rhohv_nc/" # subfolder where to find the noise corrected rhohv data
 rhoncfile = "*rhohv_nc_2percent*" # pattern to select the appropriate file (careful with the rhohv_nc_2percent)
 
+# default parameteres for phidp processing in DWD and turkish (dmi) C-band data
+phase_proc_params = {}
+
+phase_proc_params["dwd"] = {}
+phase_proc_params["dwd"]["vol5minng01"] = { # for the volume scan
+    "window0": 7, # number of range bins for phidp smoothing (this one is quite important!)
+    "winlen0": 7, # size of range window (bins) for the kdp-phidp calculations
+    "xwin0": 9, # window size (bins) for the time rolling median smoothing in ML detection
+    "ywin0": 1, # window size (bins) for the height rolling mean smoothing in ML detection
+    "fix_range": 750, # range from where to consider phi values (dwd data is bad in the first bin)
+    "rng": 3000, # range for phidp offset correction, if None it is auto calculated based on window0
+    "azmedian": True, # reduce the phidp offset by applying median along the azimuths?
+}
+phase_proc_params["dwd"]["90gradstarng01"] = { # for the vertical scan
+            "window0": 17, # number of range bins for phidp smoothing (this one is quite important!)
+            "winlen0": 21, # size of range window (bins) for the kdp-phidp calculations
+            "xwin0": 5, # window size (bins) for the time rolling median smoothing in ML detection
+            "ywin0": 5, # window size (bins) for the height rolling mean smoothing in ML detection
+            "fix_range": 750, # range from where to consider phi values (dwd data is bad in the first bin)
+            "rng": 3000, # range for phidp offset correction, if None it is auto calculated based on window0
+            "azmedian": True, # reduce the phidp offset by applying median along the azimuths?
+        }
+phase_proc_params["dwd"]["pcpng01"] = phase_proc_params["dwd"]["90gradstarng01"] # for the precip scan
+
+phase_proc_params["dmi"] = {
+        "window0": 17,
+        "winlen0": 21,
+        "xwin0": 5,
+        "ywin0": 5,
+        "fix_range": 200,
+        "rng": None, # range for phidp offset correction, if None it is auto calculated based on window0
+        "azmedian": True, # reduce the phidp offset by applying median along the azimuths?
+}
+
+# make a function to retreive only the phase_proc_params dictionary corresponding to the a data path (not very precise, tuned to my data naming)
+def get_phase_proc_params(path):
+    """
+    Get phase_proc_params according to path
+
+    Parameter
+    ---------
+    path : str or list
+        Path of the data I want to phase-process. The appropriate part of phase_proc_params
+        is retreived based on the naming. If list, only the first element is used as reference.
+
+    Returns
+    ---------
+    phase_proc_params : dict
+        Dictionary with default values to use for phase processing.
+    """
+    if type(path) is list:
+        path = path[0]
+    elif type(path) is str:
+        pass
+    else:
+        raise ValueError("path must be str or list")
+        
+    if "dwd" in path:
+        if "vol5minng01" in path:
+            if "/tur/" in path:
+                phase_proc_params_tur = phase_proc_params["dwd"]["vol5minng01"].copy()
+                phase_proc_params_tur["azmedian"] = 5
+                return phase_proc_params_tur
+            else:
+                return phase_proc_params["dwd"]["vol5minng01"]
+        if "90gradstarng01" in path:
+            return phase_proc_params["dwd"]["90gradstarng01"]
+        if "pcpng01" in path:
+            return phase_proc_params["dwd"]["pcpng01"]
+        
+    elif "dmi" in path:
+        return phase_proc_params["dmi"]
+    else:
+        raise ValueError("No default phase_proc_params dictionary could be inferred from path")
+
 # set ERA5 directory
 if os.path.exists("/automount/ags/jgiles/ERA5/hourly/"):
     # then we are in local system
@@ -2650,7 +2725,11 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
     plot_timestep : int
         In case timemode="step" and plot_correction=True, plot_timestep defines the time index to 
         be plotted. By default the first timestep (index=0) is plotted.
-    
+
+    Returns
+    ----------
+    zdroffset : xarray Dataset
+        xarray Dataset with the detected offset and the count of valid values used for the calculation.
     """
     
     # Set the climatological values according to the book for each band for 20<Zh<30
@@ -2721,26 +2800,23 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
         
         # check that there are sufficient values in each interval (at least 30)
         min_count=30
-        if where_dbzh_rhohv(ds_fil, 19, 21).count()<min_count:
-            zdr_zh_20 = zdr_zh_20*np.nan
-        if where_dbzh_rhohv(ds_fil, 21, 23).count()<min_count:
-            zdr_zh_22 = zdr_zh_22*np.nan
-        if where_dbzh_rhohv(ds_fil, 23, 25).count()<min_count:
-            zdr_zh_24 = zdr_zh_24*np.nan
-        if where_dbzh_rhohv(ds_fil, 25, 27).count()<min_count:
-            zdr_zh_26 = zdr_zh_26*np.nan
-        if where_dbzh_rhohv(ds_fil, 27, 29).count()<min_count:
-            zdr_zh_28 = zdr_zh_28*np.nan
-        if where_dbzh_rhohv(ds_fil, 29, 31).count()<min_count:
-            zdr_zh_30 = zdr_zh_30*np.nan
-
+        zdr_zh_20 = zdr_zh_20.where(where_dbzh_rhohv(ds_fil, 19, 21).count(dim=dims_wotime)>=min_count)
+        zdr_zh_22 = zdr_zh_22.where(where_dbzh_rhohv(ds_fil, 21, 23).count(dim=dims_wotime)>=min_count)
+        zdr_zh_24 = zdr_zh_24.where(where_dbzh_rhohv(ds_fil, 23, 25).count(dim=dims_wotime)>=min_count)
+        zdr_zh_26 = zdr_zh_26.where(where_dbzh_rhohv(ds_fil, 25, 27).count(dim=dims_wotime)>=min_count)
+        zdr_zh_28 = zdr_zh_28.where(where_dbzh_rhohv(ds_fil, 27, 29).count(dim=dims_wotime)>=min_count)
+        zdr_zh_30 = zdr_zh_30.where(where_dbzh_rhohv(ds_fil, 29, 31).count(dim=dims_wotime)>=min_count)
 
         zdroffset = xr.concat([zdr_zh_20-ref_vals[0], zdr_zh_22-ref_vals[1], zdr_zh_24-ref_vals[2], zdr_zh_26-ref_vals[3], zdr_zh_28-ref_vals[4], zdr_zh_30-ref_vals[5]], dim='dataarrays').mean(dim='dataarrays', skipna=False, keep_attrs=True)
+        
+        # get also the count of values used for the calculation
+        zdroffset_datacount = where_dbzh_rhohv(ds_fil, 19, 31).count(dim=dims_wotime)
         
         # drop ML coordinates if present
         for coord in zdroffset.coords:
             if "_ml" in coord:
                 zdroffset = zdroffset.drop_vars(coord)
+                zdroffset_datacount = zdroffset_datacount.drop_vars(coord)
 
     else:
         zdr_zh_20 = where_dbzh_rhohv(ds_fil, 19, 21).compute().median()
@@ -2766,16 +2842,24 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
             zdr_zh_30 = zdr_zh_30*np.nan
 
         zdroffset = xr.concat([zdr_zh_20-ref_vals[0], zdr_zh_22-ref_vals[1], zdr_zh_24-ref_vals[2], zdr_zh_26-ref_vals[3], zdr_zh_28-ref_vals[4], zdr_zh_30-ref_vals[5]], dim='dataarrays', combine_attrs="override").mean(dim='dataarrays', skipna=False, keep_attrs=True)
+
+        # get also the count of values used for the calculation
+        zdroffset_datacount = where_dbzh_rhohv(ds_fil, 19, 31).count()
         
         # restore time dim if present
         if "time" in ds:
             zdroffset = zdroffset.expand_dims("time")
             zdroffset["time"] = np.atleast_1d(ds.coords["time"][0]) # put the first time value as coord
+            zdroffset_datacount = zdroffset_datacount.expand_dims("time")
+            zdroffset_datacount["time"] = np.atleast_1d(ds.coords["time"][0]) # put the first time value as coord
             
     # restore attrs
     zdroffset.attrs = ds_fil[zdr].attrs
     zdroffset.attrs["long_name"] = "ZDR offset from light rain consistency method"
     zdroffset.attrs["standard_name"] = "ZDR_offset_from_light_rain_consistency_method"
+
+    zdroffset_datacount.attrs["long_name"] = "Count of values (bins) used for the ZDR offset calculation"
+    zdroffset_datacount.attrs["standard_name"] = "count_of_values_zdr_offset"
     
     if plot_correction:
         try:
@@ -2814,6 +2898,10 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
     
     # change name of the array
     zdroffset.name="ZDR_offset"
+    
+    # promote to Dataset
+    zdroffset = zdroffset.to_dataset().assign({"ZDR_offset_datacount": zdroffset_datacount})
+    
     return zdroffset
 
 
@@ -2942,30 +3030,35 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
     # Azimuth median before computing?
     if azmed:
         if "azimuth" in ds_zdr.dims:
-            ds_zdr = ds_zdr.median("azimuth")
+            ds_zdr_med = ds_zdr.median("azimuth")
         else:
             raise KeyError("azimuth not found in dataset dimensions")
+    else:
+        ds_zdr_med = ds_zdr
 
     if "time" in ds and timemode=="step":
         # Get dimensions to reduce (other than time)
-        dims_wotime = [kk for kk in ds_zdr.dims]
+        dims_wotime = [kk for kk in ds_zdr_med.dims]
         while "time" in dims_wotime:
             dims_wotime.remove("time")
+
+        # same as before but with ds_zdr, in case the azimuth has already been taken off (for the data count)
+        dims_full_wotime = [kk for kk in ds_zdr.dims] 
+        while "time" in dims_full_wotime:
+            dims_full_wotime.remove("time")
                             
-        # Filter according to the minimum number of bins limit
-        # ds_zdr = ds_zdr.where(ds_zdr.count(dim=dims_wotime)>minbins)
-        
-        ds_zdr = ds_zdr.where(n_longest_consecutive(ds_zdr, dim="range").compute() > minbins)
+        # Filter according to the minimum number of bins limit        
+        ds_zdr_med_ready = ds_zdr_med.where(n_longest_consecutive(ds_zdr_med, dim="range").compute() > minbins)
         
         # Calculate offset and others
         if mode=="median":
-            zdr_offset = ds_zdr.median(dim=dims_wotime).assign_attrs(
+            zdr_offset = ds_zdr_med_ready.median(dim=dims_wotime).assign_attrs(
                 {"long_name":"ZDR offset from vertical profile (median)", 
                  "standard_name":"ZDR_offset_from_vertical_profile",
                  "units": "dB"}
                 )
         elif mode=="mean":
-            zdr_offset = ds_zdr.mean(dim=dims_wotime).assign_attrs(
+            zdr_offset = ds_zdr_med_ready.mean(dim=dims_wotime).assign_attrs(
                 {"long_name":"ZDR offset from vertical profile (mean)", 
                  "standard_name":"ZDR_offset_from_vertical_profile",
                  "units": "dB"}
@@ -2973,38 +3066,41 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
         else:
             raise KeyError("mode must be either 'median' or 'mean'")
 
-        zdr_max = ds_zdr.max(dim=dims_wotime).assign_attrs(
+        zdr_max = ds_zdr_med_ready.max(dim=dims_wotime).assign_attrs(
             {"long_name":"ZDR max from offset calculation", 
              "standard_name":"ZDR_max_from_offset_calculation"}
             )
-        zdr_min = ds_zdr.min(dim=dims_wotime).assign_attrs(
+        zdr_min = ds_zdr_med_ready.min(dim=dims_wotime).assign_attrs(
             {"long_name":"ZDR min from offset calculation", 
              "standard_name":"ZDR_min_from_offset_calculation"}
             )
-        zdr_std = ds_zdr.std(dim=dims_wotime).assign_attrs(
+        zdr_std = ds_zdr_med_ready.std(dim=dims_wotime).assign_attrs(
             {"long_name":"ZDR standard deviation from offset calculation", 
              "standard_name":"ZDR_std_from_offset_calculation"}
             )
-        zdr_sem = ( zdr_std / ds_zdr.count(dim=dims_wotime)**(1/2) ).assign_attrs(
+        zdr_sem = ( zdr_std / ds_zdr_med_ready.count(dim=dims_wotime)**(1/2) ).assign_attrs(
             {"long_name":"ZDR standard error of the mean from offset calculation", 
              "standard_name":"ZDR_sem_from_offset_calculation"}
+            )
+        zdr_offset_datacount = ds_zdr.where(ds_zdr_med_ready.notnull()).count(dim=dims_full_wotime).assign_attrs(
+            {"long_name":"Count of values (bins) used for the ZDR offset calculation", 
+             "standard_name":"count_of_values_zdr_offset"}
             )
 
                 
     else:
         # Filter according to the minimum number of bins limit
-        # ds_zdr = ds_zdr.where(ds_zdr.count()>minbins)
-        ds_zdr = ds_zdr.where(n_longest_consecutive(ds_zdr, dim="range").compute() > minbins)
+        ds_zdr_med_ready = ds_zdr_med.where(n_longest_consecutive(ds_zdr_med, dim="range").compute() > minbins)
 
         # Calculate offset and others
         if mode=="median":
-            zdr_offset = ds_zdr.compute().median().assign_attrs(
+            zdr_offset = ds_zdr_med_ready.compute().median().assign_attrs(
                 {"long_name":"ZDR offset from vertical profile (median)", 
                  "standard_name":"ZDR_offset_from_vertical_profile",
                  "units": "dB"}
                 )
         elif mode=="mean":
-            zdr_offset = ds_zdr.compute().mean().assign_attrs(
+            zdr_offset = ds_zdr_med_ready.compute().mean().assign_attrs(
                 {"long_name":"ZDR offset from vertical profile (mean)", 
                  "standard_name":"ZDR_offset_from_vertical_profile",
                  "units": "dB"}
@@ -3012,30 +3108,34 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
         else:
             raise KeyError("mode must be either 'median' or 'mean'")
 
-        zdr_max = ds_zdr.compute().max().assign_attrs(
+        zdr_max = ds_zdr_med_ready.compute().max().assign_attrs(
             {"long_name":"ZDR max from offset calculation", 
              "standard_name":"ZDR_max_from_offset_calculation"}
             )
-        zdr_min = ds_zdr.compute().min().assign_attrs(
+        zdr_min = ds_zdr_med_ready.compute().min().assign_attrs(
             {"long_name":"ZDR min from offset calculation", 
              "standard_name":"ZDR_min_from_offset_calculation"}
             )
-        zdr_std = ds_zdr.compute().std().assign_attrs(
+        zdr_std = ds_zdr_med_ready.compute().std().assign_attrs(
             {"long_name":"ZDR standard deviation from offset calculation", 
              "standard_name":"ZDR_std_from_offset_calculation"}
             )
-        zdr_sem = ( zdr_std / ds_zdr.compute().count()**(1/2) ).assign_attrs(
+        zdr_sem = ( zdr_std / ds_zdr_med_ready.compute().count()**(1/2) ).assign_attrs(
             {"long_name":"ZDR standard error of the mean from offset calculation", 
              "standard_name":"ZDR_sem_from_offset_calculation"}
             )
-
+        zdr_offset_datacount = ds_zdr.where(ds_zdr_med_ready.notnull()).count().assign_attrs(
+            {"long_name":"Count of values (bins) used for the ZDR offset calculation", 
+             "standard_name":"count_of_values_zdr_offset"}
+            )
             
     # Merge results in a dataset
     ds_offset = xr.Dataset({"ZDR_offset": zdr_offset,
                             "ZDR_max_from_offset": zdr_max,
                             "ZDR_min_from_offset": zdr_min,
                             "ZDR_std_from_offset": zdr_std,
-                            "ZDR_sem_from_offset": zdr_sem}
+                            "ZDR_sem_from_offset": zdr_sem,
+                            "ZDR_offset_datacount": zdr_offset_datacount}
                            )
 
     # restore time dim if present
@@ -3174,30 +3274,35 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
     # Azimuth median before computing?
     if azmed:
         if "azimuth" in ds_zdr.dims:
-            ds_zdr = ds_zdr.median("azimuth")
+            ds_zdr_med = ds_zdr.median("azimuth")
         else:
             raise KeyError("azimuth not found in dataset dimensions")
-
+    else:
+        ds_zdr_med = ds_zdr
+        
     if "time" in ds and timemode=="step":
         # Get dimensions to reduce (other than time)
-        dims_wotime = [kk for kk in ds_zdr.dims]
+        dims_wotime = [kk for kk in ds_zdr_med.dims]
         while "time" in dims_wotime:
             dims_wotime.remove("time")
-                            
+
+        # same as before but with ds_zdr, in case the azimuth has already been taken off (for the data count)
+        dims_full_wotime = [kk for kk in ds_zdr.dims] 
+        while "time" in dims_full_wotime:
+            dims_full_wotime.remove("time")
+                                    
         # Filter according to the minimum number of bins limit
-        # ds_zdr = ds_zdr.where(ds_zdr.count(dim=dims_wotime)>minbins)
-        
-        ds_zdr = ds_zdr.where(n_longest_consecutive(ds_zdr, dim="range").compute() > minbins)
+        ds_zdr_med_ready = ds_zdr_med.where(n_longest_consecutive(ds_zdr_med, dim="range").compute() > minbins)
         
         # Calculate offset and others
         if mode=="median":
-            zdr_offset = ds_zdr.median(dim=dims_wotime).assign_attrs(
+            zdr_offset = ds_zdr_med_ready.median(dim=dims_wotime).assign_attrs(
                 {"long_name":"ZDR offset from QVP method (median)", 
                  "standard_name":"ZDR_offset_from_qvp",
                  "units": "dB"}
                 ) - zdr_0
         elif mode=="mean":
-            zdr_offset = ds_zdr.mean(dim=dims_wotime).assign_attrs(
+            zdr_offset = ds_zdr_med_ready.mean(dim=dims_wotime).assign_attrs(
                 {"long_name":"ZDR offset from QVP method (mean)", 
                  "standard_name":"ZDR_offset_from_qvp",
                  "units": "dB"}
@@ -3205,38 +3310,40 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
         else:
             raise KeyError("mode must be either 'median' or 'mean'")
 
-        zdr_max = ds_zdr.max(dim=dims_wotime).assign_attrs(
+        zdr_max = ds_zdr_med_ready.max(dim=dims_wotime).assign_attrs(
             {"long_name":"ZDR max from offset calculation", 
              "standard_name":"ZDR_max_from_offset_calculation"}
             )
-        zdr_min = ds_zdr.min(dim=dims_wotime).assign_attrs(
+        zdr_min = ds_zdr_med_ready.min(dim=dims_wotime).assign_attrs(
             {"long_name":"ZDR min from offset calculation", 
              "standard_name":"ZDR_min_from_offset_calculation"}
             )
-        zdr_std = ds_zdr.std(dim=dims_wotime).assign_attrs(
+        zdr_std = ds_zdr_med_ready.std(dim=dims_wotime).assign_attrs(
             {"long_name":"ZDR standard deviation from offset calculation", 
              "standard_name":"ZDR_std_from_offset_calculation"}
             )
-        zdr_sem = ( zdr_std / ds_zdr.count(dim=dims_wotime)**(1/2) ).assign_attrs(
+        zdr_sem = ( zdr_std / ds_zdr_med_ready.count(dim=dims_wotime)**(1/2) ).assign_attrs(
             {"long_name":"ZDR standard error of the mean from offset calculation", 
              "standard_name":"ZDR_sem_from_offset_calculation"}
             )
-
+        zdr_offset_datacount = ds_zdr.where(ds_zdr_med_ready.notnull()).count(dim=dims_full_wotime).assign_attrs(
+            {"long_name":"Count of values (bins) used for the ZDR offset calculation", 
+             "standard_name":"count_of_values_zdr_offset"}
+            )
                 
     else:
         # Filter according to the minimum number of bins limit
-        # ds_zdr = ds_zdr.where(ds_zdr.count()>minbins)
-        ds_zdr = ds_zdr.where(n_longest_consecutive(ds_zdr, dim="range").compute() > minbins)
+        ds_zdr_med_ready = ds_zdr_med.where(n_longest_consecutive(ds_zdr_med, dim="range").compute() > minbins)
 
         # Calculate offset and others
         if mode=="median":
-            zdr_offset = ds_zdr.compute().median().assign_attrs(
+            zdr_offset = ds_zdr_med_ready.compute().median().assign_attrs(
                 {"long_name":"ZDR offset from QVP method (median)", 
                  "standard_name":"ZDR_offset_from_qvp",
                  "units": "dB"}
                 ) - zdr_0
         elif mode=="mean":
-            zdr_offset = ds_zdr.compute().mean().assign_attrs(
+            zdr_offset = ds_zdr_med_ready.compute().mean().assign_attrs(
                 {"long_name":"ZDR offset from QVP method (mean)", 
                  "standard_name":"ZDR_offset_from_qvp",
                  "units": "dB"}
@@ -3244,30 +3351,34 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
         else:
             raise KeyError("mode must be either 'median' or 'mean'")
 
-        zdr_max = ds_zdr.compute().max().assign_attrs(
+        zdr_max = ds_zdr_med_ready.compute().max().assign_attrs(
             {"long_name":"ZDR max from offset calculation", 
              "standard_name":"ZDR_max_from_offset_calculation"}
             )
-        zdr_min = ds_zdr.compute().min().assign_attrs(
+        zdr_min = ds_zdr_med_ready.compute().min().assign_attrs(
             {"long_name":"ZDR min from offset calculation", 
              "standard_name":"ZDR_min_from_offset_calculation"}
             )
-        zdr_std = ds_zdr.compute().std().assign_attrs(
+        zdr_std = ds_zdr_med_ready.compute().std().assign_attrs(
             {"long_name":"ZDR standard deviation from offset calculation", 
              "standard_name":"ZDR_std_from_offset_calculation"}
             )
-        zdr_sem = ( zdr_std / ds_zdr.compute().count()**(1/2) ).assign_attrs(
+        zdr_sem = ( zdr_std / ds_zdr_med_ready.compute().count()**(1/2) ).assign_attrs(
             {"long_name":"ZDR standard error of the mean from offset calculation", 
              "standard_name":"ZDR_sem_from_offset_calculation"}
             )
-
+        zdr_offset_datacount = ds_zdr.where(ds_zdr_med_ready.notnull()).count().assign_attrs(
+            {"long_name":"Count of values (bins) used for the ZDR offset calculation", 
+             "standard_name":"count_of_values_zdr_offset"}
+            )
             
     # Merge results in a dataset
     ds_offset = xr.Dataset({"ZDR_offset": zdr_offset,
                             "ZDR_max_from_offset": zdr_max,
                             "ZDR_min_from_offset": zdr_min,
                             "ZDR_std_from_offset": zdr_std,
-                            "ZDR_sem_from_offset": zdr_sem}
+                            "ZDR_sem_from_offset": zdr_sem,
+                            "ZDR_offset_datacount": zdr_offset_datacount}
                            )
 
     # restore time dim if present
