@@ -472,7 +472,6 @@ for ff in files:
                     # save the arrays
                     if azmed: savepath = make_savedir(ff, "QVP")
                     else: savepath = make_savedir(ff, "falseQVP")
-                    savepath = make_savedir(ff, "QVP")
                     filename = ("zdr_offset_below1C"+fn_app).join(savepath.split("allmoms"))
                     zdr_offset.to_netcdf(filename)
                     
