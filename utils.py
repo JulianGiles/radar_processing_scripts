@@ -362,12 +362,14 @@ def unfold_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names):
     return ds
 
 def fix_flipped_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, range_name="range", 
-                      tolerance = 0.05, fix_range=3000., flip_kdp=True):
+                      fix_range=3000., rng=3000., flip_kdp=True, tolerance = 0.05):
     """
-    Flip PHIDP in case it is inverted. The function looks for the sign of the differences
-    in PHIDP along the range coord. If there are more negative than positive differences 
-    (within some tolerance) it is assumed that PHIDP generally decreases with range, 
-    then it is multiplied by -1. Only pixels with RHOHV>0.7 are taken into consideration.
+    Flip PHIDP in case it is inverted. The function smooths PHIDP and calculates the
+    differences between gates, for each ray. Then, the differences in the whole of ds 
+    are summed. If the resulting value is negative, i.e. PHIDP mostly goes down,
+    then PHIDP is flipped (multiplied by -1). Only pixels with RHOHV>0.7 and 
+    starting from fix_range are taken into consideration. Also flips KDP if
+    flip_kdp is True.
 
     Parameter
     ---------
@@ -375,16 +377,23 @@ def fix_flipped_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, rang
     phidp_names : list of PHIDP variable names to look for in the dataset
     rhohv_names : list of RHOHV variable names to look for in the dataset
     range_name : str name of the range coordinate
-    tolerance : float tolerance value to not apply the fix. The count of negative 
-                differences must be higher than the count of positives *(1+tolerance) 
     fix_range : float
         Minimum range from where to consider PHIDP values.
+    rng : float
+        Range in m for median smooting along the range dimension.
     flip_kdp : bool
         If True, test also "KDP" for flipping if there is a majority of negative values.
         Only flips if PHIDP was flipped.
+    tolerance : float tolerance value to not apply the kdp flip. The count of negative 
+                kdp values must be higher than the count of positives *(1+tolerance) .
     """
     success = False # define a bool to check if some PHIDP variable was found
     flip_kdp_trigger = False # define a bool to trigger kdp testing and flipping
+
+    range_step = np.diff(ds[range_name])[0]
+    nprec = int(rng / range_step)
+    if not nprec % 2:
+        nprec += 1
     
     for phi in phidp_names:
         if phi in ds.data_vars:
@@ -394,9 +403,9 @@ def fix_flipped_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, rang
                 for X_RHO in rhohv_names: # only take pixels with rhohv>0.7 to avoid noise
                     if X_RHO in ds.data_vars:
                         ds_phi = ds[X_PHI].where(ds[X_RHO]>0.7).where(ds[range_name]>=fix_range)
-                        positive_diffs = (ds_phi.diff(range_name)).sum().compute()            
-                        negative_diffs = (ds_phi.diff(range_name)).sum().compute()  
-                        if negative_diffs > positive_diffs*(1+tolerance):
+                        smooth_diff = ds_phi.rolling({range_name:nprec}).median().diff(range_name).sum()
+                        
+                        if smooth_diff < 0:
                             attrs = ds[X_PHI].attrs.copy()
                             ds[X_PHI] = ds[X_PHI]*-1
                             ds[X_PHI].attrs = attrs.copy()
@@ -406,6 +415,7 @@ def fix_flipped_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, rang
                         break
                                 
             success = True
+
     if "KDP" in ds.data_vars and flip_kdp_trigger:
         ds_kdp = ds["KDP"].where(ds[X_RHO]>0.7).where(ds[range_name]>=fix_range)
         kdp_pos = (ds_kdp>0).sum().compute()
@@ -2263,7 +2273,7 @@ def phase_offset_old(phioff, rng=3000.): # I do not remember why I wrote this fu
     """
     range_step = np.diff(phioff.range)[0]
     nprec = int(rng / range_step)
-    if nprec % 2:
+    if not nprec % 2:
         nprec += 1
 
     # create binary array
