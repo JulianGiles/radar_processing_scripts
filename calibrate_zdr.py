@@ -154,19 +154,20 @@ for ff in files:
     if not overwrite:        
         if 1 in calib_types:
             savepath = make_savedir(ff, "VP")
-            if len(os.listdir(os.path.dirname(savepath))) == 8: # this number must match the expected outputs (see how many below)
+            if len(os.listdir(os.path.dirname(savepath))) >= 6: # this number must match the min expected outputs (see how many below)
                 calib_1 = False
         else: calib_1 = False
         
         if 2 in calib_types:
             savepath = make_savedir(ff, "LR_consistency")
-            if len(os.listdir(os.path.dirname(savepath))) == 4: # this number must match the expected outputs (see how many below)
+            if len(os.listdir(os.path.dirname(savepath))) >= 2: # this number must match the min expected outputs (see how many below)
                 calib_2 = False
         else: calib_2 = False
 
         if 3 in calib_types:
-            savepath = make_savedir(ff, "QVP")
-            if len(os.listdir(os.path.dirname(savepath))) == 4: # this number must match the expected outputs (see how many below)
+            savepathqvp = make_savedir(ff, "QVP")
+            savepathfalseqvp = make_savedir(ff, "falseQVP")
+            if ( len(os.listdir(os.path.dirname(savepathqvp))) >= 2 ) and ( len(os.listdir(os.path.dirname(savepathfalseqvp))) >= 2 ): # this number must match the min expected outputs (see how many below)
                 calib_3 = False
         else: calib_3 = False
 
