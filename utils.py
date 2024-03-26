@@ -729,7 +729,7 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
 
 #### Loading ZDR offsets and RHOHV noise corrected
 
-def load_ZDR_offset(ds, X_ZDR, zdr_off_path, zdr_off_name="ZDR_offset", zdr_oc_name="ZDR_OC", load_other_vars=False):
+def load_ZDR_offset(ds, X_ZDR, zdr_off_path, zdr_off_name="ZDR_offset", zdr_oc_name="ZDR_OC", attach_all_vars=False):
     """
     Load ZDR offset and correct ZDR, then attach it as a new variable in ds. Optionally
     attach also all variables in the offset file (like the offset value and quality derived quantities).
@@ -746,7 +746,7 @@ def load_ZDR_offset(ds, X_ZDR, zdr_off_path, zdr_off_name="ZDR_offset", zdr_oc_n
             Name of the ZDR variable in the offset data file.
     zdr_oc_name : str
             Name of the new offset-corrected ZDR variable in the output dataset.
-    load_other_vars : bool
+    attach_all_vars : bool
             If True, attachs all variables from the zdr offset file in the output ds.
             Default is False (attachs only the offset-corrected ZDR).
 
@@ -769,7 +769,7 @@ def load_ZDR_offset(ds, X_ZDR, zdr_off_path, zdr_off_name="ZDR_offset", zdr_oc_n
             ds = ds.assign({zdr_oc_name: ds[X_ZDR]-zdr_offset[zdr_off_name].values})
         ds[zdr_oc_name].attrs = ds[X_ZDR].attrs
         
-        if load_other_vars:
+        if attach_all_vars:
             ds.assign(zdr_offset)
         return ds
 
