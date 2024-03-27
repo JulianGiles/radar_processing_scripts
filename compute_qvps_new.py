@@ -346,32 +346,11 @@ for ff in files:
     # Check that PHIDP is in data, otherwise skip ML detection
     if X_PHI in ds.data_vars:
         # Set parameters according to data
-        if "dwd" in ff:
-            country="dwd"
-            window0=7 # number of range bins for phidp smoothing (this one is quite important!)
-            winlen0=7 # size of range window (bins) for the kdp-phidp calculations
-            xwin0=9 # window size (bins) for the time rolling median smoothing in ML detection
-            ywin0=1 # window size (bins) for the height rolling mean smoothing in ML detection
-            fix_range = 750 # range from where to consider phi values (dwd data is bad in the first bin)
-            rng = 3000., # range for phidp offset correction, if None it is auto calculated based on window0
-            azmedian = True
-            if "/tur/" in ff:
-                # special case for tur, take the 5-ray rolling mean of the phidp offset (to handle bias induced by antennas)
-                azmedian = 5
-
-        elif "dmi" in ff:
-            country="dmi"
-            window0=17 # number of range bins for phidp smoothing (this one is quite important!)
-            winlen0=21 # size of range window (bins) for the kdp-phidp calculations
-            xwin0=5 # window size (bins) for the time rolling median smoothing in ML detection
-            ywin0=5 # window size (bins) for the height rolling mean smoothing in ML detection
-            fix_range = 200 # range from where to consider phi values (dmi data is bad in the first bin)
-            rng = 3000., # range for phidp offset correction, if None it is auto calculated based on window0
-            azmedian = True
+        phase_proc_params = utils.get_phase_proc_params(ff) # get default phase processing parameters
+        window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian = phase_proc_params.values()
 
         ######### Processing PHIDP
         #### fix PHIDP
-        
         
         # phidp may be already preprocessed (turkish case), then only offset-correct (no smoothing) and then vulpiani
         if "UPHIDP" not in X_PHI:
@@ -449,6 +428,16 @@ for ff in files:
         
         ds = ds.assign_coords({'height_ml_new_gia': ds_qvp_ra.height_ml_new_gia.where(cond_top_over_bottom)})
         ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp_ra.height_ml_bottom_new_gia.where(cond_top_over_bottom)})
+
+#%% Attenuation correction (NOT PROVED THAT IT WORKS NICELY ABOVE THE ML)
+    if X_PHI in ds.data_vars:    
+        ds = utils.attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.16, betaml = 0.022,
+                                           dbzh=X_DBZH, zdr=["ZDR_OC", "ZDR"], phidp=[X_PHI],
+                                           ML_bot = "height_ml_bottom_new_gia", ML_top = "height_ml_new_gia",
+                                           temp = "TEMP", temp_mlbot = 3, temp_mltop = 0, z_mlbot = 2000, dz_ml = 500,
+                                           interpolate_deltabump = True )
+            
+        ds_qvp_ra = ds_qvp_ra.assign( utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5})[[vv for vv in ds if "_AC" in vv]] )
 
 #%% Fix KDP in the ML using PHIDP:
     if X_PHI in ds.data_vars:    
