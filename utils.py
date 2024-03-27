@@ -2826,14 +2826,22 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
 
         zdroffset = xr.concat([zdr_zh_20-ref_vals[0], zdr_zh_22-ref_vals[1], zdr_zh_24-ref_vals[2], zdr_zh_26-ref_vals[3], zdr_zh_28-ref_vals[4], zdr_zh_30-ref_vals[5]], dim='dataarrays').mean(dim='dataarrays', skipna=False, keep_attrs=True)
         
-        # get also the count of values used for the calculation
-        zdroffset_datacount = where_dbzh_rhohv(ds_fil, 19, 31).count(dim=dims_wotime)
+        # get also data quality vars
+        zdr_max = where_dbzh_rhohv(ds_fil, 19, 31).max(dim=dims_wotime)
+        zdr_min = where_dbzh_rhohv(ds_fil, 19, 31).min(dim=dims_wotime)
+        zdr_std = where_dbzh_rhohv(ds_fil, 19, 31).std(dim=dims_wotime)
+        zdr_sem = ( zdr_std / where_dbzh_rhohv(ds_fil, 19, 31).count(dim=dims_wotime)**(1/2) )
+        zdr_offset_datacount = where_dbzh_rhohv(ds_fil, 19, 31).count(dim=dims_wotime)
         
         # drop ML coordinates if present
         for coord in zdroffset.coords:
             if "_ml" in coord:
                 zdroffset = zdroffset.drop_vars(coord)
-                zdroffset_datacount = zdroffset_datacount.drop_vars(coord)
+                zdr_max = zdr_max.drop_vars(coord)
+                zdr_min = zdr_min.drop_vars(coord)
+                zdr_std = zdr_std.drop_vars(coord)
+                zdr_sem = zdr_sem.drop_vars(coord)
+                zdr_offset_datacount = zdr_offset_datacount.drop_vars(coord)
 
     else:
         zdr_zh_20 = where_dbzh_rhohv(ds_fil, 19, 21).compute().median()
@@ -2860,23 +2868,47 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
 
         zdroffset = xr.concat([zdr_zh_20-ref_vals[0], zdr_zh_22-ref_vals[1], zdr_zh_24-ref_vals[2], zdr_zh_26-ref_vals[3], zdr_zh_28-ref_vals[4], zdr_zh_30-ref_vals[5]], dim='dataarrays', combine_attrs="override").mean(dim='dataarrays', skipna=False, keep_attrs=True)
 
-        # get also the count of values used for the calculation
-        zdroffset_datacount = where_dbzh_rhohv(ds_fil, 19, 31).count()
+        # get also data quality vars
+        zdr_max = where_dbzh_rhohv(ds_fil, 19, 31).max()
+        zdr_min = where_dbzh_rhohv(ds_fil, 19, 31).min()
+        zdr_std = where_dbzh_rhohv(ds_fil, 19, 31).std()
+        zdr_sem = ( zdr_std / where_dbzh_rhohv(ds_fil, 19, 31).count()**(1/2) )
+        zdr_offset_datacount = where_dbzh_rhohv(ds_fil, 19, 31).count()
         
         # restore time dim if present
         if "time" in ds:
             zdroffset = zdroffset.expand_dims("time")
             zdroffset["time"] = np.atleast_1d(ds.coords["time"][0]) # put the first time value as coord
-            zdroffset_datacount = zdroffset_datacount.expand_dims("time")
-            zdroffset_datacount["time"] = np.atleast_1d(ds.coords["time"][0]) # put the first time value as coord
+            zdr_max = zdr_max.expand_dims("time")
+            zdr_max["time"] = np.atleast_1d(ds.coords["time"][0]) # put the first time value as coord
+            zdr_min = zdr_min.expand_dims("time")
+            zdr_min["time"] = np.atleast_1d(ds.coords["time"][0]) # put the first time value as coord
+            zdr_std = zdr_std.expand_dims("time")
+            zdr_std["time"] = np.atleast_1d(ds.coords["time"][0]) # put the first time value as coord
+            zdr_sem = zdr_sem.expand_dims("time")
+            zdr_sem["time"] = np.atleast_1d(ds.coords["time"][0]) # put the first time value as coord
+            zdr_offset_datacount = zdr_offset_datacount.expand_dims("time")
+            zdr_offset_datacount["time"] = np.atleast_1d(ds.coords["time"][0]) # put the first time value as coord
             
     # restore attrs
     zdroffset.attrs = ds_fil[zdr].attrs
     zdroffset.attrs["long_name"] = "ZDR offset from light rain consistency method"
     zdroffset.attrs["standard_name"] = "ZDR_offset_from_light_rain_consistency_method"
 
-    zdroffset_datacount.attrs["long_name"] = "Count of values (bins) used for the ZDR offset calculation"
-    zdroffset_datacount.attrs["standard_name"] = "count_of_values_zdr_offset"
+    zdr_max.attrs["long_name"] = "ZDR max from offset calculation"
+    zdr_max.attrs["standard_name"] = "ZDR_max_from_offset_calculation"
+
+    zdr_min.attrs["long_name"] = "ZDR min from offset calculation"
+    zdr_min.attrs["standard_name"] = "ZDR_min_from_offset_calculation"
+
+    zdr_std.attrs["long_name"] = "ZDR standard deviation from offset calculation"
+    zdr_std.attrs["standard_name"] = "ZDR_std_from_offset_calculation"
+
+    zdr_sem.attrs["long_name"] = "ZDR standard error of the mean from offset calculation"
+    zdr_sem.attrs["standard_name"] = "ZDR_sem_from_offset_calculation"
+
+    zdr_offset_datacount.attrs["long_name"] = "Count of values (bins) used for the ZDR offset calculation"
+    zdr_offset_datacount.attrs["standard_name"] = "count_of_values_zdr_offset"
     
     if plot_correction:
         try:
@@ -2917,7 +2949,13 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
     zdroffset.name="ZDR_offset"
     
     # promote to Dataset
-    zdroffset = zdroffset.to_dataset().assign({"ZDR_offset_datacount": zdroffset_datacount})
+    zdroffset = zdroffset.to_dataset().assign({
+        "ZDR_max_from_offset": zdr_max,
+        "ZDR_min_from_offset": zdr_min,
+        "ZDR_std_from_offset": zdr_std,
+        "ZDR_sem_from_offset": zdr_sem,
+        "ZDR_offset_datacount": zdr_offset_datacount
+        })
     
     return zdroffset
 
