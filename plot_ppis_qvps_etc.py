@@ -68,18 +68,29 @@ warnings.filterwarnings('ignore')
 
 ## Load the data into an xarray dataset (ds)
 
-zdr_offset_perts = False # offset correct zdr per timesteps? if False, correct with daily offset
+abs_zdr_off_min_thresh = 0. # if ZDR_OC has more negative values than the original ZDR
+# and the absolute median offset is < abs_zdr_off_min_thresh, then undo the correction (set to 0 to avoid this step)
+zdr_offset_perts = True # offset correct zdr per timesteps? if False, correct with daily offset
+mix_zdr_offsets = False # if True and zdr_offset_perts=False, try to
+# choose between daily LR-consistency and QVP offsets based on how_mix_zdr_offset.
+# If True and zdr_offset_perts=True, choose between all available timestep offsets 
+# based on how_mix_zdr_offset. If False, just use the offsets according to the priority they are passed on.
+how_mix_zdr_offset = "count" # how to choose between the different offsets 
+# if mix_zdr_offsets = True. "count" will choose the offset that has more data points
+# in its calculation (there must be a variable ZDR_offset_datacount in the loaded offset).
+# "neg_overcorr" will choose the offset that generates less negative ZDR values.
+
 min_height_key = "default" # default = 200, 90grads = 600, ANK = 400, GZT = 300
 
-ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/tur/vol5minng01/07/*allmoms*"
-# ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-03-11/HTY/MON_YAZ_C/8.0/*allmoms*"
+# ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/tur/vol5minng01/07/*allmoms*"
+ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-03-11/HTY/MON_YAZ_C/8.0/*allmoms*"
 # ff = '/automount/realpep/upload/jgiles/dmi/2016/2016-08/2016-08-05/AFY/VOL_B/7.0/VOL_B-allmoms-7.0-20162016-082016-08-05-AFY-h5netcdf.nc'
 # ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-06-02/pro/90gradstarng01/00/*allmoms*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-10/2021-10-30/ess/90gradstarng01/00/*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-07/2021-07-24/ess/90gradstarng01/00/*"
-ds = utils.load_dwd_preprocessed(ff)
+# ds = utils.load_dwd_preprocessed(ff)
 # ds = utils.load_dwd_raw(ff)
-# ds = utils.load_dmi_preprocessed(ff)
+ds = utils.load_dmi_preprocessed(ff)
 
 if "dwd" in ff or "DWD" in ff:
     country="dwd"
@@ -172,30 +183,40 @@ try:
                     # if timestep-based offsets, we collect all of them and deal with them later
                     if zdrod not in zdr_oc_dict.keys():
                         zdr_oc_dict[zdrod] = []
-                    zdr_oc_dict[zdrod].append(utils.load_ZDR_offset(ds, X_ZDR, zdroffsetpath+"/"+zdrof, zdr_oc_name=X_ZDR+"_OC")[X_ZDR+"_OC"])
+                    zdr_oc_dict[zdrod].append(utils.load_ZDR_offset(ds, X_ZDR, zdroffsetpath+"/"+zdrof, zdr_oc_name=X_ZDR+"_OC", attach_all_vars=True))
                     continue
                 else:
-                    ds = utils.load_ZDR_offset(ds, X_ZDR, zdroffsetpath+"/"+zdrof, zdr_oc_name=X_ZDR+"_OC")
+                    ds = utils.load_ZDR_offset(ds, X_ZDR, zdroffsetpath+"/"+zdrof, zdr_oc_name=X_ZDR+"_OC", attach_all_vars=True)
                 
                 # if the offset comes from LR ZH-ZDR consistency, check it against
-                # the QVP method (if available) and choose the best one based on how 
-                # many negative values remain
-                if "LR_consistency" in zdrod:
+                # the QVP method (if available) and choose the best one based on how_mix_zdr_offset 
+                if "LR_consistency" in zdrod and mix_zdr_offsets:
                     for zdrof2 in zdrofffile:
                         try:
                             zdrod2 = [pp for pp in zdroffdir if "QVP" in pp][0]
                             zdroffsetpath_qvp = os.path.dirname(utils.edit_str(ff, country, country+zdrod2))
-                            ds_qvpoc = utils.load_ZDR_offset(ds, X_ZDR, zdroffsetpath_qvp+"/"+zdrof2, zdr_oc_name=X_ZDR+"_OC")
+                            ds_qvpoc = utils.load_ZDR_offset(ds, X_ZDR, zdroffsetpath_qvp+"/"+zdrof2, zdr_oc_name=X_ZDR+"_OC", attach_all_vars=True)
                             
-                            # calculate the count of negative values after each correction
-                            neg_count_ds_lroc = (ds[X_ZDR+"_OC"].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum().compute()
-                            neg_count_ds_qvpoc = (ds_qvpoc[X_ZDR+"_OC"].where((ds_qvpoc[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum().compute()
+                            if how_mix_zdr_offset == "neg_overcorr":
+                                # calculate the count of negative values after each correction
+                                neg_count_ds_lroc = (ds[X_ZDR+"_OC"].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum().compute()
+                                neg_count_ds_qvpoc = (ds_qvpoc[X_ZDR+"_OC"].where((ds_qvpoc[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum().compute()
+                                
+                                if neg_count_ds_lroc > neg_count_ds_qvpoc:
+                                    # continue with the correction with less negative values
+                                    print("Changing daily ZDR offset from LR_consistency to QVP")
+                                    ds = ds_qvpoc
                             
-                            if neg_count_ds_lroc > neg_count_ds_qvpoc:
-                                # continue with the correction with less negative values
-                                print("Changing daily ZDR offset from LR_consistency to QVP")
-                                ds = ds_qvpoc
-                                                            
+                            elif how_mix_zdr_offset == "count":
+                                if "ZDR_offset_datacount" in ds and "ZDR_offset_datacount" in ds_qvpoc:
+                                    # Choose the offset that has the most data points in its calculation
+                                    if ds_qvpoc["ZDR_offset_datacount"] > ds["ZDR_offset_datacount"]:
+                                        # continue with the correction with more data points
+                                        print("Changing daily ZDR offset from LR_consistency to QVP")
+                                        ds = ds_qvpoc
+                                else:
+                                    print("how_mix_zdr_offset == 'count' not possible, ZDR_offset_datacount not present in all offset datasets.")
+
                             break
                         except (OSError, ValueError):
                             pass
@@ -204,8 +225,8 @@ try:
                 neg_count_ds = (ds[X_ZDR].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum().compute()
                 neg_count_ds_oc = (ds[X_ZDR+"_OC"].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum().compute()
                 
-                if neg_count_ds_oc > neg_count_ds and abs((ds[X_ZDR] - ds[X_ZDR+"_OC"]).compute().median()) < 0.2:
-                    # if the correction introduces more negative values and the offset is lower than 0.2, then do not correct
+                if neg_count_ds_oc > neg_count_ds and abs((ds[X_ZDR] - ds[X_ZDR+"_OC"]).compute().median()) < abs_zdr_off_min_thresh:
+                    # if the correction introduces more negative values and the offset is lower than abs_zdr_off_min_thresh, then do not correct
                     ds[X_ZDR+"_OC"] = ds[X_ZDR]
                 
                 # Change the default ZDR name to the corrected one
@@ -218,16 +239,19 @@ try:
                 pass
     
     if zdr_offset_perts:
+        # Clean zdr_oc_dict of empty entries
+        zdr_oc_dict = {key: value for key, value in zdr_oc_dict.items() if value}
+
         # Deal with all the timestep-based offsets
         final_zdr_oc_list = []
         if len(zdr_oc_dict) == 0:
             # No ZDR timestep-based offsets were loaded, print a message
             print("No timestep-based zdr offsets to load")
         else:
-            print("Merging valid ZDR offsets (timestep mode)")
             for zdrod in zdroffdir:
-                # For the offset from each method, we merge all variants to have as many values as possible.
-                # In the end, for each entry of the dictionary, we have a final xarray dataarray (instead of the list)
+                # For the offset from each method, we merge all variants (below ML, 
+                # below 1C, etc) to have as many values as possible. In the end we have
+                # a list of final xarray dataarrays for each entry of zdroffdir.
                 if zdrod in zdr_oc_dict.keys():
                     if len(zdr_oc_dict[zdrod]) == 0:
                         del(zdr_oc_dict[zdrod])
@@ -237,25 +261,42 @@ try:
                     else:
                         zdr_oc_aux = zdr_oc_dict[zdrod][0].copy()
                         for zdr_oc_auxn in zdr_oc_dict[zdrod][1:]:
-                            zdr_oc_aux = zdr_oc_aux.where(zdr_oc_aux.notnull(), zdr_oc_auxn).copy()
+                            zdr_oc_aux = zdr_oc_aux.where(zdr_oc_aux[X_ZDR+"_OC"].notnull(), zdr_oc_auxn).copy()
                         final_zdr_oc_list.append(zdr_oc_aux.copy())
-            # now we pick, for each timestep, the best offset correction depending on the priority and 
-            # possible overcorrections
+                        
+            # we get the first correction based on priority
             final_zdr_oc = final_zdr_oc_list[0].copy()
-            if len(final_zdr_oc_list) > 1:
-                for final_zdr_ocn in final_zdr_oc_list[1:]:
-                    # calculate the count of negative values for each correction
-                    neg_count_final_zdr_oc = (final_zdr_oc.where((ds[X_RHO]>0.99) * (final_zdr_oc["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
-                    neg_count_final_zdr_ocn = (final_zdr_ocn.where((ds[X_RHO]>0.99) * (final_zdr_ocn["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
-                    # Are there less negatives in the first correction than the new one?
-                    neg_count_final_cond = neg_count_final_zdr_oc < neg_count_final_zdr_ocn
-                    # Retain first ZDR_OC where the condition is True, otherwise use the new ZDR_OC
-                    final_zdr_oc = final_zdr_oc.where(neg_count_final_cond, final_zdr_ocn).copy()
+
+            # now we pick, for each timestep, the best offset correction depending on the priority, 
+            # data quality and/or possible overcorrections            
+            if len(final_zdr_oc_list) > 1 and mix_zdr_offsets:
+                print("Merging valid ZDR offsets (timestep mode)")
+                if how_mix_zdr_offset == "neg_overcorr":
+                    for final_zdr_ocn in final_zdr_oc_list[1:]:
+                        # calculate the count of negative values for each correction
+                        neg_count_final_zdr_oc = (final_zdr_oc.where((ds[X_RHO]>0.99) * (final_zdr_oc["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
+                        neg_count_final_zdr_ocn = (final_zdr_ocn.where((ds[X_RHO]>0.99) * (final_zdr_ocn["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
+                        # Are there less negatives in the first correction than the new one?
+                        neg_count_final_cond = neg_count_final_zdr_oc < neg_count_final_zdr_ocn
+                        # Retain first ZDR_OC where the condition is True, otherwise use the new ZDR_OC
+                        final_zdr_oc = final_zdr_oc.where(neg_count_final_cond, final_zdr_ocn).copy()
+
+                elif how_mix_zdr_offset == "count":
+                    for final_zdr_ocn in final_zdr_oc_list[1:]:
+                        if "ZDR_offset_datacount" in final_zdr_oc and "ZDR_offset_datacount" in final_zdr_ocn:
+                            # Choose the offset that has the most data points in its calculation
+                            final_zdr_oc = final_zdr_oc.where(final_zdr_oc["ZDR_offset_datacount"] > final_zdr_ocn["ZDR_offset_datacount"], final_zdr_ocn).copy()
+                            
+                else:
+                    print("how_mix_zdr_offset = "+how_mix_zdr_offset+" is not a valid option, no mixing of offsets was done")
+
+            # Get only ZDR from now on
+            final_zdr_oc = final_zdr_oc[X_ZDR+"_OC"]
             
-            # Compare each timestep to the original ZDR, if the offsets overcorrect and the offset is < 0.2, discard correction
+            # Compare each timestep to the original ZDR, if the offsets overcorrect and the offset is < abs_zdr_off_min_thresh, discard correction
             neg_count_final_zdr_oc = (final_zdr_oc.where((ds[X_RHO]>0.99) * (final_zdr_oc["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
             neg_count_final_zdr = (ds[X_ZDR].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
-            neg_count_final_cond = (neg_count_final_zdr_oc > neg_count_final_zdr) * (abs((ds[X_ZDR] - final_zdr_oc).compute().median(("range", "azimuth"))) < 0.2)
+            neg_count_final_cond = (neg_count_final_zdr_oc > neg_count_final_zdr) * (abs((ds[X_ZDR] - final_zdr_oc).compute().median(("range", "azimuth"))) < abs_zdr_off_min_thresh)
             
             # Set the final ZDR_OC and change the default ZDR name to the corrected one 
             ds[X_ZDR+"_OC"] = final_zdr_oc.where(~neg_count_final_cond, ds[X_ZDR]).where(final_zdr_oc.notnull(), ds[X_ZDR])
@@ -271,52 +312,15 @@ except FileFound:
 
 interpolation_method_ML = "linear" # for interpolating PHIDP in the ML
 
-phase_pross_params = {}
-
-if country == "dwd":
-    if "vol5minng01" in ff:
-        phase_pross_params.update({
-            "window0": 7, # number of range bins for phidp smoothing (this one is quite important!)
-            "winlen0": 7, # size of range window (bins) for the kdp-phidp calculations
-            "xwin0": 9, # window size (bins) for the time rolling median smoothing in ML detection
-            "ywin0": 1, # window size (bins) for the height rolling mean smoothing in ML detection
-            "fix_range": 750, # range from where to consider phi values (dwd data is bad in the first bin)
-            "rng": 3000, # range for phidp offset correction, if None it is auto calculated based on window0
-            "azmedian": True, # reduce the phidp offset by applying median along the azimuths?
-        })
-        if "/tur/" in ff:
-            # special case for tur, take the 5-ray rolling mean of the phidp offset (to handle bias induced by antennas)
-            phase_pross_params["azmedian"] = 5
-    else:
-        phase_pross_params.update({
-            "window0": 17, # number of range bins for phidp smoothing (this one is quite important!)
-            "winlen0": 21, # size of range window (bins) for the kdp-phidp calculations
-            "xwin0": 5, # window size (bins) for the time rolling median smoothing in ML detection
-            "ywin0": 5, # window size (bins) for the height rolling mean smoothing in ML detection
-            "fix_range": 750, # range from where to consider phi values (dwd data is bad in the first bin)
-            "rng": 3000, # range for phidp offset correction, if None it is auto calculated based on window0
-            "azmedian": True, # reduce the phidp offset by applying median along the azimuths?
-        })
-
-elif country == "dmi":
-    phase_pross_params.update({
-        "window0": 17,
-        "winlen0": 21,
-        "xwin0": 5,
-        "ywin0": 5,
-        "fix_range": 200,
-        "rng": None, # range for phidp offset correction, if None it is auto calculated based on window0
-        "azmedian": True, # reduce the phidp offset by applying median along the azimuths?
-    })
-
+phase_proc_params = utils.get_phase_proc_params(ff) # get default phase processing parameters
 
 # Check that PHIDP is in data, otherwise skip ML detection
 if X_PHI in ds.data_vars:
     # Set parameters according to data
     
-    # for param_name in phase_pross_params[country].keys():
-    #     globals()[param_name] = phase_pross_params[param_name]    
-    window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian = phase_pross_params.values() # explicit alternative
+    # for param_name in phase_proc_params[country].keys():
+    #     globals()[param_name] = phase_proc_params[param_name]    
+    window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian = phase_proc_params.values() # explicit alternative
 
     # phidp may be already preprocessed (turkish case), then only offset-correct (no smoothing) and then vulpiani
     if "UPHIDP" not in X_PHI:
@@ -394,6 +398,16 @@ if "height_ml_new_gia" in ds_qvp:
     ds = ds.assign_coords({'height_ml_new_gia': ds_qvp.height_ml_new_gia.where(cond_top_over_bottom)})
     ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp.height_ml_bottom_new_gia.where(cond_top_over_bottom)})
 
+## Attenuation correction (NOT PROVED THAT IT WORKS NICELY ABOVE THE ML)
+if X_PHI in ds.data_vars:    
+    ds = utils.attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.16, betaml = 0.022,
+                                       dbzh="DBZH", zdr=["ZDR_OC", "ZDR"], phidp=["UPHIDP_OC", "PHIDP_OC"],
+                                       ML_bot = "height_ml_bottom_new_gia", ML_top = "height_ml_new_gia",
+                                       temp = "TEMP", temp_mlbot = 3, temp_mltop = 0, z_mlbot = 2000, dz_ml = 500,
+                                       interpolate_deltabump = True )
+        
+    ds_qvp = ds_qvp.assign( utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5})[[vv for vv in ds if "_AC" in vv]] )
+    
 ## Fix KDP in the ML using PHIDP:
 if X_PHI in ds.data_vars:    
     ds = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen=winlen0, min_periods=winlen0/2)
@@ -420,9 +434,79 @@ if X_PHI in ds.data_vars:
     min_trst_strati_qvp = min_trst_strati_qvp.swap_dims({"range":"z"}) # swap range dimension for height
     ds_qvp = ds_qvp.assign({"min_entropy": min_trst_strati_qvp})
 
+#%% Small test (ZDR OC after atten correction)
+# LR consistency correction after atten corr
+zdr_offset_lr_belowML_step = utils.zhzdr_lr_consistency(ds, zdr="ZDR_AC", dbzh="DBZH_AC", rhohv=X_RHO, min_h=min_height, timemode="step")
+zdr_offset_lr_below1c_step = utils.zhzdr_lr_consistency(ds, zdr="ZDR_AC", dbzh="DBZH_AC", rhohv=X_RHO, mlbottom=1, min_h=min_height, timemode="step")
+
+zdr_offset_lr_combined_step = zdr_offset_lr_belowML_step.where(zdr_offset_lr_belowML_step.notnull(), zdr_offset_lr_below1c_step)
+
+ds_qvp["ZDR_AC_OC"] = ds_qvp["ZDR_AC"] - zdr_offset_lr_combined_step
+
+# QVP-like consistency correction after atten corr
+minbins = int(1000 / ds["range"].diff("range").median())
+zdr_offset_qvp_belowML_step = utils.zdr_offset_detection_qvps(ds, zdr="ZDR_AC", dbzh="DBZH_AC", rhohv=X_RHO, azmed=False,
+                                            min_h=min_height, timemode="step", minbins=minbins).compute()
+zdr_offset_qvp_below1c_step = utils.zdr_offset_detection_qvps(ds, zdr="ZDR_AC", dbzh="DBZH_AC", rhohv=X_RHO, mlbottom=1, azmed=False,
+                                            min_h=min_height, timemode="step", minbins=minbins).compute()
+
+zdr_offset_qvp_combined_step = zdr_offset_qvp_belowML_step.where(zdr_offset_qvp_belowML_step.notnull(), zdr_offset_qvp_below1c_step)
+
+ds_qvp["ZDR_AC_OCqvp"] = ds_qvp["ZDR_AC"] - zdr_offset_qvp_combined_step["ZDR_offset"]
+
+# QVP consistency correction after atten corr
+minbins = int(1000 / ds["range"].diff("range").median())
+zdr_offset_qvp_belowML_step2 = utils.zdr_offset_detection_qvps(ds, zdr="ZDR_AC", dbzh="DBZH_AC", rhohv=X_RHO, azmed=True,
+                                            min_h=min_height, timemode="step", minbins=minbins).compute()
+zdr_offset_qvp_below1c_step2 = utils.zdr_offset_detection_qvps(ds, zdr="ZDR_AC", dbzh="DBZH_AC", rhohv=X_RHO, mlbottom=1, azmed=True,
+                                            min_h=min_height, timemode="step", minbins=minbins).compute()
+
+zdr_offset_qvp_combined_step2 = zdr_offset_qvp_belowML_step2.where(zdr_offset_qvp_belowML_step2.notnull(), zdr_offset_qvp_below1c_step2)
+
+ds_qvp["ZDR_AC_OCqvp2"] = ds_qvp["ZDR_AC"] - zdr_offset_qvp_combined_step2["ZDR_offset"]
+
+# Load the original offsets for plotting
+zdroffsetpath = os.path.dirname(utils.edit_str(ff, country, country+"/calibration/zdr/LR_consistency/"))
+zdrof = '*zdr_offset_belowML_timesteps-*'
+zdr_offset_lr_belowML_step0 = xr.open_mfdataset(zdroffsetpath+"/"+zdrof)["ZDR_offset"]
+
+zdrof = '*zdr_offset_below1C_timesteps-*'
+zdr_offset_lr_below1c_step0 = xr.open_mfdataset(zdroffsetpath+"/"+zdrof)["ZDR_offset"]
+
+zdr_offset_lr_combined_step0 = zdr_offset_lr_belowML_step0.where(zdr_offset_lr_belowML_step0.notnull(), zdr_offset_lr_below1c_step0)
+
+zdroffsetpath = os.path.dirname(utils.edit_str(ff, country, country+'/calibration/zdr/QVP/'))
+zdrof = '*zdr_offset_belowML_timesteps-*'
+zdr_offset_qvp_belowML_step0 = xr.open_mfdataset(zdroffsetpath+"/"+zdrof)["ZDR_offset"]
+
+zdrof = '*zdr_offset_below1C_timesteps-*'
+zdr_offset_qvp_below1c_step0 = xr.open_mfdataset(zdroffsetpath+"/"+zdrof)["ZDR_offset"]
+
+zdr_offset_qvp_combined_step0 = zdr_offset_qvp_belowML_step0.where(zdr_offset_qvp_belowML_step0.notnull(), zdr_offset_qvp_below1c_step0)
+
+
+# Plot the offsets (does not look very good)
+zdr_offset_lr_combined_step0.plot(label="LR consistency before atten corr", c="red")
+zdr_offset_qvp_combined_step0.plot(label="QVP-like method before atten corr", c="orangered")
+zdr_offset_lr_combined_step.plot(label="LR consistency after atten corr", c="navy", ls="--")
+zdr_offset_qvp_combined_step["ZDR_offset"].plot(label="QVP-like method after atten corr", c="royalblue", ls="--")
+zdr_offset_qvp_combined_step2["ZDR_offset"].plot(label="QVP method after atten corr", c="cornflowerblue", ls="--")
+plt.legend()
+plt.title("ZDR offset values")
+plt.grid()
+
+
+# Plot the differences of the offsets
+(zdr_offset_lr_combined_step0-zdr_offset_lr_combined_step).plot(label="LR consistency before-after atten corr")
+(zdr_offset_qvp_combined_step0-zdr_offset_qvp_combined_step["ZDR_offset"]).plot(label="QVP before-after atten corr")
+plt.legend()
+plt.title("ZDR offset differences before-after atten corr")
+plt.grid()
+plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only the hour in the x-axis
+
 #%% Plot simple PPI 
 
-tsel = "2017-07-25T14:00"
+tsel = "2015-03-11T11:00"
 if tsel == "":
     datasel = ds
 else:
@@ -435,7 +519,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "UPHIDP_OC"
+mom = "KDP"
 xylims = 40000 # xlim and ylim (from -xylims to xylims)
 
 ticks = radarmet.visdict14[mom]["ticks"]
@@ -475,7 +559,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "UPHIDP_OC"
+mom = "ZDR_OC"
 
 ticks = radarmet.visdict14[mom]["ticks"]
 cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
