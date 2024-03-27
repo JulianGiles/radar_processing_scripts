@@ -42,7 +42,18 @@ start_time = time.time()
 # path0 = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/" # For testing
 path0 = sys.argv[1] # read path from console
 overwrite = False # overwrite existing files?
-zdr_offset_perts = False # offset correct zdr per timesteps? if False, correct with daily offset
+
+abs_zdr_off_min_thresh = 0. # if ZDR_OC has more negative values than the original ZDR
+# and the absolute median offset is < abs_zdr_off_min_thresh, then undo the correction (set to 0 to avoid this step)
+zdr_offset_perts = True # offset correct zdr per timesteps? if False, correct with daily offset
+mix_zdr_offsets = False # if True and zdr_offset_perts=False, try to
+# choose between daily LR-consistency and QVP offsets based on how_mix_zdr_offset.
+# If True and zdr_offset_perts=True, choose between all available timestep offsets 
+# based on how_mix_zdr_offset. If False, just use the offsets according to the priority they are passed on.
+how_mix_zdr_offset = "count" # how to choose between the different offsets 
+# if mix_zdr_offsets = True. "count" will choose the offset that has more data points
+# in its calculation (there must be a variable ZDR_offset_datacount in the loaded offset).
+# "neg_overcorr" will choose the offset that generates less negative ZDR values.
 
 # Set the possible ZDR calibrations locations to include (in order of priority)
 # The script will try to correct according to the first offset; if not available or nan it will 
@@ -52,6 +63,7 @@ zdroffdir = utils.zdroffdir
 zdrofffile = utils.zdrofffile
 if zdr_offset_perts:
     zdrofffile = utils.zdrofffile_ts
+    zdr_oc_dict = {} # this dictionary is used later when loading all timestep-based offsets
 
 # set the RHOHV correction location
 rhoncdir = utils.rhoncdir  # subfolder where to find the noise corrected rhohv data
@@ -223,9 +235,6 @@ for ff in files:
     # We define a custom exception to stop the next nexted loops as soon as a file is loaded
     class FileFound(Exception):
         pass
-
-    if zdr_offset_perts:
-        zdr_oc_dict = {}
     
     # Load the offsets
     try:
@@ -242,30 +251,41 @@ for ff in files:
                         # if timestep-based offsets, we collect all of them and deal with them later
                         if zdrod not in zdr_oc_dict.keys():
                             zdr_oc_dict[zdrod] = []
-                        zdr_oc_dict[zdrod].append(utils.load_ZDR_offset(swp, X_ZDR, zdroffsetpath+"/"+zdrof, zdr_oc_name=X_ZDR+"_OC")[X_ZDR+"_OC"])
+                        zdr_oc_dict[zdrod].append(utils.load_ZDR_offset(swp, X_ZDR, zdroffsetpath+"/"+zdrof, zdr_oc_name=X_ZDR+"_OC", attach_all_vars=True))
                         continue
                     else:
-                        swp = utils.load_ZDR_offset(swp, X_ZDR, zdroffsetpath+"/"+zdrof, zdr_oc_name=X_ZDR+"_OC")
+                        swp = utils.load_ZDR_offset(swp, X_ZDR, zdroffsetpath+"/"+zdrof, zdr_oc_name=X_ZDR+"_OC", attach_all_vars=True)
                     
                     # if the offset comes from LR ZH-ZDR consistency, check it against
-                    # the QVP method (if available) and choose the best one based on how 
-                    # many negative values remain
-                    if "LR_consistency" in zdrod:
+                    # the QVP method (if available) and choose the best one based on how_mix_zdr_offset 
+                    if "LR_consistency" in zdrod and mix_zdr_offsets:
                         for zdrof2 in zdrofffile:
                             try:
                                 zdrod2 = [pp for pp in zdroffdir if "QVP" in pp][0]
                                 zdroffsetpath_qvp = os.path.dirname(utils.edit_str(ff, country, country+zdrod2))
-                                swp_qvpoc = utils.load_ZDR_offset(swp, X_ZDR, zdroffsetpath_qvp+"/"+zdrof2, zdr_oc_name=X_ZDR+"_OC")
+                                swp_qvpoc = utils.load_ZDR_offset(swp, X_ZDR, zdroffsetpath_qvp+"/"+zdrof2, zdr_oc_name=X_ZDR+"_OC", attach_all_vars=True)
                                 
-                                # calculate the count of negative values after each correction
-                                neg_count_swp_lroc = (swp[X_ZDR+"_OC"].where((swp[X_RHO]>0.99) * (swp["z"]>min_height)) < 0).sum().compute()
-                                neg_count_swp_qvpoc = (swp_qvpoc[X_ZDR+"_OC"].where((swp_qvpoc[X_RHO]>0.99) * (swp["z"]>min_height)) < 0).sum().compute()
+                                if how_mix_zdr_offset == "neg_overcorr":
+                                    # calculate the count of negative values after each correction
+                                    neg_count_swp_lroc = (swp[X_ZDR+"_OC"].where((swp[X_RHO]>0.99) * (swp["z"]>min_height)) < 0).sum().compute()
+                                    neg_count_swp_qvpoc = (swp_qvpoc[X_ZDR+"_OC"].where((swp_qvpoc[X_RHO]>0.99) * (swp["z"]>min_height)) < 0).sum().compute()
                                 
-                                if neg_count_swp_lroc > neg_count_swp_qvpoc:
-                                    # continue with the correction with less negative values
-                                    print("Changing daily ZDR offset from LR_consistency to QVP")
-                                    swp = swp_qvpoc
-                                                                
+                                    if neg_count_swp_lroc > neg_count_swp_qvpoc:
+                                        # continue with the correction with less negative values
+                                        print("Changing daily ZDR offset from LR_consistency to QVP")
+                                        swp = swp_qvpoc
+
+                                elif how_mix_zdr_offset == "count":
+                                    if "ZDR_offset_datacount" in swp and "ZDR_offset_datacount" in swp_qvpoc:
+                                        # Choose the offset that has the most data points in its calculation
+                                        if swp_qvpoc["ZDR_offset_datacount"] > swp["ZDR_offset_datacount"]:
+                                            # continue with the correction with more data points
+                                            print("Changing daily ZDR offset from LR_consistency to QVP")
+                                            ds = swp_qvpoc
+                                    else:
+                                        print("how_mix_zdr_offset == 'count' not possible, ZDR_offset_datacount not present in all offset datasets.")
+
+
                                 break
                             except (OSError, ValueError):
                                 pass
@@ -274,8 +294,8 @@ for ff in files:
                     neg_count_swp = (swp[X_ZDR].where((swp[X_RHO]>0.99) * (swp["z"]>min_height)) < 0).sum().compute()
                     neg_count_swp_oc = (swp[X_ZDR+"_OC"].where((swp[X_RHO]>0.99) * (swp["z"]>min_height)) < 0).sum().compute()
                     
-                    if neg_count_swp_oc > neg_count_swp and abs((swp[X_ZDR] - swp[X_ZDR+"_OC"]).compute().median()) < 0.2:
-                        # if the correction introduces more negative values and the offset is lower than 0.2, then do not correct
+                    if neg_count_swp_oc > neg_count_swp and abs((swp[X_ZDR] - swp[X_ZDR+"_OC"]).compute().median()) < abs_zdr_off_min_thresh:
+                        # if the correction introduces more negative values and the offset is lower than abs_zdr_off_min_thresh, then do not correct
                         swp[X_ZDR+"_OC"] = swp[X_ZDR]
                     
                     # Change the default ZDR name to the corrected one
@@ -288,16 +308,19 @@ for ff in files:
                     pass
         
         if zdr_offset_perts:
+            # Clean zdr_oc_dict of empty entries
+            zdr_oc_dict = {key: value for key, value in zdr_oc_dict.items() if value}
+
             # Deal with all the timestep-based offsets
             final_zdr_oc_list = []
             if len(zdr_oc_dict) == 0:
                 # No ZDR timestep-based offsets were loaded, print a message
                 print("No timestep-based zdr offsets to load")
             else:
-                # print("Merging valid ZDR offsets (timestep mode)")
                 for zdrod in zdroffdir:
-                    # For the offset from each method, we merge all variants to have as many values as possible.
-                    # In the end, for each entry of the dictionary, we have a final xarray dataarray (instead of the list)
+                    # For the offset from each method, we merge all variants (below ML, 
+                    # below 1C, etc) to have as many values as possible. In the end we have
+                    # a list of final xarray dataarrays for each entry of zdroffdir.
                     if zdrod in zdr_oc_dict.keys():
                         if len(zdr_oc_dict[zdrod]) == 0:
                             del(zdr_oc_dict[zdrod])
@@ -307,25 +330,41 @@ for ff in files:
                         else:
                             zdr_oc_aux = zdr_oc_dict[zdrod][0].copy()
                             for zdr_oc_auxn in zdr_oc_dict[zdrod][1:]:
-                                zdr_oc_aux = zdr_oc_aux.where(zdr_oc_aux.notnull(), zdr_oc_auxn).copy()
+                                zdr_oc_aux = zdr_oc_aux.where(zdr_oc_aux[X_ZDR+"_OC"].notnull(), zdr_oc_auxn).copy()
                             final_zdr_oc_list.append(zdr_oc_aux.copy())
-                # now we pick, for each timestep, the best offset correction depending on the priority and 
-                # possible overcorrections
+
+                # we get the first correction based on priority
                 final_zdr_oc = final_zdr_oc_list[0].copy()
-                if len(final_zdr_oc_list) > 1:
-                    for final_zdr_ocn in final_zdr_oc_list[1:]:
-                        # calculate the count of negative values for each correction
-                        neg_count_final_zdr_oc = (final_zdr_oc.where((swp[X_RHO]>0.99) * (final_zdr_oc["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
-                        neg_count_final_zdr_ocn = (final_zdr_ocn.where((swp[X_RHO]>0.99) * (final_zdr_ocn["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
-                        # Are there less negatives in the first correction than the new one?
-                        neg_count_final_cond = neg_count_final_zdr_oc < neg_count_final_zdr_ocn
-                        # Retain first ZDR_OC where the condition is True, otherwise use the new ZDR_OC
-                        final_zdr_oc = final_zdr_oc.where(neg_count_final_cond, final_zdr_ocn).copy()
-                
-                # Compare each timestep to the original ZDR, if the offsets overcorrect and the offset is < 0.2, discard correction
+
+                # now we pick, for each timestep, the best offset correction depending on the priority, 
+                # data quality and/or possible overcorrections            
+                if len(final_zdr_oc_list) > 1 and mix_zdr_offsets:
+                    # print("Merging valid ZDR offsets (timestep mode)")
+                    if how_mix_zdr_offset == "neg_overcorr":
+                        for final_zdr_ocn in final_zdr_oc_list[1:]:
+                            # calculate the count of negative values for each correction
+                            neg_count_final_zdr_oc = (final_zdr_oc.where((swp[X_RHO]>0.99) * (final_zdr_oc["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
+                            neg_count_final_zdr_ocn = (final_zdr_ocn.where((swp[X_RHO]>0.99) * (final_zdr_ocn["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
+                            # Are there less negatives in the first correction than the new one?
+                            neg_count_final_cond = neg_count_final_zdr_oc < neg_count_final_zdr_ocn
+                            # Retain first ZDR_OC where the condition is True, otherwise use the new ZDR_OC
+                            final_zdr_oc = final_zdr_oc.where(neg_count_final_cond, final_zdr_ocn).copy()
+                    elif how_mix_zdr_offset == "count":
+                        for final_zdr_ocn in final_zdr_oc_list[1:]:
+                            if "ZDR_offset_datacount" in final_zdr_oc and "ZDR_offset_datacount" in final_zdr_ocn:
+                                # Choose the offset that has the most data points in its calculation
+                                final_zdr_oc = final_zdr_oc.where(final_zdr_oc["ZDR_offset_datacount"] > final_zdr_ocn["ZDR_offset_datacount"], final_zdr_ocn).copy()
+                                
+                    else:
+                        print("how_mix_zdr_offset = "+how_mix_zdr_offset+" is not a valid option, no mixing of offsets was done")
+
+                # Get only ZDR from now on
+                final_zdr_oc = final_zdr_oc[X_ZDR+"_OC"]
+
+                # Compare each timestep to the original ZDR, if the offsets overcorrect and the offset is < abs_zdr_off_min_thresh, discard correction
                 neg_count_final_zdr_oc = (final_zdr_oc.where((swp[X_RHO]>0.99) * (final_zdr_oc["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
                 neg_count_final_zdr = (swp[X_ZDR].where((swp[X_RHO]>0.99) * (swp["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
-                neg_count_final_cond = (neg_count_final_zdr_oc > neg_count_final_zdr) * (abs((swp[X_ZDR] - final_zdr_oc).compute().median(("range", "azimuth"))) < 0.2)
+                neg_count_final_cond = (neg_count_final_zdr_oc > neg_count_final_zdr) * (abs((swp[X_ZDR] - final_zdr_oc).compute().median(("range", "azimuth"))) < abs_zdr_off_min_thresh)
                 
                 # Set the final ZDR_OC and change the default ZDR name to the corrected one 
                 swp[X_ZDR+"_OC"] = final_zdr_oc.where(~neg_count_final_cond, swp[X_ZDR]).where(final_zdr_oc.notnull(), swp[X_ZDR])
