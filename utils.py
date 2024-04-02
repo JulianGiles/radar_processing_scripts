@@ -658,8 +658,8 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
     -----------------
     align_z : bool
         If True and loading multiple files, align the z coord to the values of the first
-        file. This is mean to avoid broadcasting due to random fluctuations (noise) i
-        in the coordinate. If loading QVPs from multiple elevation angles, align_z should
+        file. This is meant to avoid broadcasting due to random fluctuations (noise) 
+        in the z coordinate. If loading QVPs from multiple elevation angles, align_z should
         be False to avoid erroneous alignment.
     fix_TEMP : bool
         If True and loading multiple files, add empty (nan) TEMP coordinate in case it 
