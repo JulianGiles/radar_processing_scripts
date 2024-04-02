@@ -71,7 +71,7 @@ warnings.filterwarnings('ignore')
 abs_zdr_off_min_thresh = 0. # if ZDR_OC has more negative values than the original ZDR
 # and the absolute median offset is < abs_zdr_off_min_thresh, then undo the correction (set to 0 to avoid this step)
 zdr_offset_perts = True # offset correct zdr per timesteps? if False, correct with daily offset
-mix_zdr_offsets = False # if True and zdr_offset_perts=False, try to
+mix_zdr_offsets = True # if True and zdr_offset_perts=False, try to
 # choose between daily LR-consistency and QVP offsets based on how_mix_zdr_offset.
 # If True and zdr_offset_perts=True, choose between all available timestep offsets 
 # based on how_mix_zdr_offset. If False, just use the offsets according to the priority they are passed on.
@@ -519,7 +519,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "KDP"
+mom = "UPHIDP"
 xylims = 40000 # xlim and ylim (from -xylims to xylims)
 
 ticks = radarmet.visdict14[mom]["ticks"]
@@ -603,7 +603,7 @@ plt.close()
 #%% Load QVPs
 # Load only events with ML detected (pre-condition for stratiform)
 ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2016/*/*/tur/vol5minng01/07/ML_detected.txt"
-ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2019/*/*/SVS/*/*/ML_detected.txt"
+ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2016/*/*/HTY/*/*/ML_detected.txt"
 ff_ML_glob = glob.glob(ff_ML)
 
 if "dmi" in ff_ML:
@@ -632,9 +632,31 @@ alignz = False
 if "dwd" in ff_ML: alignz = True
 ds_qvps = utils.load_qvps(ff, align_z=alignz, fix_TEMP=True, fillna=True)
 
-# Load all events
-# ff = "/automount/realpep/upload/jgiles/dwd/qvps/2015/*/*/pro/vol5minng01/07/*allmoms*"
-# ds_qvps = utils.load_qvps(ff)
+
+# Conditions to clean ML height values
+max_change = 400 # set a maximum value of ML height change from one timestep to another (in m)
+max_std = 200 # set a maximum value of ML std from one timestep to another (in m)
+time_window = 5 # set timestep window for the std computation (centered)
+min_period = 3 # set minimum number of valid ML values in the window (centered)
+
+cond_ML_bottom_change = abs(ds_qvps["height_ml_bottom_new_gia"].diff("time").compute())<max_change
+cond_ML_bottom_std = ds_qvps["height_ml_bottom_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
+# cond_ML_bottom_minlen = qvps["height_ml_bottom_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
+
+cond_ML_top_change = abs(ds_qvps["height_ml_new_gia"].diff("time").compute())<max_change
+cond_ML_top_std = ds_qvps["height_ml_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
+# cond_ML_top_minlen = qvps["height_ml_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
+
+allcond = cond_ML_bottom_change * cond_ML_bottom_std * cond_ML_top_change * cond_ML_top_std
+
+# reduce to daily condition
+allcond_daily = allcond.resample(time="D").any().dropna("time")
+allcond_daily = allcond_daily.where(allcond_daily, drop=True)
+
+# Filter only events with clean ML (requeriment for stratiform) on a daily basis
+# (not efficient and not elegant but I could not find other solution)
+ds_qvps = ds_qvps.isel(time=[date.values in  allcond_daily.time.dt.date for date in ds_qvps.time.dt.date])
+
 
 #%% Plot QPVs interactive, with matplotlib backend (working) fix in holoviews/plotting/mpl/raster.py
 # this works with a manual fix in the holoviews files.
