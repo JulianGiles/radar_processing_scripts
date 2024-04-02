@@ -352,12 +352,11 @@ def unfold_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names):
                             ds[X_PHI] = xr.where(ds[X_PHI]<=0, ds[X_PHI]+180, ds[X_PHI]-180, keep_attrs=True).compute()
                             ds[X_PHI].attrs = attrs
                             print(X_PHI+" was unfolded")
+                            success = True
                         break
             
-            success = True
-
     if not success:
-        warnings.warn("unfold_phidp: PHIDP variable not found. Nothing was done")
+        warnings.warn("unfold_phidp: PHIDP and/or RHOHV variable not found. Nothing was done")
         
     return ds
 
@@ -412,10 +411,9 @@ def fix_flipped_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, rang
                             print(X_PHI+" was flipped")
                             if flip_kdp:
                                 flip_kdp_trigger = True
+                            success = True
                         break
                                 
-            success = True
-
     if "KDP" in ds.data_vars and flip_kdp_trigger:
         ds_kdp = ds["KDP"].where(ds[X_RHO]>0.7).where(ds[range_name]>=fix_range)
         kdp_pos = (ds_kdp>0).sum().compute()
@@ -426,7 +424,7 @@ def fix_flipped_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, rang
             ds["KDP"].attrs = attrs.copy()
             print("KDP"+" was flipped")
     if not success:
-        warnings.warn("fix_flipped_phidp: PHIDP variable not found. Nothing was done")
+        warnings.warn("fix_flipped_phidp: PHIDP and/or RHOHV variable not found. Nothing was done")
         
     return ds
 
