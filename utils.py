@@ -4054,6 +4054,8 @@ def grid_cell_areas(lon1d, lat1d, radius=EARTH_RADIUS):
     """
     Calculate grid cell areas given 1D arrays of longitudes and latitudes
     for a planet with the given radius.
+    Only works well with regular lat/ lon grids. For irregular or rotated
+    grids it is not appropriate.
     
     Parameters
     ----------
@@ -4078,7 +4080,9 @@ def calc_spatial_mean(
     xr_da, lon_name="longitude", lat_name="latitude", radius=EARTH_RADIUS
 ):
     """
-    Calculate spatial mean of xarray.DataArray with grid cell weighting.
+    Calculate spatial mean of xarray.DataArray with grid cell weighting. 
+    Only works well with regular lat/ lon grids. For irregular or rotated
+    grids it is not appropriate.
     
     Parameters
     ----------
@@ -4099,9 +4103,8 @@ def calc_spatial_mean(
     lat = xr_da[lat_name].values
 
     area_weights = grid_cell_areas(lon, lat, radius=radius)
-    aw_factor = area_weights / area_weights.max()
 
-    return (xr_da * aw_factor).mean(dim=[lon_name, lat_name])
+    return xr_da.weighted(xr.ones_like(xr_da)*area_weights).mean(dim=[lon_name, lat_name])
 
 
 def calc_spatial_integral(
@@ -4109,6 +4112,8 @@ def calc_spatial_integral(
 ):
     """
     Calculate spatial integral of xarray.DataArray with grid cell weighting.
+    Only works well with regular lat/ lon grids. For irregular or rotated
+    grids it is not appropriate.
     
     Parameters
     ----------
