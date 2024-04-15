@@ -323,7 +323,7 @@ def align(ds):
     ds["time"] = np.unique(ds["time"]) # in case there are duplicate times
     return ds.set_coords(["sweep_mode", "sweep_number", "prt_mode", "follow_mode", "sweep_fixed_angle"])
 
-def unfold_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names):
+def unfold_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, phidp_lims=(-50,50)):
     """
     Unfold PHIDP in case it is wrapping around the edge values, it should be defined between -180 and 180.
     The unfolding is done for the whole of ds (not per ray or per PPI).
@@ -334,8 +334,13 @@ def unfold_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names):
     ds : xarray.DataArray or xarray.Dataset    
     phidp_names : list of PHIDP variable names to look for in the dataset
     rhohv_names : list of RHOHV variable names to look for in the dataset
+    phidp_lims : tuple delimiting the PHIDP range to use as the center of the distribution,
+                if the majority of PHIDP values are outside this range, then unfold.
     """
     success = False # define a variable to check if some PHIDP variable was found
+    
+    phidp_min = phidp_lims[0]
+    phidp_max = phidp_lims[1]
     
     for phi in phidp_names:
         if phi in ds.data_vars:
@@ -345,8 +350,8 @@ def unfold_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names):
                 for X_RHO in rhohv_names: # only take pixels with rhohv>0.7 to avoid noise
                     if X_RHO in ds.data_vars:
                         ds_phi = ds[X_PHI].where(ds[X_RHO]>0.7).isel({"range":slice(4,None)}) # we also take out the first bins
-                        values_center = ((ds_phi>-50)*(ds_phi<50)).sum().compute()
-                        values_sides = ((ds_phi>50)+(ds_phi<-50)).sum().compute()
+                        values_center = ((ds_phi>phidp_min)*(ds_phi<phidp_max)).sum().compute()
+                        values_sides = ((ds_phi>phidp_max)+(ds_phi<phidp_min)).sum().compute()
                         if values_sides > values_center:
                             attrs = ds[X_PHI].attrs.copy()
                             ds[X_PHI] = xr.where(ds[X_PHI]<=0, ds[X_PHI]+180, ds[X_PHI]-180, keep_attrs=True).compute()
@@ -2496,7 +2501,7 @@ def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rh
                                           min_periods=3)
 
     off = phidp_offset["PHIDP_OFFSET"]
-    start_range = phidp_offset["start_range"]
+    start_range = phidp_offset["start_range"].fillna(0)
 
     # apply offset
     phi_fix = ds[X_PHI].copy()
@@ -2569,7 +2574,7 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
                                           min_periods=3)
 
     off = phidp_offset["PHIDP_OFFSET"]
-    start_range = phidp_offset["start_range"]
+    start_range = phidp_offset["start_range"].fillna(0)
 
     # apply offset
     phi_fix = ds[X_PHI].copy()
