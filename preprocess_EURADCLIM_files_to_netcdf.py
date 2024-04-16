@@ -66,11 +66,11 @@ def convert_to_netcdf(filepath, num, dest):
         radardata = f[DATAFIELD_NAME][()]
         truth_table = radardata == undetect
         indices = np.where(truth_table)
-        radardata[indices] = 0
+        radardata[indices] = np.nan
         radardata[np.isnan(radardata)] = nodata
         truth_table = radardata == nodata
         indices = np.where(truth_table)
-        radardata[indices] = 0
+        radardata[indices] = np.nan
         radardata = np.expand_dims(radardata, -1)
         enddate = f['/dataset1/what'].attrs['enddate'] # we put end datetime as the timestep value
         endtime = f['/dataset1/what'].attrs['endtime']
