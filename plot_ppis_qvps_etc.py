@@ -2257,3 +2257,63 @@ df = pd.DataFrame(OrderedDict(
                     "sweep_number": sweep_number,
                     "zdr_offset": zdr_offset
                   }))
+
+
+#%% TEST data from Julian S
+
+# ess = utils.load_dwd_preprocessed("/automount/agradar/operation_hydrometeors/data/obs/OpHymet2-case09-20210714/2021/2021-07/2021-07-14/ess/pcpng01/00/ras07-pcpng01_sweeph5onem_allmoms_00-202107140000-202107142355-ess-10410.hd5")
+
+ess = dttree.open_datatree("/automount/agradar/operation_hydrometeors/data/obs/OpHymet2-case09-20210714/2021/2021-07/2021-07-14/ess/pcpng01/00/ras07-pcpng01_sweeph5onem_allmoms_00-202107140000-202107142355-ess-10410.hd5")["sweep_0"].to_dataset()
+ess.attrs["sweep_mode"] = "azimuth_surveillance"
+ess_corr = utils.fix_flipped_phidp(utils.unfold_phidp(ess.copy(), phidp_lims=(-40,40)))
+ess_corr_proc = utils.phidp_processing(ess_corr.copy().pipe(wrl.georef.georeference))
+
+umd = dttree.open_datatree("/automount/agradar/operation_hydrometeors/data/obs/OpHymet2-case09-20210714/2021/2021-07/2021-07-14/umd/vol5minng01/00/ras07-vol5minng01_sweeph5onem_allmoms_00-202107140000-202107142355-umd-10356.hd5")["sweep_0"].to_dataset()
+umd.attrs["sweep_mode"] = "azimuth_surveillance"
+umd_corr = utils.fix_flipped_phidp(utils.unfold_phidp(umd.copy(), phidp_lims=(-40,40)))
+umd_corr_proc = utils.phidp_processing(umd_corr.copy().pipe(wrl.georef.georeference), azmedian=True)
+
+
+ds=umd_corr_proc
+
+tsel = "2021-07-14T17:45"
+tsel = "2021-07-14T08"
+if tsel == "":
+    datasel = ds
+else:
+    datasel = ds.sel({"time": tsel}, method="nearest")
+    
+datasel = datasel.pipe(wrl.georef.georeference)
+
+# New Colormap
+colors = ["#2B2540", "#4F4580", "#5a77b1",
+          "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
+
+
+mom = "UPHIDP_OC"
+xylims = 100000 # xlim and ylim (from -xylims to xylims)
+
+ticks = radarmet.visdict14[mom]["ticks"]
+ticks = np.arange(-40,220,20)
+cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
+cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
+norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
+cmap = "miub2"
+
+plot_over_map = False
+
+if not plot_over_map:
+    # plot simple PPI
+    # datasel[mom].wrl.plot(x="x", y="y", cmap=cmap, norm=norm)#, xlim=(-xylims,xylims), ylim=(-xylims,xylims))
+    datasel[mom].wrl.plot(x="x", y="y", cmap="RdBu_r", vmin=-180, vmax=180)
+elif plot_over_map:
+    # plot PPI with map coordinates
+    fig = plt.figure(figsize=(10, 10))
+    datasel[mom].wrl.vis.plot(fig=fig, cmap=cmap, norm=norm, crs=ccrs.Mercator(central_longitude=float(datasel["longitude"])))
+    ax = plt.gca()
+    ax.add_feature(cartopy.feature.COASTLINE, linestyle='-', linewidth=1, alpha=0.4)
+    ax.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4)
+    ax.gridlines(draw_labels=True)
+
+plt.title(mom+". "+str(datasel.time.values).split(".")[0])
+
