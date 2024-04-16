@@ -22,6 +22,8 @@ import sys
 import scipy
 import matplotlib as mpl
 import warnings
+from xhistogram.xarray import histogram
+import wradlib as wrl
 
 #### Helper functions and definitions
 
@@ -323,7 +325,7 @@ def align(ds):
     ds["time"] = np.unique(ds["time"]) # in case there are duplicate times
     return ds.set_coords(["sweep_mode", "sweep_number", "prt_mode", "follow_mode", "sweep_fixed_angle"])
 
-def unfold_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, phidp_lims=(-50,50)):
+def unfold_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, phidp_lims=(-30,30)):
     """
     Unfold PHIDP in case it is wrapping around the edge values, it should be defined between -180 and 180.
     The unfolding is done for the whole of ds (not per ray or per PPI).
@@ -350,14 +352,29 @@ def unfold_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, phidp_lim
                 for X_RHO in rhohv_names: # only take pixels with rhohv>0.7 to avoid noise
                     if X_RHO in ds.data_vars:
                         ds_phi = ds[X_PHI].where(ds[X_RHO]>0.7).isel({"range":slice(4,None)}) # we also take out the first bins
+                        
+                        # compute the count of values inside and outside the phidp_lims
                         values_center = ((ds_phi>phidp_min)*(ds_phi<phidp_max)).sum().compute()
                         values_sides = ((ds_phi>phidp_max)+(ds_phi<phidp_min)).sum().compute()
+                        
+                        # compute also the mode (most frequent value) of the whole distribution
+                        ds_phi_hist = histogram(ds_phi, bins=np.arange(-180, 184, 4), block_size=None) # block_size=None to avoid a bug
+                        ds_phi_mode = ds_phi_hist[ds_phi_hist.argmax()][X_PHI+"_bin"].values
+                        
+                        # if the mode is < phidp_min and the count of valid phidp values 
+                        # between 0-90 degrees is greater than the count between 90-180
+                        # we assume the distribution of values is not folded but just shifted to the negatives
+                        values_0_90 = ((ds_phi>0)*(ds_phi<90)).sum().compute()
+                        values_90_180 = ((ds_phi>90)*(ds_phi<180)).sum().compute()
+                        not_folded_cond = (ds_phi_mode < phidp_min) * (values_0_90 > values_90_180)
+                        
                         if values_sides > values_center:
-                            attrs = ds[X_PHI].attrs.copy()
-                            ds[X_PHI] = xr.where(ds[X_PHI]<=0, ds[X_PHI]+180, ds[X_PHI]-180, keep_attrs=True).compute()
-                            ds[X_PHI].attrs = attrs
-                            print(X_PHI+" was unfolded")
-                            success = True
+                            if not not_folded_cond:
+                                attrs = ds[X_PHI].attrs.copy()
+                                ds[X_PHI] = xr.where(ds[X_PHI]<=0, ds[X_PHI]+180, ds[X_PHI]-180, keep_attrs=True).compute()
+                                ds[X_PHI].attrs = attrs
+                                print(X_PHI+" was unfolded")
+                                success = True
                         break
             
     if not success:
@@ -366,7 +383,7 @@ def unfold_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, phidp_lim
     return ds
 
 def fix_flipped_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, range_name="range", 
-                      fix_range=3000., rng=3000., flip_kdp=True, tolerance = 0.05):
+                      fix_range=3000., rng=10000., flip_kdp=True, tolerance = 0.05):
     """
     Flip PHIDP in case it is inverted. The function smooths PHIDP and calculates the
     differences between gates, for each ray. Then, the differences in the whole of ds 
@@ -407,7 +424,8 @@ def fix_flipped_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, rang
                 for X_RHO in rhohv_names: # only take pixels with rhohv>0.7 to avoid noise
                     if X_RHO in ds.data_vars:
                         ds_phi = ds[X_PHI].where(ds[X_RHO]>0.7).where(ds[range_name]>=fix_range)
-                        smooth_diff = ds_phi.rolling({range_name:nprec}).median().diff(range_name).sum()
+                        ds_phi_std = ds_phi.rolling({range_name:nprec}, center=True).std() # filter out pixels with std > 5
+                        smooth_diff = ds_phi.where(ds_phi_std<5).rolling({range_name:nprec}, center=True).median().diff(range_name).sum()
                         
                         if smooth_diff < 0:
                             attrs = ds[X_PHI].attrs.copy()
@@ -2115,12 +2133,6 @@ def KDP_ML_correction(ds, X_PHI="PHIDP_OC_MASKED", winlen=7, min_periods=2, mlt=
 #### NOISE CORRECTION RHOHV
 ## From Veli
 
-from xhistogram.xarray import histogram
-import wradlib as wrl
-import dask
-from dask.diagnostics import ProgressBar
-import xradar
-
 
 def noise_correction(ds, noise_level):
     """Calculate SNR, apply to RHOHV
@@ -2129,7 +2141,7 @@ def noise_correction(ds, noise_level):
     snrh = ds.DBZH - 20 * np.log10(ds.range * 0.001) - noise_level - 0.033 * ds.range / 1000
     snrh = snrh.where(snrh >= 0).fillna(0)
     # attrs = wrl.io.xarray.moments_mapping['SNRH']
-    attrs = xradar.model.sweep_vars_mapping['SNRH'] # moved to xradar since wradlib 1.19
+    attrs = xd.model.sweep_vars_mapping['SNRH'] # moved to xradar since wradlib 1.19
     attrs.pop('gamic', None)
     snrh = snrh.assign_attrs(attrs)
     rho = ds.RHOHV * (1. + 1. / 10. ** (snrh * 0.1))
@@ -2148,7 +2160,7 @@ def noise_correction2(dbz, rho, noise_level):
     snrh = dbz - 20 * np.log10(dbz.range * 0.001) - noise_level - 0.033 * dbz.range / 1000
     snrh = snrh.where(snrh >= 0).fillna(0)
     # attrs = wrl.io.xarray.moments_mapping['SNRH']
-    attrs = xradar.model.sweep_vars_mapping['SNRH'] # moved to xradar since wradlib 1.19
+    attrs = xd.model.sweep_vars_mapping['SNRH'] # moved to xradar since wradlib 1.19
     attrs.pop('gamic', None)
     snrh = snrh.assign_attrs(attrs)
     snrh.name = "SNRH"
