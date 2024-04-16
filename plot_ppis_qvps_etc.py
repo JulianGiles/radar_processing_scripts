@@ -2274,6 +2274,7 @@ umd_corr = utils.fix_flipped_phidp(utils.unfold_phidp(umd.copy(), phidp_lims=(-4
 umd_corr_proc = utils.phidp_processing(umd_corr.copy().pipe(wrl.georef.georeference), azmedian=True)
 
 
+# plotting
 ds=umd_corr_proc
 
 tsel = "2021-07-14T17:45"
