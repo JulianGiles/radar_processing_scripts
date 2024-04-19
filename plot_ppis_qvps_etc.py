@@ -2265,12 +2265,12 @@ df = pd.DataFrame(OrderedDict(
 
 ess = dttree.open_datatree("/automount/agradar/operation_hydrometeors/data/obs/OpHymet2-case09-20210714/2021/2021-07/2021-07-14/ess/pcpng01/00/ras07-pcpng01_sweeph5onem_allmoms_00-202107140000-202107142355-ess-10410.hd5")["sweep_0"].to_dataset()
 ess.attrs["sweep_mode"] = "azimuth_surveillance"
-ess_corr = utils.fix_flipped_phidp(utils.unfold_phidp(ess.copy(), phidp_lims=(-40,40)))
-ess_corr_proc = utils.phidp_processing(ess_corr.copy().pipe(wrl.georef.georeference))
+ess_corr = utils.fix_flipped_phidp(utils.unfold_phidp(ess.copy(), phidp_lims=(-30,30)))
+ess_corr_proc = utils.phidp_processing(ess_corr.copy().pipe(wrl.georef.georeference), azmedian=True)
 
 umd = dttree.open_datatree("/automount/agradar/operation_hydrometeors/data/obs/OpHymet2-case09-20210714/2021/2021-07/2021-07-14/umd/vol5minng01/00/ras07-vol5minng01_sweeph5onem_allmoms_00-202107140000-202107142355-umd-10356.hd5")["sweep_0"].to_dataset()
 umd.attrs["sweep_mode"] = "azimuth_surveillance"
-umd_corr = utils.fix_flipped_phidp(utils.unfold_phidp(umd.copy(), phidp_lims=(-40,40)))
+umd_corr = utils.fix_flipped_phidp(utils.unfold_phidp(umd.copy(), phidp_lims=(-30,30)))
 umd_corr_proc = utils.phidp_processing(umd_corr.copy().pipe(wrl.georef.georeference), azmedian=True)
 
 
