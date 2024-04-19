@@ -30,6 +30,7 @@ from dask.diagnostics import ProgressBar
 import cordex as cx
 import wradlib as wrl
 import glob
+import regionmask as rm
 
 import warnings
 #ignore by message
@@ -122,9 +123,19 @@ def preprocess_imerg(ds):
     ds["precipitation"] = ds["precipitation"]*days_in_month[ds.time.values[0].month-1]*24
     ds["precipitation"] = ds["precipitation"].assign_attrs(units="mm", Units="mm")
     return ds
-data["IMERG"] = xr.open_mfdataset('/automount/ags/jgiles/IMERG/global_monthly/3B-MO.MS.MRG.3IMERG.*.V06B.HDF5.nc4', preprocess=preprocess_imerg)\
+data["IMERG"] = xr.open_mfdataset('/automount/ags/jgiles/IMERG_V06B/global_monthly/3B-MO.MS.MRG.3IMERG.*.V06B.HDF5.nc4', preprocess=preprocess_imerg)\
                 .transpose('time', 'lat', 'lon', ...) # * 24*30 # convert to mm/month (approx)
 
+#### IMERG V07B (GLOBAL MONTHLY)
+print("Loading IMERG V07B...")
+def preprocess_imerg(ds):
+    # function to transform to accumulated monthly values
+    days_in_month = [31,28,31,30,31,30,31,31,30,31,30,31]
+    ds["precipitation"] = ds["precipitation"]*days_in_month[ds.time.values[0].month-1]*24
+    ds["precipitation"] = ds["precipitation"].assign_attrs(units="mm", Units="mm")
+    return ds
+data["IMERG-V07B"] = xr.open_mfdataset('/automount/agradar/jgiles/IMERG_V07B/global_monthly/3B-MO.MS.MRG.3IMERG.*.V07B.HDF5.nc4', preprocess=preprocess_imerg)\
+                .transpose('time', 'lat', 'lon', ...) # * 24*30 # convert to mm/month (approx)
 
 #### IMERG (Europe, half-hourly)
 def preprocess_imerg_europe(ds):
@@ -134,7 +145,7 @@ def preprocess_imerg_europe(ds):
     ds["precipitationCal"] = ds["precipitationCal"].assign_attrs(units="mm", Units="mm")
     ds["precipitationUncal"] = ds["precipitationUncal"].assign_attrs(units="mm", Units="mm")
     return ds
-data["IMERG-europe"] = xr.open_mfdataset('/automount/ags/jgiles/IMERG/europe/concat_files/*.nc4', preprocess=preprocess_imerg_europe).transpose('time', 'lat', 'lon', ...)
+data["IMERG-europe"] = xr.open_mfdataset('/automount/ags/jgiles/IMERG_V06B/europe/concat_files/*.nc4', preprocess=preprocess_imerg_europe).transpose('time', 'lat', 'lon', ...)
 
 #### CMORPH (global daily)
 data["CMORPH"] = xr.open_mfdataset('/automount/agradar/jgiles/cmorph-high-resolution-global-precipitation-estimates/access/daily/0.25deg/*/*/CMORPH_V1.0_ADJ_0.25deg-DLY_00Z_*.nc') #, preprocess=preprocess_imerg_europe).transpose('time', 'lat', 'lon', ...)
@@ -178,7 +189,19 @@ data["TSMP"] = xr.open_mfdataset('/automount/agradar/jgiles/TSMP/rcsm_TSMP-ERA5-
 data["TSMP"]["time"] = data["TSMP"].get_index("time").shift(-1.5, "h") # shift the values forward to the start of the interval
 
 
+data["TSMP-DETECT"] = xr.open_mfdataset('/automount/realpep/upload/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/postpro/ProductionV1/*/cosmo/TOT_PREC_ts.nc',
+                             preprocess=preprocess_tsmp, chunks={"time":1000})
+
+data["TSMP-DETECT"]["time"] = data["TSMP-DETECT"].get_index("time").shift(-0.5, "h") # shift the values forward to the start of the interval
+
+
+
 data["TSMP-Ben"] = xr.open_mfdataset('/automount/ags/jgiles/4BenCharlotte/TSMP/twsa_tsmp_europe_era5_1990_2021.nc')
+
+#### EURADCLIM
+# print("Loading EURADCLIM...")
+# data["EURADCLIM"] = xr.open_mfdataset("/automount/agradar/jgiles/EURADCLIM/*/*/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_*.h5")
+
 
 #### RADKLIM
 print("Loading RADKLIM...")
@@ -594,20 +617,25 @@ files = glob.glob(savepath+"/yearly/*.nc")
 
 data_yearlysum = {}
 for dsname in set([os.path.basename(ff).split("_")[0] for ff in files]):
-    data_yearlysum[dsname] = xr.open_mfdataset([ff for ff in files if dsname+"_" in ff])
-    
-    if len(data_yearlysum[dsname].data_vars) == 1:
-        # if there is only 1 variable, extract the dataarray
-        data_yearlysum[dsname] = next(iter(data_yearlysum[dsname].data_vars.values()))
+    try:
+        data_yearlysum[dsname] = xr.open_mfdataset([ff for ff in files if dsname+"_" in ff])
+        
+        if len(data_yearlysum[dsname].data_vars) == 1:
+            # if there is only 1 variable, extract the dataarray
+            data_yearlysum[dsname] = next(iter(data_yearlysum[dsname].data_vars.values()))
+    except Exception as e:
+        print(f"Unable to load {dsname}: \n {type(e).__name__} : {e}")
         
 
 # if they do not exist, calculate
 # accumulate to yearly values
 print("Calculating yearly sums ...")
 data_yearlysum = {}
+data_yearlysum["IMERG-V07B"] = data["IMERG-V07B"].loc[{"time": slice(start_date, end_date)}]["precipitation"].resample({"time": "YS"}).sum().compute()
 data_yearlysum["IMERG"] = data["IMERG"].loc[{"time": slice(start_date, end_date)}]["precipitation"].resample({"time": "YS"}).sum().compute()
 data_yearlysum["CMORPH"] = data["CMORPH"].loc[{"time": slice(start_date, end_date)}]["cmorph"].resample({"time": "YS"}).sum().compute()
 data_yearlysum["TSMP"] = data["TSMP"]["TOT_PREC"].loc[{"time": slice(start_date, end_date)}].resample({"time": "YS"}).sum().compute()
+data_yearlysum["TSMP-DETECT"] = data["TSMP-DETECT"]["TOT_PREC"].loc[{"time": slice(start_date, end_date)}].resample({"time": "YS"}).sum().compute()
 data_yearlysum["ERA5"] = data["ERA5"]["tp"].loc[{"time": slice(start_date, end_date)}].resample({"time": "YS"}).sum().compute()
 data_yearlysum["RADKLIM"] = data["RADKLIM"]["RR"].loc[{"time": slice(start_date, end_date)}].resample({"time": "YS"}).sum().compute()
 data_yearlysum["RADOLAN"] = data["RADOLAN"]["RW"].loc[{"time": slice(start_date, end_date)}].resample({"time": "YS"}).sum().compute()
@@ -627,7 +655,7 @@ for dsname in data_yearlysum.keys():
     ed = str(data_yearlysum[dsname].time[-1].values)[0:4]
     data_yearlysum[dsname] = xr.open_dataset(savepath+"/yearly/"+dsname+"_"+data_yearlysum[dsname].name+"_yearlysum_"+sd+"-"+ed+".nc")
 
-# special treatment for IMERG 3-hourly, otherwise it will crash
+# special treatment for IMERG 30-min, otherwise it will crash
 # compute the yearly sums separately for each year
 # IMPORTANT: FOR SOME REASON THIS LOOP DOES NOT WORK VERY FAST (OR AT ALL). COMPUTING EACH YEAR MANUALLY OUTSIDE A LOOP WORKS FINE (ABOUT 20 MIN PER YEAR)
 for yy in np.arange(2000, 2022):
@@ -650,13 +678,13 @@ tsmp_to_nc = xr.merge([data_yearlysum["TSMP"], tsmp_rotpole])
 tsmp_to_nc.to_netcdf("/automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_"+start_date.split("-")[0]+"-"+end_date.split("-")[0]+".nc")
 import subprocess
 bash_code="""
-cdo gencon,/automount/ags/jgiles/IMERG/global_monthly/griddes.txt -setgrid,/automount/ags/jgiles/TSMP/griddes_mod.txt /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020.nc weights_to_IMERG.nc
-cdo remap,/automount/ags/jgiles/IMERG/global_monthly/griddes.txt,weights_to_IMERG.nc /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020.nc /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_IMERGrotated0.nc
-cdo sellonlatbox,-46.40,67.22,21.14,73.24 /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_IMERGrotated0.nc /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_IMERGrotated.nc
+cdo gencon,/automount/ags/jgiles/IMERG_V06B/global_monthly/griddes.txt -setgrid,/automount/agradar/jgiles/TSMP/griddes_mod.txt /automount/agradar/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020.nc weights_to_IMERG.nc
+cdo remap,/automount/ags/jgiles/IMERG_V06B/global_monthly/griddes.txt,weights_to_IMERG.nc /automount/agradar/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020.nc /automount/agradar/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_IMERGrotated0.nc
+cdo sellonlatbox,-46.40,67.22,21.14,73.24 /automount/agradar/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_IMERGrotated0.nc /automount/agradar/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_IMERGrotated.nc
 
-cdo gencon,/automount/ags/jgiles/ERA5/griddes.txt -setgrid,/automount/ags/jgiles/TSMP/griddes_mod.txt /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020.nc weights_to_ERA5.nc
-cdo remap,/automount/ags/jgiles/ERA5/griddes.txt,weights_to_ERA5.nc /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020.nc /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_ERA5rotated0.nc
-cdo sellonlatbox,-46.40,67.22,21.14,73.24 /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_ERA5rotated0.nc /automount/ags/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_ERA5rotated.nc
+cdo gencon,/automount/ags/jgiles/ERA5/griddes.txt -setgrid,/automount/agradar/jgiles/TSMP/griddes_mod.txt /automount/agradar/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020.nc weights_to_ERA5.nc
+cdo remap,/automount/ags/jgiles/ERA5/griddes.txt,weights_to_ERA5.nc /automount/agradar/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020.nc /automount/agradar/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_ERA5rotated0.nc
+cdo sellonlatbox,-46.40,67.22,21.14,73.24 /automount/agradar/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_ERA5rotated0.nc /automount/agradar/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_ERA5rotated.nc
 
 """
 result = subprocess.run(bash_code, shell=True, check=True, capture_output=True, text=True)
@@ -664,6 +692,30 @@ print(result.stdout)
 
 data_TSMP_rot = xr.open_dataset("/automount/agradar/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_IMERGrotated.nc")["TOT_PREC"]
 data_TSMP_rot_ERA5 = xr.open_dataset("/automount/agradar/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_ERA5rotated.nc")["TOT_PREC"].isel(latitude=slice(None, None, -1))
+
+
+print("Un-rotating TSMP-DETECT data ...")
+# We use CDO because I cannot find a better way.
+# Thus, we add the rotated pole info, we save the TSMP dataset to nc, transform with CDO and reload
+tsmp_rotpole = data["TSMP-DETECT"].rotated_pole.loc[{"time": slice(start_date, end_date)}].resample({"time":"YS"}).first()
+tsmp_to_nc = xr.merge([data_yearlysum["TSMP-DETECT"], tsmp_rotpole])
+tsmp_to_nc.to_netcdf("/automount/realpep/upload/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/postprocessed/TSMP-DETECT_TOT_PREC_yearlysum_"+start_date.split("-")[0]+"-"+end_date.split("-")[0]+".nc")
+import subprocess
+bash_code="""
+cdo gencon,/automount/ags/jgiles/IMERG_V06B/global_monthly/griddes.txt -setgrid,/automount/realpep/upload/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/griddes_mod.txt /automount/realpep/upload/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/postprocessed/TSMP-DETECT_TOT_PREC_yearlysum_2000-2021.nc weights_to_IMERG.nc
+cdo remap,/automount/ags/jgiles/IMERG_V06B/global_monthly/griddes.txt,weights_to_IMERG.nc /automount/realpep/upload/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/postprocessed/TSMP-DETECT_TOT_PREC_yearlysum_2000-2021.nc /automount/realpep/upload/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/postprocessed/TSMP-DETECT_TOT_PREC_yearlysum_2000-2021_IMERGrotated0.nc
+cdo sellonlatbox,-46.40,67.22,21.14,73.24 /automount/realpep/upload/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/postprocessed/TSMP-DETECT_TOT_PREC_yearlysum_2000-2021_IMERGrotated0.nc /automount/realpep/upload/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/postprocessed/TSMP-DETECT_TOT_PREC_yearlysum_2000-2021_IMERGrotated.nc
+
+cdo gencon,/automount/ags/jgiles/ERA5/griddes.txt -setgrid,/automount/realpep/upload/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/griddes_mod.txt /automount/realpep/upload/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/postprocessed/TSMP-DETECT_TOT_PREC_yearlysum_2000-2021.nc weights_to_ERA5.nc
+cdo remap,/automount/ags/jgiles/ERA5/griddes.txt,weights_to_ERA5.nc /automount/realpep/upload/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/postprocessed/TSMP-DETECT_TOT_PREC_yearlysum_2000-2021.nc /automount/realpep/upload/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/postprocessed/TSMP-DETECT_TOT_PREC_yearlysum_2000-2021_ERA5rotated0.nc
+cdo sellonlatbox,-46.40,67.22,21.14,73.24 /automount/realpep/upload/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/postprocessed/TSMP-DETECT_TOT_PREC_yearlysum_2000-2021_ERA5rotated0.nc /automount/realpep/upload/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/postprocessed/TSMP-DETECT_TOT_PREC_yearlysum_2000-2021_ERA5rotated.nc
+
+"""
+result = subprocess.run(bash_code, shell=True, check=True, capture_output=True, text=True)
+print(result.stdout)
+
+data_TSMP_rot = xr.open_dataset("/automount/realpep/upload/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/postprocessed/TSMP-DETECT_TOT_PREC_yearlysum_2000-2021_IMERGrotated.nc")["TOT_PREC"]
+data_TSMP_rot_ERA5 = xr.open_dataset("/automount/realpep/upload/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/postprocessed/TSMP-DETECT_TOT_PREC_yearlysum_2000-2021_ERA5rotated.nc")["TOT_PREC"].isel(latitude=slice(None, None, -1))
 
 
 # Transform the RADKLIM data from rotated  (same logic as before)
@@ -1067,6 +1119,29 @@ country="Germany"
 lonlat_limits_country = {"Turkey": [25, 45, 35.5, 42.5],
                          "Germany": [5, 16, 47, 56]}
 
+# (Re-)load yearly values
+print("Loading yearly sums ...")
+data_yearlysum = {}
+data_yearlysum["IMERG-V07B"] = xr.open_dataarray("/automount/agradar/jgiles/gridded_data/yearly/IMERG-V07B_precipitation_yearlysum_2000-2021.nc")
+data_yearlysum["IMERG"] = xr.open_dataarray("/automount/agradar/jgiles/gridded_data/yearly/IMERG_precipitation_yearlysum_2001-2020.nc")
+data_yearlysum["CMORPH"] = xr.open_dataarray("/automount/agradar/jgiles/gridded_data/yearly/CMORPH_cmorph_yearlysum_2000-2021.nc")
+data_yearlysum["TSMP"] = xr.open_dataarray("/automount/agradar/jgiles/gridded_data/yearly/TSMP_TOT_PREC_yearlysum_2001-2020.nc")
+data_yearlysum["TSMP-DETECT"] = xr.open_dataarray("/automount/agradar/jgiles/gridded_data/yearly/TSMP-DETECT_TOT_PREC_yearlysum_2000-2021.nc")
+data_yearlysum["ERA5"] = xr.open_dataarray("/automount/agradar/jgiles/gridded_data/yearly/ERA5_tp_yearlysum_2001-2020.nc")
+data_yearlysum["RADKLIM"] = xr.open_dataarray("/automount/agradar/jgiles/gridded_data/yearly/RADKLIM_RR_yearlysum_2001-2020.nc")
+data_yearlysum["RADOLAN"] = xr.open_dataarray("/automount/agradar/jgiles/gridded_data/yearly/RADOLAN_RW_yearlysum_2006-2022.nc")
+data_yearlysum["GPCC"] = xr.open_dataarray("/automount/agradar/jgiles/gridded_data/yearly/GPCC_precip_yearlysum_2001-2020.nc")
+data_yearlysum["GPROF"] = xr.open_dataarray("/automount/agradar/jgiles/gridded_data/yearly/GPROF_surfacePrecipitation_yearlysum_2014-2020.nc")
+data_yearlysum["HYRAS"] = xr.open_mfdataset("/automount/agradar/jgiles/gridded_data/yearly/HYRAS_pr_yearlysum_*.nc")
+
+# load rotated RADKLIM just to get the ara of coverage
+data_RADKLIM_rot = xr.open_dataset("/automount/ags/jgiles/RADKLIM/postprocessed/RADKLIM_RR_yearlysum_2001-2020_IMERGrotated.nc")["RR"]
+data_RADKLIM_rot = data_RADKLIM_rot.where(data_RADKLIM_rot>0)
+
+# load rotated TSMP
+data_TSMP_rot = xr.open_dataset("/automount/agradar/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020_IMERGrotated.nc")["TOT_PREC"]
+
+
 # first approximation just spatially averaging all pixels
 if country == "Germany": 
     lonslice = slice(lonlat_limits_country[country][0], lonlat_limits_country[country][1])
@@ -1146,19 +1221,91 @@ if country == "Germany":
     
     d7 = data_yearlysum["RADOLAN"].where(data_yearlysum["RADKLIM"][0].interp_like(data_yearlysum["RADOLAN"][0], method="nearest")>0).mean(["x", "y"])
 
-    mask_ger8 = RADKLIM_mask.interp_like(data_yearlysum["IMERG-europe"][0])==1
-    d8 = data_yearlysum["IMERG-europe"].where(mask_ger8).loc[{"lon":lonslice, "lat":latslice}].pipe(utils.calc_spatial_mean, lon_name="lon", lat_name="lat")
+    # mask_ger8 = RADKLIM_mask.interp_like(data_yearlysum["IMERG-europe"][0])==1
+    # d8 = data_yearlysum["IMERG-europe"].where(mask_ger8).loc[{"lon":lonslice, "lat":latslice}].pipe(utils.calc_spatial_mean, lon_name="lon", lat_name="lat")
 
-    d9 = data_yearlysum["HYRAS"].where(data_yearlysum["HYRAS"]>0).mean(["x", "y"])
+    d9 = data_yearlysum["HYRAS"].where(data_yearlysum["HYRAS"]>0).mean(["x", "y"])["pr"]
 
     mask_ger10 = ( RADKLIM_mask.interp_like(data_yearlysum["CMORPH"][0])==1 ).loc[{"lon":lonslice, "lat":latslice}]
     d10 = data_yearlysum["CMORPH"].loc[{"lon":lonslice, "lat":latslice}].where(mask_ger10).pipe(utils.calc_spatial_mean, lon_name="lon", lat_name="lat")
+
+    mask_ger11 = RADKLIM_mask.interp_like(data_yearlysum["IMERG-V07B"][0])==1
+    d11 = data_yearlysum["IMERG-V07B"].where(mask_ger2).loc[{"lon":lonslice, "lat":latslice}].pipe(utils.calc_spatial_mean, lon_name="lon", lat_name="lat")
+
+    mask_ger12 = rmcountries[[country]].mask(data_yearlysum["TSMP-DETECT"])
+    d12 = data_yearlysum["TSMP-DETECT"].where(mask_ger12.notnull()).to_dataset().cf.add_bounds(["rlon", "rlat"]).spatial.average("TOT_PREC")["TOT_PREC"]
+    mask_ger12 = rmcountries[[country]].mask(test_rot)
+    d12 = test_rot.where(mask_ger12.notnull())["TOT_PREC"].pipe(utils.calc_spatial_mean, lon_name="lon", lat_name="lat")
+
+
+
+# == TESTS == 
+
+# mask and average with regionmask (not good for rotated grid since it does not unrotate)
+# https://regionmask.readthedocs.io/en/stable/notebooks/mask_3D.html#calculate-weighted-regional-averages
+rmcountries = rm.defined_regions.natural_earth_v5_1_2.countries_10
+mask_ger12 = rmcountries[["Germany"]].mask(data_yearlysum["TSMP-DETECT"])
+data_yearlysum["TSMP-DETECT"][0].plot()
+data_yearlysum["TSMP-DETECT"][0].where(mask_ger12.notnull()).plot()
+
+# mask and area-weight average with xESMF
+# https://xesmf.readthedocs.io/en/latest/notebooks/Spatial_Averaging.html
+import geopandas as gpd
+regs = gpd.read_file( # import countries polygon file
+    "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-10m.json"
+)
+regs = regs.iloc[[50]] # import polygons for Germany
+
+# Simplify the geometries to a 0.02 deg tolerance, which is 1/100 of our grid.
+# The simpler the polygons, the faster the averaging, but we lose some precision.
+regs["geometry"] = regs.simplify(tolerance=0.02, preserve_topology=True)
+
+# Display the global field and countries' outline.
+fig, ax = plt.subplots()
+data_yearlysum["TSMP-DETECT"][0].plot(ax=ax, x="lon", y="lat")
+regs.plot(ax=ax, edgecolor="k", facecolor="none")
+
+# Spatial area-weighted average
+import xesmf as xe
+savg = xe.SpatialAverager(data_yearlysum["TSMP-DETECT"].to_dataset().cf.add_bounds(["lon", "lat"]), regs.geometry, geom_dim_name="country") # the TSMP files do not come with lon and lat bounds so we have to estimate them
+out = savg(data_yearlysum["TSMP-DETECT"][0])
+out = out.assign_coords(country=xr.DataArray(regs["name"], dims=("country",))).compute() # result = 986.558
+
+
+
+# mask and area-weight average with xCDAT
+# https://xcdat.readthedocs.io/en/stable/examples/introduction-to-xcdat.html
+import xcdat as xc
+savg = data_yearlysum["TSMP-DETECT"][0].where(mask_ger12.notnull()).to_dataset().cf.add_bounds(["rlon", "rlat"]).spatial.average("TOT_PREC") # result 985.2783
+
+
+
+# Just the average over Germany without any area-weighting or unrotating
+data_yearlysum["TSMP-DETECT"][0].where(mask_ger12.notnull()).mean().compute() # result = 985.2583
+
+
+# Regridding with CDO and then area-weighted averaging
+test_rot = xr.open_dataset("/automount/agradar/jgiles/gridded_data/yearly/regridded/TSMP-DETECT_TOT_PREC_yearlysum_2000-2021_EUregLonLat01deg.nc")
+mask_ger12_rot = rmcountries[["Germany"]].mask(test_rot)
+test_rot.TOT_PREC[0].where(mask_ger12_rot.notnull()).plot()
+# with xCDAT
+test_rot.TOT_PREC[0].where(mask_ger12_rot.notnull()).to_dataset().cf.add_bounds(["lon", "lat"]).spatial.average("TOT_PREC") # result = 981.83
+# with my function
+test_rot.TOT_PREC[0].where(mask_ger12_rot.notnull()).pipe(utils.calc_spatial_mean, lon_name="lon", lat_name="lat")
+
+
+# Regridding and then area-werighted averaging (does not work)
+output_grid = data_yearlysum["GPCC"].to_dataset().regridder.grid
+output = data_yearlysum["TSMP-DETECT"].to_dataset().regridder.horizontal("TOT_PREC", output_grid, tool="xesmf", method="conservative")
+
+
 
 
 
 plt.plot(d3.time, d1, label="TSMP")
 plt.plot(d3.time, d2, label="IMERG-monthly")
-plt.plot(d8.time, d8, label="IMERG-30min")
+plt.plot(d10.time, d11, label="IMERGV07B-monthly")
+# plt.plot(d8.time, d8, label="IMERG-30min")
 plt.plot(d3.time, d3, label="ERA5")
 if country=="Germany":
     plt.plot(d3.time, d4, label="RADKLIM")    
@@ -1166,7 +1313,30 @@ if country=="Germany":
     plt.plot(d9.time, d9, label="HYRAS")
 plt.plot(d5.time, d5, label="GPCC")
 plt.plot(d6.time, d6, label="GPROF")
-plt.plot(d10.time, d10, label="CMORPH")
+# plt.plot(d10.time, d10, label="CMORPH")
+plt.plot(d12.time, d12, label="TSMP-DETECT")
+plt.legend(ncols=3, fontsize=7)
+plt.title("Annual precip "+country+" [mm]")
+
+# == END TESTS == 
+
+
+
+
+
+plt.plot(d3.time, d1, label="TSMP")
+plt.plot(d3.time, d2, label="IMERG-monthly")
+# plt.plot(d10.time, d11, label="IMERGV07B-monthly")
+# plt.plot(d8.time, d8, label="IMERG-30min")
+plt.plot(d3.time, d3, label="ERA5")
+if country=="Germany":
+    plt.plot(d3.time, d4, label="RADKLIM")    
+    plt.plot(d7.time, d7, label="RADOLAN")
+    # plt.plot(d9.time, d9, label="HYRAS")
+plt.plot(d5.time, d5, label="GPCC")
+# plt.plot(d6.time, d6, label="GPROF")
+# plt.plot(d10.time, d10, label="CMORPH")
+plt.plot(d12.time, d12, label="TSMP-DETECT")
 plt.legend(ncols=3, fontsize=7)
 plt.title("Annual precip "+country+" [mm]")
 
@@ -1300,21 +1470,35 @@ plt.legend(ncols=3, fontsize=7)
 plt.title("Annual precip total sum "+country+" [mm]")
 
 
-#%% 3-hourly precipitation distribution
-yearsel="2016"
+#%% Hourly precipitation distribution
+yearsel="2019"
 
-imerg_3h = data["IMERG-europe"]["precipitationCal"].loc[{"time": yearsel}].resample({"time":"3H"}).sum()
-tsmp_3h = data["TSMP"]["TOT_PREC"].loc[{"time": yearsel}]
+era5 = xr.open_dataset("/automount/realpep/upload/jgiles/ERA5/hourly/europe/single_level_vars/total_precipitation/total_precipitation_year_2019.nc")
+era5 = era5.assign_coords(longitude=(((era5.longitude + 180) % 360) - 180)).sortby('longitude')
+era5 = era5.isel(latitude=slice(None, None, -1))
+lonslice = slice(lonlat_limits_country[country][0], lonlat_limits_country[country][1])
+latslice = slice(lonlat_limits_country[country][2], lonlat_limits_country[country][3])
 
-imerg_3h_loc = imerg_3h.loc[{"lon":slice(lonlat_limits_country[country][0],
-                                             lonlat_limits_country[country][1]),
-                                 "lat":slice(lonlat_limits_country[country][2],
-                                             lonlat_limits_country[country][3])}]
+imerg_3h = data["IMERG-europe"]["precipitationCal"].loc[{"time": yearsel}].resample({"time":"H"}).sum()
+tsmp_3h = data["TSMP-DETECT"]["TOT_PREC"].loc[{"time": yearsel}]
+era5_3h = era5["tp"].loc[{"time": yearsel, "longitude":lonslice, "latitude":latslice}]
 
-tsmp_3h_loc = tsmp_3h.loc[{"lon":slice(lonlat_limits_country[country][0],
-                                             lonlat_limits_country[country][1]),
-                                 "lat":slice(lonlat_limits_country[country][2],
-                                             lonlat_limits_country[country][3])}]
+imerg_3h_loc = imerg_3h.where(rmcountries[[country]].mask(imerg_3h).notnull())
+
+tsmp_3h_loc = tsmp_3h.where(rmcountries[[country]].mask(tsmp_3h).notnull())
+
+era5_3h_loc = era5_3h.where(rmcountries[[country]].mask(era5_3h[0]).notnull())
+
+dc_imerg_3h_loc = imerg_3h_loc.groupby("time.hour").mean().mean(["lon", "lat"]).compute()
+
+dc_tsmp_3h_loc = tsmp_3h_loc.groupby("time.hour").mean().mean(["rlon", "rlat"]).compute()
+
+dc_era5_3h_loc = era5_3h_loc.groupby("time.hour").mean().mean(["longitude", "latitude"]).compute()
+
+
+dc_imerg_3h_loc.plot(label="IMERG")
+dc_tsmp_3h_loc.plot(label="TSMP-DETECT")
+(dc_era5_3h_loc*1000).plot(label="ERA5")
 
 #%% OLD CODE FROM HERE ON
 
