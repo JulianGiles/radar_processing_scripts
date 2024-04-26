@@ -71,7 +71,7 @@ rp = ccrs.RotatedPole(pole_longitude=198.0,
 ds_to_load = [
     # "IMERG-V07B-monthly",
     # "IMERG-V06B-monthly",
-    # "IMERG-V07B-30min", # do not load this unless necessary, currently the calculations are done with cdo
+    "IMERG-V07B-30min", # do not load this unless necessary, currently the calculations are done with cdo
     # "IMERG-V06B-30min", # do not load this unless necessary, currently the calculations are done with cdo
     # "CMORPH-daily",
     # "TSMP-old",
@@ -80,7 +80,7 @@ ds_to_load = [
     # "ERA5-monthly",
     # "ERA5-hourly",
     # "RADKLIM",
-    "RADOLAN",
+    # "RADOLAN",
     # "EURADCLIM",
     # "GPCC-monthly",
     # "GPCC-daily",
@@ -310,6 +310,9 @@ if "EURADCLIM" in ds_to_load:
     print("Loading EURADCLIM...")
     if "precipitation" in var_to_load:    
         data["EURADCLIM"] = xr.open_mfdataset("/automount/agradar/jgiles/EURADCLIM/concat_files/RAD_OPERA_HOURLY_RAINFALL_*.nc")
+        data["EURADCLIM"] = data["EURADCLIM"].set_coords(("lon", "lat"))
+        data["EURADCLIM"]["lon"] = data["EURADCLIM"]["lon"][0]
+        data["EURADCLIM"]["lat"] = data["EURADCLIM"]["lat"][0]
 
 #### RADKLIM
 if "RADKLIM" in ds_to_load:
@@ -320,11 +323,16 @@ if "RADKLIM" in ds_to_load:
 #### RADOLAN
 if "RADOLAN" in ds_to_load:
     print("Loading RADOLAN...")
-    if "precipitation" in var_to_load:    
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
-            data["RADOLAN"] = wrl.io.open_radolan_mfdataset("/automount/ags/jgiles/RADOLAN/hourly/radolan/historical/bin/20*/RW*/raa01-rw_10000-*-dwd---bin*")
-            data["RADOLAN"]["RW"].attrs["unit"] = "mm"
+    if "precipitation" in var_to_load:
+        # load raw data
+        # with warnings.catch_warnings():
+        #     warnings.simplefilter('ignore')
+        #     data["RADOLAN"] = wrl.io.open_radolan_mfdataset("/automount/ags/jgiles/RADOLAN/hourly/radolan/historical/bin/20*/RW*/raa01-rw_10000-*-dwd---bin*")
+        #     data["RADOLAN"]["RW"].attrs["unit"] = "mm"
+        
+        # load concatenated netcdf-transformed data
+        data["RADOLAN"] = xr.open_mfdataset("/automount/ags/jgiles/RADOLAN/hourly/radolan/historical/concat_files/20*/*.nc")
+        data["RADOLAN"]["RW"].attrs["unit"] = "mm"
 
 #### HYRAS
 if "HYRAS" in ds_to_load:
@@ -395,78 +403,9 @@ if "GPROF" in ds_to_load:
             data["GPROF"][vv] = data["GPROF"][vv]*days_in_month_ds*24
             data["GPROF"][vv] = data["GPROF"][vv].assign_attrs(units="mm", Units="mm")
 
-#%% YEARLY SUM
-# CAREFUL WITH THIS PART, DO NOT RUN THE WHOLE CELL AT ONCE BECAUSE IT WILL PROBABLY CRASH OR TAKE FOREVER
-# Set a path to save and load the reduced datasets
-savepath = "/automount/agradar/jgiles/gridded_data/"
-
-if len(var_to_load) == 1:
-    vname = var_to_load[0]
-else:
-    raise ValueError("Either no variable or more than one variable was selected in 'var_to_load'")
-
-# accumulate to yearly values
-print("Calculating yearly sums ...")
-data_yearlysum = {}
-for dsname in ds_to_load:
-    data_yearlysum[dsname] = data[dsname].resample({"time": "YS"}).sum().compute()
-
-# save the processed datasets
-for dsname in data_yearlysum.keys():
-    savepath_dsname = savepath+"/yearly/"+dsname
-    if not os.path.exists(savepath_dsname):
-        os.makedirs(savepath_dsname)
-    sd = str(data_yearlysum[dsname].time[0].values)[0:4]
-    ed = str(data_yearlysum[dsname].time[-1].values)[0:4]
-    if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS"]:
-        # special treatment for these datasets, otherwise it will crash
-        if dsname == "HYRAS":
-            Cdo().yearsum(input="/automount/ags/jgiles/HYRAS-PRE-DE/daily/hyras_de/precipitation/pr_hyras_1_1931_2020_v5-0_de.nc", 
-                          output="/automount/agradar/jgiles/gridded_data/yearly/HYRAS/HYRAS_precipitation_yearlysum_1931-2020.nc", options="-z zip_6")
-        if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly"]:
-            raise Warning("Do not compute yearly sums from "+dsname+". Use the monthly version.")
-    else:
-        data_yearlysum[dsname].to_netcdf(savepath_dsname+"/"+dsname+"_"+vname+"_yearlysum_"+sd+"-"+ed+".nc",
-                                         encoding=dict([(vv,{"zlib":True, "complevel":6}) for vv in data_yearlysum[dsname].data_vars]))
-
-
-#%% MONTHLY SUM
-# CAREFUL WITH THIS PART, DO NOT RUN THE WHOLE CELL AT ONCE BECAUSE IT WILL PROBABLY CRASH OR TAKE FOREVER
-# Set a path to save and load the reduced datasets
-savepath = "/automount/agradar/jgiles/gridded_data/"
-
-if len(var_to_load) == 1:
-    vname = var_to_load[0]
-else:
-    raise ValueError("Either no variable or more than one variable was selected in 'var_to_load'")
-
-# accumulate to monthly values
-print("Calculating monthly sums ...")
-data_monthlysum = {}
-for dsname in ds_to_load:
-    data_monthlysum[dsname] = data[dsname].resample({"time": "MS"}).sum().compute()
-
-# save the processed datasets
-for dsname in data_monthlysum.keys():
-    savepath_dsname = savepath+"/monthly/"+dsname
-    if not os.path.exists(savepath_dsname):
-        os.makedirs(savepath_dsname)
-    sd = str(data_monthlysum[dsname].time[0].values)[0:4]
-    ed = str(data_monthlysum[dsname].time[-1].values)[0:4]
-    if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS"]:
-        # special treatment for these datasets, otherwise it will crash
-        if dsname == "HYRAS":
-            Cdo().monsum(input="/automount/ags/jgiles/HYRAS-PRE-DE/daily/hyras_de/precipitation/pr_hyras_1_1931_2020_v5-0_de.nc", 
-                          output="/automount/agradar/jgiles/gridded_data/monthly/HYRAS/HYRAS_precipitation_monthlysum_1931-2020.nc", options="-z zip_6")
-        if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly"]:
-            raise Warning("Do not compute monthly sums from "+dsname+". Use the monthly version.")
-    else:
-        data_monthlysum[dsname].to_netcdf(savepath_dsname+"/"+dsname+"_"+vname+"_monthlysum_"+sd+"-"+ed+".nc",
-                                         encoding=dict([(vv,{"zlib":True, "complevel":6}) for vv in data_monthlysum[dsname].data_vars]))
-
-
 #%% DAILY SUM
-# CAREFUL WITH THIS PART, DO NOT RUN THE WHOLE CELL AT ONCE BECAUSE IT WILL PROBABLY CRASH OR TAKE FOREVER
+# CAREFUL WITH THIS PART, DO NOT RUN THE WHOLE CELL AT ONCE IF HANDLING MORE
+# THAN ONE DATASET BECAUSE IT WILL PROBABLY CRASH OR TAKE FOREVER
 # Set a path to save and load the reduced datasets
 savepath = "/automount/agradar/jgiles/gridded_data/"
 
@@ -479,24 +418,128 @@ else:
 print("Calculating daily sums ...")
 data_dailysum = {}
 for dsname in ds_to_load:
-    data_dailysum[dsname] = data[dsname].resample({"time": "D"}).sum().compute()
+    if dsname not in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
+                      "EURADCLIM", "GPCC-monthly", "GPCC-daily", 'GPROF']:
+        data_dailysum[dsname] = data[dsname].resample({"time": "D"}).sum().compute()
 
 # save the processed datasets
-for dsname in data_dailysum.keys():
+for dsname in ds_to_load:
     savepath_dsname = savepath+"/daily/"+dsname
     if not os.path.exists(savepath_dsname):
         os.makedirs(savepath_dsname)
-    sd = str(data_dailysum[dsname].time[0].values)[0:4]
-    ed = str(data_dailysum[dsname].time[-1].values)[0:4]
-    if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS"]:
+    if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
+                  "EURADCLIM", "GPCC-monthly", "GPCC-daily", 'GPROF']:
         # special treatment for these datasets, otherwise it will crash
-        if dsname == "HYRAS":
+        if dsname in ["HYRAS", "GPCC-daily"]:
             raise Warning(dsname+" is already daily!")
+        if dsname in ["GPCC-monthly", 'GPROF', "IMERG-V07B-monthly", "IMERG-V06B-monthly", "ERA5-monthly"]:
+            raise Warning(dsname+" is monthly!")
         if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly"]:
             raise Warning("Do not compute daily sums from "+dsname+". Use CDO.")
+        if dsname in ["IMERG-V07B-30min"]:
+            data[dsname]["MWobservationTime"] = data[dsname]["MWobservationTime"].astype(data[dsname]["time"].dtype)
+            if not os.path.exists(savepath_dsname+"/temp"):
+                    os.makedirs(savepath_dsname+"/temp")
+            for yy in np.unique(data[dsname].time.dt.year):
+                print("Saving daily "+dsname+" files for "+str(yy))
+                data[dsname].loc[{"time":str(yy)}].resample({"time": "D"}).sum().to_netcdf(savepath_dsname+"/temp/"+dsname+"_"+vname+"_dailysum_"+str(yy)+".nc",
+                                                 encoding=dict([(vv,{"zlib":True, "complevel":6}) for vv in data[dsname].data_vars if "time_" not in vv if "Time" not in vv]))
+            Cdo().daysum(input="-cat /automount/agradar/jgiles/EURADCLIM/concat_files/RAD_OPERA_HOURLY_RAINFALL_*.nc", 
+                         output="/automount/agradar/jgiles/gridded_data/daily/EURADCLIM/EURADCLIM_precipitation_dailysum_2013-2020.nc", options="-z zip_6")
+        if dsname in ["EURADCLIM"]:
+            Cdo().daysum(input="-cat /automount/agradar/jgiles/EURADCLIM/concat_files/RAD_OPERA_HOURLY_RAINFALL_*.nc", 
+                         output="/automount/agradar/jgiles/gridded_data/daily/EURADCLIM/EURADCLIM_precipitation_dailysum_2013-2020.nc", options="-z zip_6")
     else:
+        sd = str(data_dailysum[dsname].time[0].values)[0:4]
+        ed = str(data_dailysum[dsname].time[-1].values)[0:4]
         data_dailysum[dsname].to_netcdf(savepath_dsname+"/"+dsname+"_"+vname+"_dailysum_"+sd+"-"+ed+".nc",
                                          encoding=dict([(vv,{"zlib":True, "complevel":6}) for vv in data_dailysum[dsname].data_vars]))
+
+#%% MONTHLY SUM
+# CAREFUL WITH THIS PART, DO NOT RUN THE WHOLE CELL AT ONCE IF HANDLING MORE
+# THAN ONE DATASET BECAUSE IT WILL PROBABLY CRASH OR TAKE FOREVER
+# Set a path to save and load the reduced datasets
+savepath = "/automount/agradar/jgiles/gridded_data/"
+
+if len(var_to_load) == 1:
+    vname = var_to_load[0]
+else:
+    raise ValueError("Either no variable or more than one variable was selected in 'var_to_load'")
+
+# accumulate to monthly values
+print("Calculating monthly sums ...")
+data_monthlysum = {}
+for dsname in ds_to_load:
+    if dsname not in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
+                      "EURADCLIM", "GPCC-monthly", 'GPROF']:
+        data_monthlysum[dsname] = data[dsname].resample({"time": "MS"}).sum().compute()
+
+# save the processed datasets
+for dsname in ds_to_load:
+    savepath_dsname = savepath+"/monthly/"+dsname
+    if not os.path.exists(savepath_dsname):
+        os.makedirs(savepath_dsname)
+    if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
+                  "EURADCLIM", "GPCC-monthly", 'GPROF']:
+        # special treatment for these datasets, otherwise it will crash
+        if dsname == "HYRAS":
+            Cdo().monsum(input="/automount/ags/jgiles/HYRAS-PRE-DE/daily/hyras_de/precipitation/pr_hyras_1_1931_2020_v5-0_de.nc", 
+                          output="/automount/agradar/jgiles/gridded_data/monthly/HYRAS/HYRAS_precipitation_monthlysum_1931-2020.nc", options="-z zip_6")
+        if dsname in ["GPCC-monthly", 'GPROF']:
+            raise Warning(dsname+" is already monthly!")
+        if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly"]:
+            raise Warning("Do not compute monthly sums from "+dsname+". Use the monthly version.")
+        if dsname in ["EURADCLIM"]:
+            Cdo().monsum(input="/automount/agradar/jgiles/gridded_data/daily/EURADCLIM/EURADCLIM_precipitation_dailysum_2013-2020.nc", 
+                         output="/automount/agradar/jgiles/gridded_data/monthly/EURADCLIM/EURADCLIM_precipitation_monthlysum_2013-2020.nc", options="-z zip_6")
+    else:
+        sd = str(data_monthlysum[dsname].time[0].values)[0:4]
+        ed = str(data_monthlysum[dsname].time[-1].values)[0:4]
+        data_monthlysum[dsname].to_netcdf(savepath_dsname+"/"+dsname+"_"+vname+"_monthlysum_"+sd+"-"+ed+".nc",
+                                         encoding=dict([(vv,{"zlib":True, "complevel":6}) for vv in data_monthlysum[dsname].data_vars]))
+
+#%% YEARLY SUM
+# CAREFUL WITH THIS PART, DO NOT RUN THE WHOLE CELL AT ONCE IF HANDLING MORE
+# THAN ONE DATASET BECAUSE IT WILL PROBABLY CRASH OR TAKE FOREVER
+# Set a path to save and load the reduced datasets
+savepath = "/automount/agradar/jgiles/gridded_data/"
+
+if len(var_to_load) == 1:
+    vname = var_to_load[0]
+else:
+    raise ValueError("Either no variable or more than one variable was selected in 'var_to_load'")
+
+# accumulate to yearly values
+print("Calculating yearly sums ...")
+data_yearlysum = {}
+for dsname in ds_to_load:
+    if dsname not in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
+                      "EURADCLIM", "GPROF"]:
+        data_yearlysum[dsname] = data[dsname].resample({"time": "YS"}).sum().compute()
+    if dsname in ["GPROF"]:
+        data_yearlysum[dsname] = data[dsname][["surfacePrecipitation", "convectivePrecipitation", "frozenPrecipitation", "npixPrecipitation", "npixTotal"]].resample({"time": "YS"}).sum().compute()
+
+# save the processed datasets
+for dsname in ds_to_load:
+    savepath_dsname = savepath+"/yearly/"+dsname
+    if not os.path.exists(savepath_dsname):
+        os.makedirs(savepath_dsname)
+    if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
+                  "EURADCLIM"]:
+        # special treatment for these datasets, otherwise it will crash
+        if dsname == "HYRAS":
+            Cdo().yearsum(input="/automount/ags/jgiles/HYRAS-PRE-DE/daily/hyras_de/precipitation/pr_hyras_1_1931_2020_v5-0_de.nc", 
+                          output="/automount/agradar/jgiles/gridded_data/yearly/HYRAS/HYRAS_precipitation_yearlysum_1931-2020.nc", options="-z zip_6")
+        if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly"]:
+            raise Warning("Do not compute yearly sums from "+dsname+". Use the monthly version.")
+        if dsname in ["EURADCLIM"]:
+            Cdo().yearsum(input="/automount/agradar/jgiles/gridded_data/monthly/EURADCLIM/EURADCLIM_precipitation_monthlysum_2013-2020.nc", 
+                         output="/automount/agradar/jgiles/gridded_data/yearly/EURADCLIM/EURADCLIM_precipitation_yearlysum_2013-2020.nc", options="-z zip_6")
+    else:
+        sd = str(data_yearlysum[dsname].time[0].values)[0:4]
+        ed = str(data_yearlysum[dsname].time[-1].values)[0:4]
+        data_yearlysum[dsname].to_netcdf(savepath_dsname+"/"+dsname+"_"+vname+"_yearlysum_"+sd+"-"+ed+".nc",
+                                         encoding=dict([(vv,{"zlib":True, "complevel":6}) for vv in data_yearlysum[dsname].data_vars]))
 
 #%% REGRIDDING
 
