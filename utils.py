@@ -4097,13 +4097,13 @@ def calc_spatial_mean(
     xr_da, lon_name="longitude", lat_name="latitude", radius=EARTH_RADIUS
 ):
     """
-    Calculate spatial mean of xarray.DataArray with grid cell weighting. 
+    Calculate spatial mean of xr_da with grid cell weighting. 
     Only works well with regular lat/ lon grids. For irregular or rotated
     grids it is not appropriate.
     
     Parameters
     ----------
-    xr_da: xarray.DataArray
+    xr_da: xarray.DataArray or xarray.Dataset
         Data to average
     lon_name: str, optional
         Name of x-coordinate
@@ -4121,7 +4121,7 @@ def calc_spatial_mean(
 
     area_weights = grid_cell_areas(lon, lat, radius=radius)
 
-    return xr_da.weighted(xr.ones_like(xr_da)*area_weights).mean(dim=[lon_name, lat_name])
+    return xr_da.weighted(xr.DataArray(area_weights, coords=xr_da[[lat_name,lon_name]].coords)).mean(dim=[lon_name, lat_name])
 
 
 def calc_spatial_integral(
