@@ -36,6 +36,7 @@ from cdo import Cdo
 import xesmf as xe
 import hvplot.xarray
 import holoviews as hv
+import copy
 
 import warnings
 #ignore by message
@@ -87,7 +88,7 @@ paths_yearly = {
     "RADKLIM": loadpath_yearly+"RADKLIM/RADKLIM_precipitation_yearlysum_2001-2022.nc",
     "RADOLAN": loadpath_yearly+"RADOLAN/RADOLAN_precipitation_yearlysum_2006-2022.nc",
     "EURADCLIM": loadpath_yearly+"EURADCLIM/EURADCLIM_precipitation_yearlysum_2013-2020.nc",
-    "GPCC-monthly": loadpath_yearly+"GPCC-monthly/GPCC-monthly_precipitation_yearlysum_2001-2020.nc",
+    "GPCC-monthly": loadpath_yearly+"GPCC-monthly/GPCC-monthly_precipitation_yearlysum_1991-2020.nc",
     # "GPCC-daily": loadpath_yearly+"GPCC-daily/GPCC-daily_precipitation_yearlysum_2000-2020.nc",
     "GPROF": loadpath_yearly+"GPROF/GPROF_precipitation_yearlysum_2014-2023.nc",
     "HYRAS": loadpath_yearly+"HYRAS/HYRAS_precipitation_yearlysum_1931-2020.nc", 
@@ -122,6 +123,14 @@ for dsname in paths_yearly.keys():
     except:
         pass
 
+# Special selections for incomplete extreme years
+# IMERG
+data_yearlysum["IMERG-V07B-monthly"] = data_yearlysum["IMERG-V07B-monthly"].loc[{"time":slice("2001", "2022")}]
+data_yearlysum["IMERG-V06B-monthly"] = data_yearlysum["IMERG-V06B-monthly"].loc[{"time":slice("2001", "2020")}]
+# CMORPH
+data_yearlysum["CMORPH-daily"] = data_yearlysum["CMORPH-daily"].loc[{"time":slice("1998", "2022")}]
+# GPROF
+data_yearlysum["GPROF"] = data_yearlysum["GPROF"].loc[{"time":slice("2015", "2022")}]
 
 #%%% Area means
 data_to_avg = data_yearlysum # select which data to average (yearly, monthly, daily...)
@@ -168,7 +177,7 @@ for dsname in data_to_avg.keys():
         
 # add the rotated datasets to the original dictionary
 data_to_avg = {**data_to_avg, **to_add}
-
+data_yearlysum = data_to_avg
 
 #%%% Simple map plot
 rmcountries = rm.defined_regions.natural_earth_v5_1_2.countries_10
@@ -259,6 +268,183 @@ layout.opts(title="Area-mean annual total precip "+region+" [mm]", xlabel="Time"
 
 # Save to HTML file
 hv.save(layout, '/user/jgiles/interactive_plot.html')
+
+#%%% BIAS and ERRORS
+#### Bias (absolute and relative) calculation
+var_names = ["TOT_PREC", "precipitation", "pr", "surfacePrecipitation", "precip", "Precip", 
+             "RW", "RR", "tp", "cmorph"]
+
+dsignore = [] # datasets to ignore in the plotting
+dsref = ["GPCC-monthly"] # dataset to take as reference
+
+data_to_bias = data_avgreg
+
+data_bias = {}
+data_bias_relative = {}
+for dsname in data_to_bias.keys():
+    if dsname in dsignore+dsref:
+        continue
+    for vv in var_names:
+        if vv in data_to_bias[dsname].data_vars:
+            for vvref in var_names:
+                if vvref in data_to_bias[dsref[0]].data_vars:
+                    data_bias[dsname] = data_to_bias[dsname][vv] - data_to_bias[dsref[0]][vvref]
+                    data_bias_relative[dsname] = (data_to_bias[dsname][vv] - data_to_bias[dsref[0]][vvref])/data_to_bias[dsref[0]][vvref]*100
+                    break
+
+#### Bar plot
+# Calculate bar width based on the number of data arrays
+bar_width = 0.8 / len(data_bias)
+
+# Get time values
+time_values_ref = data_to_bias[dsref[0]]['time']
+
+# Plotting each DataArray in the dictionary
+plt.figure(figsize=(20, 6))  # Adjust figure size as needed
+for idx, (key, value) in enumerate(data_bias.items()):
+    value_padded = value.broadcast_like(data_to_bias[dsref[0]])
+    time_values = value_padded['time']
+    bar_positions = np.arange(len(time_values)) + idx * bar_width
+    plt.bar(bar_positions, value_padded, width=bar_width, label=key)
+
+plt.xlabel('Time')
+plt.ylabel(value.attrs['units'])
+plt.title("Area-mean annual total precip BIAS with respect to "+dsref[0]+" "+region)
+plt.xticks(np.arange(len(time_values)) + 0.4, time_values_ref.dt.year.values, rotation=45)  # Rotate x-axis labels for better readability
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# Plotting each DataArray in the dictionary (same but for relative bias)
+plt.figure(figsize=(20, 6))  # Adjust figure size as needed
+for idx, (key, value) in enumerate(data_bias_relative.items()):
+    value_padded = value.broadcast_like(data_to_bias[dsref[0]])
+    time_values = value_padded['time']
+    bar_positions = np.arange(len(time_values)) + idx * bar_width
+    plt.bar(bar_positions, value_padded, width=bar_width, label=key)
+
+plt.xlabel('Time')
+plt.ylabel("%")
+plt.title("Area-mean annual total precip RELATIVE BIAS with respect to "+dsref[0]+" "+region)
+plt.xticks(np.arange(len(time_values)) + 0.4, time_values_ref.dt.year.values, rotation=45)  # Rotate x-axis labels for better readability
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+#### Relative bias calculation (at gridpoint level, not with the area means)
+# First we need to transform EURADCLIM, RADKLIM, RADOLAN and HYRAS to regular grids
+# We use the DETECT 1 km grid for this
+to_add = {} # dictionary to add regridded versions
+for dsname in ["EURADCLIM", "RADOLAN", "HYRAS", "RADKLIM"]:
+    print("Regridding "+dsname+" ...")
+
+    grid_out = xe.util.cf_grid_2d(-49.746,70.655,0.01,19.854,74.654,0.01) # manually recreate the EURregLonLat001deg grid
+    grid_out = xe.util.grid_2d(-49.746,70.655,0.01,19.854,74.654,0.01) # manually recreate the EURregLonLat001deg grid
+    # # I tried to use dask for the weight generation to avoid memory crash
+    # # but I did not manage to make it work: https://xesmf.readthedocs.io/en/latest/notebooks/Dask.html
+
+    # grid_out = grid_out.chunk({"x": 50, "y": 50, "x_b": 50, "y_b": 50,})
+
+    # # we then try parallel regridding: slower but less memory-intensive (this takes forever)
+    # regridder = xe.Regridder(data_yearlysum[dsname].cf.add_bounds(["lon", "lat"]), 
+    #                           grid_out, 
+    #                           "conservative", parallel=True)
+    # to_add[dsname+"-EURregLonLat001deg"] = regridder(data_to_avg[dsname])
+    # regridder.to_netcdf() # we save the weights
+    # # to reuse the weigths:
+    # xe.Regridder(data_yearlysum[dsname].cf.add_bounds(["lon", "lat"]), 
+    #                           grid_out, 
+    #                           "conservative", parallel=True, weights="/path/to/weights") #!!! Can I use CDO weights here?
+    # Cdo().gencon()
+    # cdo gencon,/automount/ags/jgiles/IMERG_V06B/global_monthly/griddes.txt -setgrid,/automount/agradar/jgiles/TSMP/griddes_mod.txt /automount/agradar/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020.nc weights_to_IMERG.nc
+
+    # Instead, just regrid to the reference dataset grid (this is fast)
+
+    regridder = xe.Regridder(data_yearlysum[dsname].cf.add_bounds(["lon", "lat"]), data_yearlysum[dsref[0]], "conservative")
+    to_add[dsname+"_"+dsref[0]+"-grid"] = regridder(data_yearlysum[dsname])
+    
+# add the regridded datasets to the original dictionary
+data_yearlysum = {**data_yearlysum, **to_add}
+    
+# Compute the biases
+dsignore = ["EURADCLIM", "RADOLAN", "HYRAS", "RADKLIM", 'TSMP-old', 'TSMP-DETECT-Baseline'] # datasets to ignore 
+data_to_bias = copy.deepcopy(data_yearlysum)
+
+data_bias_map = {} # maps of yearly biases
+data_bias_relative_map = {} # maps of yearly relative biases
+data_abs_error_map = {} # maps of yearly absolute errors
+data_bias_relative_gp = {} # yearly relative biases on a gridpoint basis (sum of gridpoint biases divided by sum of reference-data values)
+data_mean_abs_error_gp = {} # yearly MAE on a gridpoint basis (sum of gridpoint abs errors divided by number of data values)
+data_norm_mean_abs_error_gp = {} # yearly NMAE on a gridpoint basis (sum of gridpoint abs errors divided by sum of reference-data values)
+for dsname in data_to_bias.keys():
+    if dsname in dsignore+dsref:
+        continue
+    print("Processing "+dsname+" ...")
+    for vv in var_names:
+        if vv in data_to_bias[dsname].data_vars:
+            for vvref in var_names:
+                if vvref in data_to_bias[dsref[0]].data_vars:
+                    if dsref[0]+"-grid" not in dsname: # if no regridded already, do it now
+                        if "longitude" in data_to_bias[dsname].coords or "latitude" in data_to_bias[dsname].coords:
+                            # if the names of the coords are longitude and latitude, change them to lon, lat
+                            data_to_bias[dsname] = data_to_bias[dsname].rename({"longitude":"lon", "latitude":"lat"})
+                        
+                        if dsname in ["IMERG-V07B-monthly", "IMERG-V06B-monthly"]:
+                            # we need to remove the default defined bounds or the regridding will fail
+                            data_to_bias[dsname] = data_to_bias[dsname].drop_vars(["lon_bnds", "lat_bnds"])
+                            del(data_to_bias[dsname].lon.attrs["bounds"])
+                            del(data_to_bias[dsname].lat.attrs["bounds"])
+                            
+                        if dsname in ["CMORPH-daily"]:
+                            # we need to remove the default defined bounds or the regridding will fail
+                            data_to_bias[dsname] = data_to_bias[dsname].drop_vars(["lon_bounds", "lat_bounds"])
+                            del(data_to_bias[dsname].lon.attrs["bounds"])
+                            del(data_to_bias[dsname].lat.attrs["bounds"])
+
+                        if dsname in ["GPROF", "TSMP-old-EURregLonLat01deg", "TSMP-DETECT-Baseline-EURregLonLat01deg"]:
+                            # we need to remove the default defined bounds or the regridding will fail
+                            del(data_to_bias[dsname].lon.attrs["bounds"])
+                            del(data_to_bias[dsname].lat.attrs["bounds"])
+
+                        # regridder = xe.Regridder(data_to_bias[dsname].cf.add_bounds(["lon", "lat"]), data_to_bias[dsref[0]], "conservative")
+
+                        regridder = xe.Regridder(data_to_bias[dsname], data_to_bias[dsref[0]], "conservative")
+
+                        data0 = regridder(data_to_bias[dsname][vv])
+                    else:
+                        data0 = data_to_bias[dsname][vv]
+
+                    data0 = data0.where(data0>0)
+                    dataref = data_to_bias[dsref[0]][vvref]
+                    
+                    mask = rmcountries[[region]].mask(data_to_bias[dsref[0]])
+
+                    data_bias_map[dsname] = ( data0.where(mask.notnull()) - dataref.where(mask.notnull()) ).compute()
+                    data_bias_relative_map[dsname] = ( data_bias_map[dsname] / dataref.where(mask.notnull()) ).compute() *100
+                    data_abs_error_map[dsname] = abs(data_bias_map[dsname])
+                    
+                    data_bias_relative_gp[dsname] = utils.calc_spatial_integral(data_bias_map[dsname],
+                                                lon_name="lon", lat_name="lat").compute() / \
+                                                    utils.calc_spatial_integral(dataref.where(mask.notnull()),
+                                                lon_name="lon", lat_name="lat").compute() *100
+                    
+                    data_norm_mean_abs_error_gp[dsname] = utils.calc_spatial_integral(data_abs_error_map[dsname],
+                                                lon_name="lon", lat_name="lat").compute() / \
+                                                    utils.calc_spatial_integral(dataref.where(mask.notnull()),
+                                                lon_name="lon", lat_name="lat").compute() *100
+
+                    data_mean_abs_error_gp[dsname] = utils.calc_spatial_mean(data_abs_error_map[dsname],
+                                                lon_name="lon", lat_name="lat").compute()
+                    
+                    break
+                    
+                        
+    
+
+
+
 
 #%% REGRIDDING TESTS
 #%%% Simple map plot TSMP original
