@@ -4121,21 +4121,23 @@ def calc_spatial_mean(
 
     area_weights = grid_cell_areas(lon, lat, radius=radius)
 
-    return xr_da.weighted(xr.DataArray(area_weights, coords=xr_da[[lat_name,lon_name]].coords)).mean(dim=[lon_name, lat_name])
-
+    if type(xr_da) is xr.Dataset:
+        return xr_da.weighted(xr.DataArray(area_weights, coords=xr_da[[lat_name,lon_name]].coords)).mean(dim=[lon_name, lat_name])
+    else: # if not dataset, we need to convert it to dataset first
+        return xr_da.weighted(xr.DataArray(area_weights, coords=xr_da.to_dataset(name="")[[lat_name,lon_name]].coords)).mean(dim=[lon_name, lat_name])
 
 def calc_spatial_integral(
     xr_da, lon_name="longitude", lat_name="latitude", radius=EARTH_RADIUS
 ):
     """
-    Calculate spatial integral of xarray.DataArray with grid cell weighting.
+    Calculate spatial integral of xr_da with grid cell weighting.
     Only works well with regular lat/ lon grids. For irregular or rotated
     grids it is not appropriate.
     
     Parameters
     ----------
-    xr_da: xarray.DataArray
-        Data to average
+    xr_da: xarray.DataArray or xarray.Dataset
+        Data to sum
     lon_name: str, optional
         Name of x-coordinate
     lat_name: str, optional
@@ -4152,4 +4154,7 @@ def calc_spatial_integral(
 
     area_weights = grid_cell_areas(lon, lat, radius=radius)
 
-    return (xr_da * area_weights).sum(dim=[lon_name, lat_name])
+    if type(xr_da) is xr.Dataset:
+        return xr_da.weighted(xr.DataArray(area_weights, coords=xr_da[[lat_name,lon_name]].coords)).sum(dim=[lon_name, lat_name])
+    else: # if not dataset, we need to convert it to dataset first
+        return xr_da.weighted(xr.DataArray(area_weights, coords=xr_da.to_dataset(name="")[[lat_name,lon_name]].coords)).sum(dim=[lon_name, lat_name])
