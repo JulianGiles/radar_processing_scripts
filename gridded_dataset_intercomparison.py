@@ -132,7 +132,8 @@ data_yearlysum["CMORPH-daily"] = data_yearlysum["CMORPH-daily"].loc[{"time":slic
 # GPROF
 data_yearlysum["GPROF"] = data_yearlysum["GPROF"].loc[{"time":slice("2015", "2022")}]
 
-#%%% Area means
+#%%% Regional averages
+#%%%% Calculate area means (regional averages)
 data_to_avg = data_yearlysum # select which data to average (yearly, monthly, daily...)
 
 region ="Germany"
@@ -179,7 +180,7 @@ for dsname in data_to_avg.keys():
 data_to_avg = {**data_to_avg, **to_add}
 data_yearlysum = data_to_avg
 
-#%%% Simple map plot
+#%%%% Simple map plot
 rmcountries = rm.defined_regions.natural_earth_v5_1_2.countries_10
 mask = rmcountries[["Germany"]].mask(data_yearlysum["EURADCLIM"])
 f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
@@ -192,7 +193,7 @@ plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
 plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
 plt.title("EURADCLIM")
 
-#%%% Interannual variability area-means plot
+#%%%% Interannual variability area-means plot
 # make a list with the names of the precipitation variables
 var_names = ["TOT_PREC", "precipitation", "pr", "surfacePrecipitation", "precip", "Precip", 
              "RW", "RR", "tp", "cmorph"]
@@ -226,7 +227,7 @@ plt.xlim(datetime(2000,1,1), datetime(2020,1,1))
 # plt.xlim(2000, 2020)
 plt.grid()
 
-#%%% Interannual variability area-means plot (interactive html)
+#%%%% Interannual variability area-means plot (interactive html)
 
 var_names = ["TOT_PREC", "precipitation", "pr", "surfacePrecipitation", "precip", "Precip", 
              "RW", "RR", "tp", "cmorph"]
@@ -270,7 +271,7 @@ layout.opts(title="Area-mean annual total precip "+region+" [mm]", xlabel="Time"
 hv.save(layout, '/user/jgiles/interactive_plot.html')
 
 #%%% BIAS and ERRORS
-#### Bias (absolute and relative) calculation
+#%%%% Bias (absolute and relative) calculation from regional averages
 var_names = ["TOT_PREC", "precipitation", "pr", "surfacePrecipitation", "precip", "Precip", 
              "RW", "RR", "tp", "cmorph"]
 
@@ -292,14 +293,14 @@ for dsname in data_to_bias.keys():
                     data_bias_relative[dsname] = (data_to_bias[dsname][vv] - data_to_bias[dsref[0]][vvref])/data_to_bias[dsref[0]][vvref]*100
                     break
 
-#### Bar plot
+#%%%% Region-averages bias bar plot
 # Calculate bar width based on the number of data arrays
 bar_width = 0.8 / len(data_bias)
 
 # Get time values
 time_values_ref = data_to_bias[dsref[0]]['time']
 
-# Plotting each DataArray in the dictionary
+#%%%%% Plotting each DataArray in the dictionary
 plt.figure(figsize=(20, 6))  # Adjust figure size as needed
 for idx, (key, value) in enumerate(data_bias.items()):
     value_padded = value.broadcast_like(data_to_bias[dsref[0]])
@@ -316,7 +317,7 @@ plt.grid(True)
 plt.tight_layout()
 plt.show()
 
-# Plotting each DataArray in the dictionary (same but for relative bias)
+#%%%%% Plotting each DataArray in the dictionary (same but for relative bias)
 plt.figure(figsize=(20, 6))  # Adjust figure size as needed
 for idx, (key, value) in enumerate(data_bias_relative.items()):
     value_padded = value.broadcast_like(data_to_bias[dsref[0]])
@@ -333,9 +334,9 @@ plt.grid(True)
 plt.tight_layout()
 plt.show()
 
-#### Relative bias calculation (at gridpoint level, not with the area means)
+#%%%% Relative bias and errors calculation (at gridpoint level, not with the area means)
 # First we need to transform EURADCLIM, RADKLIM, RADOLAN and HYRAS to regular grids
-# We use the DETECT 1 km grid for this
+# We use the DETECT 1 km grid for thi^s
 to_add = {} # dictionary to add regridded versions
 for dsname in ["EURADCLIM", "RADOLAN", "HYRAS", "RADKLIM"]:
     print("Regridding "+dsname+" ...")
@@ -440,10 +441,78 @@ for dsname in data_to_bias.keys():
                     
                     break
                     
-                        
-    
+#%%%% Relative bias and error plots
+#%%%%% Simple map plot
+to_plot = data_bias_relative_map
+dsname = "RADKLIM_GPCC-monthly-grid"
+title = "Relative BIAS"
+yearsel = "2016"
+rmcountries = rm.defined_regions.natural_earth_v5_1_2.countries_10
+mask = rmcountries[["Germany"]].mask(to_plot[dsname])
+f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
+plot = to_plot[dsname].loc[{"time":yearsel}].where(mask.notnull(), drop=True).plot(x="lon", y="lat", cmap="RdBu_r", vmin=-100, vmax=100, 
+                                         subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
+                                         cbar_kwargs={'label': "%", 'shrink':0.88})
+# ax1.set_extent([float(a) for a in lonlat_limits])
+plot.axes.coastlines(alpha=0.7)
+plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
+plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
+plt.title(title+" "+yearsel+"\n"+dsname+"\n Ref.: "+dsref[0])
 
 
+#%%%%% Box plots of BIAS and ERRORS
+# the box plots are made up of the yearly bias or error values
+to_plot = data_norm_mean_abs_error_gp # data_mean_abs_error_gp # data_bias_relative_gp
+title = "Normalized mean absolute error (yearly values)"
+ylabel = "%" # %
+dsignore = ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', ] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', ] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
+
+# Initialize a figure and axis
+plt.figure(figsize=(10, 6))
+ax = plt.subplot(111)
+
+# Create a list to hold the data arrays
+plotted_arrays = []
+plotted_arrays_lengths = []
+
+# Iterate over the datasets in the dictionary
+for key, value in to_plot.items():
+    if key not in dsignore:
+        # Plot a box plot for each dataset
+        plotted_arrays.append(value.values) # values of each box
+        plotted_arrays_lengths.append(len(value)) # number of values in each box
+        ax.boxplot(value.values, positions=[len(plotted_arrays)], widths=0.6, 
+                   patch_artist=True, boxprops=dict(facecolor='#b6d6e3'),
+                   medianprops=dict(color="#20788e", lw=2))
+
+# Set x-axis ticks and labels with dataset names
+ax.set_xticks(range(1, len(plotted_arrays) + 1))
+ax.set_xticklabels([dsname.split("_")[0] if "_" in dsname 
+                    else "-".join(dsname.split("-")[:-1]) if "EURreg" in dsname 
+                    else dsname 
+                    for dsname in 
+                    [ds for ds in to_plot.keys() if ds not in dsignore]
+                    ],
+                   rotation=45)
+
+# Make a secondary x axis to display the number of values in each box
+ax2 = ax.secondary_xaxis('top')
+ax2.xaxis.set_ticks_position("bottom")
+ax2.xaxis.set_label_position("top")
+
+ax2.set_xticks(range(1, len(plotted_arrays) + 1))
+ax2.set_xticklabels(plotted_arrays_lengths)
+ax2.set_xlabel('Number of years')
+
+# Set labels and title
+#ax.set_xlabel('')
+ax.set_ylabel(ylabel)
+ax.set_title(title)
+
+# Show the plot
+plt.grid(True)
+plt.tight_layout()
+plt.show()
 
 
 #%% REGRIDDING TESTS
