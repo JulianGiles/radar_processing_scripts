@@ -226,6 +226,8 @@ qvps_strat_fil = qvps_strat.where((qvps_strat[X_TH] > 0 )&
 
 try: 
     qvps_strat_fil = qvps_strat_fil.where(qvps_strat_fil["SNRHC"]>10)
+except KeyError:
+    qvps_strat_fil = qvps_strat_fil.where(qvps_strat_fil["SNRH"]>10)
 except:
     print("Could not filter out low SNR")
 
