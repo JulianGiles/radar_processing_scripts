@@ -359,7 +359,7 @@ def unfold_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, phidp_lim
                         
                         # compute also the mode (most frequent value) of the whole distribution
                         ds_phi_hist = histogram(ds_phi, bins=np.arange(-180, 184, 4), block_size=None) # block_size=None to avoid a bug
-                        ds_phi_mode = ds_phi_hist[ds_phi_hist.argmax()][X_PHI+"_bin"].values
+                        ds_phi_mode = ds_phi_hist[ds_phi_hist.argmax().compute()][X_PHI+"_bin"].values
                         
                         # if the mode is < phidp_min and the count of valid phidp values 
                         # between 0-90 degrees is greater than the count between 90-180
