@@ -2459,7 +2459,7 @@ def phidp_offset_detection(ds, phidp="PHIDP", rhohv="RHOHV", dbzh="DBZH", rhohvm
 
 def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
                      dbzhmin=0., min_height=0, window=7, fix_range=500., rng=None, rng_min=3000., azmedian=False,
-                     fillna=False, clean_invalid=False):
+                     fillna=False, clean_invalid=False, tolerance=(0,0)):
     r"""
     Calculate PHIDP offset and attach results to the input dataset.
 
@@ -2501,6 +2501,9 @@ def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rh
         If True, only outpot corrected phase for pixels with range beyond start_range + fix_range.
         start_range is the range of the first bin with the necessary consecutive valid bins from
         phase_offset(). Default is False (apply the offset to all ds[X_PHI]).
+    tolerance : tuple
+        If the phase offset lies between the values in tolerance, then no offset correction
+        is applied. clean_invalid and fillna are still applied.
 
     Returns
     ----------
@@ -2521,6 +2524,8 @@ def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rh
                                           min_periods=3)
 
     off = phidp_offset["PHIDP_OFFSET"]
+    tolerance_cond = ( off<=tolerance[0] ) + ( off>tolerance[1] )
+    off = off.where(tolerance_cond, other=0)
     start_range = phidp_offset["start_range"].fillna(0)
 
     # apply offset
@@ -2545,7 +2550,7 @@ def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rh
 
 def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
                      dbzhmin=0., min_height=0, window=7, window2 = 3, fix_range=500., rng=None, rng_min=3000., 
-                     fillna=False, clean_invalid=False, azmedian=False):
+                     fillna=False, clean_invalid=False, azmedian=False, tolerance=(0,0)):
     r"""
     Calculate basic PHIDP processing including thresholding, smoothing and 
     offset correction. Attach results to the input dataset.
@@ -2590,6 +2595,9 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
         If True, only outpot corrected phase for pixels with range beyond start_range + fix_range.
         start_range is the range of the first bin with the necessary consecutive valid bins from
         phase_offset(). Default is False (apply the offset to all ds[X_PHI]).
+    tolerance : tuple
+        If the phase offset lies between the values in tolerance, then no offset correction
+        is applied. clean_invalid and fillna are still applied.
 
     Returns
     ----------
@@ -2610,6 +2618,8 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
                                           min_periods=3)
 
     off = phidp_offset["PHIDP_OFFSET"]
+    tolerance_cond = ( off<=tolerance[0] ) + ( off>tolerance[1] )
+    off = off.where(tolerance_cond, other=0)
     start_range = phidp_offset["start_range"].fillna(0)
 
     # apply offset
