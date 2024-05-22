@@ -353,7 +353,7 @@ else:
 
 #### Compute QVP
 
-ds_qvp = utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5} )
+ds_qvp = utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10,"SNRHC":10, "SQIH":0.5} )
 
 # filter out values close to the ground
 ds_qvp = ds_qvp.where(ds_qvp["z"]>min_height)
