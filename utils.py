@@ -121,7 +121,7 @@ phase_proc_params["dmi"] = {
         "xwin0": 5,
         "ywin0": 5,
         "fix_range": 200,
-        "rng": None, # range for phidp offset correction, if None it is auto calculated based on window0
+        "rng": 1000, # range for phidp offset correction, if None it is auto calculated based on window0
         "azmedian": True, # reduce the phidp offset by applying median along the azimuths?
 }
 
@@ -2458,7 +2458,8 @@ def phidp_offset_detection(ds, phidp="PHIDP", rhohv="RHOHV", dbzh="DBZH", rhohvm
     return phidp_offset
 
 def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
-                     dbzhmin=0., min_height=0, window=7, fix_range=500., rng=None, rng_min=3000., azmedian=False):
+                     dbzhmin=0., min_height=0, window=7, fix_range=500., rng=None, rng_min=3000., azmedian=False,
+                     fillna=False, clean_invalid=False):
     r"""
     Calculate PHIDP offset and attach results to the input dataset.
 
@@ -2493,6 +2494,13 @@ def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rh
         used instead.
     azmedian : bool, int
         Passed to phidp_offset_detection. Default is False.
+    fillna : bool, float
+        If True, fill non valid values (na) in the end result with zero. If float,
+        fill the non valid values with fillna. Default is False (do not fill na).
+    clean_invalid : bool
+        If True, only outpot corrected phase for pixels with range beyond start_range + fix_range.
+        start_range is the range of the first bin with the necessary consecutive valid bins from
+        phase_offset(). Default is False (apply the offset to all ds[X_PHI]).
 
     Returns
     ----------
@@ -2516,9 +2524,18 @@ def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rh
     start_range = phidp_offset["start_range"].fillna(0)
 
     # apply offset
-    phi_fix = ds[X_PHI].copy()
-    off_fix = off.broadcast_like(phi_fix)
-    phi_fix = phi_fix.where(phi_fix["range"] >= start_range + fix_range).fillna(off_fix) - off
+    if clean_invalid:
+        phi_fix = ds[X_PHI].copy().where(ds[X_PHI]["range"] >= start_range + fix_range)
+    else:
+        phi_fix = ds[X_PHI].copy()
+
+    if fillna is True:
+        off_fix = off.broadcast_like(phi_fix)
+        phi_fix = phi_fix.fillna(off_fix) - off
+    elif fillna is False:    
+        phi_fix = phi_fix - off    
+    elif isinstance(fillna, int) or isinstance(fillna, float):
+        phi_fix = phi_fix.fillna(fillna) - off
 
     assign = {X_PHI+"_OFFSET": off.assign_attrs(ds[X_PHI].attrs),
               X_PHI+"_OC": phi_fix.assign_attrs(ds[X_PHI].attrs)}
@@ -2528,7 +2545,7 @@ def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rh
 
 def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
                      dbzhmin=0., min_height=0, window=7, window2 = 3, fix_range=500., rng=None, rng_min=3000., 
-                     azmedian=False):
+                     fillna=False, clean_invalid=False, azmedian=False):
     r"""
     Calculate basic PHIDP processing including thresholding, smoothing and 
     offset correction. Attach results to the input dataset.
@@ -2566,6 +2583,13 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
         used instead.
     azmedian : bool, int
         Passed to phidp_offset_detection. Default is False.
+    fillna : bool, float
+        If True, fill non valid values (na) in the end result with zero. If float,
+        fill the non valid values with fillna. Default is False (do not fill na).
+    clean_invalid : bool
+        If True, only outpot corrected phase for pixels with range beyond start_range + fix_range.
+        start_range is the range of the first bin with the necessary consecutive valid bins from
+        phase_offset(). Default is False (apply the offset to all ds[X_PHI]).
 
     Returns
     ----------
@@ -2589,9 +2613,18 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
     start_range = phidp_offset["start_range"].fillna(0)
 
     # apply offset
-    phi_fix = ds[X_PHI].copy()
-    off_fix = off.broadcast_like(phi_fix)
-    phi_fix = phi_fix.where(phi_fix["range"] >= start_range + fix_range).fillna(off_fix) - off
+    if clean_invalid:
+        phi_fix = ds[X_PHI].copy().where(ds[X_PHI]["range"] >= start_range + fix_range)
+    else:
+        phi_fix = ds[X_PHI].copy()
+
+    if fillna is True:
+        off_fix = off.broadcast_like(phi_fix)
+        phi_fix = phi_fix.fillna(off_fix) - off
+    elif fillna is False:    
+        phi_fix = phi_fix - off    
+    elif isinstance(fillna, int) or isinstance(fillna, float):
+        phi_fix = phi_fix.fillna(fillna) - off
 
     # smooth range dim
     phi_median = phi_fix.where((ds[X_RHO]>=rhohvmin) & (ds[X_DBZH]>=dbzhmin) & (ds["z"]>min_height) ).pipe(xr_rolling, window, window2=window2, method='median', min_periods=round(window/2), skipna=False)
