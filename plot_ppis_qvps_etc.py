@@ -66,7 +66,7 @@ warnings.filterwarnings('ignore')
 
 #%% Load and process data
 
-## Load the data into an xarray dataset (ds)
+#### Load the data into an xarray dataset (ds)
 
 abs_zdr_off_min_thresh = 0. # if ZDR_OC has more negative values than the original ZDR
 # and the absolute median offset is < abs_zdr_off_min_thresh, then undo the correction (set to 0 to avoid this step)
@@ -80,10 +80,10 @@ how_mix_zdr_offset = "count" # how to choose between the different offsets
 # in its calculation (there must be a variable ZDR_offset_datacount in the loaded offset).
 # "neg_overcorr" will choose the offset that generates less negative ZDR values.
 
-min_height_key = "default" # default = 200, 90grads = 600, ANK = 400, GZT = 300
+min_height_key = "ANK" # default = 200, 90grads = 600, ANK = 400, GZT = 300
 
 # ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/tur/vol5minng01/07/*allmoms*"
-ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-03-11/HTY/MON_YAZ_C/8.0/*allmoms*"
+ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-10-06/ANK/*/12.0/*allmoms*"
 # ff = '/automount/realpep/upload/jgiles/dmi/2016/2016-08/2016-08-05/AFY/VOL_B/7.0/VOL_B-allmoms-7.0-20162016-082016-08-05-AFY-h5netcdf.nc'
 # ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-06-02/pro/90gradstarng01/00/*allmoms*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-10/2021-10-30/ess/90gradstarng01/00/*"
@@ -111,19 +111,19 @@ elif "dmi" in ff:
     country="dmi"
     clowres0=False
 
-## Georeference 
+#### Georeference 
 
 ds = ds.pipe(wrl.georef.georeference) 
 
-## Define minimum height of usable data
+#### Define minimum height of usable data
 
 min_height = utils.min_hgts[min_height_key] + ds["altitude"].values
 
-## Get variable names
+#### Get variable names
 
 X_DBZH, X_PHI, X_RHO, X_ZDR, X_TH = utils.get_names(ds)
 
-## Load noise corrected RHOHV
+#### Load noise corrected RHOHV
 
 # Define the rhohv corrected paths and file names or take them from the default
 
@@ -152,7 +152,7 @@ except OSError:
 except ValueError:
     print("ValueError with corrected RHOHV: "+rhoncpath+"/"+rhoncfile)        
 
-## Load ZDR offset
+#### Load ZDR offset
 
 # We define a custom exception to stop the next nexted loops as soon as a file is loaded
 class FileFound(Exception):
@@ -308,7 +308,7 @@ try:
 except FileFound:
     pass
 
-## Phase processing
+#### Phase processing
 
 interpolation_method_ML = "linear" # for interpolating PHIDP in the ML
 
@@ -326,13 +326,15 @@ if X_PHI in ds.data_vars:
     if "UPHIDP" not in X_PHI:
         # calculate phidp offset
         ds = utils.phidp_offset_correction(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
-                             dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range, azmedian=azmedian)
+                             dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
+                             rng_min=1000, rng=rng, azmedian=azmedian, tolerance=(0,5)) # shorter rng, rng_min for finer turkish data
     
         phi_masked = ds[X_PHI+"_OC"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["z"]>min_height) )   
 
     else:
         ds = utils.phidp_processing(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
-                             dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range, rng=rng, azmedian=azmedian)
+                             dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
+                             rng=rng, azmedian=azmedian, tolerance=(0,5))
     
         phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["z"]>min_height) )
 
@@ -349,14 +351,14 @@ if X_PHI in ds.data_vars:
 else:
     print(X_PHI+" not found in the data, skipping ML detection")
 
-## Compute QVP
+#### Compute QVP
 
 ds_qvp = utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5} )
 
 # filter out values close to the ground
 ds_qvp = ds_qvp.where(ds_qvp["z"]>min_height)
 
-## Detect melting layer
+#### Detect melting layer
 
 if X_PHI in ds.data_vars:
     # Define thresholds
@@ -374,12 +376,12 @@ if X_PHI in ds.data_vars:
     ds = ds.assign_coords({'height_ml_new_gia': ds_qvp.height_ml_new_gia})
     ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp.height_ml_bottom_new_gia})
 
-## Attach ERA5 temperature profile
+#### Attach ERA5 temperature profile
 loc = utils.find_loc(utils.locs, ff)
 ds_qvp = utils.attach_ERA5_TEMP(ds_qvp, path=loc.join(utils.era5_dir.split("loc")))
 ds = utils.attach_ERA5_TEMP(ds, path=loc.join(utils.era5_dir.split("loc")))
 
-## Discard possible erroneous ML values
+#### Discard possible erroneous ML values
 if "height_ml_new_gia" in ds_qvp:
     ## First, filter out ML heights that are too high (above selected isotherm)
     isotherm = -1 # isotherm for the upper limit of possible ML values
@@ -398,7 +400,7 @@ if "height_ml_new_gia" in ds_qvp:
     ds = ds.assign_coords({'height_ml_new_gia': ds_qvp.height_ml_new_gia.where(cond_top_over_bottom)})
     ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp.height_ml_bottom_new_gia.where(cond_top_over_bottom)})
 
-## Attenuation correction (NOT PROVED THAT IT WORKS NICELY ABOVE THE ML)
+#### Attenuation correction (NOT PROVED THAT IT WORKS NICELY ABOVE THE ML)
 if X_PHI in ds.data_vars:    
     ds = utils.attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.16, betaml = 0.022,
                                        dbzh="DBZH", zdr=["ZDR_OC", "ZDR"], phidp=["UPHIDP_OC", "PHIDP_OC"],
@@ -408,13 +410,13 @@ if X_PHI in ds.data_vars:
         
     ds_qvp = ds_qvp.assign( utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5})[[vv for vv in ds if "_AC" in vv]] )
     
-## Fix KDP in the ML using PHIDP:
+#### Fix KDP in the ML using PHIDP:
 if X_PHI in ds.data_vars:    
     ds = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen=winlen0, min_periods=winlen0/2)
 
     ds_qvp = ds_qvp.assign({"KDP_ML_corrected": utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5})["KDP_ML_corrected"]})
         
-## Classification of stratiform events based on entropy
+#### Classification of stratiform events based on entropy
 if X_PHI in ds.data_vars:    
     
     # calculate linear values for ZH and ZDR
@@ -506,7 +508,7 @@ plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only
 
 #%% Plot simple PPI 
 
-tsel = "2015-03-11T11:00"
+tsel = "2015-10-06T16:00"
 if tsel == "":
     datasel = ds
 else:
@@ -519,7 +521,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "UPHIDP"
+mom = "PHIDP_OC"
 xylims = 40000 # xlim and ylim (from -xylims to xylims)
 
 ticks = radarmet.visdict14[mom]["ticks"]
@@ -546,9 +548,9 @@ plt.title(mom+". "+str(datasel.time.values).split(".")[0])
 
 #%% Plot simple QVP 
 
-max_height = 16000 # max height for the qvp plots
+max_height = 12000 # max height for the qvp plots
 
-tsel = ""# slice("2017-08-31T19","2017-08-31T22")
+tsel = "2015-10-06"# slice("2017-08-31T19","2017-08-31T22")
 if tsel == "":
     datasel = ds_qvp.loc[{"z": slice(0, max_height)}]
 else:
@@ -559,7 +561,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "ZDR_OC"
+mom = "RHOHV"
 
 ticks = radarmet.visdict14[mom]["ticks"]
 cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
@@ -578,14 +580,14 @@ plt.close()
 
 #%% Plot QVP as lines 
 
-tsel = slice("2017-08-31T20","2017-08-31T21")
+tsel = slice("2015-10-06T16","2015-10-06T18")
 if tsel == "":
     datasel = ds_qvp
 else:
     datasel = ds_qvp.loc[{"time": tsel}]
 
 
-mom = "UPHIDP_OC"
+mom = "PHIDP_OC"
 
 cmap0 = mpl.colormaps.get_cmap("Blues")
 cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(datasel.time))), N=len(datasel.time)+1)
@@ -603,7 +605,7 @@ plt.close()
 #%% Load QVPs
 # Load only events with ML detected (pre-condition for stratiform)
 ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2016/*/*/tur/vol5minng01/07/ML_detected.txt"
-ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2016/*/*/HTY/*/*/ML_detected.txt"
+ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2015/*/*/ANK/*/12.0/ML_detected.txt"
 ff_ML_glob = glob.glob(ff_ML)
 
 if "dmi" in ff_ML:
@@ -667,7 +669,7 @@ ds_qvps = ds_qvps.isel(time=[date.values in  allcond_daily.time.dt.date for date
 
 hv.extension("matplotlib")
 
-max_height = 16000 # max height for the qvp plots (necessary because of random high points and because of dropna in the z dim)
+max_height = 12000 # max height for the qvp plots (necessary because of random high points and because of dropna in the z dim)
 
 var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR', 
                # 'TH','UPHIDP',  # not so relevant
@@ -724,8 +726,12 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
 
         subtitle = var
         if var == "ZDR_OC":
-            # for the plot of ZDR_OC, put the value of the offset in the subtitle
-            subtitle = var+" (Offset: "+str(np.round((selected_data["ZDR"]-selected_data["ZDR_OC"]).compute().median().values,3))+")"
+            # for the plot of ZDR_OC, put the value of the offset in the subtitle if it is daily
+            if (selected_data["ZDR"]-selected_data["ZDR_OC"]).compute().median("z").std() < 0.1:
+                # if the std of ZDR - ZDR_OC is < 0.1 we assume it is a daily offset
+                subtitle = var+" (Offset: "+str(np.round((selected_data["ZDR"]-selected_data["ZDR_OC"]).compute().median().values,3))+")"                
+            else:
+                subtitle = var+" (Offset: variable per timestep)"
 
         quadmesh = selected_data[var].hvplot.quadmesh(
             x='time', y='z', title=subtitle,
