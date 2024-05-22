@@ -157,9 +157,9 @@ for ff in files:
     if skipfile:
         continue
     
-    # check if the QVP file already exists and it is larger than 100 KiB before starting
+    # check for the file DONE.txt in the savepath before starting
     savepath = make_savedir(ff, "")
-    if os.path.exists(savepath) and (os.stat(savepath).st_size >> 10) > 100 and not overwrite:
+    if os.path.exists(os.path.dirname(savepath)+"/DONE.txt") and not overwrite:
         continue
 
     print("processing "+ff)
