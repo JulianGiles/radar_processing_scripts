@@ -395,14 +395,16 @@ for ff in files:
         if "UPHIDP" not in X_PHI:
             # calculate phidp offset
             ds = utils.phidp_offset_correction(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
-                                 dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range, azmedian=azmedian)
+                                 dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range, 
+                                 rng_min=1000, rng=rng, azmedian=azmedian, tolerance=(0,5)) # shorter rng, rng_min for finer turkish data
         
             phi_masked = ds[X_PHI+"_OC"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["z"]>min_height) )   
         
         else:
             # process phidp (offset and smoothing)
             ds = utils.phidp_processing(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
-                                 dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range, rng=rng, azmedian=azmedian)
+                                 dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range, 
+                                 rng=rng, azmedian=azmedian, tolerance=(0,5))
         
             phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["z"]>min_height) )   
 
@@ -413,7 +415,7 @@ for ff in files:
         
         # derive KDP from PHIDP (Vulpiani)
         
-        ds = utils.kdp_phidp_vulpiani(ds, winlen0, X_PHI+"_OC_MASKED", min_periods=winlen0/2)    
+        ds = utils.kdp_phidp_vulpiani(ds, winlen0, X_PHI+"_OC_MASKED", min_periods=winlen0/2) 
         
         X_PHI = X_PHI+"_OC" # continue using offset corrected PHI
                 
@@ -423,7 +425,7 @@ for ff in files:
 #%% Compute QVP
     ## Only data with a cross-correlation coefficient ρHV above 0.7 are used to calculate their azimuthal median at all ranges (from Trömel et al 2019).
     ## Also added further filtering (TH>0, ZDR>-1)
-    ds_qvp_ra = utils.compute_qvp(ds, min_thresh={X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5} )
+    ds_qvp_ra = utils.compute_qvp(ds, min_thresh={X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SNRHC":10, "SQIH":0.5} )
     
     # filter out values close to the ground
     ds_qvp_ra2 = ds_qvp_ra.where(ds_qvp_ra["z"]>min_height)
@@ -527,7 +529,9 @@ for ff in files:
     except:
         pass
 
-
+#%% Save a text file to register that the work finished correctly
+    with open( os.path.dirname(savepath)+'/DONE.txt', 'w') as f:
+        f.write('')
 
 #%% print how much time did it take
 total_time = time.time() - start_time
