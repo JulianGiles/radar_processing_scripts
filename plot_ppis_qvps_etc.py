@@ -521,8 +521,8 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "PHIDP_OC"
-xylims = 40000 # xlim and ylim (from -xylims to xylims)
+mom = "DBZH"
+xylims = 20000 # xlim and ylim (from -xylims to xylims)
 
 ticks = radarmet.visdict14[mom]["ticks"]
 cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
@@ -531,10 +531,13 @@ norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
 cmap = "miub2"
 
 plot_over_map = False
+plot_ML = True
+
+crs=ccrs.Mercator(central_longitude=float(datasel["longitude"]))
 
 if not plot_over_map:
     # plot simple PPI
-    datasel[mom].wrl.plot(x="x", y="y", cmap=cmap, norm=norm, xlim=(-xylims,xylims), ylim=(-xylims,xylims))
+    datasel[mom].wrl.vis.plot( cmap=cmap, norm=norm, xlim=(-xylims,xylims), ylim=(-xylims,xylims))
 elif plot_over_map:
     # plot PPI with map coordinates
     fig = plt.figure(figsize=(10, 10))
@@ -543,6 +546,14 @@ elif plot_over_map:
     ax.add_feature(cartopy.feature.COASTLINE, linestyle='-', linewidth=1, alpha=0.4)
     ax.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4)
     ax.gridlines(draw_labels=True)
+
+if plot_ML:
+    cax = plt.gca()
+    datasel["z"].wrl.vis.plot(ax=cax,
+                          levels=[datasel["height_ml_bottom_new_gia"], datasel["height_ml_new_gia"]], 
+                          cmap="black",
+                          func="contour")
+    # datasel["z"].wrl.vis.plot(fig=fig, cmap=cmap, norm=norm, crs=ccrs.Mercator(central_longitude=float(datasel["longitude"])))
 
 plt.title(mom+". "+str(datasel.time.values).split(".")[0])
 
@@ -561,7 +572,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "RHOHV"
+mom = "PHIDP_OC"
 
 ticks = radarmet.visdict14[mom]["ticks"]
 cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
@@ -595,7 +606,7 @@ cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(datasel.time))), N=
 from cycler import cycler
 rc_cycle = {"axes.prop_cycle": cycler(color=cmap.colors)}
 with plt.rc_context(rc_cycle):
-    datasel[mom].plot.line(x="z", hue="time", add_legend=False)
+    datasel[mom].plot.line(x="z", hue="time", add_legend=False, xlim=(2000, 8000), ylim=(-2, 14))
 
 plt.title(mom)
 plt.show()
