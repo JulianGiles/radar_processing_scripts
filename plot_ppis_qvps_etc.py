@@ -616,7 +616,7 @@ plt.close()
 #%% Load QVPs
 # Load only events with ML detected (pre-condition for stratiform)
 ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2016/*/*/tur/vol5minng01/07/ML_detected.txt"
-ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2015/*/*/ANK/*/12.0/ML_detected.txt"
+ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps_new/qvps/2015/*/*/ANK/*/12.0/ML_detected.txt"
 ff_ML_glob = glob.glob(ff_ML)
 
 if "dmi" in ff_ML:
@@ -743,6 +743,8 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
                 subtitle = var+" (Offset: "+str(np.round((selected_data["ZDR"]-selected_data["ZDR_OC"]).compute().median().values,3))+")"                
             else:
                 subtitle = var+" (Offset: variable per timestep)"
+        if var == "DBZH": # add elevation angle to DBZH panel
+            subtitle = var+" (Elevation: "+str(selected_data['sweep_fixed_angle'].mean().compute().values)+"°)"
 
         quadmesh = selected_data[var].hvplot.quadmesh(
             x='time', y='z', title=subtitle,
