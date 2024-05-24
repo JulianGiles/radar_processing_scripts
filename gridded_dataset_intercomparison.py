@@ -182,7 +182,7 @@ data_yearlysum = data_to_avg
 
 #%%%% Simple map plot
 rmcountries = rm.defined_regions.natural_earth_v5_1_2.countries_10
-mask = rmcountries[["Germany"]].mask(data_yearlysum["EURADCLIM"])
+mask = rmcountries[[region]].mask(data_yearlysum["EURADCLIM"])
 f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
 plot = data_yearlysum["EURADCLIM"]["Precip"][0].where(mask.notnull(), drop=True).plot(x="lon", y="lat", cmap="Blues", vmin=0, vmax=1000, 
                                          subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
@@ -370,8 +370,10 @@ for dsname in ["EURADCLIM", "RADOLAN", "HYRAS", "RADKLIM"]:
 data_yearlysum = {**data_yearlysum, **to_add}
     
 # Compute the biases
-dsignore = ["EURADCLIM", "RADOLAN", "HYRAS", "RADKLIM", 'TSMP-old', 'TSMP-DETECT-Baseline'] # datasets to ignore 
+dsignore = ["EURADCLIM", "RADOLAN", "HYRAS", "RADKLIM", 'TSMP-old', 'TSMP-DETECT-Baseline'] # datasets to ignore (because we want the regridded version)
 data_to_bias = copy.deepcopy(data_yearlysum)
+
+to_add = {} # dictionary to add regridded versions
 
 data_bias_map = {} # maps of yearly biases
 data_bias_relative_map = {} # maps of yearly relative biases
@@ -414,6 +416,7 @@ for dsname in data_to_bias.keys():
                         regridder = xe.Regridder(data_to_bias[dsname], data_to_bias[dsref[0]], "conservative")
 
                         data0 = regridder(data_to_bias[dsname][vv])
+                        to_add[dsname+"_"+dsref[0]+"-grid"] = regridder(data_to_bias[dsname][vv])
                     else:
                         data0 = data_to_bias[dsname][vv]
 
@@ -422,25 +425,31 @@ for dsname in data_to_bias.keys():
                     
                     mask = rmcountries[[region]].mask(data_to_bias[dsref[0]])
 
-                    data_bias_map[dsname] = ( data0.where(mask.notnull()) - dataref.where(mask.notnull()) ).compute()
-                    data_bias_relative_map[dsname] = ( data_bias_map[dsname] / dataref.where(mask.notnull()) ).compute() *100
+                    data_bias_map[dsname] = ( data0 - dataref ).compute()
+                    data_bias_relative_map[dsname] = ( data_bias_map[dsname] / dataref ).compute() *100
+                    data_bias_map_masked = data_bias_map[dsname].where(mask.notnull())
+                    data_bias_relative_map_masked = data_bias_relative_map[dsname].where(mask.notnull())
                     data_abs_error_map[dsname] = abs(data_bias_map[dsname])
+                    data_abs_error_map_masked = data_abs_error_map[dsname].where(mask.notnull())
                     
-                    data_bias_relative_gp[dsname] = utils.calc_spatial_integral(data_bias_map[dsname],
+                    data_bias_relative_gp[dsname] = utils.calc_spatial_integral(data_bias_map_masked,
                                                 lon_name="lon", lat_name="lat").compute() / \
                                                     utils.calc_spatial_integral(dataref.where(mask.notnull()),
                                                 lon_name="lon", lat_name="lat").compute() *100
                     
-                    data_norm_mean_abs_error_gp[dsname] = utils.calc_spatial_integral(data_abs_error_map[dsname],
+                    data_norm_mean_abs_error_gp[dsname] = utils.calc_spatial_integral(data_abs_error_map_masked,
                                                 lon_name="lon", lat_name="lat").compute() / \
                                                     utils.calc_spatial_integral(dataref.where(mask.notnull()),
                                                 lon_name="lon", lat_name="lat").compute() *100
 
-                    data_mean_abs_error_gp[dsname] = utils.calc_spatial_mean(data_abs_error_map[dsname],
+                    data_mean_abs_error_gp[dsname] = utils.calc_spatial_mean(data_abs_error_map_masked,
                                                 lon_name="lon", lat_name="lat").compute()
                     
                     break
-                    
+
+# add the regridded datasets to the original dictionary
+data_yearlysum = {**data_yearlysum, **to_add}
+
 #%%%% Relative bias and error plots
 #%%%%% Simple map plot
 to_plot = data_bias_relative_map
@@ -448,7 +457,7 @@ dsname = "RADKLIM_GPCC-monthly-grid"
 title = "Relative BIAS"
 yearsel = "2016"
 rmcountries = rm.defined_regions.natural_earth_v5_1_2.countries_10
-mask = rmcountries[["Germany"]].mask(to_plot[dsname])
+mask = rmcountries[[region]].mask(to_plot[dsname])
 f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
 plot = to_plot[dsname].loc[{"time":yearsel}].where(mask.notnull(), drop=True).plot(x="lon", y="lat", cmap="RdBu_r", vmin=-100, vmax=100, 
                                          subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
@@ -457,15 +466,15 @@ plot = to_plot[dsname].loc[{"time":yearsel}].where(mask.notnull(), drop=True).pl
 plot.axes.coastlines(alpha=0.7)
 plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
 plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
-plt.title(title+" "+yearsel+"\n"+dsname+"\n Ref.: "+dsref[0])
+plt.title(title+" "+yearsel+"\n"+dsname+"\n "+region+" Ref.: "+dsref[0])
 
 
 #%%%%% Box plots of BIAS and ERRORS
 # the box plots are made up of the yearly bias or error values
-to_plot = data_norm_mean_abs_error_gp # data_mean_abs_error_gp # data_bias_relative_gp
-title = "Normalized mean absolute error (yearly values)"
-ylabel = "%" # %
-dsignore = ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', ] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', ] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
+to_plot = data_mean_abs_error_gp # data_mean_abs_error_gp # data_bias_relative_gp
+title = "Mean absolute error (yearly values) "+region+". Ref.: "+dsref[0]
+ylabel = "mm" # %
+dsignore = ['CMORPH-daily' ] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', ] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
 
 # Initialize a figure and axis
 plt.figure(figsize=(10, 6))
@@ -493,7 +502,12 @@ ax.set_xticklabels([dsname.split("_")[0] if "_" in dsname
                     for dsname in 
                     [ds for ds in to_plot.keys() if ds not in dsignore]
                     ],
-                   rotation=45)
+                   rotation=45, fontsize=15)
+ax.xaxis.label.set_size(15)     # change xlabel size
+ax.yaxis.label.set_size(15)     # change ylabel size
+
+ax.tick_params(axis='x', labelsize=15) # change xtick label size
+ax.tick_params(axis='y', labelsize=15) # change xtick label size
 
 # Make a secondary x axis to display the number of values in each box
 ax2 = ax.secondary_xaxis('top')
@@ -502,18 +516,276 @@ ax2.xaxis.set_label_position("top")
 
 ax2.set_xticks(range(1, len(plotted_arrays) + 1))
 ax2.set_xticklabels(plotted_arrays_lengths)
-ax2.set_xlabel('Number of years')
+ax2.set_xlabel('Number of years', fontsize= 15)
 
 # Set labels and title
 #ax.set_xlabel('')
 ax.set_ylabel(ylabel)
-ax.set_title(title)
+ax.set_title(title, fontsize=20)
+
+# plot a reference line at zero
+plt.hlines(y=0, xmin=0, xmax=len(plotted_arrays)+1, colors='black', lw=2, zorder=0)
+plt.xlim(0.5, len(plotted_arrays) + 0.5)
 
 # Show the plot
 plt.grid(True)
 plt.tight_layout()
 plt.show()
 
+#%%%%% Taylor diagram
+# The Taylor diagram can be done by computing the stats over all gridpoints and all timesteps (spatiotemporal)
+# or only doing the stats over space or time separately (for these, either temporal or spatial averages must be done first)
+    
+#%%%%%% Compute stats
+import skill_metrics as sm
+# https://github.com/PeterRochford/SkillMetrics/blob/master/Examples/taylor10.py#L123
+# I cannot use skill_metrics to calculate the stats because they do not filter out 
+# nan values (because of the masks) so the result is erroneous. They also do not handle weighted arrays.
+
+mode = "" # if "spatial" then average in time and comput the diagram in space. Viceversa for "temporal"
+dsref = ["GPCC-monthly"]
+data_to_stat = data_yearlysum
+
+# choose common period (only datasets that cover the whole period are included)
+tslice = slice("2016","2020") # this covers all
+tslice = slice("2013","2020") # this excludes GPROF
+tslice = slice("2006","2020") # this excludes GPROF and EURADCLIM
+tslice = slice("2001","2020") # this excludes GPROF, EURADCLIM and RADOLAN
+
+ccoef = dict()
+crmsd = dict()
+sdev = dict()
+
+for vv in var_names: # get the name of the desired variable in the reference dataset
+    if vv in data_to_stat[dsref[0]]:
+        ref_var_name = vv
+        break
+
+# Get reference dataset
+ds_ref = data_to_stat[dsref[0]][ref_var_name]
+
+# Get area weights
+try:
+    weights = xr.DataArray(utils.grid_cell_areas(ds_ref.lon.values, ds_ref.lat.values),
+                           coords=ds_ref.to_dataset()[["lat","lon"]].coords)
+except AttributeError:
+    weights = xr.DataArray(utils.grid_cell_areas(ds_ref.lon.values, ds_ref.lat.values),
+                           coords=ds_ref.to_dataset()[["latitude","longitude"]].coords)
+
+# Get mask
+rmcountries = rm.defined_regions.natural_earth_v5_1_2.countries_10
+mask_ref = rmcountries[[region]].mask(ds_ref)
+ds_ref = ds_ref.where(mask_ref.notnull())#.mean(tuple([cn for cn in ds_ref.coords if cn!="time"]))
+
+# Normalize weights in the mask
+weights = weights.where(mask_ref.notnull(), other=0.)/weights.where(mask_ref.notnull(), other=0.).sum()
+
+for dsname in data_to_stat.keys(): # compute the stats
+    if dsref[0]+"-grid" in dsname or dsname==dsref[0]:
+        # get dataset
+        if type(data_to_stat[dsname]) is xr.DataArray:
+            ds_n = data_to_stat[dsname].where(mask_ref.notnull())
+        else:
+            for vv in var_names:
+                if vv in data_to_stat[dsname]:
+                    ds_n = data_to_stat[dsname][vv].where(mask_ref.notnull())
+                    break
+
+        # Subset period
+        tslice_array = ds_ref.sel(time=tslice).time
+
+        ds_ref_tsel = ds_ref.sel(time=tslice_array)
+        try:
+            ds_n_tsel = ds_n.sel(time=tslice_array)
+        except KeyError:
+            print(dsname+" ignored because it does not cover the selected time period")
+            continue
+        
+        # Reduce in case mode is "spatial" or "temporal"
+        if mode=="spatial":
+            ds_ref_tsel = ds_ref_tsel.mean("time")
+            ds_n_tsel = ds_n_tsel.mean("time")
+            mode_name="Spatial"
+        elif mode=="temporal":
+            ds_ref_tsel = ds_ref_tsel.weighted(weights).mean([cn for cn in ds_ref_tsel.dims if cn!="time"])
+            ds_n_tsel = ds_n_tsel.weighted(weights).mean([cn for cn in ds_n_tsel.dims if cn!="time"])
+            mode_name="Temporal"
+        else:
+            mode_name="Spatiotemporal"
+        
+        if mode=="temporal":
+            # Get Correlation Coefficient (ccoef)
+                
+            ccoef[dsname] = xr.corr(ds_n_tsel, ds_ref_tsel).compute()
+            
+            # Get Centered Root-Mean-Square-Deviation (CRMSD)
+    
+            crmsd_0 = ( (ds_n_tsel - ds_n_tsel.mean() ) - 
+                        (ds_ref_tsel - ds_ref_tsel.mean()) )**2
+            crmsd_1 = crmsd_0.sum()/xr.ones_like(crmsd_0).where(crmsd_0.notnull()).sum()
+            crmsd[dsname] = np.sqrt(crmsd_1)
+                            
+            # Get Standard Deviation (SDEV)
+            
+            sdev[dsname] = ds_n_tsel.std()
+        else:
+            # Get Correlation Coefficient (ccoef)
+    
+            # could work like this but I have to update xarray to include the weights
+            # ccoef[dsname] = xr.corr(ds_n_tsel, ds_ref_tsel, weigths=weights )
+            
+            ccoef[dsname] = xr.corr(ds_n_tsel*weights, ds_ref_tsel*weights).compute()
+            
+            # Get Centered Root-Mean-Square-Deviation (CRMSD)
+    
+            crmsd_0 = ( (ds_n_tsel - ds_n_tsel.mean() ) - 
+                        (ds_ref_tsel - ds_ref_tsel.mean()) )**2
+            crmsd_1 = crmsd_0.weighted(weights).sum()/xr.ones_like(crmsd_0).where(crmsd_0.notnull()).sum()
+            crmsd[dsname] = np.sqrt(crmsd_1)
+                            
+            # Get Standard Deviation (SDEV)
+            
+            sdev[dsname] = ds_n_tsel.weighted(weights).std()
+
+#%%%%%% Plot the diagram
+'''
+Specify individual marker label (key), label color, symbol, size, symbol face color, 
+symbol edge color
+'''
+# Define colors for each group
+color_gauges = "k"
+color_radar = "r"
+color_satellite = "g"
+color_reanalysis = "m"
+color_model = "c"
+
+# Define marker size
+markersize = 7
+
+MARKERS = {
+    "GPCC-monthly": {
+        "labelColor": "k",
+        "symbol": "+",
+        "size": markersize,
+        "faceColor": color_gauges,
+        "edgeColor": color_gauges,
+    },
+    "HYRAS": {
+        "labelColor": "k",
+        "symbol": "o",
+        "size": markersize,
+        "faceColor": color_gauges,
+        "edgeColor": color_gauges,
+    },
+    "EURADCLIM": {
+        "labelColor": "k",
+        "symbol": "^",
+        "size": markersize,
+        "faceColor": color_radar,
+        "edgeColor": color_radar,
+    },
+    "RADOLAN": {
+        "labelColor": "k",
+        "symbol": "s",
+        "size": markersize,
+        "faceColor": color_radar,
+        "edgeColor": color_radar,
+    },
+    "RADKLIM": {
+        "labelColor": "k",
+        "symbol": "v",
+        "size": markersize,
+        "faceColor": color_radar,
+        "edgeColor": color_radar,
+    },
+    "IMERG-V07B-monthly": {
+        "labelColor": "k",
+        "symbol": "d",
+        "size": markersize,
+        "faceColor": color_satellite,
+        "edgeColor": color_satellite,
+    },
+    "IMERG-V06B-monthly": {
+        "labelColor": "k",
+        "symbol": "<",
+        "size": markersize,
+        "faceColor": color_satellite,
+        "edgeColor": color_satellite,
+    },
+    "CMORPH-daily": {
+        "labelColor": "k",
+        "symbol": ">",
+        "size": markersize,
+        "faceColor": color_satellite,
+        "edgeColor": color_satellite,
+    },
+    "GPROF": {
+        "labelColor": "k",
+        "symbol": "p",
+        "size": markersize,
+        "faceColor": color_satellite,
+        "edgeColor": color_satellite,
+    },
+    "ERA5-monthly": {
+        "labelColor": "k",
+        "symbol": "*",
+        "size": markersize,
+        "faceColor": color_reanalysis,
+        "edgeColor": color_reanalysis,
+    },
+    "TSMP-old-EURregLonLat01deg": {
+        "labelColor": "k",
+        "symbol": "h",
+        "size": markersize,
+        "faceColor": color_model,
+        "edgeColor": color_model,
+    },
+    "TSMP-DETECT-Baseline-EURregLonLat01deg": {
+        "labelColor": "k",
+        "symbol": "8",
+        "size": markersize,
+        "faceColor": color_model,
+        "edgeColor": color_model,
+    },
+}
+
+
+# Set the stats in arrays like the plotting function wants them (the reference first)
+
+lccoef = ccoef[dsref[0]].round(3).values # we round the reference so it does not go over 1
+lcrmsd = crmsd[dsref[0]].values
+lsdev = sdev[dsref[0]].values
+labels = [dsref[0]]
+
+for dsname in ccoef.keys():
+    if dsref[0]+"-grid" in dsname:
+        lccoef = np.append(lccoef, ccoef[dsname].values)
+        lcrmsd = np.append(lcrmsd, crmsd[dsname].values)
+        lsdev = np.append(lsdev, sdev[dsname].values)
+        labels.append(dsname.split("_")[0])
+
+# Must set figure size here to prevent legend from being cut off
+plt.figure(num=1, figsize=(8, 6))
+
+sm.taylor_diagram(lsdev,lcrmsd,lccoef, markerLabel = labels, #markerLabelColor = 'r', 
+                          markerLegend = 'on', markerColor = 'r',
+                           colCOR = "black", markers = {k: MARKERS[k] for k in labels[1:]}, 
+                          styleOBS = '-', colOBS = 'r', markerobs = 'o', 
+                          markerSize = 7, #tickRMS = [0.0, 1.0, 2.0, 3.0],
+                          tickRMSangle = 115, showlabelsRMS = 'on',
+                          titleRMS = 'on', titleOBS = 'Ref: '+labels[0],
+                            # checkstats = "on"
+                          )
+
+ax = plt.gca()
+ax.set_title(mode_name+" Taylor Diagram over "+region+"\n"+
+             "Area-weighted yearly gridded precipitation \n"+
+             str(tslice_array[0].dt.year.values)+"-"+str(tslice_array[-1].dt.year.values),
+             x=1.2, y=1,)
+
+# To check that the equation that defines the diagram is closed (negligible residue)
+sm.check_taylor_stats(lsdev, lcrmsd, lccoef, threshold=1000000000000000000000)
+# 24.05.24: the check does not close but the weighted calculations seem to be fine
 
 #%% REGRIDDING TESTS
 #%%% Simple map plot TSMP original
