@@ -918,7 +918,7 @@ def load_corrected_RHOHV(ds, rho_nc_path, rho_nc_name="RHOHV_NC"):
     return ds
 
 #### QVPs
-def compute_qvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1} ):
+def compute_qvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1} , output_count=False):
     """
     Computes QVP by doing the azimuthal median from the values of an 
     xarray Dataset, thresholded by min_thresh.
@@ -930,11 +930,15 @@ def compute_qvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1} ):
     min_thresh : dict
             dictionary where the keys are variable names and the values are
             the minimum values of each variable, for thresholding.
-
+    output_count : bool
+            If True, output a second dataset with the counts of valid values that
+            went into the QVP calculation.
     Return
     ------
     ds_qvp : xarray.Dataset
         Dataset with the thresholded data reduced to a QVP with dim z (and time if available)
+    ds_qvp_count : xarray.Dataset, optional
+        Dataset with the counts of valid values that went into the QVP calculation.
     """
     # Georeference if not
     if "z" not in ds:
@@ -960,8 +964,71 @@ def compute_qvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1} ):
     
     ds_qvp = ds_qvp.swap_dims({"range":"z"}) # swap range dimension for height
     
-    return ds_qvp
+    if output_count:
+        ds_qvp_count = ds.where(combined_mask).count("azimuth", keep_attrs=True)
+    
+        # assign coord z
+        ds_qvp_count = ds_qvp_count.assign_coords({"z": ds["z"].median("azimuth", keep_attrs=True)})
+        
+        ds_qvp_count = ds_qvp_count.swap_dims({"range":"z"}) # swap range dimension for height
 
+        return ds_qvp, ds_qvp_count
+    
+    else:
+        return ds_qvp
+
+def compute_rdqvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1}, max_range=50000. ):
+    """
+    Computes range-defined QVP by doing the azimuthal median from the values of an 
+    xarray Dataset with several elevations (radar volume), thresholded by min_thresh.
+    This simple version only considers data inside the defined range and does not
+    use any weighting outside the range, it just ignores it.
+
+    Parameter
+    ---------
+    ds : xarray.Dataset 
+            Dataset with several elevations (radar volume)
+    min_thresh : dict
+            dictionary where the keys are variable names and the values are
+            the minimum values of each variable, for thresholding.
+    max_range : float
+            Maximum ground range within wich to consider values. This is the 
+            ground distance to the radar and not the range along the ray.
+
+    Return
+    ------
+    ds_qvp : xarray.Dataset
+        Dataset with the thresholded data reduced to a QVP with dim z (and time if available)
+    """
+    qvps=[]
+    qvps_count=[]
+    qvps_highres=[]
+    qvps_highres_count=[]
+    ds_close = ds.where(ds["gr"]<max_range)
+    
+    # call compute_qvp for each elevation
+    for sfa in ds_close["sweep_fixed_angle"]:
+        qvp, count = compute_qvp(ds_close.sel(sweep_fixed_angle=sfa), min_thresh=min_thresh, output_count=True)
+        qvps.append(qvp.copy(deep=True))
+        qvps_count.append(count.fillna(0).copy(deep=True))
+        
+    # interpolate to higher res z
+    new_z = np.linspace(qvps[0].z[0].values, qvps[-1].z[-1].values, round((qvps[-1].z[-1]-qvps[0].z[0]).values/2) )
+    
+    for qvp in qvps:
+        qvps_highres.append( qvp.interp(z=new_z) )
+
+    for count in qvps_count:
+        qvps_highres_count.append( count.interp(z=new_z) )
+    
+    # merge qvps into one dataset
+    qvps_highres = xr.concat(qvps_highres, dim="sweep_fixed_angle")
+    qvps_highres_count = xr.concat(qvps_highres_count, dim="sweep_fixed_angle")
+    
+    # weighted average of all elevs
+    ds_qvp = qvps_highres.weighted(qvps_highres_count["DBZH"]).mean("sweep_fixed_angle")
+    
+    return ds_qvp
 
 #### Entropy calculation
 def Entropy_timesteps_over_azimuth_different_vars_schneller(ds, zhlin="zhlin", zdrlin="zdrlin", rhohvnc="RHOHV_NC", kdp="KDP_ML_corrected"):
