@@ -325,6 +325,39 @@ def align(ds):
     ds["time"] = np.unique(ds["time"]) # in case there are duplicate times
     return ds.set_coords(["sweep_mode", "sweep_number", "prt_mode", "follow_mode", "sweep_fixed_angle"])
 
+def check_time_dimension_alignment(datasets):
+    """
+    From a list of xarray DataArray or Datasets, check that it is possible to align their time 
+    dimensions to a unique one (e.g. to the one with the earliest time values).
+
+    Parameter
+    ---------
+    datasets : list of xarray.DataArray or xarray.Dataset
+    """
+    if not datasets:
+        return False, "No datasets provided."
+
+    # Check that all datasets have the same length of the time dimension
+    time_lengths = [ds.dims['time'] for ds in datasets]
+    if len(set(time_lengths)) != 1:
+        return False, "Datasets have different lengths of the time dimension."
+
+    # Check that each time array is shifted by the same delta time (or a multiple of it)
+    time_deltas = [ds['time'].diff(dim='time').median().item() for ds in datasets]
+    time_inis = [ds['time'][0].item() for ds in datasets]
+    # print(time_deltas)
+    # print(time_inis)
+    base_delta = time_deltas[0]
+    for n, delta in enumerate(time_deltas):
+        if not (delta % base_delta == 0 or base_delta % delta == 0):
+            return False, "Datasets have inconsistent delta times."
+        if n>0:
+            # print((time_inis[n] - time_inis[n-1]))
+            if not abs(time_inis[n] - time_inis[n-1]) <= base_delta:
+                return False, "Datasets have inconsistent delta times."
+
+    return True, "Datasets have consistent time dimensions and delta times. It is possible to align them."
+
 def unfold_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, phidp_lims=(-30,30)):
     """
     Unfold PHIDP in case it is wrapping around the edge values, it should be defined between -180 and 180.
@@ -666,6 +699,68 @@ def load_dmi_raw(filepath): # THIS IS NOT IMPLEMENTED YET # !!!
         dmidata = xr.open_mfdataset(files)
     
     return fix_flipped_phidp(unfold_phidp(fix_time_in_coords(dmidata)))
+
+def load_volume(filelists, func=load_dwd_preprocessed, align_time=True):
+    """
+    Full radar volume based on the data files provided.
+
+    Parameter
+    ---------
+    filelists : list of list or str
+            Each item of filelists must be another list containing all files paths for a single elevation, or
+            a str of a file path (either uniquely defined or with wildcards).
+    func : func
+            Function to load each elevation. Either load_dwd_preprocessed, load_dwd_raw, 
+            load_dmi_preprocessed, load_dmi_raw or a user defined function that is called for
+            each item in filelists.
+    align_time : bool
+            If True and if the time dimension has equal length in all files, align 
+            the time dimension according to the values of the first file. Note that 
+            if time alignment is not done (or not possible) the resulting dataset
+            may be too large to fit in memory.
+    """
+    sweeps = []
+    for filelist in filelists:
+        # collect files
+        if type(filelist) is list:
+            files = sorted(filelist)
+        else:
+            files = sorted(glob.glob(filelist))
+            
+        # load files for this elevation
+        sweeps.append(func(files))
+        
+        # tidy up coords and dims
+        sweeps[-1].coords["azimuth"] = sweeps[-1].coords["azimuth"].round(1) # round the azimuths to avoid slight differences
+        try:
+            sweeps[-1] = sweeps[-1].set_coords("sweep_fixed_angle") 
+            sweeps[-1].coords["sweep_fixed_angle"] = sweeps[-1].coords["sweep_fixed_angle"].mean() # reduce sweep_fixed_angle
+        except:
+            pass
+        sweeps[-1] = sweeps[-1].expand_dims("sweep_fixed_angle") # promote sweep_fixed_angle to dim
+
+    if align_time:
+        if check_time_dimension_alignment(sweeps)[0]:
+            try:
+                for dsn in range(len(sweeps)):
+                    if dsn == 0: continue
+                    sweeps[dsn]["time"] = sweeps[0]["time"] # align all datasets to the time dim of the first one
+                vol = xr.concat(sweeps, dim="sweep_fixed_angle")    # try to unify time
+            except:
+                warnings.warn("Not possible to align time dimension. May result in increased memory usage.")
+                vol = xr.concat(sweeps, dim="sweep_fixed_angle")
+    else:
+        vol = xr.concat(sweeps, dim="sweep_fixed_angle")
+
+    # Pass meta variables to coords to avoid some issues
+    vol = vol.set_coords(("sweep_mode", "sweep_number", "prt_mode", "follow_mode"))
+    
+    # Reduce coordinates so the georeferencing works
+    vol["elevation"] = vol["elevation"].mean("azimuth")
+    vol["rtime"] = vol["rtime"].min("azimuth")
+    vol["sweep_mode"] = vol["sweep_mode"].min()
+    
+    return vol
 
 def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False, 
               fillna_vars={"ZDR_OC": "ZDR", "RHOHV_NC": "RHOHV", "UPHIDP_OC": "UPHIDP", "PHIDP_OC": "PHIDP"}):
