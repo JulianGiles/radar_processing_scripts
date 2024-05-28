@@ -999,6 +999,11 @@ def compute_rdqvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1}, max_range=50
     ------
     ds_qvp : xarray.Dataset
         Dataset with the thresholded data reduced to a QVP with dim z (and time if available)
+        
+    Reference
+    ------
+    Tobin, D. M., and M. R. Kumjian, 2017: Polarimetric Radar and Surface-Based Precipitation-Type Observations of Ice Pellet to Freezing Rain Transitions. Wea. Forecasting, 32, 2065–2082
+    https://doi.org/10.1175/WAF-D-17-0054.1
     """
     qvps=[]
     qvps_count=[]
@@ -1026,7 +1031,7 @@ def compute_rdqvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1}, max_range=50
     qvps_highres_count = xr.concat(qvps_highres_count, dim="sweep_fixed_angle")
     
     # weighted average of all elevs
-    ds_qvp = qvps_highres.weighted(qvps_highres_count["DBZH"]).mean("sweep_fixed_angle")
+    ds_qvp = qvps_highres.weighted(qvps_highres_count["DBZH"].fillna(0)).mean("sweep_fixed_angle")
     
     return ds_qvp
 
