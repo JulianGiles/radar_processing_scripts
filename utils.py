@@ -723,8 +723,14 @@ def load_volume(filelists, func=load_dwd_preprocessed, align_time=True):
     for filelist in filelists:
         # collect files
         if type(filelist) is list:
+            if any(["359." in ff for ff in filelist]):
+                print("Ignoring 359. elevation")
+                continue
             files = sorted(filelist)
         else:
+            if "359." in filelist: 
+                print("Ignoring 359. elevation")
+                continue
             files = sorted(glob.glob(filelist))
             
         # load files for this elevation
@@ -760,7 +766,7 @@ def load_volume(filelists, func=load_dwd_preprocessed, align_time=True):
     vol["rtime"] = vol["rtime"].min("azimuth")
     vol["sweep_mode"] = vol["sweep_mode"].min()
     
-    return vol
+    return vol.sortby("sweep_fixed_angle")
 
 def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False, 
               fillna_vars={"ZDR_OC": "ZDR", "RHOHV_NC": "RHOHV", "UPHIDP_OC": "UPHIDP", "PHIDP_OC": "PHIDP"}):
@@ -1010,6 +1016,8 @@ def compute_rdqvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1}, max_range=50
     qvps_highres=[]
     qvps_highres_count=[]
     ds_close = ds.where(ds["gr"]<max_range)
+    min_z = ds_close["z"].min().values
+    max_z = ds_close["z"].max().values
     
     # call compute_qvp for each elevation
     for sfa in ds_close["sweep_fixed_angle"]:
@@ -1018,7 +1026,7 @@ def compute_rdqvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1}, max_range=50
         qvps_count.append(count.fillna(0).copy(deep=True))
         
     # interpolate to higher res z
-    new_z = np.linspace(qvps[0].z[0].values, qvps[-1].z[-1].values, round((qvps[-1].z[-1]-qvps[0].z[0]).values/2) )
+    new_z = np.linspace(min_z, max_z, round((max_z-min_z)/2) ) 
     
     for qvp in qvps:
         qvps_highres.append( qvp.interp(z=new_z) )
@@ -2819,14 +2827,73 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
 
     return ds.assign(assign)
     
-#### PHIDP-KDP Vulpiani
+#### KDP derivation from PHIDP
+
+def kdp_from_phidp(ds, winlen, X_PHI=None, min_periods=2):
+    """Derive KDP from PHIDP (based on convolution filter).
+
+    Parameter
+    ---------
+    da : xarray.DataArray
+        array with differential phase data
+    winlen : int
+        size of window in range dimension
+
+    Keyword Arguments
+    -----------------
+    X_PHI : str
+        name of variable for differential phase in case ds is a Dataset.
+    min_periods : int
+        minimum number of valid bins
+
+    Return
+    ------
+    ds : xarray.Dataset
+        Dataset with differential phase values and specific differential phase; or
+    phidp, kdp : xarray.DataArray
+        DataArrays with differential phase values (PHI_CONV) and specific differential phase (KDP_CONV)
+    """
+    if type(ds) is xr.DataArray:
+    
+        dr = ds.range.diff('range').median('range').values / 1000.
+        print("range res [km]:", dr)
+        print("processing window [km]:", dr * winlen)
+        return xr.apply_ufunc(wrl.dp.kdp_from_phidp,
+                              ds,
+                              input_core_dims=[["range"]],
+                              output_core_dims=[["range"]],
+                              dask='parallelized',
+                              kwargs=dict(winlen=winlen, dr=dr,
+                                          min_periods=min_periods),
+                              dask_gufunc_kwargs=dict(allow_rechunk=True),
+                              )
+    
+    elif type(ds) is xr.Dataset:
+        dr = ds.range.diff('range').median('range').values / 1000.
+        print("range res [km]:", dr)
+        print("processing window [km]:", dr * winlen)
+        kdp = xr.apply_ufunc(wrl.dp.kdp_from_phidp,
+                              ds[X_PHI],
+                              input_core_dims=[["range"]],
+                              output_core_dims=[["range"]],
+                              dask='parallelized',
+                              kwargs=dict(winlen=winlen, dr=dr,
+                                          min_periods=min_periods),
+                              dask_gufunc_kwargs=dict(allow_rechunk=True),
+                              )
+
+        assign = {
+                  "KDP_CONV": kdp.assign_attrs(KDP_attrs),
+                  }
+        return ds.assign(assign)
+
 
 def kdp_phidp_vulpiani(ds, winlen, X_PHI=None, min_periods=2):
     """Derive KDP from PHIDP (based on Vulpiani).
 
     Parameter
     ---------
-    ds : xarray.Dataset or xarray.DataArray
+    da : xarray.DataArray
         array with differential phase data
     winlen : int
         size of window in range dimension
