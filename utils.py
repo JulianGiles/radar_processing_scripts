@@ -24,6 +24,7 @@ import matplotlib as mpl
 import warnings
 from xhistogram.xarray import histogram
 import wradlib as wrl
+import regionmask as rm
 
 #### Helper functions and definitions
 
@@ -69,7 +70,7 @@ def get_names(ds, phidp_names=phidp_names, dbzh_names=dbzh_names, rhohv_names=rh
 min_hgts = {
     'default': 200, 
     '90grads': 600, # for the VP we need to set a higher min height because there are several bins of unrealistic values
-    'ANK': 400, # for ANK we need higher min_hgt to avoid artifacts
+    'ANK': 200, # for ANK we need higher min_hgt to avoid artifacts
     'GZT': 300 # for GZT we need higher min_hgt to avoid artifacts
 }
 
@@ -2767,7 +2768,7 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
         If True, fill non valid values (na) in the end result with zero. If float,
         fill the non valid values with fillna. Default is False (do not fill na).
     clean_invalid : bool
-        If True, only outpot corrected phase for pixels with range beyond start_range + fix_range.
+        If True, only output corrected phase for pixels with range beyond start_range + fix_range.
         start_range is the range of the first bin with the necessary consecutive valid bins from
         phase_offset(). Default is False (apply the offset to all ds[X_PHI]).
     tolerance : tuple
@@ -4435,3 +4436,28 @@ def calc_spatial_integral(
         return xr_da.weighted(xr.DataArray(area_weights, coords=xr_da[[lat_name,lon_name]].coords)).sum(dim=[lon_name, lat_name])
     else: # if not dataset, we need to convert it to dataset first
         return xr_da.weighted(xr.DataArray(area_weights, coords=xr_da.to_dataset(name="")[[lat_name,lon_name]].coords)).sum(dim=[lon_name, lat_name])
+    
+def get_regionmask(regionname):
+    """
+    Returns a mask for the desired region using regionemask and Natural Earth data.
+    
+    Parameters
+    ----------
+    regionname: str
+        Name of the region. Can be a country of region name or "land" for a global land-ocean mask.
+
+    Returns
+    -------
+    mask: regionmask.Regions
+        Desired mask.
+    """
+    if regionname == "land":
+        mask = rm.defined_regions.natural_earth_v5_1_2.land_10
+        return mask
+    else:
+        try:
+            rmcountries = rm.defined_regions.natural_earth_v5_1_2.countries_10
+            mask = rmcountries[[regionname]]
+            return mask
+        except KeyError:
+            raise KeyError("Desired region "+regionname+" is not available.")
