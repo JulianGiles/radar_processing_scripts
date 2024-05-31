@@ -80,18 +80,18 @@ paths_yearly = {
     "IMERG-V06B-monthly": loadpath_yearly+"IMERG-V06B-monthly/IMERG-V06B-monthly_precipitation_yearlysum_2000-2021.nc",
     # "IMERG-V07B-30min": loadpath_yearly+, 
     # "IMERG-V06B-30min": loadpath_yearly+, 
-    "CMORPH-daily": loadpath_yearly+"CMORPH-daily/CMORPH-daily_precipitation_yearlysum_1998-2023.nc",
-    "TSMP-old": loadpath_yearly+"TSMP-old/TSMP-old_precipitation_yearlysum_2000-2021.nc",
-    "TSMP-DETECT-Baseline": loadpath_yearly+"TSMP-DETECT-Baseline/TSMP-DETECT-Baseline_precipitation_yearlysum_2000-2022.nc",
-    "ERA5-monthly": loadpath_yearly+"ERA5-monthly/ERA5-monthly_precipitation_yearlysum_1979-2020.nc",
+    # "CMORPH-daily": loadpath_yearly+"CMORPH-daily/CMORPH-daily_precipitation_yearlysum_1998-2023.nc",
+    # "TSMP-old": loadpath_yearly+"TSMP-old/TSMP-old_precipitation_yearlysum_2000-2021.nc",
+    # "TSMP-DETECT-Baseline": loadpath_yearly+"TSMP-DETECT-Baseline/TSMP-DETECT-Baseline_precipitation_yearlysum_2000-2022.nc",
+    # "ERA5-monthly": loadpath_yearly+"ERA5-monthly/ERA5-monthly_precipitation_yearlysum_1979-2020.nc",
     # "ERA5-hourly": loadpath_yearly+,
-    "RADKLIM": loadpath_yearly+"RADKLIM/RADKLIM_precipitation_yearlysum_2001-2022.nc",
-    "RADOLAN": loadpath_yearly+"RADOLAN/RADOLAN_precipitation_yearlysum_2006-2022.nc",
-    "EURADCLIM": loadpath_yearly+"EURADCLIM/EURADCLIM_precipitation_yearlysum_2013-2020.nc",
+    # "RADKLIM": loadpath_yearly+"RADKLIM/RADKLIM_precipitation_yearlysum_2001-2022.nc",
+    # "RADOLAN": loadpath_yearly+"RADOLAN/RADOLAN_precipitation_yearlysum_2006-2022.nc",
+    # "EURADCLIM": loadpath_yearly+"EURADCLIM/EURADCLIM_precipitation_yearlysum_2013-2020.nc",
     "GPCC-monthly": loadpath_yearly+"GPCC-monthly/GPCC-monthly_precipitation_yearlysum_1991-2020.nc",
     # "GPCC-daily": loadpath_yearly+"GPCC-daily/GPCC-daily_precipitation_yearlysum_2000-2020.nc",
-    "GPROF": loadpath_yearly+"GPROF/GPROF_precipitation_yearlysum_2014-2023.nc",
-    "HYRAS": loadpath_yearly+"HYRAS/HYRAS_precipitation_yearlysum_1931-2020.nc", 
+    # "GPROF": loadpath_yearly+"GPROF/GPROF_precipitation_yearlysum_2014-2023.nc",
+    # "HYRAS": loadpath_yearly+"HYRAS/HYRAS_precipitation_yearlysum_1931-2020.nc", 
     }
 
 data_yearlysum = {}
@@ -102,19 +102,23 @@ for dsname in paths_yearly.keys():
 
 # Special tweaks
 # RADOLAN GRID AND CRS
-lonlat_radolan = wrl.georef.rect.get_radolan_grid(900,900, wgs84=True) # these are the left lower edges of each bin
-data_yearlysum["RADOLAN"] = data_yearlysum["RADOLAN"].assign_coords({"lon":(("y", "x"), lonlat_radolan[:,:,0]), "lat":(("y", "x"), lonlat_radolan[:,:,1])})
-data_yearlysum["RADOLAN"] = data_yearlysum["RADOLAN"].assign(crs=data_yearlysum['RADKLIM'].crs[0])
-data_yearlysum["RADOLAN"].attrs["grid_mapping"] = "crs"
-data_yearlysum["RADOLAN"].lon.attrs = data_yearlysum["RADKLIM"].lon.attrs
-data_yearlysum["RADOLAN"].lat.attrs = data_yearlysum["RADKLIM"].lat.attrs
+if "RADOLAN" in data_yearlysum.keys():
+    lonlat_radolan = wrl.georef.rect.get_radolan_grid(900,900, wgs84=True) # these are the left lower edges of each bin
+    data_yearlysum["RADOLAN"] = data_yearlysum["RADOLAN"].assign_coords({"lon":(("y", "x"), lonlat_radolan[:,:,0]), "lat":(("y", "x"), lonlat_radolan[:,:,1])})
+    data_yearlysum["RADOLAN"] = data_yearlysum["RADOLAN"].assign(crs=data_yearlysum['RADKLIM'].crs[0])
+    data_yearlysum["RADOLAN"].attrs["grid_mapping"] = "crs"
+    data_yearlysum["RADOLAN"].lon.attrs = data_yearlysum["RADKLIM"].lon.attrs
+    data_yearlysum["RADOLAN"].lat.attrs = data_yearlysum["RADKLIM"].lat.attrs
 
 # EURADCLIM coords
-data_yearlysum["EURADCLIM"] = data_yearlysum["EURADCLIM"].set_coords(("lon", "lat"))
+if "EURADCLIM" in data_yearlysum.keys():
+    data_yearlysum["EURADCLIM"] = data_yearlysum["EURADCLIM"].set_coords(("lon", "lat"))
 
 # Shift HYRAS and EURADCLIM timeaxis
-data_yearlysum["EURADCLIM"] = data_yearlysum["EURADCLIM"].resample({"time":"YS"}).first()
-data_yearlysum["HYRAS"] = data_yearlysum["HYRAS"].resample({"time":"YS"}).mean()
+if "EURADCLIM" in data_yearlysum.keys():
+    data_yearlysum["EURADCLIM"] = data_yearlysum["EURADCLIM"].resample({"time":"YS"}).first()
+if "HYRAS" in data_yearlysum.keys():
+    data_yearlysum["HYRAS"] = data_yearlysum["HYRAS"].resample({"time":"YS"}).mean()
 
 # Convert all non datetime axes (cf Julian calendars) into datetime 
 for dsname in paths_yearly.keys():
@@ -125,19 +129,23 @@ for dsname in paths_yearly.keys():
 
 # Special selections for incomplete extreme years
 # IMERG
-data_yearlysum["IMERG-V07B-monthly"] = data_yearlysum["IMERG-V07B-monthly"].loc[{"time":slice("2001", "2022")}]
-data_yearlysum["IMERG-V06B-monthly"] = data_yearlysum["IMERG-V06B-monthly"].loc[{"time":slice("2001", "2020")}]
+if "IMERG-V07B-monthly" in data_yearlysum.keys():
+    data_yearlysum["IMERG-V07B-monthly"] = data_yearlysum["IMERG-V07B-monthly"].loc[{"time":slice("2001", "2022")}]
+if "IMERG-V06B-monthly" in data_yearlysum.keys():
+    data_yearlysum["IMERG-V06B-monthly"] = data_yearlysum["IMERG-V06B-monthly"].loc[{"time":slice("2001", "2020")}]
 # CMORPH
-data_yearlysum["CMORPH-daily"] = data_yearlysum["CMORPH-daily"].loc[{"time":slice("1998", "2022")}]
+if "CMORPH-daily" in data_yearlysum.keys():
+    data_yearlysum["CMORPH-daily"] = data_yearlysum["CMORPH-daily"].loc[{"time":slice("1998", "2022")}]
 # GPROF
-data_yearlysum["GPROF"] = data_yearlysum["GPROF"].loc[{"time":slice("2015", "2022")}]
+if "GPROF" in data_yearlysum.keys():
+    data_yearlysum["GPROF"] = data_yearlysum["GPROF"].loc[{"time":slice("2015", "2022")}]
 
 #%%% Regional averages
 #%%%% Calculate area means (regional averages)
 data_to_avg = data_yearlysum # select which data to average (yearly, monthly, daily...)
 
-region ="Germany"
-rmcountries = rm.defined_regions.natural_earth_v5_1_2.countries_10
+region ="land"
+mask = utils.get_regionmask(region)
 
 data_avgreg = {}
 # Means over region
@@ -146,8 +154,8 @@ for dsname in data_to_avg.keys():
     
     if dsname in ["RADOLAN", "RADKLIM", "HYRAS", "EURADCLIM"]:
         # these datasets come in equal-pixel-sized grids, so we only need to apply the average over the region
-        mask = rmcountries[[region]].mask(data_to_avg[dsname])
-        data_avgreg[dsname] = data_to_avg[dsname].where(mask.notnull()).mean(("x", "y")).compute()
+        mask0 = mask.mask(data_to_avg[dsname])
+        data_avgreg[dsname] = data_to_avg[dsname].where(mask0.notnull()).mean(("x", "y")).compute()
 
     if dsname in ["IMERG-V07B-monthly", "IMERG-V06B-monthly", "CMORPH-daily", "ERA5-monthly", 
                   "GPCC-monthly", "GPCC-daily", "GPROF"]:
@@ -156,12 +164,12 @@ for dsname in data_to_avg.keys():
                                 if "lonv" not in data_to_avg[dsname][vv].dims \
                                 if "latv" not in data_to_avg[dsname][vv].dims \
                                 if "nv" not in data_to_avg[dsname][vv].dims]
-        mask = rmcountries[[region]].mask(data_to_avg[dsname])
+        mask0 = mask.mask(data_to_avg[dsname])
         if dsname in ["ERA5-monthly"]:
-            data_avgreg[dsname] = utils.calc_spatial_mean(data_to_avg[dsname][variables_to_include].where(mask.notnull()), 
+            data_avgreg[dsname] = utils.calc_spatial_mean(data_to_avg[dsname][variables_to_include].where(mask0.notnull()), 
                                                           lon_name="longitude", lat_name="latitude").compute()
         else:
-            data_avgreg[dsname] = utils.calc_spatial_mean(data_to_avg[dsname][variables_to_include].where(mask.notnull()), 
+            data_avgreg[dsname] = utils.calc_spatial_mean(data_to_avg[dsname][variables_to_include].where(mask0.notnull()), 
                                                           lon_name="lon", lat_name="lat").compute()
 
     if dsname in ["TSMP-DETECT-Baseline", "TSMP-old"]:
@@ -171,9 +179,9 @@ for dsname in data_to_avg.keys():
         regridder = xe.Regridder(data_to_avg[dsname].cf.add_bounds(["lon", "lat"]), grid_out, "conservative")
         to_add[dsname+"-EURregLonLat01deg"] = regridder(data_to_avg[dsname])
         
-        mask = rmcountries[[region]].mask(to_add[dsname+"-EURregLonLat01deg"])
+        mask0 = mask.mask(to_add[dsname+"-EURregLonLat01deg"])
     
-        data_avgreg[dsname] = utils.calc_spatial_mean(to_add[dsname+"-EURregLonLat01deg"].where(mask.notnull()), 
+        data_avgreg[dsname] = utils.calc_spatial_mean(to_add[dsname+"-EURregLonLat01deg"].where(mask0.notnull()), 
                                                       lon_name="lon", lat_name="lat").compute()
         
 # add the rotated datasets to the original dictionary
@@ -181,17 +189,19 @@ data_to_avg = {**data_to_avg, **to_add}
 data_yearlysum = data_to_avg
 
 #%%%% Simple map plot
-rmcountries = rm.defined_regions.natural_earth_v5_1_2.countries_10
-mask = rmcountries[[region]].mask(data_yearlysum["EURADCLIM"])
+dsname = "GPCC-monthly"
+vname = "precip"
+mask = utils.get_regionmask(region)
+mask0 = mask.mask(data_yearlysum[dsname])
 f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
-plot = data_yearlysum["EURADCLIM"]["Precip"][0].where(mask.notnull(), drop=True).plot(x="lon", y="lat", cmap="Blues", vmin=0, vmax=1000, 
+plot = data_yearlysum[dsname][vname][0].where(mask0.notnull(), drop=True).plot(x="lon", y="lat", cmap="Blues", vmin=0, vmax=1000, 
                                          subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
                                          cbar_kwargs={'label': "mm", 'shrink':0.88})
 # ax1.set_extent([float(a) for a in lonlat_limits])
 plot.axes.coastlines(alpha=0.7)
 plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
 plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
-plt.title("EURADCLIM")
+plt.title(dsname)
 
 #%%%% Interannual variability area-means plot
 # make a list with the names of the precipitation variables
@@ -339,6 +349,7 @@ plt.show()
 # We use the DETECT 1 km grid for thi^s
 to_add = {} # dictionary to add regridded versions
 for dsname in ["EURADCLIM", "RADOLAN", "HYRAS", "RADKLIM"]:
+    if dsname not in data_yearlysum: continue
     print("Regridding "+dsname+" ...")
 
     grid_out = xe.util.cf_grid_2d(-49.746,70.655,0.01,19.854,74.654,0.01) # manually recreate the EURregLonLat001deg grid
@@ -423,23 +434,23 @@ for dsname in data_to_bias.keys():
                     data0 = data0.where(data0>0)
                     dataref = data_to_bias[dsref[0]][vvref]
                     
-                    mask = rmcountries[[region]].mask(data_to_bias[dsref[0]])
+                    mask0 = mask.mask(data_to_bias[dsref[0]])
 
                     data_bias_map[dsname] = ( data0 - dataref ).compute()
                     data_bias_relative_map[dsname] = ( data_bias_map[dsname] / dataref ).compute() *100
-                    data_bias_map_masked = data_bias_map[dsname].where(mask.notnull())
-                    data_bias_relative_map_masked = data_bias_relative_map[dsname].where(mask.notnull())
+                    data_bias_map_masked = data_bias_map[dsname].where(mask0.notnull())
+                    data_bias_relative_map_masked = data_bias_relative_map[dsname].where(mask0.notnull())
                     data_abs_error_map[dsname] = abs(data_bias_map[dsname])
-                    data_abs_error_map_masked = data_abs_error_map[dsname].where(mask.notnull())
+                    data_abs_error_map_masked = data_abs_error_map[dsname].where(mask0.notnull())
                     
                     data_bias_relative_gp[dsname] = utils.calc_spatial_integral(data_bias_map_masked,
                                                 lon_name="lon", lat_name="lat").compute() / \
-                                                    utils.calc_spatial_integral(dataref.where(mask.notnull()),
+                                                    utils.calc_spatial_integral(dataref.where(mask0.notnull()),
                                                 lon_name="lon", lat_name="lat").compute() *100
                     
                     data_norm_mean_abs_error_gp[dsname] = utils.calc_spatial_integral(data_abs_error_map_masked,
                                                 lon_name="lon", lat_name="lat").compute() / \
-                                                    utils.calc_spatial_integral(dataref.where(mask.notnull()),
+                                                    utils.calc_spatial_integral(dataref.where(mask0.notnull()),
                                                 lon_name="lon", lat_name="lat").compute() *100
 
                     data_mean_abs_error_gp[dsname] = utils.calc_spatial_mean(data_abs_error_map_masked,
@@ -452,14 +463,15 @@ data_yearlysum = {**data_yearlysum, **to_add}
 
 #%%%% Relative bias and error plots
 #%%%%% Simple map plot
-to_plot = data_bias_relative_map
-dsname = "RADKLIM_GPCC-monthly-grid"
-title = "Relative BIAS"
+region = "land" 
+to_plot = data_bias_map
+dsname = "IMERG-V07B-monthly"
+title = "BIAS"
 yearsel = "2016"
-rmcountries = rm.defined_regions.natural_earth_v5_1_2.countries_10
-mask = rmcountries[[region]].mask(to_plot[dsname])
+mask = utils.get_regionmask(region)
+mask0 = mask.mask(to_plot[dsname])
 f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
-plot = to_plot[dsname].loc[{"time":yearsel}].where(mask.notnull(), drop=True).plot(x="lon", y="lat", cmap="RdBu_r", vmin=-100, vmax=100, 
+plot = to_plot[dsname].loc[{"time":yearsel}].where(mask0.notnull(), drop=True).plot(x="lon", y="lat", cmap="RdBu_r", vmin=-100, vmax=100, 
                                          subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
                                          cbar_kwargs={'label': "%", 'shrink':0.88})
 # ax1.set_extent([float(a) for a in lonlat_limits])
@@ -471,8 +483,8 @@ plt.title(title+" "+yearsel+"\n"+dsname+"\n "+region+" Ref.: "+dsref[0])
 
 #%%%%% Box plots of BIAS and ERRORS
 # the box plots are made up of the yearly bias or error values
-to_plot = data_mean_abs_error_gp # data_mean_abs_error_gp # data_bias_relative_gp
-title = "Mean absolute error (yearly values) "+region+". Ref.: "+dsref[0]
+to_plot = data_bias_relative_gp # data_mean_abs_error_gp # data_bias_relative_gp # data_norm_mean_abs_error_gp
+title = "Relative Bias (yearly values) "+region+". Ref.: "+dsref[0]
 ylabel = "mm" # %
 dsignore = ['CMORPH-daily' ] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', ] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
 
@@ -542,7 +554,7 @@ import skill_metrics as sm
 # I cannot use skill_metrics to calculate the stats because they do not filter out 
 # nan values (because of the masks) so the result is erroneous. They also do not handle weighted arrays.
 
-mode = "" # if "spatial" then average in time and comput the diagram in space. Viceversa for "temporal"
+mode = "" # if "spatial" then average in time and compute the diagram in space. Viceversa for "temporal"
 dsref = ["GPCC-monthly"]
 data_to_stat = data_yearlysum
 
@@ -573,8 +585,8 @@ except AttributeError:
                            coords=ds_ref.to_dataset()[["latitude","longitude"]].coords)
 
 # Get mask
-rmcountries = rm.defined_regions.natural_earth_v5_1_2.countries_10
-mask_ref = rmcountries[[region]].mask(ds_ref)
+mask = utils.get_regionmask(region)
+mask_ref = mask.mask(ds_ref)
 ds_ref = ds_ref.where(mask_ref.notnull())#.mean(tuple([cn for cn in ds_ref.coords if cn!="time"]))
 
 # Normalize weights in the mask
