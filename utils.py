@@ -66,11 +66,19 @@ def get_names(ds, phidp_names=phidp_names, dbzh_names=dbzh_names, rhohv_names=rh
 
 
 
-# Set minimum height above the radar to be considered when calculating ML and entropy 
+# Set minimum height above the radar to be considered (mostly for filtering when calculating offsets, ML and entropy)
 min_hgts = {
     'default': 200, 
     '90grads': 600, # for the VP we need to set a higher min height because there are several bins of unrealistic values
     'ANK': 200, # for ANK we need higher min_hgt to avoid artifacts
+    'GZT': 300 # for GZT we need higher min_hgt to avoid artifacts
+}
+
+# Set minimum range to be considered (mostly for filtering bad PHIDP close to the radar)
+min_rngs = {
+    'default': 1000, 
+    'HTY': 0, # for HTY the data looks pretty good close to the radar
+    'ANK': 8000, # for ANK we need higher min_range to avoid PHIDP artifacts
     'GZT': 300 # for GZT we need higher min_hgt to avoid artifacts
 }
 
@@ -123,7 +131,7 @@ phase_proc_params["dmi"] = {
         "ywin0": 5,
         "fix_range": 200,
         "rng": 1000, # range for phidp offset correction, if None it is auto calculated based on window0
-        "azmedian": True, # reduce the phidp offset by applying median along the azimuths?
+        "azmedian": 10, # reduce the phidp offset by applying median along the azimuths?
 }
 
 # make a function to retreive only the phase_proc_params dictionary corresponding to the a data path (not very precise, tuned to my data naming)
