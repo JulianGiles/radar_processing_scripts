@@ -88,7 +88,9 @@ if len(files)==0:
 
 clowres0=False # this is for the ML detection algorithm
 min_hgts = utils.min_hgts
-min_hgt = min_hgts["default"] # minimum height above the radar to be considered when calculating ZDR offset
+min_rngs = utils.min_rngs
+min_hgt = min_hgts["default"] # minimum height above the radar to be considered
+min_range = min_rngs["default"] # minimum range from which to consider data (mostly for bad PHIDP filtering)
 if "dwd" in path0 and "90grads" in path0:
     # for the VP we need to set a higher min height because there are several bins of unrealistic values
     min_hgt = min_hgts["90grads"]
@@ -100,6 +102,9 @@ if "ANK" in path0:
 if "GZT" in path0:
     # for GZT we need higher min_hgt to avoid artifacts
     min_hgt = min_hgts["GZT"]
+if "HTY" in path0:
+    # HTY has pretty good data, no additional filtering
+    min_range = min_rngs["HTY"]
 
 # ERA5 folder
 if os.path.exists("/automount/ags/jgiles/ERA5/hourly/"):
@@ -398,7 +403,7 @@ for ff in files:
                                  dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range, 
                                  rng_min=1000, rng=rng, azmedian=azmedian, tolerance=(0,5)) # shorter rng, rng_min for finer turkish data
         
-            phi_masked = ds[X_PHI+"_OC"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["z"]>min_height) )   
+            phi_masked = ds[X_PHI+"_OC"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["range"]>min_range) ) 
         
         else:
             # process phidp (offset and smoothing)
@@ -406,7 +411,7 @@ for ff in files:
                                  dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range, 
                                  rng=rng, azmedian=azmedian, tolerance=(0,5))
         
-            phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["z"]>min_height) )   
+            phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["range"]>min_range) )
 
         # Assign phi_masked
         assign = { X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs) }
