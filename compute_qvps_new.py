@@ -96,14 +96,18 @@ if "dwd" in path0 and "90grads" in path0:
     min_hgt = min_hgts["90grads"]
 if "dwd" in path0 and "vol5minng01" in path0:
     clowres0=True
+# Set specifics for each turkish radar
 if "ANK" in path0:
-    # for ANK we need higher min_hgt to avoid artifacts
     min_hgt = min_hgts["ANK"]
+    min_range = min_rngs["ANK"]
 if "GZT" in path0:
-    # for GZT we need higher min_hgt to avoid artifacts
     min_hgt = min_hgts["GZT"]
+    min_range = min_rngs["GZT"]
+if "AFY" in path0:
+    min_range = min_rngs["AFY"]
+if "SVS" in path0:
+    min_range = min_rngs["SVS"]
 if "HTY" in path0:
-    # HTY has pretty good data, no additional filtering
     min_range = min_rngs["HTY"]
 
 # ERA5 folder
