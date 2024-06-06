@@ -71,15 +71,17 @@ min_hgts = {
     'default': 200, 
     '90grads': 600, # for the VP we need to set a higher min height because there are several bins of unrealistic values
     'ANK': 200, # for ANK we need higher min_hgt to avoid artifacts
-    'GZT': 300 # for GZT we need higher min_hgt to avoid artifacts
+    'GZT': 200 # for GZT we need higher min_hgt to avoid artifacts
 }
 
 # Set minimum range to be considered (mostly for filtering bad PHIDP close to the radar)
 min_rngs = {
     'default': 1000, 
     'HTY': 0, # for HTY the data looks pretty good close to the radar
-    'ANK': 8000, # for ANK we need higher min_range to avoid PHIDP artifacts
-    'GZT': 300 # for GZT we need higher min_hgt to avoid artifacts
+    'ANK': 7000, # for ANK we need higher min_range to avoid PHIDP artifacts
+    'AFY': 8500, # for AFY we need higher min_hgt to avoid artifacts
+    'SVS': 5500, # for SVS we need higher min_hgt to avoid artifacts
+    'GZT': 3500, # for GZT we need higher min_hgt to avoid artifacts
 }
 
 # Set the possible ZDR calibrations locations to include (in order of priority)
