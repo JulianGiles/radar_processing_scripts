@@ -42,6 +42,7 @@ import holoviews as hv
 
 import panel as pn
 from bokeh.resources import INLINE
+from osgeo import osr
 
 from functools import partial
 
@@ -80,10 +81,16 @@ how_mix_zdr_offset = "count" # how to choose between the different offsets
 # in its calculation (there must be a variable ZDR_offset_datacount in the loaded offset).
 # "neg_overcorr" will choose the offset that generates less negative ZDR values.
 
-min_height_key = "ANK" # default = 200, 90grads = 600, ANK = 400, GZT = 300
+min_height_key = "default" # default = 200, 90grads = 600, ANK = 400, GZT = 300
+min_range_key = "GZT" # default = 1000, HTY = 0
 
 # ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/tur/vol5minng01/07/*allmoms*"
-ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-10-06/ANK/*/0.2/*allmoms*"
+ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-10-06/ANK/*/12.0/*allmoms*"
+ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-08-04/AFY/VOL*/4.0/*allmoms*"
+# ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-11-20/HTY/VOL*/10.0/*allmoms*"
+ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-03-28/GZT/*/7.0/*allmoms*.nc"
+# ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-11-05/SVS/*/10.0/*allmoms*.nc"
+# ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-10-21/SVS/*/7.0/*allmoms*.nc"
 # ff = '/automount/realpep/upload/jgiles/dmi/2016/2016-08/2016-08-05/AFY/VOL_B/7.0/VOL_B-allmoms-7.0-20162016-082016-08-05-AFY-h5netcdf.nc'
 # ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-06-02/pro/90gradstarng01/00/*allmoms*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-10/2021-10-30/ess/90gradstarng01/00/*"
@@ -123,6 +130,10 @@ ds = ds.pipe(wrl.georef.georeference)
 #### Define minimum height of usable data
 
 min_height = utils.min_hgts[min_height_key] + ds["altitude"].values
+
+#### Define minimum range of usable data (mostly for bad PHIDP filtering)
+
+min_range = utils.min_rngs[min_range_key]
 
 #### Get variable names
 
@@ -340,16 +351,14 @@ if X_PHI in ds.data_vars:
                              dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
                              rng_min=1000, rng=rng, azmedian=azmedian, tolerance=(0,5)) # shorter rng, rng_min for finer turkish data
     
-        # phi_masked = ds[X_PHI+"_OC"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["z"]>min_height) )   
-        phi_masked = ds[X_PHI+"_OC"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) )   
+        phi_masked = ds[X_PHI+"_OC"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["range"]>min_range) )   
 
     else:
         ds = utils.phidp_processing(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                              dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
                              rng=rng, azmedian=azmedian, tolerance=(0,5))
     
-        # phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["z"]>min_height) )
-        phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) )
+        phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["range"]>min_range) )
 
     # Assign phi_masked
     assign = { X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs) }
@@ -368,8 +377,10 @@ else:
 
 if isvolume:
     print("Computing RD-QVP")
-    ds_qvp = utils.compute_rdqvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10,"SNRHC":10, "SQIH":0.5} )
+    ds_qvp = utils.compute_rdqvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10,"SNRHC":10, "SQIH":0.5},
+                                 max_range=30000.)
 else:
+    print("Computing QVP")
     ds_qvp = utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10,"SNRHC":10, "SQIH":0.5} )
 
 # filter out values close to the ground
@@ -528,8 +539,8 @@ plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only
 
 #%% Plot simple PPI 
 
-tsel = "2015-10-06T16:00"
-elevn = 0 # elevation index
+tsel = "2018-03-28T17:00"
+elevn = 6 # elevation index
 
 if isvolume: # if more than one elevation, we need to select the one we want
     if tsel == "":
@@ -549,14 +560,14 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "PHIDP_OC_MASKED"
-xylims = 50000 # xlim and ylim (from -xylims to xylims)
+mom = "KDP_CONV"
+xylims = 40000 # xlim and ylim (from -xylims to xylims)
 
 ticks = radarmet.visdict14[mom]["ticks"]
-cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
+cmap0 = mpl.colormaps.get_cmap("RdBu_r")
 cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
 norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
-cmap = "miub2"
+if mom!="VRADH": cmap = "miub2"
 
 plot_over_map = False
 plot_ML = True
@@ -566,6 +577,7 @@ crs=ccrs.Mercator(central_longitude=float(datasel["longitude"]))
 if not plot_over_map:
     # plot simple PPI
     datasel[mom].wrl.vis.plot( cmap=cmap, norm=norm, xlim=(-xylims,xylims), ylim=(-xylims,xylims))
+    # datasel[mom].wrl.vis.plot( cmap="Blues", vmin=0, vmax=6, xlim=(-xylims,xylims), ylim=(-xylims,xylims))
 elif plot_over_map:
     # plot PPI with map coordinates
     fig = plt.figure(figsize=(10, 10))
@@ -587,11 +599,38 @@ if isvolume: elevtitle = " "+str(np.round(ds.isel({"sweep_fixed_angle":elevn}).s
 else: elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
 plt.title(mom+elevtitle+". "+str(datasel.time.values).split(".")[0])
 
+#%% Plot PPI as lines 
+
+tsel = "2018-03-28T17:00"
+if tsel == "":
+    datasel = ds
+else:
+    datasel = ds.sel({"time": tsel}, method="nearest")
+
+
+mom = "PHIDP_OC_MASKED"
+
+cmap0 = mpl.colormaps.get_cmap("Blues")
+cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(datasel["azimuth"]))), N=len(datasel["azimuth"])+1)
+
+from cycler import cycler
+rc_cycle = {"axes.prop_cycle": cycler(color=cmap.colors)}
+with plt.rc_context(rc_cycle):
+    datasel[mom].plot.line(x="range", hue="azimuth", add_legend=False, xlim=(1500, 8000), ylim=(-10, 10))
+
+# add also qvp as line
+ds_qvp[mom].sel({"time": tsel}, method="nearest").plot.line(x="range", add_legend=False, c="red",
+                                                            xlim=(1500, 10000), ylim=(-5,40))
+
+plt.title(mom)
+plt.show()
+plt.close()
+
 #%% Plot simple QVP 
 
 max_height = 12000 # max height for the qvp plots
 
-tsel = "2015-10-06"# slice("2017-08-31T19","2017-08-31T22")
+tsel = ""# slice("2017-08-31T19","2017-08-31T22")
 if tsel == "":
     datasel = ds_qvp.loc[{"z": slice(0, max_height)}]
 else:
@@ -615,17 +654,25 @@ plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only
 datasel["height_ml_new_gia"].plot(c="black")
 datasel["height_ml_bottom_new_gia"].plot(c="black")
 plt.gca().set_ylabel("height over sea level")
-plt.title(mom)
+
+# # Plot reflectivity as lines to check wet radome effect
+# ax2 = plt.gca().twinx()
+# # ds.DBZH.mean("azimuth")[:,4:7].mean("range").plot(ax=ax2, suptitle="")
+# plt.plot(ds.DBZH.mean("azimuth")[:,4:7].mean("range"), ax=ax2)
+
+if isvolume: elevtitle = " RD-QVP"
+else: elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
+plt.title(mom+elevtitle+". "+str(datasel.time.values[0]).split(".")[0])
 plt.show()
 plt.close()
 
 #%% Plot QVP as lines 
 
-tsel = slice("2015-10-06T16","2015-10-06T18")
+tsel = slice("2018-03-28T17:00","2018-03-28T18:00")
 if tsel == "":
     datasel = ds_qvp
 else:
-    datasel = ds_qvp.loc[{"time": tsel}]
+    datasel = ds_qvp.sel({"time": tsel})
 
 
 mom = "PHIDP_OC"
@@ -636,12 +683,68 @@ cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(datasel.time))), N=
 from cycler import cycler
 rc_cycle = {"axes.prop_cycle": cycler(color=cmap.colors)}
 with plt.rc_context(rc_cycle):
-    datasel[mom].plot.line(x="z", hue="time", add_legend=False, xlim=(2000, 8000), ylim=(-2, 14))
+    datasel[mom].plot.line(x="range", hue="time", add_legend=False, xlim=(1000, 10000), ylim=(-10,30))
 
 plt.title(mom)
 plt.show()
 plt.close()
 
+#%% Plot fake RHI (cross section PPI) #!!!! NOT FINISHED
+
+tsel = "2015-10-06T16:30"
+azimuth = 0. # azimuth to plot
+
+# Define projection
+epsg_code=3857
+# Create projection objects for georeferencing 
+proj_utm = osr.SpatialReference()
+proj_utm.ImportFromEPSG(epsg_code)
+
+# sel time
+if tsel == "":
+    datasel = ds
+else:
+    datasel = ds.sel({"time": tsel}, method="nearest")
+
+datasel = datasel.pipe(wrl.georef.georeference)
+
+# New Colormap
+colors = ["#2B2540", "#4F4580", "#5a77b1",
+          "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
+
+
+mom = "DBZH"
+xylims = 50000 # xlim and ylim (from -xylims to xylims)
+
+ticks = radarmet.visdict14[mom]["ticks"]
+cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
+cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
+norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
+cmap = "miub2"
+
+plot_ML = True
+
+if isvolume: # if more than one elevation, we need to select the one we want
+    # Extract a single azimuth
+    rec_rhi = wrl.util.cross_section_ppi(datasel, azimuth, crs=proj_utm, method="nearest")
+else:
+    print("Data only has one elevation.")
+    
+# Plot
+rec_rhi[mom].plot(cmap=cmap, norm=norm, x="gr", y="z", ylim=(0,14000), xlim=(-xylims,xylims))
+
+# THIS LAST PART WAS NOT CHECKED
+if plot_ML:
+    cax = plt.gca()
+    datasel["z"].wrl.vis.plot(ax=cax,
+                          levels=[datasel["height_ml_bottom_new_gia"], datasel["height_ml_new_gia"]], 
+                          cmap="black",
+                          func="contour")
+    # datasel["z"].wrl.vis.plot(fig=fig, cmap=cmap, norm=norm, crs=ccrs.Mercator(central_longitude=float(datasel["longitude"])))
+
+if isvolume: elevtitle = " "+str(np.round(ds.isel({"sweep_fixed_angle":elevn}).sweep_fixed_angle.values, 2))+"°"
+else: elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
+plt.title(mom+elevtitle+". "+str(datasel.time.values).split(".")[0])
 
 #%% Load QVPs
 # Load only events with ML detected (pre-condition for stratiform)
