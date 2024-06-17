@@ -68,7 +68,7 @@ path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/pr
 path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
 # path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/2016/*/*/ANK/*/*/ML_detected.txt"
 # path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
-# path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/*/*/*/ANK/*/*/*allmoms*"
+path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/*/*/*/ANK/*/*/ML_detected.txt"
 # path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_singlefile/ML_detected/ANK/*/12*/*allmoms*"
 # path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*"
 # path_qvps = ["/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*",
@@ -333,9 +333,9 @@ stats[find_loc(locs, ff[0])] = {"values_sfc": values_sfc.compute().copy(),
     }
 
 # Save stats
-# for ll in stats.keys():
-#     for xx in stats[ll].keys():
-#         stats[ll][xx].to_netcdf("/automount/realpep/upload/jgiles/radar_stats/stratiform/"+ll+"_"+xx+".nc")
+for ll in stats.keys():
+    for xx in stats[ll].keys():
+        stats[ll][xx].to_netcdf("/automount/realpep/upload/jgiles/radar_stats/stratiform/"+ll+"_"+xx+".nc")
 
 #%% Statistics for Raquel
 
@@ -413,7 +413,7 @@ if country=="dmi":
     vars_to_plot = {"DBZH": [0, 45.5, 0.5], 
                     "ZDR_OC": [-0.505, 2.05, 0.1],
                     "KDP_ML_corrected":  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
-                    "RHOHV": [0.9, 1.002, 0.002]}
+                    "RHOHV_NC": [0.9, 1.002, 0.002]}
     
     fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
     
@@ -589,6 +589,28 @@ plot_qvp(qvps_strat_fil_notime, "ZDR_OC", tloc="2020-07-15", plot_ml=True, plot_
 #%% Statistics histograms
 import ridgeplot
 
+# load stats
+if 'stats' not in globals() and 'stats' not in locals():
+    stats = {}
+
+for ll in ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']:
+    if ll not in stats.keys():
+        stats[ll] = {}
+    elif type(stats[ll]) is not dict:
+        stats[ll] = {}
+    for xx in ['values_sfc', 'values_snow', 'values_rain', 'values_ML_max', 'values_ML_min', 'values_ML_mean', 'ML_thickness', 'values_DGL_max', 'values_DGL_min', 'values_DGL_mean']:
+        try:
+            stats[ll][xx] = xr.open_dataset("/automount/realpep/upload/jgiles/radar_stats/stratiform/"+ll+"_"+xx+".nc")
+            if len(stats[ll][xx].data_vars)==1:
+                # if only 1 var, convert to data array
+                stats[ll][xx] = stats[ll][xx].to_dataarray() 
+            print(ll+" "+xx+" stats loaded")
+        except:
+            pass
+    # delete entry if empty
+    if not stats[ll]:
+        del stats[ll]
+
 ridge_vars = [X_DBZH, X_ZDR, X_RHO, X_KDP]
 
 vars_ticks = {X_DBZH: np.arange(0, 46, 1), 
@@ -612,15 +634,16 @@ bins = {"ML_thickness": np.arange(0,1200,50),
 
 order = ['pro', 'afy', 'ank', 'gzt', 'hty', 'svs']
 for ss in bins.keys():
+    print("plotting "+ss)
     try: 
         for vv in ridge_vars:
 
             if vv == "RHOHV_NC":
                 order_turk = order.copy()
                 order_turk.remove("pro")
-                samples = [stats["pro"][ss][vv].dropna("time").values] + [stats[loc][ss]["RHOHV"].dropna("time").values for loc in order_turk]
+                samples = [stats["pro"][ss][vv].dropna("time").values] + [stats[loc][ss]["RHOHV"].dropna("time").values for loc in order_turk if loc in stats.keys()]
             else:
-                samples = [stats[loc][ss][vv].dropna("time").values for loc in order]
+                samples = [stats[loc][ss][vv].dropna("time").values for loc in order if loc in stats.keys()]
 
             fig = ridgeplot.ridgeplot(samples=samples,
                                     colorscale="viridis",
@@ -639,9 +662,9 @@ for ss in bins.keys():
                             title=ss+" "+vv,
                             xaxis_tickvals=bins[ss][vv],
             )
-            fig.write_html("/home/jgiles/sciebo/Images/AMS poster/final/ridgeplots_stats/"+ss+"_"+vv+".html")            
+            fig.write_html("/automount/agradar/jgiles/images/ridgeplots_stats/"+ss+"_"+vv+".html")            
     except: 
-        samples = [stats[loc][ss].values for loc in order]
+        samples = [stats[loc][ss].values for loc in order if loc in stats.keys()]
         fig = ridgeplot.ridgeplot(samples=samples,
                                 colorscale="viridis",
                                 colormode="row-index",
@@ -659,7 +682,7 @@ for ss in bins.keys():
                         title=ss,
                         xaxis_tickvals=bins[ss],
         )
-        fig.write_html("/home/jgiles/sciebo/Images/AMS poster/final/ridgeplots_stats/"+ss+".html")
+        fig.write_html("/automount/agradar/jgiles/images/ridgeplots_stats/"+ss+".html")
     
 #%% Checking PHIDP
 # get and plot a random selection of QVPs
