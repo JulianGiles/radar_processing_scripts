@@ -283,7 +283,7 @@ retreivals = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
                          }).compute()
 
 #### General statistics
-values_sfc = qvps_strat_fil.isel({"z": 2})
+values_sfc = qvps_strat_fil.bfill("z", limit=10).isel({"z": 0}) # selects the closest value to the ground (it could be refined further by setting lim=half the ML height, but it is pretty tricky)
 values_snow = qvps_strat_fil.sel({"z": qvps_strat_fil["height_ml_new_gia"]}, method="nearest")
 values_rain = qvps_strat_fil.sel({"z": qvps_strat_fil["height_ml_bottom_new_gia"]}, method="nearest")
     
@@ -582,9 +582,9 @@ with mpl.rc_context({'font.size': 10}):
     plot_qvp(qvps_fix, "ZDR_OC", tloc="2020-07-15", plot_ml=True, plot_entropy=True, ylim=(qvps.altitude,10000))
 
 
-qvps_strat_fil_notime = qvps_strat_fil.copy()
-qvps_strat_fil_notime = qvps_strat_fil_notime.reset_index("time")
-plot_qvp(qvps_strat_fil_notime, "ZDR_OC", tloc="2020-07-15", plot_ml=True, plot_entropy=True, ylim=(qvps.altitude,10000))
+# qvps_strat_fil_notime = qvps_strat_fil.copy()
+# qvps_strat_fil_notime = qvps_strat_fil_notime.reset_index("time")
+# plot_qvp(qvps_strat_fil_notime, "ZDR_OC", tloc="2020-07-15", plot_ml=True, plot_entropy=True, ylim=(qvps.altitude,10000))
 
 #%% Statistics histograms
 import ridgeplot
@@ -665,7 +665,7 @@ for ss in bins.keys():
             fig.write_html("/automount/agradar/jgiles/images/ridgeplots_stats/"+ss+"_"+vv+".html")            
     except: 
         samples = [stats[loc][ss].values for loc in order if loc in stats.keys()]
-        fig = ridgeplot.ridgeplot(samples=samples,
+        fig = ridgeplot.ridgeplot(samples=samples, #bandwidth=50,
                                 colorscale="viridis",
                                 colormode="row-index",
                                 coloralpha=0.65,
