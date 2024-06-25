@@ -79,9 +79,9 @@ min_rngs = {
     'default': 1000, 
     'HTY': 0, # for HTY the data looks pretty good close to the radar
     'ANK': 7000, # for ANK we need higher min_range to avoid PHIDP artifacts
-    'AFY': 8500, # for AFY we need higher min_hgt to avoid artifacts
-    'SVS': 5500, # for SVS we need higher min_hgt to avoid artifacts
-    'GZT': 3500, # for GZT we need higher min_hgt to avoid artifacts
+    'AFY': 8500, # for AFY we need higher min_range to avoid artifacts
+    'SVS': 5500, # for SVS we need higher min_range to avoid artifacts
+    'GZT': 3500, # for GZT we need higher min_range to avoid artifacts
 }
 
 # Set the possible ZDR calibrations locations to include (in order of priority)
@@ -1055,7 +1055,7 @@ def compute_rdqvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1}, max_range=50
     return ds_qvp
 
 #### Entropy calculation
-def Entropy_timesteps_over_azimuth_different_vars_schneller(ds, zhlin="zhlin", zdrlin="zdrlin", rhohvnc="RHOHV_NC", kdp="KDP_ML_corrected"):
+def Entropy_timesteps_over_azimuth_different_vars_schneller(ds, n_az=360, zhlin="zhlin", zdrlin="zdrlin", rhohvnc="RHOHV_NC", kdp="KDP_ML_corrected"):
 
     '''
     From Tobias Scharbach
@@ -1071,6 +1071,9 @@ def Entropy_timesteps_over_azimuth_different_vars_schneller(ds, zhlin="zhlin", z
     ---------
     ds : xarray.DataArray
         array with PPI data.
+
+    n_az : int
+        number of azimuth values.
 
     Keyword Arguments
     -----------------
@@ -1100,8 +1103,6 @@ def Entropy_timesteps_over_azimuth_different_vars_schneller(ds, zhlin="zhlin", z
     ds["min_entropy"] = min_trst_strati
     
     '''
-    n_az = 360
-
     Variable_List_new_zhlin = (ds[zhlin]/(ds[zhlin].sum(("azimuth"),skipna=True)))
     entropy_zhlin = - ((Variable_List_new_zhlin * np.log10(Variable_List_new_zhlin)).sum("azimuth"))/np.log10(n_az)
     entropy_zhlin = entropy_zhlin.rename("entropy_Z")
