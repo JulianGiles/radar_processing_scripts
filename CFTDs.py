@@ -283,9 +283,11 @@ retreivals = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
                          }).compute()
 
 #### General statistics
+z_snow_over_ML = 300 # set the height above the ML from where to consider snow. 300 m like in https://doi.org/10.1175/JAMC-D-19-0128.1
+z_rain_below_ML = 300 # set the height below the ML from where to consider rain. 300 m like in https://doi.org/10.1175/JAMC-D-19-0128.1
 values_sfc = qvps_strat_fil.bfill("z", limit=10).isel({"z": 0}) # selects the closest value to the ground (it could be refined further by setting lim=half the ML height, but it is pretty tricky)
-values_snow = qvps_strat_fil.sel({"z": qvps_strat_fil["height_ml_new_gia"]}, method="nearest")
-values_rain = qvps_strat_fil.sel({"z": qvps_strat_fil["height_ml_bottom_new_gia"]}, method="nearest")
+values_snow = qvps_strat_fil.sel({"z": qvps_strat_fil["height_ml_new_gia"] + z_snow_over_ML}, method="nearest")
+values_rain = qvps_strat_fil.sel({"z": qvps_strat_fil["height_ml_bottom_new_gia"] - z_rain_below_ML}, method="nearest")
     
 #### ML statistics
 # select values inside the ML
@@ -296,6 +298,10 @@ values_ML_max = qvps_ML.max(dim="z")
 values_ML_min = qvps_ML.min(dim="z")
 values_ML_mean = qvps_ML.mean(dim="z")
 ML_thickness = qvps_ML["height_ml_new_gia"] - qvps_ML["height_ml_bottom_new_gia"]
+ML_bottom = qvps_ML["height_ml_bottom_new_gia"]
+
+height_ML_max = qvps_ML.idxmax("z")
+height_ML_min = qvps_ML.idxmin("z")
 
 # Silke style
 # select timesteps with detected ML
@@ -305,6 +311,10 @@ ML_thickness = qvps_ML["height_ml_new_gia"] - qvps_ML["height_ml_bottom_new_gia"
 # gradient_final = (gradient_silke_ML_plus_2km - gradient_silke_ML)/2
 # beta = gradient_final[X_TH] #### TH OR DBZH??
 
+z_grad_above_ML = 2000 # height above the ML until which to compute the gradient
+beta = qvps_strat_fil.where(qvps_strat_fil["z"] > qvps_strat_fil["height_ml_new_gia"])\
+                        .where(qvps_strat_fil["z"] < qvps_strat_fil["height_ml_new_gia"] + z_grad_above_ML)\
+                            .differentiate("z").median("z") 
 
 #### DGL statistics
 # select values in the DGL 
@@ -314,7 +324,83 @@ values_DGL_max = qvps_DGL.max(dim="z")
 values_DGL_min = qvps_DGL.min(dim="z")
 values_DGL_mean = qvps_DGL.mean(dim="z")
 
-# Put everything in a dict
+#### Statistics from Raquel
+MLmaxZH = values_ML_max["DBZH"]
+ZHrain = values_rain["DBZH"] 
+deltaZH = MLmaxZH - ZHrain
+MLminRHOHV = values_ML_min["RHOHV_NC"]
+
+MLdepth = ML_thickness
+
+#### Scatterplots: like Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
+# plot scatterplots (2d hist) like Fig. 10
+# plot a
+binsx = np.linspace(0.8, 1, 41)
+binsy = np.linspace(-10, 20, 61)
+deltaZHcurve = 4.27 + 6.89*(1-binsx) + 341*(1-binsx)**2 # curve from Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
+
+utils.hist_2d(MLminRHOHV.compute(), deltaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+plt.plot(binsx, deltaZHcurve, c="black", label="Reference curve")
+plt.legend()
+plt.xlabel(r"$\mathregular{Minimum \ \rho _{HV} \ in \ ML}$")
+plt.ylabel(r"$\mathregular{\Delta Z_H \ (MLmaxZ_H - Z_HRain) }$")
+plt.text(0.81, -8, r"$\mathregular{\Delta Z_H = 4.27 + 6.89(1-\rho _{HV}) + 341(1-\rho _{HV})^2 }$", fontsize="small")
+plt.grid()
+fig = plt.gcf()
+fig.savefig("/automount/realpep/upload/jgiles/radar_stats/stratiform/images/"+find_loc(locs, ff[0])+"_DeltaZH_MinRHOHVinML.png",
+            bbox_inches="tight")
+
+# plot b
+binsx = np.linspace(0, 4, 16*5+1)
+binsy = np.linspace(-10, 20, 61)
+deltaZHcurve = 3.18 + 2.19*binsx # curve from Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
+
+utils.hist_2d(values_ML_max["ZDR_OC"].compute(), deltaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+plt.plot(binsx, deltaZHcurve, c="black", label="Reference curve")
+plt.legend()
+plt.xlabel(r"$\mathregular{Maximum \ Z_{DR} \ in \ ML}$")
+plt.ylabel(r"$\mathregular{\Delta Z_H \ (MLmaxZ_H - Z_HRain) }$")
+plt.text(2, -8, r"$\mathregular{\Delta Z_H = 3.18 + 2.19 Z_{DR} }$", fontsize="small")
+plt.grid()
+fig = plt.gcf()
+fig.savefig("/automount/realpep/upload/jgiles/radar_stats/stratiform/images/"+find_loc(locs, ff[0])+"_DeltaZH_MaxZDRinML.png",
+            bbox_inches="tight")
+
+# plot c
+binsx = np.linspace(0.8, 1, 41)
+binsy = np.linspace(0, 1000, 26)
+MLdepthcurve = -0.64 + 30.8*(1-binsx) - 315*(1-binsx)**2 + 1115*(1-binsx)**3 # curve from Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
+
+utils.hist_2d(MLminRHOHV.compute(), MLdepth.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+plt.plot(binsx, MLdepthcurve*1000, c="black", label="Reference curve") # multiply curve by 1000 to change from km to m
+plt.legend()
+plt.xlabel(r"$\mathregular{Minimum \ \rho _{HV} \ in \ ML}$")
+plt.ylabel(r"Depth of ML (m)")
+# plt.text(0.8, 800, r"$\mathregular{ML \ Depth = -0.64 + 30.8(1-\rho _{HV}) - 315(1-\rho _{HV})^2 + 1115(1-\rho _{HV})^3 }$", fontsize="xx-small")
+plt.text(0.86, 700, r"$\mathregular{ML \ Depth = -0.64 + 30.8(1-\rho _{HV})}$" "\n" r"$\mathregular{- 315(1-\rho _{HV})^2 + 1115(1-\rho _{HV})^3}$", fontsize="xx-small")
+plt.grid()
+fig = plt.gcf()
+fig.savefig("/automount/realpep/upload/jgiles/radar_stats/stratiform/images/"+find_loc(locs, ff[0])+"_DepthML_MinRHOHVinML.png",
+            bbox_inches="tight")
+
+# plot d
+binsx = np.linspace(0, 4, 16*5+1)
+binsy = np.linspace(0, 1000, 26)
+MLdepthcurve = 0.21 + 0.091*binsx # curve from Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
+
+utils.hist_2d(values_ML_max["ZDR_OC"].compute(), MLdepth.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+plt.plot(binsx, MLdepthcurve*1000, c="black", label="Reference curve") # multiply curve by 1000 to change from km to m
+plt.legend()
+plt.xlabel(r"$\mathregular{Maximum \ Z_{DR} \ in \ ML}$")
+plt.ylabel(r"Depth of ML (m)")
+# plt.text(0.8, 800, r"$\mathregular{ML \ Depth = -0.64 + 30.8(1-\rho _{HV}) - 315(1-\rho _{HV})^2 + 1115(1-\rho _{HV})^3 }$", fontsize="xx-small")
+plt.text(0.86, 700, r"$\mathregular{ML \ Depth = 0.21 + 0.091 Z_{DR} }$", fontsize="xx-small")
+plt.grid()
+fig = plt.gcf()
+fig.savefig("/automount/realpep/upload/jgiles/radar_stats/stratiform/images/"+find_loc(locs, ff[0])+"_DepthML_MaxZDRinML.png",
+            bbox_inches="tight")
+
+#### Put everything in a dict
 try: # check if exists, if not, create it
     stats
 except NameError:
@@ -326,10 +412,14 @@ stats[find_loc(locs, ff[0])] = {"values_sfc": values_sfc.compute().copy(),
                                    "values_ML_max": values_ML_max.compute().copy(),
                                    "values_ML_min": values_ML_min.compute().copy(),
                                    "values_ML_mean": values_ML_mean.compute().copy(),
+                                   "height_ML_max": height_ML_max.compute().copy(),
+                                   "height_ML_min": height_ML_min.compute().copy(),
                                    "ML_thickness": ML_thickness.compute().copy(),
+                                   "ML_bottom": ML_bottom.compute().copy(),
                                    "values_DGL_max": values_DGL_max.compute().copy(),
                                    "values_DGL_min": values_DGL_min.compute().copy(),
                                    "values_DGL_mean": values_DGL_mean.compute().copy(),
+                                   "beta": beta.compute().copy(),
     }
 
 # Save stats
@@ -337,8 +427,8 @@ for ll in stats.keys():
     for xx in stats[ll].keys():
         stats[ll][xx].to_netcdf("/automount/realpep/upload/jgiles/radar_stats/stratiform/"+ll+"_"+xx+".nc")
 
-#%% Statistics for Raquel
-
+#%% Statistics for Raquel # DEPRECATED (incorporated to the previous block)
+'''
 #### Scatterplots:
 MLmaxZH = values_ML_max["DBZH"]
 ZHrain = values_rain["DBZH"] # not exactly the same definition, but close
@@ -376,7 +466,7 @@ ZHmax = values_ML_max["DBZH"].mean().compute()
 
 Hb = qvps_ML["height_ml_bottom_new_gia"].mean().compute()
 Ht = qvps_ML["height_ml_new_gia"].mean().compute()
-
+'''
 #%% CFTDs Plot
 
 # adjustment from K to C (disabled now because I know that all qvps have ERA5 data)
