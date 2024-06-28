@@ -68,7 +68,7 @@ path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/pr
 path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
 # path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/2016/*/*/ANK/*/*/ML_detected.txt"
 # path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
-path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/*/*/*/ANK/*/*/ML_detected.txt"
+# path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/*/*/*/ANK/*/*/ML_detected.txt"
 # path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_singlefile/ML_detected/ANK/*/12*/*allmoms*"
 # path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*"
 # path_qvps = ["/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*",
@@ -347,8 +347,9 @@ plt.ylabel(r"$\mathregular{\Delta Z_H \ (MLmaxZ_H - Z_HRain) }$")
 plt.text(0.81, -8, r"$\mathregular{\Delta Z_H = 4.27 + 6.89(1-\rho _{HV}) + 341(1-\rho _{HV})^2 }$", fontsize="small")
 plt.grid()
 fig = plt.gcf()
-fig.savefig("/automount/realpep/upload/jgiles/radar_stats/stratiform/images/"+find_loc(locs, ff[0])+"_DeltaZH_MinRHOHVinML.png",
+fig.savefig("/automount/agradar/jgiles/images/stats_scatterplots/"+find_loc(locs, ff[0])+"_DeltaZH_MinRHOHVinML.png",
             bbox_inches="tight")
+plt.close(fig)
 
 # plot b
 binsx = np.linspace(0, 4, 16*5+1)
@@ -363,8 +364,9 @@ plt.ylabel(r"$\mathregular{\Delta Z_H \ (MLmaxZ_H - Z_HRain) }$")
 plt.text(2, -8, r"$\mathregular{\Delta Z_H = 3.18 + 2.19 Z_{DR} }$", fontsize="small")
 plt.grid()
 fig = plt.gcf()
-fig.savefig("/automount/realpep/upload/jgiles/radar_stats/stratiform/images/"+find_loc(locs, ff[0])+"_DeltaZH_MaxZDRinML.png",
+fig.savefig("/automount/agradar/jgiles/images/stats_scatterplots/"+find_loc(locs, ff[0])+"_DeltaZH_MaxZDRinML.png",
             bbox_inches="tight")
+plt.close(fig)
 
 # plot c
 binsx = np.linspace(0.8, 1, 41)
@@ -380,8 +382,9 @@ plt.ylabel(r"Depth of ML (m)")
 plt.text(0.86, 700, r"$\mathregular{ML \ Depth = -0.64 + 30.8(1-\rho _{HV})}$" "\n" r"$\mathregular{- 315(1-\rho _{HV})^2 + 1115(1-\rho _{HV})^3}$", fontsize="xx-small")
 plt.grid()
 fig = plt.gcf()
-fig.savefig("/automount/realpep/upload/jgiles/radar_stats/stratiform/images/"+find_loc(locs, ff[0])+"_DepthML_MinRHOHVinML.png",
+fig.savefig("/automount/agradar/jgiles/images/stats_scatterplots/"+find_loc(locs, ff[0])+"_DepthML_MinRHOHVinML.png",
             bbox_inches="tight")
+plt.close(fig)
 
 # plot d
 binsx = np.linspace(0, 4, 16*5+1)
@@ -397,8 +400,9 @@ plt.ylabel(r"Depth of ML (m)")
 plt.text(0.86, 700, r"$\mathregular{ML \ Depth = 0.21 + 0.091 Z_{DR} }$", fontsize="xx-small")
 plt.grid()
 fig = plt.gcf()
-fig.savefig("/automount/realpep/upload/jgiles/radar_stats/stratiform/images/"+find_loc(locs, ff[0])+"_DepthML_MaxZDRinML.png",
+fig.savefig("/automount/agradar/jgiles/images/stats_scatterplots/"+find_loc(locs, ff[0])+"_DepthML_MaxZDRinML.png",
             bbox_inches="tight")
+plt.close(fig)
 
 #### Put everything in a dict
 try: # check if exists, if not, create it
@@ -752,7 +756,7 @@ for ss in bins.keys():
                             title=ss+" "+vv,
                             xaxis_tickvals=bins[ss][vv],
             )
-            fig.write_html("/automount/agradar/jgiles/images/ridgeplots_stats/"+ss+"_"+vv+".html")            
+            fig.write_html("/automount/agradar/jgiles/images/stats_ridgeplots/"+ss+"_"+vv+".html")            
     except: 
         samples = [stats[loc][ss].values for loc in order if loc in stats.keys()]
         fig = ridgeplot.ridgeplot(samples=samples, #bandwidth=50,
@@ -772,7 +776,7 @@ for ss in bins.keys():
                         title=ss,
                         xaxis_tickvals=bins[ss],
         )
-        fig.write_html("/automount/agradar/jgiles/images/ridgeplots_stats/"+ss+".html")
+        fig.write_html("/automount/agradar/jgiles/images/stats_ridgeplots/"+ss+".html")
     
 #%% Checking PHIDP
 # get and plot a random selection of QVPs
