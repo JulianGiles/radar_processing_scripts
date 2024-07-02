@@ -68,7 +68,7 @@ path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/pr
 path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
 # path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/2016/*/*/ANK/*/*/ML_detected.txt"
 # path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
-# path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/*/*/*/ANK/*/*/ML_detected.txt"
+path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/*/*/*/HTY/*/*/ML_detected.txt"
 # path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_singlefile/ML_detected/ANK/*/12*/*allmoms*"
 # path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*"
 # path_qvps = ["/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*",
@@ -285,9 +285,9 @@ retreivals = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
 #### General statistics
 z_snow_over_ML = 300 # set the height above the ML from where to consider snow. 300 m like in https://doi.org/10.1175/JAMC-D-19-0128.1
 z_rain_below_ML = 300 # set the height below the ML from where to consider rain. 300 m like in https://doi.org/10.1175/JAMC-D-19-0128.1
-values_sfc = qvps_strat_fil.bfill("z", limit=10).isel({"z": 0}) # selects the closest value to the ground (it could be refined further by setting lim=half the ML height, but it is pretty tricky)
-values_snow = qvps_strat_fil.sel({"z": qvps_strat_fil["height_ml_new_gia"] + z_snow_over_ML}, method="nearest")
-values_rain = qvps_strat_fil.sel({"z": qvps_strat_fil["height_ml_bottom_new_gia"] - z_rain_below_ML}, method="nearest")
+values_sfc = qvps_strat_fil.where( (qvps_strat_fil["z"] < (qvps_strat_fil["height_ml_bottom_new_gia"]+qvps_strat_fil["z"][0])/2) ).bfill("z").isel({"z": 0}) # selects the closest value to the ground starting from below half of the ML height (with respect to the radar altitude)
+values_snow = qvps_strat_fil.bfill("z").sel({"z": qvps_strat_fil["height_ml_new_gia"] + z_snow_over_ML}, method="nearest")
+values_rain = qvps_strat_fil.ffill("z").sel({"z": qvps_strat_fil["height_ml_bottom_new_gia"] - z_rain_below_ML}, method="nearest")
     
 #### ML statistics
 # select values inside the ML
@@ -312,9 +312,9 @@ height_ML_min = qvps_ML.idxmin("z")
 # beta = gradient_final[X_TH] #### TH OR DBZH??
 
 z_grad_above_ML = 2000 # height above the ML until which to compute the gradient
-beta = qvps_strat_fil.where(qvps_strat_fil["z"] > qvps_strat_fil["height_ml_new_gia"])\
-                        .where(qvps_strat_fil["z"] < qvps_strat_fil["height_ml_new_gia"] + z_grad_above_ML)\
-                            .differentiate("z").median("z") 
+beta = qvps_strat_fil.where(qvps_strat_fil["z"] > (qvps_strat_fil["height_ml_new_gia"] + z_snow_over_ML) )\
+                        .where(qvps_strat_fil["z"] < (qvps_strat_fil["height_ml_new_gia"] + z_snow_over_ML + z_grad_above_ML) )\
+                            .differentiate("z").median("z") * 1000 # x1000 to transform the gradients to /km
 
 #### DGL statistics
 # select values in the DGL 
@@ -692,7 +692,9 @@ for ll in ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']:
         stats[ll] = {}
     elif type(stats[ll]) is not dict:
         stats[ll] = {}
-    for xx in ['values_sfc', 'values_snow', 'values_rain', 'values_ML_max', 'values_ML_min', 'values_ML_mean', 'ML_thickness', 'values_DGL_max', 'values_DGL_min', 'values_DGL_mean']:
+    for xx in ['values_sfc', 'values_snow', 'values_rain', 'values_ML_max', 'values_ML_min', 'values_ML_mean', 
+               'ML_thickness', 'values_DGL_max', 'values_DGL_min', 'values_DGL_mean',
+               'height_ML_max', 'height_ML_min', 'ML_bottom', 'beta']:
         try:
             stats[ll][xx] = xr.open_dataset("/automount/realpep/upload/jgiles/radar_stats/stratiform/"+ll+"_"+xx+".nc")
             if len(stats[ll][xx].data_vars)==1:
@@ -713,11 +715,20 @@ vars_ticks = {X_DBZH: np.arange(0, 46, 1),
                 X_RHO: np.arange(0.9, 1.004, 0.004)
                 }
 
+beta_vars_ticks = {X_DBZH: np.linspace(-15, 10, int((10--15)/1)+1 ), 
+                X_ZDR: np.linspace(-0.5, 1, int((1--0.5)/0.1)+1 ),
+                X_KDP: np.linspace(-0.2, 0.2, int((0.2--0.2)/0.01)+1 ),
+                X_RHO: np.linspace(-0.05, 0.05, int((0.05--0.05)/0.001)+1 ),
+                }
+
+
 bins = {"ML_thickness": np.arange(0,1200,50),
         "values_snow": vars_ticks,
         "values_rain": vars_ticks,
         "values_DGL_mean": vars_ticks,
         "values_ML_mean": vars_ticks,
+        "values_sfc": vars_ticks,
+        "beta": beta_vars_ticks,
         }
 
 # for loc in stats.keys():
@@ -726,7 +737,7 @@ bins = {"ML_thickness": np.arange(0,1200,50),
 #                                                weights=np.ones_like(stats[loc][ss])*100 / len(stats[loc][ss]))
 
 
-order = ['pro', 'afy', 'ank', 'gzt', 'hty', 'svs']
+order = ['umd', 'pro', 'afy', 'ank', 'gzt', 'hty', 'svs']
 for ss in bins.keys():
     print("plotting "+ss)
     try: 
