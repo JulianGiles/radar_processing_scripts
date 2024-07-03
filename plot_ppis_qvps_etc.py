@@ -81,14 +81,14 @@ how_mix_zdr_offset = "count" # how to choose between the different offsets
 # in its calculation (there must be a variable ZDR_offset_datacount in the loaded offset).
 # "neg_overcorr" will choose the offset that generates less negative ZDR values.
 
-min_height_key = "default" # default = 200, 90grads = 600, ANK = 400, GZT = 300
-min_range_key = "GZT" # default = 1000, HTY = 0
+min_height_key = "default" # default = 200
+min_range_key = "HTY" # default = 1000
 
-# ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/tur/vol5minng01/07/*allmoms*"
-ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-10-06/ANK/*/12.0/*allmoms*"
-ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-08-04/AFY/VOL*/4.0/*allmoms*"
-# ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-11-20/HTY/VOL*/10.0/*allmoms*"
-ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-03-28/GZT/*/7.0/*allmoms*.nc"
+ff = "/automount/realpep/upload/jgiles/dwd/*/*/2015-01-08/umd/vol5minng01/07/*allmoms*"
+# ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-10-06/ANK/*/12.0/*allmoms*"
+# ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-08-04/AFY/VOL*/4.0/*allmoms*"
+ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-03-11/HTY/MON*/8.0/*allmoms*"
+# ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-03-28/GZT/*/7.0/*allmoms*.nc"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-11-05/SVS/*/10.0/*allmoms*.nc"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-10-21/SVS/*/7.0/*allmoms*.nc"
 # ff = '/automount/realpep/upload/jgiles/dmi/2016/2016-08/2016-08-05/AFY/VOL_B/7.0/VOL_B-allmoms-7.0-20162016-082016-08-05-AFY-h5netcdf.nc'
@@ -467,6 +467,46 @@ if not isvolume:
 else:
     print("Ignored: Atten corr, fix KDP in the ML and entropy calculation")
 
+#%% Test: load original ZDR offsets from files
+import re
+
+def create_zdrcal_dataset(loc, zdrcal_path="/automount/realpep/upload/jgiles/dmi/zdrcal"):
+    zdr_offsets = []
+    timestamps = []
+    
+    file_pattern = re.compile(loc+r'(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2}).zdrcal_results')
+    value_pattern = re.compile(r'results\.fNewZdrOffsetEstimate_dB = ([-+]?[0-9]*\.?[0-9]+)')
+    
+    for filename in sorted(os.listdir(zdrcal_path)):
+        match = file_pattern.match(filename)
+        if match:
+            # Extract timestamp from filename
+            year, month, day, hour, minute, second = match.groups()
+            timestamp = pd.Timestamp(f'20{year}-{month}-{day} {hour}:{minute}:{second}')
+
+            # Read the file content
+            with open(os.path.join(zdrcal_path, filename), 'r') as file:
+                content = file.read()
+                
+            # Extract the fNewZdrOffsetEstimate_dB value
+            value_match = value_pattern.search(content)
+            if value_match:
+                zdr_offset = float(value_match.group(1))
+                timestamps.append(timestamp)
+                zdr_offsets.append(zdr_offset)        
+    
+    # Create a DataArray with the extracted data
+    zdr_offset_da = xr.DataArray(zdr_offsets, coords=[timestamps], dims=['time'])    
+    
+    # Create a Dataset
+    zdr_offset_ds = xr.Dataset({'fNewZdrOffsetEstimate_dB': zdr_offset_da})
+
+    return zdr_offset_ds
+
+zdrcal = create_zdrcal_dataset("HTY")
+
+
+
 #%% Small test (ZDR OC after atten correction)
 # LR consistency correction after atten corr
 zdr_offset_lr_belowML_step = utils.zhzdr_lr_consistency(ds, zdr="ZDR_AC", dbzh="DBZH_AC", rhohv=X_RHO, min_h=min_height, timemode="step")
@@ -641,7 +681,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "KDP_CONV"
+mom = "ZDR"
 
 ticks = radarmet.visdict14[mom]["ticks"]
 cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
@@ -655,16 +695,180 @@ datasel["height_ml_new_gia"].plot(c="black")
 datasel["height_ml_bottom_new_gia"].plot(c="black")
 plt.gca().set_ylabel("height over sea level")
 
-# # Plot reflectivity as lines to check wet radome effect
-# ax2 = plt.gca().twinx()
-# # ds.DBZH.mean("azimuth")[:,4:7].mean("range").plot(ax=ax2, suptitle="")
-# plt.plot(ds.DBZH.mean("azimuth")[:,4:7].mean("range"), ax=ax2)
+# Plot reflectivity as lines to check wet radome effect
+ax2 = plt.gca().twinx()
+ds.DBZH.mean("azimuth")[:,4:7].mean("range").plot(ax=ax2, c="dodgerblue")
+ax2.yaxis.label.set_color("dodgerblue")
+ax2.spines['left'].set_position(('outward', 60))
+ax2.tick_params(axis='y', labelcolor="dodgerblue")  # Add padding to the ticks
+ax2.yaxis.labelpad = -400  # Add padding to the y-axis label
+ax2.set_title("")
+
+# Plot zdrcal values
+ax3 = plt.gca().twinx()
+zdrcal.loc[{"time":slice(str(datasel.time[0].values), str(datasel.time[-1].values))}].fNewZdrOffsetEstimate_dB.plot(ax=ax3, c="magenta")
+ax3.yaxis.label.set_color("magenta")
+ax3.spines['right'].set_position(('outward', 90))
+ax3.tick_params(axis='y', labelcolor="magenta")  # Add padding to the ticks
+# ax3.yaxis.labelpad = 10  # Add padding to the y-axis label
+ax3.set_title("")
 
 if isvolume: elevtitle = " RD-QVP"
 else: elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
 plt.title(mom+elevtitle+". "+str(datasel.time.values[0]).split(".")[0])
 plt.show()
 plt.close()
+
+#%% TEST: fix wet radome atten (following Fig 7 of https://doi.org/10.1002/qj.3366)
+def zhcorr(ds, dbzh="DBZH", irange=2):
+    # correction according to the fitting curve of Fig 5. https://doi.org/10.1175/JTECH-D-12-00148.1 (plotted in Fig 7 of https://doi.org/10.1002/qj.3366)
+    Zm = ds[dbzh].mean("azimuth").isel(range=irange)
+    Zm = Zm.where(Zm>=0)
+    return 0.352*Zm + 0.00189*Zm**2
+
+def zdrcorr(ds, dbzh="DBZH", zdr="ZDR", irange=2):
+    # correction extracted by eye from Fig 7 of https://doi.org/10.1002/qj.3366
+    Zm = ds[dbzh].mean("azimuth").isel(range=irange)
+    Zm = Zm.where(Zm>=0)
+    return 0.03018*Zm - 0.0021176*Zm**2 + 0.000056464*Zm**3
+
+zh_offset = zhcorr(ds)
+zdr_offset = zdrcorr(ds).rename("ZDR")
+
+# Plot the values
+ds["DBZH"].mean("azimuth").isel(range=2).plot(label="DBZH close to the radar")
+zh_offset.plot(label="DBZH correction", ylim=(0,30));
+ax2 = plt.gca().twinx()
+zdr_offset.plot(label="DBZH close to the radar", ax=ax2, ylim=(0,1)); # irrelevant plot just to get the label
+zdr_offset.plot(label="DBZH correction", ax=ax2, ylim=(0,1)); # irrelevant plot just to get the label
+zdr_offset.plot(label="ZDR correction", ax=ax2, c="green", ylim=(0,1));
+plt.legend()
+
+#%% TEST: apply the previous fix (Plot simple QVP)
+max_height = 12000 # max height for the qvp plots
+
+tsel = ""# slice("2017-08-31T19","2017-08-31T22")
+if tsel == "":
+    datasel = ds_qvp.loc[{"z": slice(0, max_height)}]
+else:
+    datasel = ds_qvp.loc[{"time": tsel, "z": slice(0, max_height)}]
+
+# Apply the previous correction
+datasel  = datasel.assign({"ZDR_WRcorr": datasel["ZDR"]-zdr_offset.fillna(0)})
+datasel = datasel.assign({"DBZH_WRcorr": datasel["DBZH"]+zh_offset.fillna(0)})
+
+# New Colormap
+colors = ["#2B2540", "#4F4580", "#5a77b1",
+          "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
+
+
+mom = "ZDR_WRcorr"
+
+ticks = radarmet.visdict14["ZDR"]["ticks"]
+cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
+cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
+# norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
+cmap = "miub2"
+norm = utils.get_discrete_norm(ticks, cmap, extend="both")
+datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm, figsize=(7,3))
+plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only the hour in the x-axis
+datasel["height_ml_new_gia"].plot(c="black")
+datasel["height_ml_bottom_new_gia"].plot(c="black")
+plt.gca().set_ylabel("height over sea level")
+
+# # Plot reflectivity as lines to check wet radome effect
+# ax2 = plt.gca().twinx()
+# ds.DBZH.mean("azimuth")[:,2].plot(ax=ax2, c="dodgerblue")
+# ax2.yaxis.label.set_color("dodgerblue")
+# ax2.spines['left'].set_position(('outward', 60))
+# ax2.tick_params(axis='y', labelcolor="dodgerblue")  # Add padding to the ticks
+# ax2.yaxis.labelpad = -400  # Add padding to the y-axis label
+# ax2.set_title("")
+
+# # Plot zdrcal values
+# ax3 = plt.gca().twinx()
+# zdrcal.loc[{"time":slice(str(datasel.time[0].values), str(datasel.time[-1].values))}].fNewZdrOffsetEstimate_dB.plot(ax=ax3, c="magenta")
+# ax3.yaxis.label.set_color("magenta")
+# ax3.spines['right'].set_position(('outward', 90))
+# ax3.tick_params(axis='y', labelcolor="magenta")  # Add padding to the ticks
+# # ax3.yaxis.labelpad = 10  # Add padding to the y-axis label
+# ax3.set_title("")
+
+if isvolume: elevtitle = " RD-QVP"
+else: elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
+plt.title(mom+elevtitle+". "+str(datasel.time.values[0]).split(".")[0])
+plt.show()
+plt.close()
+
+#%% TEST: Test the ZDR LR offset correction again with the wet radome corrected vars
+# Apply the previous correction
+ds_corr  = ds.assign({"ZDR_WRcorr": ds["ZDR"]-zdr_offset.fillna(0)})
+ds_corr = ds_corr.assign({"DBZH_WRcorr": ds["DBZH"]+zh_offset.fillna(0)})
+
+zdr_offset_lr = utils.zhzdr_lr_consistency(ds_corr, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99, min_h=200, band="C",
+                         mlbottom=None, temp=None, timemode="step", plot_correction=True, plot_timestep=70)
+
+zdr_offset_lr_wr = utils.zhzdr_lr_consistency(ds_corr, zdr="ZDR_WRcorr", dbzh="DBZH_WRcorr", rhohv="RHOHV", rhvmin=0.99, min_h=200, band="C",
+                         mlbottom=None, temp=None, timemode="step", plot_correction=True, plot_timestep=70)
+
+#%% TEST: apply the ZDR offsets with and without WR correction
+max_height = 12000 # max height for the qvp plots
+
+tsel = ""# slice("2017-08-31T19","2017-08-31T22")
+if tsel == "":
+    datasel = ds_qvp.loc[{"z": slice(0, max_height)}]
+else:
+    datasel = ds_qvp.loc[{"time": tsel, "z": slice(0, max_height)}]
+
+# Apply the previous corrections
+datasel  = datasel.assign({"ZDR_WRcorr": datasel["ZDR"]-zdr_offset.fillna(0)})
+datasel = datasel.assign({"DBZH_WRcorr": datasel["DBZH"]+zh_offset.fillna(0)})
+
+datasel  = datasel.assign({"ZDR_WRcorr_OC": datasel["ZDR_WRcorr"]-zdr_offset_lr_wr["ZDR_offset"].fillna(0)})
+
+# New Colormap
+colors = ["#2B2540", "#4F4580", "#5a77b1",
+          "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
+
+
+mom = "ZDR_WRcorr_OC"
+
+ticks = radarmet.visdict14["ZDR"]["ticks"]
+cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
+cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
+# norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
+cmap = "miub2"
+norm = utils.get_discrete_norm(ticks, cmap, extend="both")
+datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm, figsize=(7,3))
+plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only the hour in the x-axis
+datasel["height_ml_new_gia"].plot(c="black")
+datasel["height_ml_bottom_new_gia"].plot(c="black")
+plt.gca().set_ylabel("height over sea level")
+
+# # Plot reflectivity as lines to check wet radome effect
+# ax2 = plt.gca().twinx()
+# ds.DBZH.mean("azimuth")[:,2].plot(ax=ax2, c="dodgerblue")
+# ax2.yaxis.label.set_color("dodgerblue")
+# ax2.spines['left'].set_position(('outward', 60))
+# ax2.tick_params(axis='y', labelcolor="dodgerblue")  # Add padding to the ticks
+# ax2.yaxis.labelpad = -400  # Add padding to the y-axis label
+# ax2.set_title("")
+
+# # Plot zdrcal values
+# ax3 = plt.gca().twinx()
+# zdrcal.loc[{"time":slice(str(datasel.time[0].values), str(datasel.time[-1].values))}].fNewZdrOffsetEstimate_dB.plot(ax=ax3, c="magenta")
+# ax3.yaxis.label.set_color("magenta")
+# ax3.spines['right'].set_position(('outward', 90))
+# ax3.tick_params(axis='y', labelcolor="magenta")  # Add padding to the ticks
+# # ax3.yaxis.labelpad = 10  # Add padding to the y-axis label
+# ax3.set_title("")
+
+if isvolume: elevtitle = " RD-QVP"
+else: elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
+plt.title(mom+elevtitle+". "+str(datasel.time.values[0]).split(".")[0])
+plt.show()
+plt.close()
+
 
 #%% Plot QVP as lines 
 
@@ -749,7 +953,7 @@ plt.title(mom+elevtitle+". "+str(datasel.time.values).split(".")[0])
 #%% Load QVPs
 # Load only events with ML detected (pre-condition for stratiform)
 ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2016/*/*/tur/vol5minng01/07/ML_detected.txt"
-ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps_new/qvps/2015/*/*/ANK/*/12.0/ML_detected.txt"
+ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2018/*/*/HTY/*/*/ML_detected.txt"
 ff_ML_glob = glob.glob(ff_ML)
 
 if "dmi" in ff_ML:
@@ -877,7 +1081,7 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
             else:
                 subtitle = var+" (Offset: variable per timestep)"
         if var == "DBZH": # add elevation angle to DBZH panel
-            subtitle = var+" (Elevation: "+str(selected_data['sweep_fixed_angle'].mean().compute().values)+"°)"
+            subtitle = var+" (Elevation: "+str(np.round(selected_data['sweep_fixed_angle'].mean().compute().values, 2))+"°)"
 
         quadmesh = selected_data[var].hvplot.quadmesh(
             x='time', y='z', title=subtitle,
