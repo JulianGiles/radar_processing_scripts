@@ -2736,7 +2736,7 @@ def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rh
 
 
 def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
-                     dbzhmin=0., min_height=0, window=7, window2 = 3, fix_range=500., rng=None, rng_min=3000., 
+                     dbzhmin=0., min_height=0, window=7, window2 = None, fix_range=500., rng=None, rng_min=3000., 
                      fillna=False, clean_invalid=False, azmedian=False, tolerance=(0,0)):
     r"""
     Calculate basic PHIDP processing including thresholding, smoothing and 
