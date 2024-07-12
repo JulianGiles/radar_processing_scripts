@@ -45,7 +45,7 @@ overwrite = False # overwrite existing files?
 
 abs_zdr_off_min_thresh = 0. # if ZDR_OC has more negative values than the original ZDR
 # and the absolute median offset is < abs_zdr_off_min_thresh, then undo the correction (set to 0 to avoid this step)
-zdr_offset_perts = True # offset correct zdr per timesteps? if False, correct with daily offset
+zdr_offset_perts = False # offset correct zdr per timesteps? if False, correct with daily offset
 mix_zdr_offsets = False # if True and zdr_offset_perts=False, try to
 # choose between daily LR-consistency and QVP offsets based on how_mix_zdr_offset.
 # If True and zdr_offset_perts=True, choose between all available timestep offsets 
@@ -424,7 +424,7 @@ for ff in files:
         
         # derive KDP from PHIDP (Vulpiani)
         
-        ds = utils.kdp_phidp_vulpiani(ds, winlen0, X_PHI+"_OC_MASKED", min_periods=winlen0/2) 
+        ds = utils.kdp_phidp_vulpiani(ds, winlen0, X_PHI+"_OC_MASKED", min_periods=winlen0//2+1) 
         
         X_PHI = X_PHI+"_OC" # continue using offset corrected PHI
                 
