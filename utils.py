@@ -2735,7 +2735,7 @@ def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rh
     return ds.assign(assign)
 
 
-def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
+def phidp_processing_old(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
                      dbzhmin=0., min_height=0, window=7, window2 = None, fix_range=500., rng=None, rng_min=3000., 
                      fillna=False, clean_invalid=False, azmedian=False, tolerance=(0,0)):
     r"""
@@ -2824,7 +2824,7 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
         phi_fix = phi_fix.fillna(fillna) - off
 
     # smooth range dim
-    phi_median = phi_fix.where((ds[X_RHO]>=rhohvmin) & (ds[X_DBZH]>=dbzhmin) & (ds["z"]>min_height) ).pipe(xr_rolling, window, window2=window2, method='median', min_periods=round(window/2), skipna=False)
+    phi_median = phi_fix.where((ds[X_RHO]>=rhohvmin) & (ds[X_DBZH]>=dbzhmin) & (ds["z"]>min_height) & (ds["range"]>fix_range) ).pipe(xr_rolling, window, window2=window2, method='median', min_periods=round(window/2), skipna=True)
 
     # Apply additional smoothing
     gkern = gauss_kernel(window, window)
@@ -2839,6 +2839,278 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
 
     return ds.assign(assign)
     
+def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
+                     dbzhmin=-20., min_height=0, window=7, window2 = None, gauss_rng=5, gauss_az=3, fix_range=500., rng=None, rng_min=3000., 
+                     fillna=False, clean_invalid=False, azmedian=False, tolerance=(0,0)):
+    r"""
+    Calculate basic PHIDP processing including thresholding, smoothing and 
+    offset correction. Attach results to the input dataset.
+
+    Parameters
+    ----------
+    ds : xarray Dataset
+        Dataset with PHIDP, RHOHV, DBZH and z (height) coord.
+    X_PHI : str
+        Name of the variable for PHIDP data in ds.
+    X_RHO : str
+        Name of the variable for RHOHV data in ds.
+    X_DBZH : str
+        Name of the variable for DBZH data in ds.
+    rhohvmin : float
+        Minimum value for filtering RHOHV.
+    dbzhmin : float
+        Minimum value for filtering DBZH.
+    min_height : float
+        Minimum height for filtering the z coordinate.
+    window : int
+        Number of range bins for PHIDP rolling median (median filter).
+    window2 : int
+        Number of azimuth bins for PHIDP rolling median (median filter).
+    gauss_rng : int
+        Number of range bins for PHIDP Gaussian smoothing.
+    gauss_az : int
+        Number of azimuth bins for PHIDP Gaussian smoothing.
+    fix_range : int
+        Minimum range from where to consider PHIDP values.
+    rng : float
+        Range in m to calculate system phase offset. If None (default), it 
+        will be calculated according to window. It should be large enough to
+        allow sufficient data for offset identification (a value around 3000 
+        is usually enough)
+    rng_min : float
+        Minimum value of rng. If the value of rng (either passed by the user 
+        or calculated automatically) is lower than rng_min, then rng_min will be 
+        used instead.
+    azmedian : bool, int
+        Passed to phidp_offset_detection. Default is False.
+    fillna : bool, float
+        If True, fill non valid values (na) in the end result with zero. If float,
+        fill the non valid values with fillna. Default is False (do not fill na).
+    clean_invalid : bool
+        If True, only output corrected phase for pixels with range beyond start_range + fix_range.
+        start_range is the range of the first bin with the necessary consecutive valid bins from
+        phase_offset(). Default is False (apply the offset to all ds[X_PHI]).
+    tolerance : tuple
+        If the phase offset lies between the values in tolerance, then no offset correction
+        is applied. clean_invalid and fillna are still applied.
+
+    Returns
+    ----------
+    ds : xarray Dataset
+        xarray Dataset with the original data and processed PHIDP.
+
+    """
+    
+    # smooth range dim
+    phi_median = ds[X_PHI].where((ds[X_RHO]>=rhohvmin) & (ds[X_DBZH]>=dbzhmin) & (ds["z"]>min_height) & (ds["range"]>fix_range) ).pipe(xr_rolling, window, window2=window2, method='median', min_periods=window//2+1, skipna=True)
+
+    # Apply additional smoothing
+    gkern = gauss_kernel(gauss_az, gauss_rng)
+    smooth_partial = partial(smooth_data, kernel=gkern)
+    phiclean = xr.apply_ufunc(smooth_partial, phi_median.compute(), 
+                              input_core_dims=[["azimuth","range"]], output_core_dims=[["azimuth","range"]],
+                              vectorize=True)
+
+    # Calculate range for offset calculation if rng is None
+    if rng is None:
+        rng = ds[X_PHI].range.diff("range").median().values * window
+        
+    if rng < rng_min:
+        rng = rng_min
+
+    # Calculate phase offset
+    phidp_offset = phidp_offset_detection(ds.assign({X_PHI: phiclean}), phidp=X_PHI, rhohv=X_RHO, dbzh=X_DBZH, rhohvmin=rhohvmin,
+                                          dbzhmin=dbzhmin, min_height=min_height, rng=rng, azmedian=azmedian,
+                                          min_periods=3)
+
+    off = phidp_offset["PHIDP_OFFSET"]
+    tolerance_cond = ( off<=tolerance[0] ) + ( off>tolerance[1] )
+    off = off.where(tolerance_cond, other=0)
+    start_range = phidp_offset["start_range"].fillna(0)
+
+    # apply offset
+    if clean_invalid:
+        phi_fix = ds[X_PHI].copy().where(ds[X_PHI]["range"] >= start_range + fix_range)
+        phiclean = phiclean.where(ds[X_PHI]["range"] >= start_range + fix_range)
+    else:
+        phi_fix = ds[X_PHI].copy()
+        phiclean = phiclean.copy()
+
+    if fillna is True:
+        off_fix = off.broadcast_like(phi_fix)
+        phi_fix = phi_fix.fillna(off_fix) - off
+        phiclean = phiclean.fillna(off_fix) - off
+    elif fillna is False:    
+        phi_fix = phi_fix - off    
+        phiclean = phiclean - off    
+    elif isinstance(fillna, int) or isinstance(fillna, float):
+        phi_fix = phi_fix.fillna(fillna) - off
+        phiclean = phiclean.fillna(fillna) - off
+
+    # assign results
+    assign = {X_PHI+"_OC_SMOOTH": phiclean.assign_attrs(ds[X_PHI].attrs),    
+              X_PHI+"_OFFSET": off.assign_attrs(ds[X_PHI].attrs),
+              X_PHI+"_OC": phi_fix.assign_attrs(ds[X_PHI].attrs)}
+
+    return ds.assign(assign)
+
+def count_and_filter_segments(da, min_length=7):
+    # Identify valid values (not NaN)
+    valid_mask = ~np.isnan(da)
+
+    # Find the indices where the valid_mask changes
+    changes = np.diff(valid_mask.astype(int))
+    
+    # Get start and end indices of segments
+    start_indices = np.where(changes == 1)[0] + 1
+    end_indices = np.where(changes == -1)[0] + 1
+    
+    # Adjust for segments that start or end at the edges
+    if valid_mask[0]:
+        start_indices = np.insert(start_indices, 0, 0)
+    if valid_mask[-1]:
+        end_indices = np.append(end_indices, len(valid_mask))
+    
+    # Calculate segment lengths
+    segment_lengths = end_indices - start_indices
+
+    # Create a mask for segments longer than min_length
+    long_segment_mask = np.zeros_like(valid_mask, dtype=bool)
+    for start, length in zip(start_indices, segment_lengths):
+        if length >= min_length:
+            long_segment_mask[start:start + length] = True
+
+    # Apply the mask to the original DataArray
+    try:
+        filtered_da = da.where(xr.DataArray(long_segment_mask, dims=["range"]), drop=False)
+    except:
+        filtered_da = np.where(long_segment_mask, da, np.nan)
+
+    return filtered_da
+
+def phidp_processing_ryzhkov(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
+                     dbzhmin=-20., min_height=0, window=3, window2 = None, window3=7, fix_range=500., rng=None, rng_min=3000., 
+                     fillna=False, clean_invalid=False, azmedian=False, tolerance=(0,0)):
+    r"""
+    Calculate basic PHIDP processing including thresholding, smoothing and 
+    offset correction like A. Ryzhkov does for NEXRAD. Attach results to the input dataset.
+
+    Parameters
+    ----------
+    ds : xarray Dataset
+        Dataset with PHIDP, RHOHV, DBZH and z (height) coord.
+    X_PHI : str
+        Name of the variable for PHIDP data in ds.
+    X_RHO : str
+        Name of the variable for RHOHV data in ds.
+    X_DBZH : str
+        Name of the variable for DBZH data in ds.
+    rhohvmin : float
+        Minimum value for filtering RHOHV.
+    dbzhmin : float
+        Minimum value for filtering DBZH.
+    min_height : float
+        Minimum height for filtering the z coordinate.
+    window : int
+        Number of range bins for PHIDP rolling median (median filter).
+    window2 : int
+        Number of azimuth bins for PHIDP rolling median (median filter).
+    window3 : int
+        Number of range bins for PHIDP valid window size and rolling mean.
+    fix_range : int
+        Minimum range from where to consider PHIDP values.
+    rng : float
+        Range in m to calculate system phase offset. If None (default), it 
+        will be calculated according to window. It should be large enough to
+        allow sufficient data for offset identification (a value around 3000 
+        is usually enough)
+    rng_min : float
+        Minimum value of rng. If the value of rng (either passed by the user 
+        or calculated automatically) is lower than rng_min, then rng_min will be 
+        used instead.
+    azmedian : bool, int
+        Passed to phidp_offset_detection. Default is False.
+    fillna : bool, float
+        If True, fill non valid values (na) in the end result with zero. If float,
+        fill the non valid values with fillna. Default is False (do not fill na).
+    clean_invalid : bool
+        If True, only output corrected phase for pixels with range beyond start_range + fix_range.
+        start_range is the range of the first bin with the necessary consecutive valid bins from
+        phase_offset(). Default is False (apply the offset to all ds[X_PHI]).
+    tolerance : tuple
+        If the phase offset lies between the values in tolerance, then no offset correction
+        is applied. clean_invalid and fillna are still applied.
+
+    Returns
+    ----------
+    ds : xarray Dataset
+        xarray Dataset with the original data and processed PHIDP.
+
+    """
+    
+    # smooth range dim
+    phi_median = ds[X_PHI].where((ds[X_RHO]>=rhohvmin)).pipe(xr_rolling, window, window2=window2, method='median', min_periods=window//2+1, skipna=True)
+    
+    # select only the segments of PHIDP that have enough valid values
+    phimed_clean = xr.apply_ufunc(count_and_filter_segments, phi_median.compute(), kwargs=dict(min_length=window3),
+                              input_core_dims=[["range"]], output_core_dims=[["range"]],
+                              vectorize=True)
+    
+    # calculate PHIDP for the good intervals with a running average
+    
+    phi_mean = phimed_clean.rolling(range=window3, min_periods=window3//2+1, center=True).mean(skipna=True)
+    
+    # fill in the gaps with linear interpolation
+    
+    phi_mean_interp = phi_mean.interpolate_na(dim="range", method="linear")
+    
+    # fill the edges
+    
+    phi_mean_interp_fill = phi_mean_interp.bfill("range").ffill("range")
+
+    # Calculate range for offset calculation if rng is None
+    if rng is None:
+        rng = ds[X_PHI].range.diff("range").median().values * window
+        
+    if rng < rng_min:
+        rng = rng_min
+
+    # Calculate phase offset
+    phidp_offset = phidp_offset_detection(ds.assign({X_PHI: phi_mean_interp_fill}), phidp=X_PHI, rhohv=X_RHO, dbzh=X_DBZH, rhohvmin=rhohvmin,
+                                          dbzhmin=dbzhmin, min_height=min_height, rng=rng, azmedian=azmedian,
+                                          min_periods=3)
+
+    off = phidp_offset["PHIDP_OFFSET"]
+    tolerance_cond = ( off<=tolerance[0] ) + ( off>tolerance[1] )
+    off = off.where(tolerance_cond, other=0)
+    start_range = phidp_offset["start_range"].fillna(0)
+
+    # apply offset
+    if clean_invalid:
+        phi_fix = ds[X_PHI].copy().where(ds[X_PHI]["range"] >= start_range + fix_range)
+        phi_mean_interp_fill = phi_mean_interp_fill.where(ds[X_PHI]["range"] >= start_range + fix_range)
+    else:
+        phi_fix = ds[X_PHI].copy()
+        phi_mean_interp_fill = phi_mean_interp_fill.copy()
+
+    if fillna is True:
+        off_fix = off.broadcast_like(phi_fix)
+        phi_fix = phi_fix.fillna(off_fix) - off
+        phi_mean_interp_fill = phi_mean_interp_fill.fillna(off_fix) - off
+    elif fillna is False:    
+        phi_fix = phi_fix - off    
+        phi_mean_interp_fill = phi_mean_interp_fill - off    
+    elif isinstance(fillna, int) or isinstance(fillna, float):
+        phi_fix = phi_fix.fillna(fillna) - off
+        phi_mean_interp_fill = phi_mean_interp_fill.fillna(fillna) - off
+
+    # assign results
+    assign = {X_PHI+"_OC_SMOOTH": phi_mean_interp_fill.assign_attrs(ds[X_PHI].attrs),    
+              X_PHI+"_OFFSET": off.assign_attrs(ds[X_PHI].attrs),
+              X_PHI+"_OC": phi_fix.assign_attrs(ds[X_PHI].attrs)}
+
+    return ds.assign(assign)
+
 #### KDP derivation from PHIDP
 
 def kdp_from_phidp(ds, winlen, X_PHI=None, min_periods=2):
