@@ -859,7 +859,6 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
     
     return qvps
 
-
 #### Loading ZDR offsets and RHOHV noise corrected
 
 def load_ZDR_offset(ds, X_ZDR, zdr_off_path, zdr_off_name="ZDR_offset", zdr_oc_name="ZDR_OC", attach_all_vars=False):
@@ -4744,3 +4743,100 @@ def get_regionmask(regionname):
             return mask
         except KeyError:
             raise KeyError("Desired region "+regionname+" is not available.")
+
+def load_emvorado_to_radar_volume(path_or_data):
+    """
+    Load and reorganize EMVORADO output into a xarray.Dataset in the same flavor as DWD data. 
+    Optimized for EMVORADO output with one file per timestep containing all elevations and variables.
+    WARNING: The resulting volume has its elevations ordered from lower to higher and
+            not according to the scan strategy
+    
+    Parameters
+    ----------
+    path_or_data : str or nested sequence of paths or xarray.Dataset
+        – Either a string glob in the form "path/to/my/files/*.nc" or an 
+        explicit list of files to open. Paths can be given as strings or 
+        as pathlib Paths. Feeds into xarray.open_mfdataset. Alternatively, 
+        already-loaded data in the form of an xarray.Dataset can be passed.
+        
+    Returns
+    -------
+    data_vol : xarray.Dataset
+
+    """
+    if type(path_or_data) is xr.Dataset:
+        data_emvorado_xr = path_or_data
+    else:
+        data_emvorado_xr = xr.open_mfdataset(path_or_data, concat_dim="time", combine="nested")
+
+    data = data_emvorado_xr.rename_dims({"n_range": "range", "n_azimuth": "azimuth"})
+
+    # we make the coordinate arrays
+    range_coord = np.array([ np.arange(rs, rr*rb+rs, rr) for rr, rs, rb in 
+                           zip(data.range_resolution[0], data.range_start[0], data.n_range_bins[0]) ])
+    azimuth_coord = np.array([ np.arange(azs, azr*azb+azs, azr) for azr, azs, azb in 
+                           zip(data.azimuthal_resolution[0], data.azimuth_start[0], data.azimuth.shape[0]*np.ones_like(data.records)) ])
+    
+    # create time coordinate
+    time_coord = xr.DataArray( [
+                dt.datetime(int(yy), int(mm), int(dd),
+                                  int(hh), int(mn), int(ss))
+                for yy,mm,dd,hh,mn,ss in
+                
+                                zip( data.year,
+                                data.month,
+                                data.day,
+                                data.hour,
+                                data.minute,
+                                data.second 
+                                )
+                ], dims=["time"] )
+
+    # add coordinates for range, azimuth, time, latitude, longitude, altitude, elevation, sweep_mode
+
+    data.coords["range"] = ( ( "range"), range_coord)
+    data.coords["azimuth"] = ( ( "azimuth"), azimuth_coord)
+    data.coords["time"] = time_coord
+    data.coords["latitude"] = float( data["station_latitude"][0] )
+    data.coords["longitude"] = float( data["station_longitude"][0] )
+    data.coords["altitude"] = data.attrs["alt_msl_true"]
+    data.coords["elevation"] = data["ray_elevation"]
+    data.coords["sweep_mode"] = 'azimuth_surveillance'
+    
+    # move some variables to attributes
+    vars_to_attrs = ["station_name", "country_ID", "station_ID_national",
+                     "station_longitude", "station_height",
+                     "station_latitude", "range_resolution", "azimuthal_resolution",
+                     "range_start", "azimuth_start", "extended_nyquist",
+                     "high_nyquist", "dualPRF_ratio", "range_gate_length",
+                     "n_ranges_averaged", "n_pulses_averaged", "DATE", "TIME",
+                     "year", "month", "day", "hour", "minute", "second",
+                     "ppi_azimuth", "ppi_elevation", "n_range_bins"
+                     ]
+    for vta in vars_to_attrs:
+        data.attrs[vta] = data[vta]
+        
+    # add attribute "fixed_angle"
+    try:
+        # if one timestep
+        data.attrs["fixed_angle"] = float(data.attrs["ppi_elevation"])
+    except:
+        # if multiple timesteps
+        data.attrs["fixed_angle"] = float(data.attrs["ppi_elevation"][0])
+    
+    # drop variables that were moved to attrs
+    data = data.drop_vars(vars_to_attrs)
+
+    # for each remaining variable add "long_name" and "units" attribute
+    for vv in data.data_vars.keys():
+        try:
+            data[vv].attrs["long_name"] = data[vv].attrs["Description"]
+        except:
+            print("no long_name attribute in "+vv)
+
+        try:
+            data[vv].attrs["units"] = data[vv].attrs["Unit"]
+        except:
+            print("no long_name attribute in "+vv)
+        
+    return data
