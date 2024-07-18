@@ -114,6 +114,7 @@ phase_proc_params["dwd"]["vol5minng01"] = { # for the volume scan
     "fix_range": 750, # range from where to consider phi values (dwd data is bad in the first bin)
     "rng": 3000, # range for phidp offset correction, if None it is auto calculated based on window0
     "azmedian": True, # reduce the phidp offset by applying median along the azimuths?
+    "rhohv_thresh_gia": (0.97, 1) # rhohv thresholds for ML Giangrande refinement of KDP
 }
 phase_proc_params["dwd"]["90gradstarng01"] = { # for the vertical scan
             "window0": 17, # number of range bins for phidp smoothing (this one is quite important!)
@@ -123,6 +124,7 @@ phase_proc_params["dwd"]["90gradstarng01"] = { # for the vertical scan
             "fix_range": 750, # range from where to consider phi values (dwd data is bad in the first bin)
             "rng": 3000, # range for phidp offset correction, if None it is auto calculated based on window0
             "azmedian": True, # reduce the phidp offset by applying median along the azimuths?
+            "rhohv_thresh_gia": (0.97, 1) # rhohv thresholds for ML Giangrande refinement of KDP
         }
 phase_proc_params["dwd"]["pcpng01"] = phase_proc_params["dwd"]["90gradstarng01"] # for the precip scan
 
@@ -134,6 +136,7 @@ phase_proc_params["dmi"] = {
         "fix_range": 200,
         "rng": 1000, # range for phidp offset correction, if None it is auto calculated based on window0
         "azmedian": 10, # reduce the phidp offset by applying median along the azimuths?
+        "rhohv_thresh_gia": (0.995, 1) # rhohv thresholds for ML Giangrande refinement of KDP
 }
 
 # make a function to retreive only the phase_proc_params dictionary corresponding to the a data path (not very precise, tuned to my data naming)
@@ -1207,7 +1210,8 @@ def ml_height_top_new(ds, moment='comb_dy', dim='height',skipna=True, drop=True)
 
 
 
-def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), PHIDP=(-90.,-70.)), dim='height', thres=0.02, xwin=5, ywin=5, fmlh=0.3, min_h=600, all_data=False, clowres=False):
+def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), PHIDP=(-90.,-70.)), dim='height', 
+                            thres=0.02, xwin=5, ywin=5, fmlh=0.3, min_h=600, rhohv_thresh_gia=(0.97, 1), all_data=False, clowres=False):
     '''
     Function to detect the melting layer based on wolfensberger et al 2016 (https://doi.org/10.1002/qj.2672) 
     refined by T. Scharbach. Giangrande refinement is also calculated and included in separate variables.
@@ -1229,10 +1233,10 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
         Threshold for noise reduction in the gradients of the normalized smoothed variables. Only values over thres are kept.
 
     xwin : int
-        Minimum number of time steps for rolling median smoothing
+        Window size for rolling median smoothing
 
     ywin : int
-        Minimum number of height steps for rolling mean smoothing
+        Window size for rolling mean smoothing
 
     fmlh : float
         Tolerance value for melting layer height limits, above and below +-(1 +- flmh) from
@@ -1242,6 +1246,10 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
         Minimum height of usable data within the polarimetric profiles, in m. This is relative to
         sea level and not relative to the altitude of the radar (in accordance to the "z" coordinate 
         from wradlib.georef.georeference). The default is 600. 
+
+    rhohv_thresh_gia : tuple or list
+        Thresholds for filtering RHOHV in Giangrande refinement. Only data between the provided
+        thresholds is used for the refinement.
 
     all_data : bool
         If True, include all normalized moments in the output dataset. If False, only output 
@@ -1384,8 +1392,8 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
     new_cut_above_min_ML = ds.where(ds[dim] < min_height_ML)
     
     # Filter out values outside some RHOHV range
-    new_cut_below_min_ML_filter = new_cut_below_min_ML[rho].where((new_cut_below_min_ML[rho]>=0.97)&(new_cut_below_min_ML[rho]<=1))
-    new_cut_above_min_ML_filter = new_cut_above_min_ML[rho].where((new_cut_above_min_ML[rho]>=0.97)&(new_cut_above_min_ML[rho]<=1))            
+    new_cut_below_min_ML_filter = new_cut_below_min_ML[rho].where((new_cut_below_min_ML[rho]>=rhohv_thresh_gia[0])&(new_cut_below_min_ML[rho]<=rhohv_thresh_gia[1]))
+    new_cut_above_min_ML_filter = new_cut_above_min_ML[rho].where((new_cut_above_min_ML[rho]>=rhohv_thresh_gia[0])&(new_cut_above_min_ML[rho]<=rhohv_thresh_gia[1]))            
 
     # ML TOP Giangrande refinement
     
