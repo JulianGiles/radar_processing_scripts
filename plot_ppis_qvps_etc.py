@@ -71,8 +71,8 @@ warnings.filterwarnings('ignore')
 
 abs_zdr_off_min_thresh = 0. # if ZDR_OC has more negative values than the original ZDR
 # and the absolute median offset is < abs_zdr_off_min_thresh, then undo the correction (set to 0 to avoid this step)
-zdr_offset_perts = True # offset correct zdr per timesteps? if False, correct with daily offset
-mix_zdr_offsets = True # if True and zdr_offset_perts=False, try to
+zdr_offset_perts = False # offset correct zdr per timesteps? if False, correct with daily offset
+mix_zdr_offsets = False # if True and zdr_offset_perts=False, try to
 # choose between daily LR-consistency and QVP offsets based on how_mix_zdr_offset.
 # If True and zdr_offset_perts=True, choose between all available timestep offsets 
 # based on how_mix_zdr_offset. If False, just use the offsets according to the priority they are passed on.
@@ -82,12 +82,12 @@ how_mix_zdr_offset = "count" # how to choose between the different offsets
 # "neg_overcorr" will choose the offset that generates less negative ZDR values.
 
 min_height_key = "default" # default = 200
-min_range_key = "HTY" # default = 1000
+min_range_key = "default" # default = 1000
 
-ff = "/automount/realpep/upload/jgiles/dwd/*/*/2015-01-08/umd/vol5minng01/07/*allmoms*"
+ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/pro/vol5minng01/07/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-10-06/ANK/*/12.0/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-08-04/AFY/VOL*/4.0/*allmoms*"
-ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-03-11/HTY/MON*/8.0/*allmoms*"
+# ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-03-11/HTY/MON*/8.0/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-03-28/GZT/*/7.0/*allmoms*.nc"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-11-05/SVS/*/10.0/*allmoms*.nc"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-10-21/SVS/*/7.0/*allmoms*.nc"
@@ -95,9 +95,9 @@ ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-03-11/HTY/MON*/8.0/*allmoms*
 # ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-06-02/pro/90gradstarng01/00/*allmoms*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-10/2021-10-30/ess/90gradstarng01/00/*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-07/2021-07-24/ess/90gradstarng01/00/*"
-# ds = utils.load_dwd_preprocessed(ff)
+ds = utils.load_dwd_preprocessed(ff)
 # ds = utils.load_dwd_raw(ff)
-ds = utils.load_dmi_preprocessed(ff)
+# ds = utils.load_dmi_preprocessed(ff)
 # ds = utils.load_volume(sorted(glob.glob(ff)), func=utils.load_dmi_preprocessed)
 
 # check if we are dealing with several elevations
@@ -342,7 +342,7 @@ if X_PHI in ds.data_vars:
     
     # for param_name in phase_proc_params[country].keys():
     #     globals()[param_name] = phase_proc_params[param_name]    
-    window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian = phase_proc_params.values() # explicit alternative
+    window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian, rhohv_thresh_gia = phase_proc_params.values() # explicit alternative
 
     # phidp may be already preprocessed (turkish case), then only offset-correct (no smoothing) and then vulpiani
     if "UPHIDP" not in X_PHI:
@@ -356,7 +356,7 @@ if X_PHI in ds.data_vars:
     else:
         ds = utils.phidp_processing(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                              dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
-                             rng=rng, azmedian=azmedian, tolerance=(0,5))
+                             rng=rng, azmedian=azmedian, tolerance=(0,5), clean_invalid=False, fillna=False)
     
         phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["range"]>min_range) )
 
@@ -366,7 +366,7 @@ if X_PHI in ds.data_vars:
     
     # derive KDP from PHIDP (Vulpiani)
 
-    ds = utils.kdp_phidp_vulpiani(ds, winlen0, X_PHI+"_OC_MASKED", min_periods=winlen0/2)    
+    ds = utils.kdp_phidp_vulpiani(ds, winlen0, X_PHI+"_OC_MASKED", min_periods=winlen0//2+1)    
     
     X_PHI = X_PHI+"_OC" # continue using offset corrected PHI
 
@@ -394,7 +394,7 @@ if X_PHI in ds.data_vars:
     
     # Calculate ML
     ds_qvp = utils.melting_layer_qvp_X_new(ds_qvp, moments=moments, dim="z", fmlh=0.3, 
-             xwin=xwin0, ywin=ywin0, min_h=min_height, all_data=True, clowres=clowres0)
+             xwin=xwin0, ywin=ywin0, min_h=min_height, rhohv_thresh_gia=rhohv_thresh_gia, all_data=True, clowres=clowres0)
     
     # Assign ML values to dataset
     
@@ -441,7 +441,7 @@ if not isvolume:
         
     #### Fix KDP in the ML using PHIDP:
     if X_PHI in ds.data_vars:    
-        ds = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen=winlen0, min_periods=winlen0/2)
+        ds = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen=winlen0, min_periods=winlen0//2+1)
     
         ds_qvp = ds_qvp.assign({"KDP_ML_corrected": utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5})["KDP_ML_corrected"]})
             
@@ -681,7 +681,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "ZDR"
+mom = "KDP_ML_corrected"
 
 ticks = radarmet.visdict14[mom]["ticks"]
 cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
@@ -695,23 +695,23 @@ datasel["height_ml_new_gia"].plot(c="black")
 datasel["height_ml_bottom_new_gia"].plot(c="black")
 plt.gca().set_ylabel("height over sea level")
 
-# Plot reflectivity as lines to check wet radome effect
-ax2 = plt.gca().twinx()
-ds.DBZH.mean("azimuth")[:,4:7].mean("range").plot(ax=ax2, c="dodgerblue")
-ax2.yaxis.label.set_color("dodgerblue")
-ax2.spines['left'].set_position(('outward', 60))
-ax2.tick_params(axis='y', labelcolor="dodgerblue")  # Add padding to the ticks
-ax2.yaxis.labelpad = -400  # Add padding to the y-axis label
-ax2.set_title("")
+# # Plot reflectivity as lines to check wet radome effect
+# ax2 = plt.gca().twinx()
+# ds.DBZH.mean("azimuth")[:,4:7].mean("range").plot(ax=ax2, c="dodgerblue")
+# ax2.yaxis.label.set_color("dodgerblue")
+# ax2.spines['left'].set_position(('outward', 60))
+# ax2.tick_params(axis='y', labelcolor="dodgerblue")  # Add padding to the ticks
+# ax2.yaxis.labelpad = -400  # Add padding to the y-axis label
+# ax2.set_title("")
 
-# Plot zdrcal values
-ax3 = plt.gca().twinx()
-zdrcal.loc[{"time":slice(str(datasel.time[0].values), str(datasel.time[-1].values))}].fNewZdrOffsetEstimate_dB.plot(ax=ax3, c="magenta")
-ax3.yaxis.label.set_color("magenta")
-ax3.spines['right'].set_position(('outward', 90))
-ax3.tick_params(axis='y', labelcolor="magenta")  # Add padding to the ticks
-# ax3.yaxis.labelpad = 10  # Add padding to the y-axis label
-ax3.set_title("")
+# # Plot zdrcal values
+# ax3 = plt.gca().twinx()
+# zdrcal.loc[{"time":slice(str(datasel.time[0].values), str(datasel.time[-1].values))}].fNewZdrOffsetEstimate_dB.plot(ax=ax3, c="magenta")
+# ax3.yaxis.label.set_color("magenta")
+# ax3.spines['right'].set_position(('outward', 90))
+# ax3.tick_params(axis='y', labelcolor="magenta")  # Add padding to the ticks
+# # ax3.yaxis.labelpad = 10  # Add padding to the y-axis label
+# ax3.set_title("")
 
 if isvolume: elevtitle = " RD-QVP"
 else: elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
@@ -953,7 +953,7 @@ plt.title(mom+elevtitle+". "+str(datasel.time.values).split(".")[0])
 #%% Load QVPs
 # Load only events with ML detected (pre-condition for stratiform)
 ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2016/*/*/tur/vol5minng01/07/ML_detected.txt"
-ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2018/*/*/HTY/*/*/ML_detected.txt"
+# ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2018/*/*/HTY/*/*/ML_detected.txt"
 ff_ML_glob = glob.glob(ff_ML)
 
 if "dmi" in ff_ML:
