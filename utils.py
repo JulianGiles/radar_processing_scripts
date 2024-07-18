@@ -4773,9 +4773,9 @@ def load_emvorado_to_radar_volume(path_or_data):
 
     # we make the coordinate arrays
     range_coord = np.array([ np.arange(rs, rr*rb+rs, rr) for rr, rs, rb in 
-                           zip(data.range_resolution[0], data.range_start[0], data.n_range_bins[0]) ])
+                           zip(data.range_resolution, data.range_start, data.n_range_bins) ])[0]
     azimuth_coord = np.array([ np.arange(azs, azr*azb+azs, azr) for azr, azs, azb in 
-                           zip(data.azimuthal_resolution[0], data.azimuth_start[0], data.azimuth.shape[0]*np.ones_like(data.records)) ])
+                           zip(data.azimuthal_resolution, data.azimuth_start, data.azimuth.shape*np.ones_like(data.records)) ])[0]
     
     # create time coordinate
     time_coord = xr.DataArray( [
@@ -4790,7 +4790,7 @@ def load_emvorado_to_radar_volume(path_or_data):
                                 data.minute,
                                 data.second 
                                 )
-                ], dims=["time"] )
+                ], dims=["time"] )[0]
 
     # add coordinates for range, azimuth, time, latitude, longitude, altitude, elevation, sweep_mode
 
