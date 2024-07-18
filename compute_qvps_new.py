@@ -395,7 +395,7 @@ for ff in files:
     if X_PHI in ds.data_vars:
         # Set parameters according to data
         phase_proc_params = utils.get_phase_proc_params(ff) # get default phase processing parameters
-        window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian = phase_proc_params.values()
+        window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian, rhohv_thresh_gia = phase_proc_params.values()
 
         ######### Processing PHIDP
         #### fix PHIDP
@@ -447,7 +447,7 @@ for ff in files:
             moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI: (-20, 180)}
 
         ds_qvp_ra = utils.melting_layer_qvp_X_new(ds_qvp_ra2, moments=moments, dim="z", fmlh=0.3, 
-                 xwin=xwin0, ywin=ywin0, min_h=min_height, all_data=True, clowres=clowres0)
+                 xwin=xwin0, ywin=ywin0, min_h=min_height, rhohv_thresh_gia=rhohv_thresh_gia, all_data=True, clowres=clowres0)
     
         #### Assign ML values to dataset
         
@@ -492,7 +492,7 @@ for ff in files:
 #%% Fix KDP in the ML using PHIDP:
     if X_PHI in ds.data_vars:    
         
-        ds = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen=winlen0, min_periods=winlen0/2)
+        ds = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen=winlen0, min_periods=winlen0//2+1)
 
         ds_qvp_ra = ds_qvp_ra.assign({"KDP_ML_corrected": utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5})["KDP_ML_corrected"]})
     
