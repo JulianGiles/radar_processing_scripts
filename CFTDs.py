@@ -31,6 +31,7 @@ from xhistogram.xarray import histogram
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import xradar as xd
+import time
 
 try:
     from Scripts.python.radar_processing_scripts import utils
@@ -60,6 +61,8 @@ locs = ["pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs"]
 
 #%% Load QVPs for stratiform-case CFTDs
 # This part should be run after having the QVPs computed (compute_qvps.py)
+start_time = time.time()
+print("Loading QVPs...")
 
 #### Get QVP file list
 path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/*allmoms*"
@@ -171,8 +174,13 @@ qvps = utils.load_qvps(ff, align_z=alignz, fix_TEMP=False, fillna=False)
 #         open_files.append(fix_dailys(xr.open_dataset(ff)))
         
 # data = xr.concat(open_files, dim="time")
+total_time = time.time() - start_time
+print(f"took {total_time/60:.2f} minutes.")
 
 #%% Filters (conditions for stratiform)
+start_time = time.time()
+print("Filtering stratiform conditions...")
+
 # Filter only stratiform events (min entropy >= 0.8) and ML detected
 # with ProgressBar():
 #     qvps_strat = qvps.where( (qvps["min_entropy"]>=0.8) & (qvps.height_ml_bottom_new_gia.notnull()), drop=True).compute()
@@ -214,24 +222,41 @@ cond_ML_top_std = qvps["height_ml_new_gia"].rolling(time=time_window, min_period
 
 allcond = cond_ML_bottom_change * cond_ML_bottom_std * cond_ML_top_change * cond_ML_top_std
 
-# Filter only stratiform events (min entropy >= 0.8 and ML detected)
+# Filter only fully stratiform pixels (min entropy >= 0.8 and ML detected)
 qvps_strat = qvps.where( (qvps["min_entropy"]>=0.8).compute() & allcond, drop=True)
-# Filter relevant values
-qvps_strat_fil = qvps_strat.where((qvps_strat[X_TH] > 0 )&
+# Relaxed alternative: Filter qvps with at least 50% of stratiform pixels (min entropy >= 0.8 and ML detected)
+qvps_strat_relaxed = qvps.where( ( (qvps["min_entropy"]>=0.8).count("z").compute() > qvps[X_DBZH].count("z").compute()/2 ) & allcond, drop=True)
+
+# Filter out non relevant values
+qvps_strat_fil = qvps_strat.where((qvps_strat[X_TH] > -10 )&
                                   (qvps_strat[X_KDP] > -0.1)&
                                   (qvps_strat[X_KDP] < 3)&
                                   (qvps_strat[X_RHO] > 0.7)&
                                   (qvps_strat[X_ZDR] > -1) &
                                   (qvps_strat[X_ZDR] < 3))
 
+qvps_strat_relaxed_fil = qvps_strat_relaxed.where((qvps_strat_relaxed[X_TH] > -10 )&
+                                  (qvps_strat_relaxed[X_KDP] > -0.1)&
+                                  (qvps_strat_relaxed[X_KDP] < 3)&
+                                  (qvps_strat_relaxed[X_RHO] > 0.7)&
+                                  (qvps_strat_relaxed[X_ZDR] > -1) &
+                                  (qvps_strat_relaxed[X_ZDR] < 3))
+
 try: 
     qvps_strat_fil = qvps_strat_fil.where(qvps_strat_fil["SNRHC"]>10)
+    qvps_strat_relaxed_fil = qvps_strat_relaxed_fil.where(qvps_strat_relaxed_fil["SNRHC"]>10)
 except KeyError:
     qvps_strat_fil = qvps_strat_fil.where(qvps_strat_fil["SNRH"]>10)
+    qvps_strat_relaxed_fil = qvps_strat_relaxed_fil.where(qvps_strat_relaxed_fil["SNRH"]>10)
 except:
     print("Could not filter out low SNR")
 
+total_time = time.time() - start_time
+print(f"took {total_time/60:.2f} minutes.")
+
 #### Calculate retreivals
+start_time = time.time()
+print("Calculating microphysical retrievals...")
 
 # to check the wavelength of each radar, in cm for DWD, in 1/100 cm for DMI ()
 # filewl = ""
@@ -283,153 +308,204 @@ retreivals = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
                          }).compute()
 
 #### General statistics
+
+# We do this for both qvps_strat_fil and relaxed qvps_strat_relaxed_fil
+
 z_snow_over_ML = 300 # set the height above the ML from where to consider snow. 300 m like in https://doi.org/10.1175/JAMC-D-19-0128.1
 z_rain_below_ML = 300 # set the height below the ML from where to consider rain. 300 m like in https://doi.org/10.1175/JAMC-D-19-0128.1
-values_sfc = qvps_strat_fil.where( (qvps_strat_fil["z"] < (qvps_strat_fil["height_ml_bottom_new_gia"]+qvps_strat_fil["z"][0])/2) ).bfill("z").isel({"z": 0}) # selects the closest value to the ground starting from below half of the ML height (with respect to the radar altitude)
-values_snow = qvps_strat_fil.bfill("z").sel({"z": qvps_strat_fil["height_ml_new_gia"] + z_snow_over_ML}, method="nearest")
-values_rain = qvps_strat_fil.ffill("z").sel({"z": qvps_strat_fil["height_ml_bottom_new_gia"] - z_rain_below_ML}, method="nearest")
-    
-#### ML statistics
-# select values inside the ML
-qvps_ML = qvps_strat_fil.where( (qvps_strat_fil["z"] < qvps_strat_fil["height_ml_new_gia"]) & \
-                               (qvps_strat_fil["z"] > qvps_strat_fil["height_ml_bottom_new_gia"]), drop=True)
-
-values_ML_max = qvps_ML.max(dim="z")
-values_ML_min = qvps_ML.min(dim="z")
-values_ML_mean = qvps_ML.mean(dim="z")
-ML_thickness = qvps_ML["height_ml_new_gia"] - qvps_ML["height_ml_bottom_new_gia"]
-ML_bottom = qvps_ML["height_ml_bottom_new_gia"]
-
-height_ML_max = qvps_ML.idxmax("z")
-height_ML_min = qvps_ML.idxmin("z")
-
-# Silke style
-# select timesteps with detected ML
-# gradient_silke = qvps_strat_fil.where(qvps_strat_fil["height_ml_new_gia"] > qvps_strat_fil["height_ml_bottom_new_gia"], drop=True)
-# gradient_silke_ML = gradient_silke.sel({"z": gradient_silke["height_ml_new_gia"]}, method="nearest")
-# gradient_silke_ML_plus_2km = gradient_silke.sel({"z": gradient_silke_ML["z"]+2000}, method="nearest")
-# gradient_final = (gradient_silke_ML_plus_2km - gradient_silke_ML)/2
-# beta = gradient_final[X_TH] #### TH OR DBZH??
-
 z_grad_above_ML = 2000 # height above the ML until which to compute the gradient
-beta = qvps_strat_fil.where(qvps_strat_fil["z"] > (qvps_strat_fil["height_ml_new_gia"] + z_snow_over_ML) )\
-                        .where(qvps_strat_fil["z"] < (qvps_strat_fil["height_ml_new_gia"] + z_snow_over_ML + z_grad_above_ML) )\
-                            .differentiate("z").median("z") * 1000 # x1000 to transform the gradients to /km
 
-#### DGL statistics
-# select values in the DGL 
-qvps_DGL = qvps_strat_fil.where((qvps_strat_fil["TEMP"] >= -20)&(qvps_strat_fil["TEMP"] <= -10), drop=True)    
-
-values_DGL_max = qvps_DGL.max(dim="z")
-values_DGL_min = qvps_DGL.min(dim="z")
-values_DGL_mean = qvps_DGL.mean(dim="z")
-
-#### Statistics from Raquel
-MLmaxZH = values_ML_max["DBZH"]
-ZHrain = values_rain["DBZH"] 
-deltaZH = MLmaxZH - ZHrain
-MLminRHOHV = values_ML_min["RHOHV_NC"]
-
-MLdepth = ML_thickness
-
-#### Scatterplots: like Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
-# plot scatterplots (2d hist) like Fig. 10
-# plot a
-binsx = np.linspace(0.8, 1, 41)
-binsy = np.linspace(-10, 20, 61)
-deltaZHcurve = 4.27 + 6.89*(1-binsx) + 341*(1-binsx)**2 # curve from Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
-
-utils.hist_2d(MLminRHOHV.compute(), deltaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
-plt.plot(binsx, deltaZHcurve, c="black", label="Reference curve")
-plt.legend()
-plt.xlabel(r"$\mathregular{Minimum \ \rho _{HV} \ in \ ML}$")
-plt.ylabel(r"$\mathregular{\Delta Z_H \ (MLmaxZ_H - Z_HRain) }$")
-plt.text(0.81, -8, r"$\mathregular{\Delta Z_H = 4.27 + 6.89(1-\rho _{HV}) + 341(1-\rho _{HV})^2 }$", fontsize="small")
-plt.grid()
-fig = plt.gcf()
-fig.savefig("/automount/agradar/jgiles/images/stats_scatterplots/"+find_loc(locs, ff[0])+"_DeltaZH_MinRHOHVinML.png",
-            bbox_inches="tight")
-plt.close(fig)
-
-# plot b
-binsx = np.linspace(0, 4, 16*5+1)
-binsy = np.linspace(-10, 20, 61)
-deltaZHcurve = 3.18 + 2.19*binsx # curve from Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
-
-utils.hist_2d(values_ML_max["ZDR_OC"].compute(), deltaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
-plt.plot(binsx, deltaZHcurve, c="black", label="Reference curve")
-plt.legend()
-plt.xlabel(r"$\mathregular{Maximum \ Z_{DR} \ in \ ML}$")
-plt.ylabel(r"$\mathregular{\Delta Z_H \ (MLmaxZ_H - Z_HRain) }$")
-plt.text(2, -8, r"$\mathregular{\Delta Z_H = 3.18 + 2.19 Z_{DR} }$", fontsize="small")
-plt.grid()
-fig = plt.gcf()
-fig.savefig("/automount/agradar/jgiles/images/stats_scatterplots/"+find_loc(locs, ff[0])+"_DeltaZH_MaxZDRinML.png",
-            bbox_inches="tight")
-plt.close(fig)
-
-# plot c
-binsx = np.linspace(0.8, 1, 41)
-binsy = np.linspace(0, 1000, 26)
-MLdepthcurve = -0.64 + 30.8*(1-binsx) - 315*(1-binsx)**2 + 1115*(1-binsx)**3 # curve from Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
-
-utils.hist_2d(MLminRHOHV.compute(), MLdepth.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
-plt.plot(binsx, MLdepthcurve*1000, c="black", label="Reference curve") # multiply curve by 1000 to change from km to m
-plt.legend()
-plt.xlabel(r"$\mathregular{Minimum \ \rho _{HV} \ in \ ML}$")
-plt.ylabel(r"Depth of ML (m)")
-# plt.text(0.8, 800, r"$\mathregular{ML \ Depth = -0.64 + 30.8(1-\rho _{HV}) - 315(1-\rho _{HV})^2 + 1115(1-\rho _{HV})^3 }$", fontsize="xx-small")
-plt.text(0.86, 700, r"$\mathregular{ML \ Depth = -0.64 + 30.8(1-\rho _{HV})}$" "\n" r"$\mathregular{- 315(1-\rho _{HV})^2 + 1115(1-\rho _{HV})^3}$", fontsize="xx-small")
-plt.grid()
-fig = plt.gcf()
-fig.savefig("/automount/agradar/jgiles/images/stats_scatterplots/"+find_loc(locs, ff[0])+"_DepthML_MinRHOHVinML.png",
-            bbox_inches="tight")
-plt.close(fig)
-
-# plot d
-binsx = np.linspace(0, 4, 16*5+1)
-binsy = np.linspace(0, 1000, 26)
-MLdepthcurve = 0.21 + 0.091*binsx # curve from Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
-
-utils.hist_2d(values_ML_max["ZDR_OC"].compute(), MLdepth.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
-plt.plot(binsx, MLdepthcurve*1000, c="black", label="Reference curve") # multiply curve by 1000 to change from km to m
-plt.legend()
-plt.xlabel(r"$\mathregular{Maximum \ Z_{DR} \ in \ ML}$")
-plt.ylabel(r"Depth of ML (m)")
-# plt.text(0.8, 800, r"$\mathregular{ML \ Depth = -0.64 + 30.8(1-\rho _{HV}) - 315(1-\rho _{HV})^2 + 1115(1-\rho _{HV})^3 }$", fontsize="xx-small")
-plt.text(0.86, 700, r"$\mathregular{ML \ Depth = 0.21 + 0.091 Z_{DR} }$", fontsize="xx-small")
-plt.grid()
-fig = plt.gcf()
-fig.savefig("/automount/agradar/jgiles/images/stats_scatterplots/"+find_loc(locs, ff[0])+"_DepthML_MaxZDRinML.png",
-            bbox_inches="tight")
-plt.close(fig)
-
-#### Put everything in a dict
+# We will put the final stats in a dict
 try: # check if exists, if not, create it
     stats
 except NameError:
     stats = {}
 
-stats[find_loc(locs, ff[0])] = {"values_sfc": values_sfc.compute().copy(),
-                                   "values_snow": values_snow.compute().copy(),
-                                   "values_rain": values_rain.compute().copy(),
-                                   "values_ML_max": values_ML_max.compute().copy(),
-                                   "values_ML_min": values_ML_min.compute().copy(),
-                                   "values_ML_mean": values_ML_mean.compute().copy(),
-                                   "height_ML_max": height_ML_max.compute().copy(),
-                                   "height_ML_min": height_ML_min.compute().copy(),
-                                   "ML_thickness": ML_thickness.compute().copy(),
-                                   "ML_bottom": ML_bottom.compute().copy(),
-                                   "values_DGL_max": values_DGL_max.compute().copy(),
-                                   "values_DGL_min": values_DGL_min.compute().copy(),
-                                   "values_DGL_mean": values_DGL_mean.compute().copy(),
-                                   "beta": beta.compute().copy(),
-    }
+for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed", qvps_strat_relaxed_fil)]:
+    print("   ... for "+stratname)
+    
+    stats[stratname] = {}
+    
+    values_sfc = stratqvp.where( (stratqvp["z"] < (stratqvp["height_ml_bottom_new_gia"]+stratqvp["z"][0])/2) ).bfill("z").isel({"z": 0}) # selects the closest value to the ground starting from below half of the ML height (with respect to the radar altitude)
+    values_snow = stratqvp.where( (stratqvp["z"] > stratqvp["height_ml_new_gia"]) ).bfill("z").ffill("z").sel({"z": stratqvp["height_ml_new_gia"] + z_snow_over_ML}, method="nearest")
+    values_rain = stratqvp.where( (stratqvp["z"] < stratqvp["height_ml_bottom_new_gia"]) ).ffill("z").bfill("z").sel({"z": stratqvp["height_ml_bottom_new_gia"] - z_rain_below_ML}, method="nearest")
+    
+    #### ML statistics
+    # select values inside the ML
+    qvps_ML = stratqvp.where( (stratqvp["z"] < stratqvp["height_ml_new_gia"]) & \
+                                   (stratqvp["z"] > stratqvp["height_ml_bottom_new_gia"]), drop=True)
+    
+    values_ML_max = qvps_ML.max(dim="z")
+    values_ML_min = qvps_ML.min(dim="z")
+    values_ML_mean = qvps_ML.mean(dim="z")
+    ML_thickness = (qvps_ML["height_ml_new_gia"] - qvps_ML["height_ml_bottom_new_gia"]).rename("ML_thickness")
+    ML_bottom = qvps_ML["height_ml_bottom_new_gia"]
 
-# Save stats
-for ll in stats.keys():
-    for xx in stats[ll].keys():
-        stats[ll][xx].to_netcdf("/automount/realpep/upload/jgiles/radar_stats/stratiform/"+ll+"_"+xx+".nc")
+    ML_bottom_TEMP = stratqvp["TEMP"].sel(z=stratqvp["height_ml_bottom_new_gia"], method="nearest")
+    ML_thickness_TEMP = ML_bottom_TEMP - stratqvp["TEMP"].sel(z=stratqvp["height_ml_new_gia"], method="nearest")
+    
+    height_ML_max = qvps_ML.idxmax("z")
+    height_ML_min = qvps_ML.idxmin("z")
+    
+    # Silke style
+    # select timesteps with detected ML
+    # gradient_silke = stratqvp.where(stratqvp["height_ml_new_gia"] > stratqvp["height_ml_bottom_new_gia"], drop=True)
+    # gradient_silke_ML = gradient_silke.sel({"z": gradient_silke["height_ml_new_gia"]}, method="nearest")
+    # gradient_silke_ML_plus_2km = gradient_silke.sel({"z": gradient_silke_ML["z"]+2000}, method="nearest")
+    # gradient_final = (gradient_silke_ML_plus_2km - gradient_silke_ML)/2
+    # beta = gradient_final[X_TH] #### TH OR DBZH??
+    
+    # Gradient above the ML
+    # First we select only above the ML. Then we interpolate possibly missing values. 
+    # Then we select above z_snow_over_ML and below z_snow_over_ML + z_grad_above_ML
+    # Then we compute the gradient.
+    beta = stratqvp.where(stratqvp["z"] > (stratqvp["height_ml_new_gia"]) ) \
+                    .interpolate_na("z") \
+                        .where(stratqvp["z"] > (stratqvp["height_ml_new_gia"] + z_snow_over_ML) ) \
+                            .where(stratqvp["z"] < (stratqvp["height_ml_new_gia"] + z_snow_over_ML + z_grad_above_ML) )\
+                                .differentiate("z").median("z") * 1000 # x1000 to transform the gradients to /km
+
+    # Gradient below the ML
+    # First we select only above the ML. Then we interpolate possibly missing values. 
+    # Then we select above z_snow_over_ML and below z_snow_over_ML + z_grad_above_ML
+    # Then we compute the gradient.
+    beta_belowML = stratqvp.where(stratqvp["z"] < (stratqvp["height_ml_bottom_new_gia"]) ) \
+                    .interpolate_na("z") \
+                        .where(stratqvp["z"] < (stratqvp["height_ml_bottom_new_gia"] - z_rain_below_ML ) )\
+                            .differentiate("z").median("z") * 1000 # x1000 to transform the gradients to /km
+    
+    # Cloud top (3 methods)
+    # Get the height value of the last not null value
+    cloudtop = stratqvp[X_DBZH].where(stratqvp["z"] > (stratqvp["height_ml_new_gia"]) ) \
+                        .notnull().isel(z=slice(None,None,-1)).idxmax("z").rename("cloudtop")
+    # Get the height value of the last value > 5 dBZ
+    cloudtop_5dbz = stratqvp[X_DBZH].where(stratqvp["z"] > (stratqvp["height_ml_new_gia"]) ) \
+                        .where(stratqvp[X_DBZH]>5) \
+                        .notnull().isel(z=slice(None,None,-1)).idxmax("z").rename("cloudtop 5 dBZ")
+    # Get the height value of the last value > 10 dBZ
+    cloudtop_10dbz = stratqvp[X_DBZH].where(stratqvp["z"] > (stratqvp["height_ml_new_gia"]) ) \
+                        .where(stratqvp[X_DBZH]>10) \
+                        .notnull().isel(z=slice(None,None,-1)).idxmax("z").rename("cloudtop 10 dBZ")
+
+    #### DGL statistics
+    # select values in the DGL 
+    qvps_DGL = stratqvp.where(((stratqvp["TEMP"] >= -20)&(stratqvp["TEMP"] <= -10)).compute(), drop=True)
+    
+    values_DGL_max = qvps_DGL.max(dim="z")
+    values_DGL_min = qvps_DGL.min(dim="z")
+    values_DGL_mean = qvps_DGL.mean(dim="z")
+        
+    # Put in the dictionary
+    stats[stratname][find_loc(locs, ff[0])] = {"values_sfc": values_sfc.compute().copy(deep=True).assign_attrs({"Description": "value closest to the ground (at least lower than half of the ML height)"}),
+                                       "values_snow": values_snow.compute().copy(deep=True).assign_attrs({"Description": "value in snow ("" m above the ML)"}),
+                                       "values_rain": values_rain.compute().copy(deep=True).assign_attrs({"Description": "value in rain ("+str(z_rain_below_ML)+" m above the ML)"}),
+                                       "values_ML_max": values_ML_max.compute().copy(deep=True).assign_attrs({"Description": "maximum value within the ML"}),
+                                       "values_ML_min": values_ML_min.compute().copy(deep=True).assign_attrs({"Description": "minimum value within the ML"}),
+                                       "values_ML_mean": values_ML_mean.compute().copy(deep=True).assign_attrs({"Description": "mean value within the ML"}),
+                                       "height_ML_max": height_ML_max.compute().copy(deep=True).assign_attrs({"Description": "height (z) of the maximum value within the ML"}),
+                                       "height_ML_min": height_ML_min.compute().copy(deep=True).assign_attrs({"Description": "height (z) of the minimum value within the ML"}),
+                                       "ML_thickness": ML_thickness.compute().copy(deep=True).assign_attrs({"Description": "thickness of the ML (in m)"}),
+                                       "ML_bottom": ML_bottom.compute().copy(deep=True).assign_attrs({"Description": "height of the ML bottom (in m)"}),
+                                       "ML_thickness_TEMP": ML_thickness_TEMP.compute().copy(deep=True).assign_attrs({"Description": "thickness of the ML (in temperature)"}),
+                                       "ML_bottom_TEMP": ML_bottom_TEMP.compute().copy(deep=True).assign_attrs({"Description": "height of the ML bottom (in temperature)"}),
+                                       "values_DGL_max": values_DGL_max.compute().copy(deep=True).assign_attrs({"Description": "maximum value within the DGL"}),
+                                       "values_DGL_min": values_DGL_min.compute().copy(deep=True).assign_attrs({"Description": "minimum value within the DGL"}),
+                                       "values_DGL_mean": values_DGL_mean.compute().copy(deep=True).assign_attrs({"Description": "mean value within the DGL"}),
+                                       "beta": beta.compute().copy(deep=True).assign_attrs({"Description": "Gradient from "+str(z_snow_over_ML)+" to "+str(z_grad_above_ML)+" m above the ML"}),
+                                       "beta_belowML": beta_belowML.compute().copy(deep=True).assign_attrs({"Description": "Gradient from the first valid value to "+str(z_rain_below_ML)+" m below the ML"}),
+                                       "cloudtop": cloudtop.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest not-null ZH value)"}),
+                                       "cloudtop_5dbz": cloudtop_5dbz.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest ZH value > 5 dBZ)"}),
+                                       "cloudtop_10dbz": cloudtop_10dbz.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest ZH value > 10 dBZ)"}),
+        }
+    
+    # Save stats
+    for ll in stats[stratname].keys():
+        for xx in stats[stratname][ll].keys():
+            stats[stratname][ll][xx].to_netcdf("/automount/realpep/upload/jgiles/radar_stats/"+stratname+"/"+ll+"_"+xx+".nc")
+
+    #### Statistics from Raquel
+    MLmaxZH = values_ML_max["DBZH"]
+    ZHrain = values_rain["DBZH"] 
+    deltaZH = MLmaxZH - ZHrain
+    MLminRHOHV = values_ML_min["RHOHV_NC"]
+    
+    MLdepth = ML_thickness
+
+    #### Scatterplots: like Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
+    print("   ... plotting scatterplots")
+    # plot scatterplots (2d hist) like Fig. 10
+    # plot a
+    binsx = np.linspace(0.8, 1, 41)
+    binsy = np.linspace(-10, 20, 61)
+    deltaZHcurve = 4.27 + 6.89*(1-binsx) + 341*(1-binsx)**2 # curve from Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
+    
+    utils.hist_2d(MLminRHOHV.compute(), deltaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+    plt.plot(binsx, deltaZHcurve, c="black", label="Reference curve")
+    plt.legend()
+    plt.xlabel(r"$\mathregular{Minimum \ \rho _{HV} \ in \ ML}$")
+    plt.ylabel(r"$\mathregular{\Delta Z_H \ (MLmaxZ_H - Z_HRain) }$")
+    plt.text(0.81, -8, r"$\mathregular{\Delta Z_H = 4.27 + 6.89(1-\rho _{HV}) + 341(1-\rho _{HV})^2 }$", fontsize="small")
+    plt.grid()
+    fig = plt.gcf()
+    fig.savefig("/automount/agradar/jgiles/images/stats_scatterplots/"+stratname+"/"+find_loc(locs, ff[0])+"_DeltaZH_MinRHOHVinML.png",
+                bbox_inches="tight")
+    plt.close(fig)
+    
+    # plot b
+    binsx = np.linspace(0, 4, 16*5+1)
+    binsy = np.linspace(-10, 20, 61)
+    deltaZHcurve = 3.18 + 2.19*binsx # curve from Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
+    
+    utils.hist_2d(values_ML_max["ZDR_OC"].compute(), deltaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+    plt.plot(binsx, deltaZHcurve, c="black", label="Reference curve")
+    plt.legend()
+    plt.xlabel(r"$\mathregular{Maximum \ Z_{DR} \ in \ ML}$")
+    plt.ylabel(r"$\mathregular{\Delta Z_H \ (MLmaxZ_H - Z_HRain) }$")
+    plt.text(2, -8, r"$\mathregular{\Delta Z_H = 3.18 + 2.19 Z_{DR} }$", fontsize="small")
+    plt.grid()
+    fig = plt.gcf()
+    fig.savefig("/automount/agradar/jgiles/images/stats_scatterplots/"+stratname+"/"+find_loc(locs, ff[0])+"_DeltaZH_MaxZDRinML.png",
+                bbox_inches="tight")
+    plt.close(fig)
+    
+    # plot c
+    binsx = np.linspace(0.8, 1, 41)
+    binsy = np.linspace(0, 1000, 26)
+    MLdepthcurve = -0.64 + 30.8*(1-binsx) - 315*(1-binsx)**2 + 1115*(1-binsx)**3 # curve from Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
+    
+    utils.hist_2d(MLminRHOHV.compute(), MLdepth.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+    plt.plot(binsx, MLdepthcurve*1000, c="black", label="Reference curve") # multiply curve by 1000 to change from km to m
+    plt.legend()
+    plt.xlabel(r"$\mathregular{Minimum \ \rho _{HV} \ in \ ML}$")
+    plt.ylabel(r"Depth of ML (m)")
+    # plt.text(0.8, 800, r"$\mathregular{ML \ Depth = -0.64 + 30.8(1-\rho _{HV}) - 315(1-\rho _{HV})^2 + 1115(1-\rho _{HV})^3 }$", fontsize="xx-small")
+    plt.text(0.86, 700, r"$\mathregular{ML \ Depth = -0.64 + 30.8(1-\rho _{HV})}$" "\n" r"$\mathregular{- 315(1-\rho _{HV})^2 + 1115(1-\rho _{HV})^3}$", fontsize="xx-small")
+    plt.grid()
+    fig = plt.gcf()
+    fig.savefig("/automount/agradar/jgiles/images/stats_scatterplots/"+stratname+"/"+find_loc(locs, ff[0])+"_DepthML_MinRHOHVinML.png",
+                bbox_inches="tight")
+    plt.close(fig)
+    
+    # plot d
+    binsx = np.linspace(0, 4, 16*5+1)
+    binsy = np.linspace(0, 1000, 26)
+    MLdepthcurve = 0.21 + 0.091*binsx # curve from Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
+    
+    utils.hist_2d(values_ML_max["ZDR_OC"].compute(), MLdepth.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+    plt.plot(binsx, MLdepthcurve*1000, c="black", label="Reference curve") # multiply curve by 1000 to change from km to m
+    plt.legend()
+    plt.xlabel(r"$\mathregular{Maximum \ Z_{DR} \ in \ ML}$")
+    plt.ylabel(r"Depth of ML (m)")
+    # plt.text(0.8, 800, r"$\mathregular{ML \ Depth = -0.64 + 30.8(1-\rho _{HV}) - 315(1-\rho _{HV})^2 + 1115(1-\rho _{HV})^3 }$", fontsize="xx-small")
+    plt.text(0.86, 700, r"$\mathregular{ML \ Depth = 0.21 + 0.091 Z_{DR} }$", fontsize="xx-small")
+    plt.grid()
+    fig = plt.gcf()
+    fig.savefig("/automount/agradar/jgiles/images/stats_scatterplots/"+stratname+"/"+find_loc(locs, ff[0])+"_DepthML_MaxZDRinML.png",
+                bbox_inches="tight")
+    plt.close(fig)
+
+total_time = time.time() - start_time
+print(f"took {total_time/60:.2f} minutes.")
 
 #%% Statistics for Raquel # DEPRECATED (incorporated to the previous block)
 '''
@@ -532,7 +608,7 @@ if country=="dmi":
             binsx2 = [0.9, 1.005, 0.005]
             rd=3
         utils.hist2d(ax[nn], qvps_strat_fil[vv].round(rd), qvps_strat_fil["TEMP"]+adjtemp, whole_x_range=True, 
-                     binsx=vars_to_plot[vv], binsy=[-20,16,tb], mode='rel_y', qq=0.2,
+                     binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                      cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
                      fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
                      cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
@@ -567,7 +643,7 @@ if country=="dwd":
         if "KDP" in vv:
             adj=1
         utils.hist2d(ax[nn], qvps_strat_fil[vv]*adj, qvps_strat_fil["TEMP"]+adjtemp, whole_x_range=True, 
-                     binsx=vars_to_plot[vv], binsy=[-20,16,tb], mode='rel_y', qq=0.2,
+                     binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                      cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
                      fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
                      cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
@@ -584,6 +660,9 @@ if country=="dwd":
 
 #%% CFTDs retreivals Plot
 # We assume that everything above ML is frozen and everything below is liquid
+
+# top temp limit
+ytlim=-20
 
 IWC = "iwc_zh_t" # iwc_zh_t or iwc_zdr_zh_kdp
 LWC = "lwc_zh_zdr" # lwc_zh_zdr (adjusted for Germany) or lwc_zh_zdr2 (S-band) or lwc_kdp
@@ -621,7 +700,7 @@ for nn, vv in enumerate(vars_to_plot.keys()):
     if "KDP" in vv:
         adj=1
     utils.hist2d(ax[nn], retreivals_merged[vv]*adj, retreivals_merged["TEMP"]+adjtemp, whole_x_range=True, 
-                 binsx=vars_to_plot[vv], binsy=[-20,16,tb], mode='rel_y', qq=0.2,
+                 binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                  cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
                  fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
                  cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
@@ -687,25 +766,32 @@ import ridgeplot
 if 'stats' not in globals() and 'stats' not in locals():
     stats = {}
 
-for ll in ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']:
-    if ll not in stats.keys():
-        stats[ll] = {}
-    elif type(stats[ll]) is not dict:
-        stats[ll] = {}
-    for xx in ['values_sfc', 'values_snow', 'values_rain', 'values_ML_max', 'values_ML_min', 'values_ML_mean', 
-               'ML_thickness', 'values_DGL_max', 'values_DGL_min', 'values_DGL_mean',
-               'height_ML_max', 'height_ML_min', 'ML_bottom', 'beta']:
-        try:
-            stats[ll][xx] = xr.open_dataset("/automount/realpep/upload/jgiles/radar_stats/stratiform/"+ll+"_"+xx+".nc")
-            if len(stats[ll][xx].data_vars)==1:
-                # if only 1 var, convert to data array
-                stats[ll][xx] = stats[ll][xx].to_dataarray() 
-            print(ll+" "+xx+" stats loaded")
-        except:
-            pass
-    # delete entry if empty
-    if not stats[ll]:
-        del stats[ll]
+for stratname in ["stratiform", "stratiform_relaxed"]:
+    if stratname not in stats.keys():
+        stats[stratname] = {}
+    elif type(stats[stratname]) is not dict:
+        stats[stratname] = {}
+
+    for ll in ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']:
+        if ll not in stats[stratname].keys():
+            stats[stratname][ll] = {}
+        elif type(stats[stratname][ll]) is not dict:
+            stats[stratname][ll] = {}
+        for xx in ['values_sfc', 'values_snow', 'values_rain', 'values_ML_max', 'values_ML_min', 'values_ML_mean', 
+                   'ML_thickness', 'ML_bottom', 'ML_thickness_TEMP', 'ML_bottom_TEMP', 'values_DGL_max', 'values_DGL_min',
+                   'values_DGL_mean', 'height_ML_max', 'height_ML_min', 'ML_bottom', 'beta', 'beta_belowML',
+                   'cloudtop', 'cloudtop_5dbz', 'cloudtop_10dbz']:
+            try:
+                stats[stratname][ll][xx] = xr.open_dataset("/automount/realpep/upload/jgiles/radar_stats/"+stratname+"/"+ll+"_"+xx+".nc")
+                if len(stats[stratname][ll][xx].data_vars)==1:
+                    # if only 1 var, convert to data array
+                    stats[stratname][ll][xx] = stats[stratname][ll][xx].to_dataarray() 
+                print(ll+" "+xx+" stats loaded")
+            except:
+                pass
+        # delete entry if empty
+        if not stats[stratname][ll]:
+            del stats[stratname][ll]
 
 ridge_vars = [X_DBZH, X_ZDR, X_RHO, X_KDP]
 
@@ -723,71 +809,86 @@ beta_vars_ticks = {X_DBZH: np.linspace(-15, 10, int((10--15)/1)+1 ),
 
 
 bins = {"ML_thickness": np.arange(0,1200,50),
+        "ML_thickness_TEMP": np.arange(0, 5.25, 0.25),
         "values_snow": vars_ticks,
         "values_rain": vars_ticks,
         "values_DGL_mean": vars_ticks,
         "values_ML_mean": vars_ticks,
         "values_sfc": vars_ticks,
+        "cloudtop": np.arange(2000,10250,250),
+        "cloudtop_5dbz": np.arange(2000,10250,250),
+        "cloudtop_10dbz": np.arange(2000,10250,250),
         "beta": beta_vars_ticks,
         }
 
-# for loc in stats.keys():
+# for loc in stats[stratname].keys():
 #     for ss in bins.keys():
-#         stats[loc][ss].plot.hist(bins=bins[ss], histtype='step',
-#                                                weights=np.ones_like(stats[loc][ss])*100 / len(stats[loc][ss]))
+#         stats[stratname][loc][ss].plot.hist(bins=bins[ss], histtype='step',
+#                                                weights=np.ones_like(stats[stratname][loc][ss])*100 / len(stats[stratname][loc][ss]))
 
 
 order = ['umd', 'pro', 'afy', 'ank', 'gzt', 'hty', 'svs']
-for ss in bins.keys():
-    print("plotting "+ss)
-    try: 
-        for vv in ridge_vars:
+order = ['umd', 'pro', 'hty']
 
-            if vv == "RHOHV_NC":
-                order_turk = order.copy()
-                order_turk.remove("pro")
-                samples = [stats["pro"][ss][vv].dropna("time").values] + [stats[loc][ss]["RHOHV"].dropna("time").values for loc in order_turk if loc in stats.keys()]
-            else:
-                samples = [stats[loc][ss][vv].dropna("time").values for loc in order if loc in stats.keys()]
-
-            fig = ridgeplot.ridgeplot(samples=samples,
-                                    colorscale="viridis",
-                                    colormode="row-index",
-                                    coloralpha=0.65,
-                                    labels=order,
-                                    linewidth=2,
-                                    spacing=5 / 9,
-                                    )
-            fig.update_layout(
-                            height=760,
-                            width=900,
-                            font_size=16,
-                            plot_bgcolor="white",
-                            showlegend=False,
-                            title=ss+" "+vv,
-                            xaxis_tickvals=bins[ss][vv],
-            )
-            fig.write_html("/automount/agradar/jgiles/images/stats_ridgeplots/"+ss+"_"+vv+".html")            
-    except: 
-        samples = [stats[loc][ss].values for loc in order if loc in stats.keys()]
-        fig = ridgeplot.ridgeplot(samples=samples, #bandwidth=50,
-                                colorscale="viridis",
-                                colormode="row-index",
-                                coloralpha=0.65,
-                                labels=order,
-                                linewidth=2,
-                                spacing=5 / 9,
-                                )
-        fig.update_layout(
-                        height=760,
-                        width=900,
-                        font_size=16,
-                        plot_bgcolor="white",
-                        showlegend=False,
-                        title=ss,
-                        xaxis_tickvals=bins[ss],
-        )
-        fig.write_html("/automount/agradar/jgiles/images/stats_ridgeplots/"+ss+".html")
+for stratname in ["stratiform", "stratiform_relaxed"]:
+    print("plotting "+stratname+" stats...")
+    order_fil = [ll for ll in order if ll in stats[stratname].keys()]
+    for ss in bins.keys():
+        print("...plotting "+ss)
+        try: 
+            for vv in ridge_vars:
+    
+                if vv == "RHOHV_NC":
+                    order_turk = order_fil.copy()
+                    order_turk.remove("pro") # THIS IS WRONG taking out DWD radars and putting them separate (because turkish radars do not have RHOHV_NC)
+                    samples = [stats[stratname]["pro"][ss][vv].dropna("time").values] + [stats[stratname][loc][ss]["RHOHV"].dropna("time").values for loc in order_turk if loc in stats[stratname].keys()]
+                else:
+                    samples = [stats[stratname][loc][ss][vv].dropna("time").values for loc in order_fil]
+    
+                fig = ridgeplot.ridgeplot(samples=samples,
+                                        colorscale="viridis",
+                                        colormode="row-index",
+                                        coloralpha=0.65,
+                                        labels=order_fil,
+                                        linewidth=2,
+                                        spacing=5 / 9,
+                                        )
+                fig.update_layout(
+                                height=760,
+                                width=900,
+                                font_size=16,
+                                plot_bgcolor="white",
+                                showlegend=False,
+                                title=ss+" "+vv,
+                                xaxis_tickvals=bins[ss][vv],
+                )
+                fig.write_html("/automount/agradar/jgiles/images/stats_ridgeplots/"+stratname+"/"+ss+"_"+vv+".html")            
+        except KeyError: 
+            try:
+                samples = [stats[stratname][loc][ss].values for loc in order_fil]
+                fig = ridgeplot.ridgeplot(samples=samples, #bandwidth=50,
+                                        colorscale="viridis",
+                                        colormode="row-index",
+                                        coloralpha=0.65,
+                                        labels=order_fil,
+                                        linewidth=2,
+                                        spacing=5 / 9,
+                                        )
+                fig.update_layout(
+                                height=760,
+                                width=900,
+                                font_size=16,
+                                plot_bgcolor="white",
+                                showlegend=False,
+                                title=ss,
+                                xaxis_tickvals=bins[ss],
+                )
+                fig.write_html("/automount/agradar/jgiles/images/stats_ridgeplots/"+stratname+"/"+ss+".html")
+            except:
+                print("!!! unable to plot "+stratname+" "+ss+" !!!")
+        except:
+            print("!!! unable to plot "+stratname+" "+ss+" !!!")
+        
     
 #%% Checking PHIDP
 # get and plot a random selection of QVPs
