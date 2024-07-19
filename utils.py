@@ -81,7 +81,7 @@ min_rngs = {
     'ANK': 7000, # for ANK we need higher min_range to avoid PHIDP artifacts
     'AFY': 8500, # for AFY we need higher min_range to avoid artifacts
     'SVS': 5500, # for SVS we need higher min_range to avoid artifacts
-    'GZT': 3500, # for GZT we need higher min_range to avoid artifacts
+    'GZT': 8500, # for GZT we need higher min_range to avoid artifacts
 }
 
 # Set the possible ZDR calibrations locations to include (in order of priority)
@@ -133,10 +133,10 @@ phase_proc_params["dmi"] = {
         "winlen0": 21,
         "xwin0": 5,
         "ywin0": 5,
-        "fix_range": 200,
+        "fix_range": 350,
         "rng": 1000, # range for phidp offset correction, if None it is auto calculated based on window0
         "azmedian": 10, # reduce the phidp offset by applying median along the azimuths?
-        "rhohv_thresh_gia": (0.995, 1) # rhohv thresholds for ML Giangrande refinement of KDP
+        "rhohv_thresh_gia": (0.99, 1) # rhohv thresholds for ML Giangrande refinement of KDP
 }
 
 # make a function to retreive only the phase_proc_params dictionary corresponding to the a data path (not very precise, tuned to my data naming)
@@ -1211,7 +1211,8 @@ def ml_height_top_new(ds, moment='comb_dy', dim='height',skipna=True, drop=True)
 
 
 def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), PHIDP=(-90.,-70.)), dim='height', 
-                            thres=0.02, xwin=5, ywin=5, fmlh=0.3, min_h=600, rhohv_thresh_gia=(0.97, 1), all_data=False, clowres=False):
+                            thres=0.02, xwin=5, ywin=5, fmlh=0.3, min_h=600, rhohv_thresh_gia=(0.97, 1), 
+                            grad_thresh=0.0001, all_data=False, clowres=False):
     '''
     Function to detect the melting layer based on wolfensberger et al 2016 (https://doi.org/10.1002/qj.2672) 
     refined by T. Scharbach. Giangrande refinement is also calculated and included in separate variables.
@@ -1250,6 +1251,11 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
     rhohv_thresh_gia : tuple or list
         Thresholds for filtering RHOHV in Giangrande refinement. Only data between the provided
         thresholds is used for the refinement.
+
+    grad_thresh : float
+        Threshold for filtering RHOHV gradient after Giangrande refinement. RHOHV gradient in dim
+        must be lower than this threshold to qualify as ML top or bottom. To ignore this condition just
+        set the value of grad_thresh to an unreasonably high value (e.g. grad_thresh=1).
 
     all_data : bool
         If True, include all normalized moments in the output dataset. If False, only output 
@@ -1395,15 +1401,19 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
     new_cut_below_min_ML_filter = new_cut_below_min_ML[rho].where((new_cut_below_min_ML[rho]>=rhohv_thresh_gia[0])&(new_cut_below_min_ML[rho]<=rhohv_thresh_gia[1]))
     new_cut_above_min_ML_filter = new_cut_above_min_ML[rho].where((new_cut_above_min_ML[rho]>=rhohv_thresh_gia[0])&(new_cut_above_min_ML[rho]<=rhohv_thresh_gia[1]))            
 
-    # ML TOP Giangrande refinement
+    # J. Giles refinement
+    # Add condition that the absolute gradient of the RHOHV profile must be below certain threshold (like 0.0001)
+    ds_grad = abs(ds[rho].differentiate(dim)) < grad_thresh
+
+    # ML TOP Giangrande+Giles refinement
     
     notnull = new_cut_below_min_ML_filter.notnull() # this replaces nan for False and the rest for True
-    first_valid_height_after_ml = notnull.where(notnull).idxmax(dim=dim) # get the first True value, i.e. first valid value
+    first_valid_height_after_ml = notnull.where(notnull).where(ds_grad).idxmax(dim=dim) # get the first True value, i.e. first valid value
     
-    # ML BOTTOM Giangrande refinement
+    # ML BOTTOM Giangrande+Giles refinement
     # For this one, we need to flip the coordinate so that it is actually selecting the last valid index
     notnull = new_cut_above_min_ML_filter.notnull() # this replaces nan for False and the rest for True
-    last_valid_height = notnull.where(notnull).isel({dim:slice(None, None, -1)}).idxmax(dim=dim) # get the first True value, i.e. first valid value (flipped)
+    last_valid_height = notnull.where(notnull).isel({dim:slice(None, None, -1)}).where(ds_grad).idxmax(dim=dim) # get the first True value, i.e. first valid value (flipped)
     
     # assign new values
     ds = ds.assign_coords(height_ml_new_gia = ("time",first_valid_height_after_ml.data))
