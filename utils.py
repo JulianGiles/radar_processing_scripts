@@ -4817,7 +4817,7 @@ def load_emvorado_to_radar_volume(path_or_data):
     data.coords["time"] = time_coord
     data.coords["latitude"] = float( data["station_latitude"][0] )
     data.coords["longitude"] = float( data["station_longitude"][0] )
-    data.coords["altitude"] = data.attrs["alt_msl_true"]
+    data.coords["altitude"] = float([ss for ss in data.attrs["Data_description"].split(" ") if "radar_alt_msl_mod" in ss][0].split("=")[1])
     data.coords["elevation"] = data["ray_elevation"]
     data.coords["sweep_mode"] = 'azimuth_surveillance'
     
@@ -4858,3 +4858,17 @@ def load_emvorado_to_radar_volume(path_or_data):
             print("no long_name attribute in "+vv)
         
     return data
+
+# Dictionary to rename EMVORADO vars to DWD-like vars
+rename_vars_emvorado_dwd = {
+    "ahsim":"AH",
+    "ahpisim":"AHPI",
+    "adpsim":"ADP",
+    "adppisim":"ADPPI",
+    "zdrsim":"ZDR",
+    "rhvsim":"RHOHV",
+    "kdpsim":"KDP",
+    "phidpsim":"PHIDP",
+    "zrsim":"DBZH",
+    "vrsim":"VRADH",
+    }
