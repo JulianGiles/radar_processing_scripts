@@ -8,10 +8,10 @@
 dir=/automount/realpep/upload/jgiles/dwd/
 
 # Which location to process
-loc=pro
+loc=tur
 
 max_attempts=5  # Maximum number of restart attempts
-max_execution_time=120  # Maximum execution time in seconds
+max_execution_time=240  # Maximum execution time in seconds
 
 # Create a list of all files that include *allmoms* in their name
 files=$(find $dir -name "*allmoms_07*$loc*" -type f -not -path "*qvp*"  -not -path "*WIND*" -not -path "*SURVEILLANCE*" -not -path "*RHI1*" | sort -u)
@@ -61,7 +61,7 @@ for file in $files; do
     done
 
     if [ $attempt -gt $max_attempts ]; then
-        echo "Max restart attempts reached, could not be completed: $new_path"
+        echo "Max restart attempts reached, could not be completed: $file"
     fi
 
 done
