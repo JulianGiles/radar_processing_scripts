@@ -82,22 +82,22 @@ how_mix_zdr_offset = "count" # how to choose between the different offsets
 # "neg_overcorr" will choose the offset that generates less negative ZDR values.
 
 min_height_key = "default" # default = 200
-min_range_key = "default" # default = 1000
+min_range_key = "SVS" # default = 1000
 
 ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/pro/vol5minng01/07/*allmoms*"
-# ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-10-06/ANK/*/12.0/*allmoms*"
-# ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-08-04/AFY/VOL*/4.0/*allmoms*"
-# ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-03-11/HTY/MON*/8.0/*allmoms*"
-# ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-03-28/GZT/*/7.0/*allmoms*.nc"
-# ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-11-05/SVS/*/10.0/*allmoms*.nc"
+ff = "/automount/realpep/upload/jgiles/dmi/*/*/2019-07-17/ANK/*F/8.0/*allmoms*"
+# ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-08-09/AFY/*/10.0/*allmoms*"
+# ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-11-20/HTY/*/10.0/*allmoms*"
+ff = "/automount/realpep/upload/jgiles/dmi/*/*/2016-09-22/GZT/*/10.0/*allmoms*.nc"
+ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-04-30/SVS/*/10.0/*allmoms*.nc"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-10-21/SVS/*/7.0/*allmoms*.nc"
 # ff = '/automount/realpep/upload/jgiles/dmi/2016/2016-08/2016-08-05/AFY/VOL_B/7.0/VOL_B-allmoms-7.0-20162016-082016-08-05-AFY-h5netcdf.nc'
 # ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-06-02/pro/90gradstarng01/00/*allmoms*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-10/2021-10-30/ess/90gradstarng01/00/*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-07/2021-07-24/ess/90gradstarng01/00/*"
-ds = utils.load_dwd_preprocessed(ff)
+# ds = utils.load_dwd_preprocessed(ff)
 # ds = utils.load_dwd_raw(ff)
-# ds = utils.load_dmi_preprocessed(ff)
+ds = utils.load_dmi_preprocessed(ff)
 # ds = utils.load_volume(sorted(glob.glob(ff)), func=utils.load_dmi_preprocessed)
 
 # check if we are dealing with several elevations
@@ -345,7 +345,7 @@ if X_PHI in ds.data_vars:
     window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian, rhohv_thresh_gia = phase_proc_params.values() # explicit alternative
 
     # phidp may be already preprocessed (turkish case), then only offset-correct (no smoothing) and then vulpiani
-    if "UPHIDP" not in X_PHI:
+    if "PHIDP" not in X_PHI:
         # calculate phidp offset
         ds = utils.phidp_offset_correction(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                              dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
@@ -579,7 +579,7 @@ plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only
 
 #%% Plot simple PPI 
 
-tsel = "2018-03-28T17:00"
+tsel = "2020-03-13T10:00"
 elevn = 6 # elevation index
 
 if isvolume: # if more than one elevation, we need to select the one we want
@@ -600,7 +600,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "KDP_CONV"
+mom = "KDP_ML_corrected"
 xylims = 40000 # xlim and ylim (from -xylims to xylims)
 
 ticks = radarmet.visdict14[mom]["ticks"]
@@ -641,7 +641,7 @@ plt.title(mom+elevtitle+". "+str(datasel.time.values).split(".")[0])
 
 #%% Plot PPI as lines 
 
-tsel = "2018-03-28T17:00"
+tsel = "2020-03-13T10:00"
 if tsel == "":
     datasel = ds
 else:
@@ -660,7 +660,7 @@ with plt.rc_context(rc_cycle):
 
 # add also qvp as line
 ds_qvp[mom].sel({"time": tsel}, method="nearest").plot.line(x="range", add_legend=False, c="red",
-                                                            xlim=(1500, 10000), ylim=(-5,40))
+                                                            xlim=(1500, 30000), ylim=(-5,40))
 
 plt.title(mom)
 plt.show()
@@ -724,13 +724,13 @@ def zhcorr(ds, dbzh="DBZH", irange=2):
     # correction according to the fitting curve of Fig 5. https://doi.org/10.1175/JTECH-D-12-00148.1 (plotted in Fig 7 of https://doi.org/10.1002/qj.3366)
     Zm = ds[dbzh].mean("azimuth").isel(range=irange)
     Zm = Zm.where(Zm>=0)
-    return 0.352*Zm + 0.00189*Zm**2
+    return 2.51 + 0.352*Zm + 0.00189*Zm**2
 
 def zdrcorr(ds, dbzh="DBZH", zdr="ZDR", irange=2):
     # correction extracted by eye from Fig 7 of https://doi.org/10.1002/qj.3366
     Zm = ds[dbzh].mean("azimuth").isel(range=irange)
     Zm = Zm.where(Zm>=0)
-    return 0.03018*Zm - 0.0021176*Zm**2 + 0.000056464*Zm**3
+    return -0.043 + 0.03018*Zm - 0.0021176*Zm**2 + 0.000056464*Zm**3
 
 zh_offset = zhcorr(ds)
 zdr_offset = zdrcorr(ds).rename("ZDR")
