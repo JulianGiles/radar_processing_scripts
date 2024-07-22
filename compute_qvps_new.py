@@ -45,8 +45,8 @@ overwrite = False # overwrite existing files?
 
 abs_zdr_off_min_thresh = 0. # if ZDR_OC has more negative values than the original ZDR
 # and the absolute median offset is < abs_zdr_off_min_thresh, then undo the correction (set to 0 to avoid this step)
-zdr_offset_perts = False # offset correct zdr per timesteps? if False, correct with daily offset
-mix_zdr_offsets = False # if True and zdr_offset_perts=False, try to
+zdr_offset_perts = True # offset correct zdr per timesteps? if False, correct with daily offset
+mix_zdr_offsets = True # if True and zdr_offset_perts=False, try to
 # choose between daily LR-consistency and QVP offsets based on how_mix_zdr_offset.
 # If True and zdr_offset_perts=True, choose between all available timestep offsets 
 # based on how_mix_zdr_offset. If False, just use the offsets according to the priority they are passed on.
@@ -401,7 +401,7 @@ for ff in files:
         #### fix PHIDP
         
         # phidp may be already preprocessed (turkish case), then only offset-correct (no smoothing) and then vulpiani
-        if "UPHIDP" not in X_PHI:
+        if "PHIDP" not in X_PHI: # if "PHIDP" then this option is skipped
             # calculate phidp offset
             ds = utils.phidp_offset_correction(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                                  dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range, 
