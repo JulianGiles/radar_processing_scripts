@@ -71,7 +71,7 @@ rp = ccrs.RotatedPole(pole_longitude=198.0,
 ds_to_load = [
     # "IMERG-V07B-monthly",
     # "IMERG-V06B-monthly",
-    "IMERG-V07B-30min", # do not load this unless necessary, currently the calculations are done with cdo
+    # "IMERG-V07B-30min", # do not load this unless necessary, currently the calculations are done with cdo
     # "IMERG-V06B-30min", # do not load this unless necessary, currently the calculations are done with cdo
     # "CMORPH-daily",
     # "TSMP-old",
@@ -84,6 +84,8 @@ ds_to_load = [
     # "EURADCLIM",
     # "GPCC-monthly",
     # "GPCC-daily",
+    "E-OBS",
+    "CPC",
     # "GPROF",
     # "HYRAS", # do not load this unless necessary, currently the calculations are done with cdo
     # "GRACE-GDO",
@@ -362,6 +364,20 @@ if "GPCC-daily" in ds_to_load:
         data["GPCC-daily"] = data["GPCC-daily"].isel(lat=slice(None, None, -1))
         data["GPCC-daily"]["precip"] = data["GPCC-daily"]["precip"].assign_attrs(units="mm", Units="mm")
 
+#### E-OBS
+if "E-OBS" in ds_to_load:
+    print("Loading E-OBS...")
+    if "precipitation" in var_to_load:    
+        data["E-OBS"] = xr.open_mfdataset("/automount/ags/jgiles/E-OBS/RR/rr_ens_mean_0.25deg_reg_v29.0e.nc")
+
+#### CPC
+if "CPC" in ds_to_load:
+    print("Loading CPC...")
+    if "precipitation" in var_to_load:    
+        data["CPC"] = xr.open_mfdataset("/automount/ags/jgiles/CPC_global_precip/precip.????.nc")
+        data["CPC"] = data["CPC"].isel(lat=slice(None, None, -1))
+        data["CPC"] = data["CPC"].assign_coords(lon=(((data["CPC"].lon + 180) % 360) - 180)).sortby('lon')
+
 #### GPROF
 if "GPROF" in ds_to_load:
     print("Loading GPROF...")
@@ -420,10 +436,13 @@ data_dailysum = {}
 for dsname in ds_to_load:
     if dsname not in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
                       "EURADCLIM", "GPCC-monthly", "GPCC-daily", 'GPROF']:
+        print("... "+dsname)
         data_dailysum[dsname] = data[dsname].resample({"time": "D"}).sum().compute()
 
 # save the processed datasets
+print("Saving file ...")
 for dsname in ds_to_load:
+    print("... "+dsname)
     savepath_dsname = savepath+"/daily/"+dsname
     if not os.path.exists(savepath_dsname):
         os.makedirs(savepath_dsname)
@@ -470,10 +489,13 @@ data_monthlysum = {}
 for dsname in ds_to_load:
     if dsname not in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
                       "EURADCLIM", "GPCC-monthly", 'GPROF']:
+        print("... "+dsname)
         data_monthlysum[dsname] = data[dsname].resample({"time": "MS"}).sum().compute()
 
 # save the processed datasets
+print("Saving file ...")
 for dsname in ds_to_load:
+    print("... "+dsname)
     savepath_dsname = savepath+"/monthly/"+dsname
     if not os.path.exists(savepath_dsname):
         os.makedirs(savepath_dsname)
@@ -513,12 +535,16 @@ data_yearlysum = {}
 for dsname in ds_to_load:
     if dsname not in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
                       "EURADCLIM", "GPROF"]:
+        print("... "+dsname)
         data_yearlysum[dsname] = data[dsname].resample({"time": "YS"}).sum().compute()
     if dsname in ["GPROF"]:
+        print("... "+dsname)
         data_yearlysum[dsname] = data[dsname][["surfacePrecipitation", "convectivePrecipitation", "frozenPrecipitation", "npixPrecipitation", "npixTotal"]].resample({"time": "YS"}).sum().compute()
 
 # save the processed datasets
+print("Saving file ...")
 for dsname in ds_to_load:
+    print("... "+dsname)
     savepath_dsname = savepath+"/yearly/"+dsname
     if not os.path.exists(savepath_dsname):
         os.makedirs(savepath_dsname)
