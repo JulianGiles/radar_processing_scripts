@@ -80,24 +80,28 @@ paths_yearly = {
     "IMERG-V06B-monthly": loadpath_yearly+"IMERG-V06B-monthly/IMERG-V06B-monthly_precipitation_yearlysum_2000-2021.nc",
     # "IMERG-V07B-30min": loadpath_yearly+, 
     # "IMERG-V06B-30min": loadpath_yearly+, 
-    # "CMORPH-daily": loadpath_yearly+"CMORPH-daily/CMORPH-daily_precipitation_yearlysum_1998-2023.nc",
-    # "TSMP-old": loadpath_yearly+"TSMP-old/TSMP-old_precipitation_yearlysum_2000-2021.nc",
-    # "TSMP-DETECT-Baseline": loadpath_yearly+"TSMP-DETECT-Baseline/TSMP-DETECT-Baseline_precipitation_yearlysum_2000-2022.nc",
-    # "ERA5-monthly": loadpath_yearly+"ERA5-monthly/ERA5-monthly_precipitation_yearlysum_1979-2020.nc",
+    "CMORPH-daily": loadpath_yearly+"CMORPH-daily/CMORPH-daily_precipitation_yearlysum_1998-2023.nc",
+    "TSMP-old": loadpath_yearly+"TSMP-old/TSMP-old_precipitation_yearlysum_2000-2021.nc",
+    "TSMP-DETECT-Baseline": loadpath_yearly+"TSMP-DETECT-Baseline/TSMP-DETECT-Baseline_precipitation_yearlysum_2000-2022.nc",
+    "ERA5-monthly": loadpath_yearly+"ERA5-monthly/ERA5-monthly_precipitation_yearlysum_1979-2020.nc",
     # "ERA5-hourly": loadpath_yearly+,
-    # "RADKLIM": loadpath_yearly+"RADKLIM/RADKLIM_precipitation_yearlysum_2001-2022.nc",
-    # "RADOLAN": loadpath_yearly+"RADOLAN/RADOLAN_precipitation_yearlysum_2006-2022.nc",
-    # "EURADCLIM": loadpath_yearly+"EURADCLIM/EURADCLIM_precipitation_yearlysum_2013-2020.nc",
+    "RADKLIM": loadpath_yearly+"RADKLIM/RADKLIM_precipitation_yearlysum_2001-2022.nc",
+    "RADOLAN": loadpath_yearly+"RADOLAN/RADOLAN_precipitation_yearlysum_2006-2022.nc",
+    "EURADCLIM": loadpath_yearly+"EURADCLIM/EURADCLIM_precipitation_yearlysum_2013-2020.nc",
     "GPCC-monthly": loadpath_yearly+"GPCC-monthly/GPCC-monthly_precipitation_yearlysum_1991-2020.nc",
     # "GPCC-daily": loadpath_yearly+"GPCC-daily/GPCC-daily_precipitation_yearlysum_2000-2020.nc",
-    # "GPROF": loadpath_yearly+"GPROF/GPROF_precipitation_yearlysum_2014-2023.nc",
-    # "HYRAS": loadpath_yearly+"HYRAS/HYRAS_precipitation_yearlysum_1931-2020.nc", 
+    "GPROF": loadpath_yearly+"GPROF/GPROF_precipitation_yearlysum_2014-2023.nc",
+    "HYRAS": loadpath_yearly+"HYRAS/HYRAS_precipitation_yearlysum_1931-2020.nc", 
+    "E-OBS": loadpath_yearly+"E-OBS/E-OBS_precipitation_yearlysum_1950-2023.nc", 
+    "CPC": loadpath_yearly+"CPC/CPC_precipitation_yearlysum_1979-2024.nc", 
     }
 
 data_yearlysum = {}
 
 # reload the datasets
+print("Loading yearly datasets ...")
 for dsname in paths_yearly.keys():
+    print("... "+dsname)
     data_yearlysum[dsname] = xr.open_dataset(paths_yearly[dsname])
 
 # Special tweaks
@@ -139,33 +143,38 @@ if "CMORPH-daily" in data_yearlysum.keys():
 # GPROF
 if "GPROF" in data_yearlysum.keys():
     data_yearlysum["GPROF"] = data_yearlysum["GPROF"].loc[{"time":slice("2015", "2022")}]
+# CPC
+if "CPC" in data_yearlysum.keys():
+    data_yearlysum["CPC"] = data_yearlysum["CPC"].loc[{"time":slice("1979", "2023")}]
 
 #%%% Regional averages
 #%%%% Calculate area means (regional averages)
 data_to_avg = data_yearlysum # select which data to average (yearly, monthly, daily...)
 
-region ="land"
+region ="Germany"#"land"
 mask = utils.get_regionmask(region)
 
 data_avgreg = {}
 # Means over region
+print("Calculating means over "+region)
 to_add = {} # dictionary to add rotated versions
 for dsname in data_to_avg.keys():
-    
+    print("... "+dsname)
+
     if dsname in ["RADOLAN", "RADKLIM", "HYRAS", "EURADCLIM"]:
         # these datasets come in equal-pixel-sized grids, so we only need to apply the average over the region
         mask0 = mask.mask(data_to_avg[dsname])
         data_avgreg[dsname] = data_to_avg[dsname].where(mask0.notnull()).mean(("x", "y")).compute()
 
     if dsname in ["IMERG-V07B-monthly", "IMERG-V06B-monthly", "CMORPH-daily", "ERA5-monthly", 
-                  "GPCC-monthly", "GPCC-daily", "GPROF"]:
+                  "GPCC-monthly", "GPCC-daily", "GPROF", "E-OBS", "CPC"]:
         # these datasets come in regular lat-lon grids, so we need to average over the region considering the area weights
         variables_to_include = [vv for vv in data_to_avg[dsname].data_vars \
                                 if "lonv" not in data_to_avg[dsname][vv].dims \
                                 if "latv" not in data_to_avg[dsname][vv].dims \
                                 if "nv" not in data_to_avg[dsname][vv].dims]
         mask0 = mask.mask(data_to_avg[dsname])
-        if dsname in ["ERA5-monthly"]:
+        if dsname in ["ERA5-monthly", "E-OBS"]:
             data_avgreg[dsname] = utils.calc_spatial_mean(data_to_avg[dsname][variables_to_include].where(mask0.notnull()), 
                                                           lon_name="longitude", lat_name="latitude").compute()
         else:
@@ -206,10 +215,27 @@ plt.title(dsname)
 #%%%% Interannual variability area-means plot
 # make a list with the names of the precipitation variables
 var_names = ["TOT_PREC", "precipitation", "pr", "surfacePrecipitation", "precip", "Precip", 
-             "RW", "RR", "tp", "cmorph"]
+             "RW", "RR", "tp", "cmorph", "rr"]
 
 dsignore = [] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
 dsref = ["GPCC-monthly"] # dataset to take as reference (black and bold curve)
+
+colors = {
+    "IMERG-V07B-monthly": "#FF6347", # Tomato
+    "IMERG-V06B-monthly": "crimson", # crimson
+    "CMORPH-daily": "#A52A2A", # Brown
+    "TSMP-old": "#4682B4", # SteelBlue
+    "TSMP-DETECT-Baseline": "#1E90FF", # DodgerBlue
+    "ERA5-monthly": "#8A2BE2", # BlueViolet
+    "RADKLIM": "#006400", # DarkGreen
+    "RADOLAN": "#228B22", # ForestGreen
+    "EURADCLIM": "#32CD32", # LimeGreen
+    "GPCC-monthly": "black", # Black
+    "GPROF": "#FF1493", # DeepPink
+    "HYRAS": "#FFD700", # Gold
+    "E-OBS": "#FFA500", # Orange
+    "CPC": "#FF8C00", # DarkOrange
+    }
 
 for dsname in data_avgreg.keys():
     if dsname in dsignore:
@@ -222,11 +248,13 @@ for dsname in data_avgreg.keys():
             if dsname in dsref:
                 color = "black"
                 marker = "o"
+            else: 
+                color = colors[dsname]
             try:
                 plt.plot(data_avgreg[dsname]['time'], data_avgreg[dsname][vv], label=dsname, c=color, marker=marker)
             except TypeError:
                 # try to change the time coord to datetime format
-                plt.plot(data_avgreg[dsname].indexes['time'].to_datetimeindex(), data_avgreg[dsname][vv], label=dsname)
+                plt.plot(data_avgreg[dsname].indexes['time'].to_datetimeindex(), data_avgreg[dsname][vv], label=dsname, c=color, marker=marker)
             plotted = True
     if not plotted:
         raise Warning("Nothing plotted for "+dsname)
@@ -240,7 +268,7 @@ plt.grid()
 #%%%% Interannual variability area-means plot (interactive html)
 
 var_names = ["TOT_PREC", "precipitation", "pr", "surfacePrecipitation", "precip", "Precip", 
-             "RW", "RR", "tp", "cmorph"]
+             "RW", "RR", "tp", "cmorph", "rr"]
 
 dsignore = [] # datasets to ignore in the plotting
 dsref = ["GPCC-monthly"] # dataset to take as reference (black and bold curve)
@@ -278,12 +306,53 @@ layout.opts(title="Area-mean annual total precip "+region+" [mm]", xlabel="Time"
             height=600, width=1200)
 
 # Save to HTML file
-hv.save(layout, '/user/jgiles/interactive_plot.html')
+hv.save(layout, "/user/jgiles/area_mean_annual_total_precip_"+region+".html")
+
+#%%%% Plot the period from each dataset
+# make a list with the names of the precipitation variables
+var_names = ["TOT_PREC", "precipitation", "pr", "surfacePrecipitation", "precip", "Precip", 
+             "RW", "RR", "tp", "cmorph", "rr"]
+
+dsignore = [] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
+dsref = ["GPCC-monthly"] # dataset to take as reference (black and bold curve)
+
+yticks = []
+yticklabels = []
+
+for dsn,dsname in enumerate(data_avgreg.keys()):
+    if dsname in dsignore:
+        continue
+    plotted = False
+    for vv in var_names:
+        if vv in data_avgreg[dsname].data_vars:
+            color=None
+            marker=None
+            if dsname in dsref:
+                color = "black"
+                marker = "o"
+            else: 
+                color = colors[dsname]
+            try:
+                plt.plot(data_avgreg[dsname]['time'], data_avgreg[dsname][vv]*0+dsn+1, label=dsname, c=color, marker=marker)
+            except TypeError:
+                # try to change the time coord to datetime format
+                plt.plot(data_avgreg[dsname].indexes['time'].to_datetimeindex(), data_avgreg[dsname][vv]*0+dsn+1, label=dsname, c=color, marker=marker)
+            plotted = True
+            yticks.append(dsn+1)
+            yticklabels.append(dsname)
+    if not plotted:
+        raise Warning("Nothing plotted for "+dsname)
+
+plt.title("Period from each dataset")
+plt.gca().set_xticks([str(xx) for xx in np.arange(1980, 2024)], minor=True)
+plt.xlim(datetime(1980,1,1), datetime(2024,1,1))
+plt.yticks(yticks, yticklabels) # set yticks and labels
+plt.grid()
 
 #%%% BIAS and ERRORS
 #%%%% Bias (absolute and relative) calculation from regional averages
 var_names = ["TOT_PREC", "precipitation", "pr", "surfacePrecipitation", "precip", "Precip", 
-             "RW", "RR", "tp", "cmorph"]
+             "RW", "RR", "tp", "cmorph", "rr"]
 
 dsignore = [] # datasets to ignore in the plotting
 dsref = ["GPCC-monthly"] # dataset to take as reference
@@ -346,7 +415,7 @@ plt.show()
 
 #%%%% Relative bias and errors calculation (at gridpoint level, not with the area means)
 # First we need to transform EURADCLIM, RADKLIM, RADOLAN and HYRAS to regular grids
-# We use the DETECT 1 km grid for thi^s
+# We use the DETECT 1 km grid for this
 to_add = {} # dictionary to add regridded versions
 for dsname in ["EURADCLIM", "RADOLAN", "HYRAS", "RADKLIM"]:
     if dsname not in data_yearlysum: continue
@@ -463,86 +532,145 @@ data_yearlysum = {**data_yearlysum, **to_add}
 
 #%%%% Relative bias and error plots
 #%%%%% Simple map plot
-region = "land" 
-to_plot = data_bias_map
-dsname = "IMERG-V07B-monthly"
+region = "Germany" #"land" 
+to_plot = data_bias_relative_map
+dsname = "TSMP-DETECT-Baseline-EURregLonLat01deg"
 title = "BIAS"
 yearsel = "2016"
+cbarlabel = "%" # mm
+vmin = -50
+vmax = 50
 mask = utils.get_regionmask(region)
 mask0 = mask.mask(to_plot[dsname])
 f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
-plot = to_plot[dsname].loc[{"time":yearsel}].where(mask0.notnull(), drop=True).plot(x="lon", y="lat", cmap="RdBu_r", vmin=-100, vmax=100, 
+plot = to_plot[dsname].loc[{"time":yearsel}].where(mask0.notnull(), drop=True).plot(x="lon", y="lat", cmap="RdBu_r", 
+                                                                                    vmin=vmin, vmax=vmax, 
                                          subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
-                                         cbar_kwargs={'label': "%", 'shrink':0.88})
+                                         cbar_kwargs={'label': cbarlabel, 'shrink':0.88})
 # ax1.set_extent([float(a) for a in lonlat_limits])
 plot.axes.coastlines(alpha=0.7)
 plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
 plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
 plt.title(title+" "+yearsel+"\n"+dsname+"\n "+region+" Ref.: "+dsref[0])
 
+#%%%%% Simple map plot (loop)
+# Like previous but for saving all plots
+region = "Germany" #"land" 
+savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/maps/Germany/"
+period = np.arange(2000,2024)
+to_plot_dict = [
+            (data_bias_map, "BIAS", "mm", -250, 250),
+            (data_bias_relative_map, "RELATIVE BIAS", "%", -75, 75),
+           ]
+for to_plot, title, cbarlabel, vmin, vmax in to_plot_dict:
+    print("Plotting "+title)
+    for dsname in to_plot.keys():
+        print("... "+dsname)
+        dsname_short = dsname.split("_")[0]
+        mask = utils.get_regionmask(region)
+        mask0 = mask.mask(to_plot[dsname])
+        for yearsel in period:
+            try:
+                plt.close()
+                # f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
+                plot = to_plot[dsname].loc[{"time":str(yearsel)}].where(mask0.notnull(), drop=True).plot(x="lon", y="lat", cmap="RdBu_r", 
+                                                                                                    vmin=vmin, vmax=vmax, 
+                                                         subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
+                                                         cbar_kwargs={'label': cbarlabel, 'shrink':0.88})
+                # ax1.set_extent([float(a) for a in lonlat_limits])
+                plot.axes.coastlines(alpha=0.7)
+                plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
+                plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
+                plt.title(title+" "+str(yearsel)+"\n"+dsname_short+"\n "+region+" Ref.: "+dsref[0])
+                
+                # save figure
+                savepath_yy = savepath+str(yearsel)+"/"
+                if not os.path.exists(savepath_yy):
+                    os.makedirs(savepath_yy)
+                filename = "_".join([title.lower().replace(" ","_"), region, dsname_short,dsref[0],str(yearsel)])+".png"
+                plt.savefig(savepath_yy+filename, bbox_inches="tight")
+                plt.close()
+            except KeyError:
+                continue
 
 #%%%%% Box plots of BIAS and ERRORS
-# the box plots are made up of the yearly bias or error values
+# the box plots are made up of the yearly bias or error values, and the datasets are ordered according to their median
 to_plot = data_bias_relative_gp # data_mean_abs_error_gp # data_bias_relative_gp # data_norm_mean_abs_error_gp
-title = "Relative Bias (yearly values) "+region+". Ref.: "+dsref[0]
-ylabel = "mm" # %
-dsignore = ['CMORPH-daily' ] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', ] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
+savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/interannual/Germany/boxplots/relative_bias/"
+savefilename = "boxplot_relative_bias_yearly"
+title = "Relative bias (yearly values) "+region+". Ref.: "+dsref[0]
+ylabel = "%" # % # mm
+dsignore = [] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', "E-OBS", "CPC"] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
+tsel = [slice(None, None), slice("2001", "2020"), slice("2013", "2020")] # if I want to consider only certain period. Otherwise set to (None, None). Multiple options possible
 
-# Initialize a figure and axis
-plt.figure(figsize=(10, 6))
-ax = plt.subplot(111)
-
-# Create a list to hold the data arrays
-plotted_arrays = []
-plotted_arrays_lengths = []
-
-# Iterate over the datasets in the dictionary
-for key, value in to_plot.items():
-    if key not in dsignore:
-        # Plot a box plot for each dataset
-        plotted_arrays.append(value.values) # values of each box
-        plotted_arrays_lengths.append(len(value)) # number of values in each box
-        ax.boxplot(value.values, positions=[len(plotted_arrays)], widths=0.6, 
-                   patch_artist=True, boxprops=dict(facecolor='#b6d6e3'),
-                   medianprops=dict(color="#20788e", lw=2))
-
-# Set x-axis ticks and labels with dataset names
-ax.set_xticks(range(1, len(plotted_arrays) + 1))
-ax.set_xticklabels([dsname.split("_")[0] if "_" in dsname 
-                    else "-".join(dsname.split("-")[:-1]) if "EURreg" in dsname 
-                    else dsname 
-                    for dsname in 
-                    [ds for ds in to_plot.keys() if ds not in dsignore]
-                    ],
-                   rotation=45, fontsize=15)
-ax.xaxis.label.set_size(15)     # change xlabel size
-ax.yaxis.label.set_size(15)     # change ylabel size
-
-ax.tick_params(axis='x', labelsize=15) # change xtick label size
-ax.tick_params(axis='y', labelsize=15) # change xtick label size
-
-# Make a secondary x axis to display the number of values in each box
-ax2 = ax.secondary_xaxis('top')
-ax2.xaxis.set_ticks_position("bottom")
-ax2.xaxis.set_label_position("top")
-
-ax2.set_xticks(range(1, len(plotted_arrays) + 1))
-ax2.set_xticklabels(plotted_arrays_lengths)
-ax2.set_xlabel('Number of years', fontsize= 15)
-
-# Set labels and title
-#ax.set_xlabel('')
-ax.set_ylabel(ylabel)
-ax.set_title(title, fontsize=20)
-
-# plot a reference line at zero
-plt.hlines(y=0, xmin=0, xmax=len(plotted_arrays)+1, colors='black', lw=2, zorder=0)
-plt.xlim(0.5, len(plotted_arrays) + 0.5)
-
-# Show the plot
-plt.grid(True)
-plt.tight_layout()
-plt.show()
+for tseln in tsel:
+    savefilenamen = copy.deepcopy(savefilename)
+    titlen = copy.deepcopy(title)
+    if tseln.start is not None: # add specific period to title
+        titlen = titlen+". "+tseln.start+"-"+tseln.stop
+        savefilenamen = savefilenamen+"_"+tseln.start+"-"+tseln.stop
+        
+    
+    # Initialize a figure and axis
+    plt.figure(figsize=(1.25*(len(to_plot.keys())-len(dsignore)), 6))
+    ax = plt.subplot(111)
+    
+    # Create a list to hold the data arrays
+    plotted_arrays = []
+    plotted_arrays_lengths = []
+    
+    # Order according to median:
+    to_plot = dict(sorted(to_plot.items(), key=lambda item: item[1].sel(time=tseln).median()))
+    
+    # Iterate over the datasets in the dictionary
+    for key, value in to_plot.items():
+        if key not in dsignore:
+            # Plot a box plot for each dataset
+            value = value.sel(time=tseln)
+            plotted_arrays.append(value.values) # values of each box
+            plotted_arrays_lengths.append(len(value)) # number of values in each box
+            ax.boxplot(value.values, positions=[len(plotted_arrays)], widths=0.6, 
+                       patch_artist=True, boxprops=dict(facecolor='#b6d6e3'),
+                       medianprops=dict(color="#20788e", lw=2))
+    
+    # Set x-axis ticks and labels with dataset names
+    ax.set_xticks(range(1, len(plotted_arrays) + 1))
+    ax.set_xticklabels([dsname.split("_")[0] if "_" in dsname 
+                        else "-".join(dsname.split("-")[:-1]) if "EURreg" in dsname 
+                        else dsname 
+                        for dsname in 
+                        [ds for ds in to_plot.keys() if ds not in dsignore]
+                        ],
+                       rotation=45, fontsize=15)
+    ax.xaxis.label.set_size(15)     # change xlabel size
+    ax.yaxis.label.set_size(15)     # change ylabel size
+    
+    ax.tick_params(axis='x', labelsize=15) # change xtick label size
+    ax.tick_params(axis='y', labelsize=15) # change xtick label size
+    
+    # Make a secondary x axis to display the number of values in each box
+    ax2 = ax.secondary_xaxis('top')
+    ax2.xaxis.set_ticks_position("bottom")
+    ax2.xaxis.set_label_position("top")
+    
+    ax2.set_xticks(range(1, len(plotted_arrays) + 1))
+    ax2.set_xticklabels(plotted_arrays_lengths)
+    ax2.set_xlabel('Number of years', fontsize= 15)
+    
+    # Set labels and title
+    #ax.set_xlabel('')
+    ax.set_ylabel(ylabel)
+    ax.set_title(titlen, fontsize=20)
+    
+    # plot a reference line at zero
+    plt.hlines(y=0, xmin=0, xmax=len(plotted_arrays)+1, colors='black', lw=2, zorder=0)
+    plt.xlim(0.5, len(plotted_arrays) + 0.5)
+    
+    # Show the plot
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(savepath+savefilenamen+".png", bbox_inches="tight")
+    plt.show()
 
 #%%%%% Taylor diagram
 # The Taylor diagram can be done by computing the stats over all gridpoints and all timesteps (spatiotemporal)
@@ -667,7 +795,7 @@ symbol edge color
 # Define colors for each group
 color_gauges = "k"
 color_radar = "r"
-color_satellite = "g"
+color_satellite = "b"
 color_reanalysis = "m"
 color_model = "c"
 
@@ -685,6 +813,20 @@ MARKERS = {
     "HYRAS": {
         "labelColor": "k",
         "symbol": "o",
+        "size": markersize,
+        "faceColor": color_gauges,
+        "edgeColor": color_gauges,
+    },
+    "E-OBS": {
+        "labelColor": "k",
+        "symbol": "D",
+        "size": markersize,
+        "faceColor": color_gauges,
+        "edgeColor": color_gauges,
+    },
+    "CPC": {
+        "labelColor": "k",
+        "symbol": "X",
         "size": markersize,
         "faceColor": color_gauges,
         "edgeColor": color_gauges,
@@ -769,12 +911,13 @@ lcrmsd = crmsd[dsref[0]].values
 lsdev = sdev[dsref[0]].values
 labels = [dsref[0]]
 
-for dsname in ccoef.keys():
-    if dsref[0]+"-grid" in dsname:
-        lccoef = np.append(lccoef, ccoef[dsname].values)
-        lcrmsd = np.append(lcrmsd, crmsd[dsname].values)
-        lsdev = np.append(lsdev, sdev[dsname].values)
-        labels.append(dsname.split("_")[0])
+for dsname in MARKERS.keys():
+    dsname_grid = dsname+"_"+dsref[0]+"-grid"
+    if dsname_grid in ccoef.keys():
+        lccoef = np.append(lccoef, ccoef[dsname_grid].values)
+        lcrmsd = np.append(lcrmsd, crmsd[dsname_grid].values)
+        lsdev = np.append(lsdev, sdev[dsname_grid].values)
+        labels.append(dsname_grid.split("_")[0])
 
 # Must set figure size here to prevent legend from being cut off
 plt.figure(num=1, figsize=(8, 6))
