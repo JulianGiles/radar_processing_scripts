@@ -85,13 +85,13 @@ paths_yearly = {
     "TSMP-DETECT-Baseline": loadpath_yearly+"TSMP-DETECT-Baseline/TSMP-DETECT-Baseline_precipitation_yearlysum_2000-2022.nc",
     "ERA5-monthly": loadpath_yearly+"ERA5-monthly/ERA5-monthly_precipitation_yearlysum_1979-2020.nc",
     # "ERA5-hourly": loadpath_yearly+,
-    "RADKLIM": loadpath_yearly+"RADKLIM/RADKLIM_precipitation_yearlysum_2001-2022.nc",
-    "RADOLAN": loadpath_yearly+"RADOLAN/RADOLAN_precipitation_yearlysum_2006-2022.nc",
-    "EURADCLIM": loadpath_yearly+"EURADCLIM/EURADCLIM_precipitation_yearlysum_2013-2020.nc",
+    # "RADKLIM": loadpath_yearly+"RADKLIM/RADKLIM_precipitation_yearlysum_2001-2022.nc",
+    # "RADOLAN": loadpath_yearly+"RADOLAN/RADOLAN_precipitation_yearlysum_2006-2022.nc",
+    # "EURADCLIM": loadpath_yearly+"EURADCLIM/EURADCLIM_precipitation_yearlysum_2013-2020.nc",
     "GPCC-monthly": loadpath_yearly+"GPCC-monthly/GPCC-monthly_precipitation_yearlysum_1991-2020.nc",
     # "GPCC-daily": loadpath_yearly+"GPCC-daily/GPCC-daily_precipitation_yearlysum_2000-2020.nc",
     "GPROF": loadpath_yearly+"GPROF/GPROF_precipitation_yearlysum_2014-2023.nc",
-    "HYRAS": loadpath_yearly+"HYRAS/HYRAS_precipitation_yearlysum_1931-2020.nc", 
+    # "HYRAS": loadpath_yearly+"HYRAS/HYRAS_precipitation_yearlysum_1931-2020.nc", 
     "E-OBS": loadpath_yearly+"E-OBS/E-OBS_precipitation_yearlysum_1950-2023.nc", 
     "CPC": loadpath_yearly+"CPC/CPC_precipitation_yearlysum_1979-2024.nc", 
     }
@@ -151,8 +151,32 @@ if "CPC" in data_yearlysum.keys():
 #%%%% Calculate area means (regional averages)
 data_to_avg = data_yearlysum # select which data to average (yearly, monthly, daily...)
 
-region ="Germany"#"land"
+region ="Turkey"#"land"
 mask = utils.get_regionmask(region)
+TSMP_nudge_margin = 13 # number of gridpoints to mask out the relaxation zone at the margins
+
+# TSMP-case: we make a specific mask to cut out the edge of the european domain + country
+dsname = "TSMP-DETECT-Baseline"
+mask_TSMP_nudge = False
+if dsname in data_to_avg.keys():
+    mask_TSMP_nudge = True # This will be used later as a trigger for this extra mask
+    lon_bot = data_to_avg[dsname].lon[TSMP_nudge_margin:-TSMP_nudge_margin,TSMP_nudge_margin:-TSMP_nudge_margin][0].lon.values
+    lat_bot = data_to_avg[dsname].lat[TSMP_nudge_margin:-TSMP_nudge_margin,TSMP_nudge_margin:-TSMP_nudge_margin][0].lat.values
+    lon_top = data_to_avg[dsname].lon[TSMP_nudge_margin:-TSMP_nudge_margin,TSMP_nudge_margin:-TSMP_nudge_margin][-1].lon.values
+    lat_top = data_to_avg[dsname].lat[TSMP_nudge_margin:-TSMP_nudge_margin,TSMP_nudge_margin:-TSMP_nudge_margin][-1].lat.values
+    lon_right = data_to_avg[dsname].lon[TSMP_nudge_margin:-TSMP_nudge_margin,TSMP_nudge_margin:-TSMP_nudge_margin][:,-1].lon.values
+    lat_right = data_to_avg[dsname].lat[TSMP_nudge_margin:-TSMP_nudge_margin,TSMP_nudge_margin:-TSMP_nudge_margin][:,-1].lat.values
+    lon_left = data_to_avg[dsname].lon[TSMP_nudge_margin:-TSMP_nudge_margin,TSMP_nudge_margin:-TSMP_nudge_margin][:,0].lon.values
+    lat_left = data_to_avg[dsname].lat[TSMP_nudge_margin:-TSMP_nudge_margin,TSMP_nudge_margin:-TSMP_nudge_margin][:,0].lat.values
+    
+    lon_tsmp_edge = np.concatenate((lon_bot, lon_right, lon_top[::-1], lon_left[::-1]))
+    lat_tsmp_edge = np.concatenate((lat_bot, lat_right, lat_top[::-1], lat_left[::-1]))
+    
+    lonlat_tsmp_edge = list(zip(lon_tsmp_edge, lat_tsmp_edge))
+    
+    TSMP_no_nudge = rm.Regions([ lonlat_tsmp_edge ], names=["TSMP_no_nudge"], abbrevs=["TSMP_NE"], name="TSMP")
+    # I did not find a way to directly combine this custom region with a predefined country region. I will 
+    # have to just apply the masks consecutively
 
 data_avgreg = {}
 # Means over region
@@ -164,6 +188,7 @@ for dsname in data_to_avg.keys():
     if dsname in ["RADOLAN", "RADKLIM", "HYRAS", "EURADCLIM"]:
         # these datasets come in equal-pixel-sized grids, so we only need to apply the average over the region
         mask0 = mask.mask(data_to_avg[dsname])
+        if mask_TSMP_nudge: mask0 = TSMP_no_nudge.mask(data_to_avg[dsname]).where(mask0.notnull())
         data_avgreg[dsname] = data_to_avg[dsname].where(mask0.notnull()).mean(("x", "y")).compute()
 
     if dsname in ["IMERG-V07B-monthly", "IMERG-V06B-monthly", "CMORPH-daily", "ERA5-monthly", 
@@ -174,6 +199,7 @@ for dsname in data_to_avg.keys():
                                 if "latv" not in data_to_avg[dsname][vv].dims \
                                 if "nv" not in data_to_avg[dsname][vv].dims]
         mask0 = mask.mask(data_to_avg[dsname])
+        if mask_TSMP_nudge: mask0 = TSMP_no_nudge.mask(data_to_avg[dsname]).where(mask0.notnull())
         if dsname in ["ERA5-monthly", "E-OBS"]:
             data_avgreg[dsname] = utils.calc_spatial_mean(data_to_avg[dsname][variables_to_include].where(mask0.notnull()), 
                                                           lon_name="longitude", lat_name="latitude").compute()
@@ -189,7 +215,8 @@ for dsname in data_to_avg.keys():
         to_add[dsname+"-EURregLonLat01deg"] = regridder(data_to_avg[dsname])
         
         mask0 = mask.mask(to_add[dsname+"-EURregLonLat01deg"])
-    
+        if mask_TSMP_nudge: mask0 = TSMP_no_nudge.mask(to_add[dsname+"-EURregLonLat01deg"]).where(mask0.notnull())
+
         data_avgreg[dsname] = utils.calc_spatial_mean(to_add[dsname+"-EURregLonLat01deg"].where(mask0.notnull()), 
                                                       lon_name="lon", lat_name="lat").compute()
         
@@ -202,6 +229,7 @@ dsname = "GPCC-monthly"
 vname = "precip"
 mask = utils.get_regionmask(region)
 mask0 = mask.mask(data_yearlysum[dsname])
+if mask_TSMP_nudge: mask0 = TSMP_no_nudge.mask(data_yearlysum[dsname]).where(mask0.notnull())
 f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
 plot = data_yearlysum[dsname][vname][0].where(mask0.notnull(), drop=True).plot(x="lon", y="lat", cmap="Blues", vmin=0, vmax=1000, 
                                          subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
