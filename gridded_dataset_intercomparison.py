@@ -595,21 +595,33 @@ for to_plot, title, cbarlabel, vmin, vmax in to_plot_dict:
 
 #%%%%% Box plots of BIAS and ERRORS
 # the box plots are made up of the yearly bias or error values, and the datasets are ordered according to their median
-to_plot = data_bias_relative_gp # data_mean_abs_error_gp # data_bias_relative_gp # data_norm_mean_abs_error_gp
+to_plot0 = data_bias_relative_gp.copy() # data_mean_abs_error_gp # data_bias_relative_gp # data_norm_mean_abs_error_gp
 savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/interannual/Germany/boxplots/relative_bias/"
 savefilename = "boxplot_relative_bias_yearly"
 title = "Relative bias (yearly values) "+region+". Ref.: "+dsref[0]
 ylabel = "%" # % # mm
 dsignore = [] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', "E-OBS", "CPC"] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
-tsel = [slice(None, None), slice("2001", "2020"), slice("2013", "2020")] # if I want to consider only certain period. Otherwise set to (None, None). Multiple options possible
+tsel = [slice(None, None), # if I want to consider only certain period. Otherwise set to (None, None). Multiple options possible
+        slice("2001-01-01", "2020-01-01"), 
+        slice("2006-01-01", "2020-01-01"), 
+        slice("2013-01-01", "2020-01-01"), 
+        slice("2016-01-01", "2020-01-01")] 
+ignore_incomplete = True # flag for ignoring datasets that do not cover the complete period. Only works for specific periods (not for slice(None, None))
 
 for tseln in tsel:
+    to_plot = to_plot0.copy()
     savefilenamen = copy.deepcopy(savefilename)
     titlen = copy.deepcopy(title)
-    if tseln.start is not None: # add specific period to title
-        titlen = titlen+". "+tseln.start+"-"+tseln.stop
+    
+    if tseln.start is not None and tseln.stop is not None: # add specific period to title
+        titlen = titlen+". "+tseln.start+" - "+tseln.stop
         savefilenamen = savefilenamen+"_"+tseln.start+"-"+tseln.stop
         
+        if ignore_incomplete:
+            for key in to_plot.copy().keys():
+                if not (to_plot[key].time[0].dt.date <= datetime.strptime(tseln.start, "%Y-%m-%d").date() and
+                        to_plot[key].time[-1].dt.date >= datetime.strptime(tseln.stop, "%Y-%m-%d").date()):
+                    del(to_plot[key])
     
     # Initialize a figure and axis
     plt.figure(figsize=(1.25*(len(to_plot.keys())-len(dsignore)), 6))
