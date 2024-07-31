@@ -85,13 +85,13 @@ paths_yearly = {
     "TSMP-DETECT-Baseline": loadpath_yearly+"TSMP-DETECT-Baseline/TSMP-DETECT-Baseline_precipitation_yearlysum_2000-2022.nc",
     "ERA5-monthly": loadpath_yearly+"ERA5-monthly/ERA5-monthly_precipitation_yearlysum_1979-2020.nc",
     # "ERA5-hourly": loadpath_yearly+,
-    # "RADKLIM": loadpath_yearly+"RADKLIM/RADKLIM_precipitation_yearlysum_2001-2022.nc",
-    # "RADOLAN": loadpath_yearly+"RADOLAN/RADOLAN_precipitation_yearlysum_2006-2022.nc",
-    # "EURADCLIM": loadpath_yearly+"EURADCLIM/EURADCLIM_precipitation_yearlysum_2013-2020.nc",
+    "RADKLIM": loadpath_yearly+"RADKLIM/RADKLIM_precipitation_yearlysum_2001-2022.nc",
+    "RADOLAN": loadpath_yearly+"RADOLAN/RADOLAN_precipitation_yearlysum_2006-2022.nc",
+    "EURADCLIM": loadpath_yearly+"EURADCLIM/EURADCLIM_precipitation_yearlysum_2013-2020.nc",
     "GPCC-monthly": loadpath_yearly+"GPCC-monthly/GPCC-monthly_precipitation_yearlysum_1991-2020.nc",
     # "GPCC-daily": loadpath_yearly+"GPCC-daily/GPCC-daily_precipitation_yearlysum_2000-2020.nc",
     "GPROF": loadpath_yearly+"GPROF/GPROF_precipitation_yearlysum_2014-2023.nc",
-    # "HYRAS": loadpath_yearly+"HYRAS/HYRAS_precipitation_yearlysum_1931-2020.nc", 
+    "HYRAS": loadpath_yearly+"HYRAS/HYRAS_precipitation_yearlysum_1931-2020.nc", 
     "E-OBS": loadpath_yearly+"E-OBS/E-OBS_precipitation_yearlysum_1950-2023.nc", 
     "CPC": loadpath_yearly+"CPC/CPC_precipitation_yearlysum_1979-2024.nc", 
     }
@@ -151,7 +151,7 @@ if "CPC" in data_yearlysum.keys():
 #%%%% Calculate area means (regional averages)
 data_to_avg = data_yearlysum # select which data to average (yearly, monthly, daily...)
 
-region ="Turkey"#"land"
+region ="Germany"#"land"
 mask = utils.get_regionmask(region)
 TSMP_nudge_margin = 13 # number of gridpoints to mask out the relaxation zone at the margins
 
@@ -601,6 +601,7 @@ vmin = -50
 vmax = 50
 mask = utils.get_regionmask(region)
 mask0 = mask.mask(to_plot[dsname])
+if mask_TSMP_nudge: mask0 = TSMP_no_nudge.mask(to_plot[dsname]).where(mask0.notnull())
 f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
 plot = to_plot[dsname].loc[{"time":yearsel}].where(mask0.notnull(), drop=True).plot(x="lon", y="lat", cmap="RdBu_r", 
                                                                                     vmin=vmin, vmax=vmax, 
@@ -628,6 +629,7 @@ for to_plot, title, cbarlabel, vmin, vmax in to_plot_dict:
         dsname_short = dsname.split("_")[0]
         mask = utils.get_regionmask(region)
         mask0 = mask.mask(to_plot[dsname])
+        if mask_TSMP_nudge: mask0 = TSMP_no_nudge.mask(to_plot[dsname]).where(mask0.notnull())
         for yearsel in period:
             try:
                 plt.close()
@@ -660,11 +662,13 @@ savefilename = "boxplot_relative_bias_yearly"
 title = "Relative bias (yearly values) "+region+". Ref.: "+dsref[0]
 ylabel = "%" # % # mm
 dsignore = [] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', "E-OBS", "CPC"] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
-tsel = [slice(None, None), # if I want to consider only certain period. Otherwise set to (None, None). Multiple options possible
+tsel = [
+        slice(None, None), # if I want to consider only certain period. Otherwise set to (None, None). Multiple options possible
         slice("2001-01-01", "2020-01-01"), 
         slice("2006-01-01", "2020-01-01"), 
         slice("2013-01-01", "2020-01-01"), 
-        slice("2016-01-01", "2020-01-01")] 
+        slice("2015-01-01", "2020-01-01")
+        ] 
 ignore_incomplete = True # flag for ignoring datasets that do not cover the complete period. Only works for specific periods (not for slice(None, None))
 
 for tseln in tsel:
@@ -740,6 +744,8 @@ for tseln in tsel:
     # Show the plot
     plt.grid(True)
     plt.tight_layout()
+    if not os.path.exists(savepath):
+        os.makedirs(savepath)
     plt.savefig(savepath+savefilenamen+".png", bbox_inches="tight")
     plt.show()
 
@@ -758,9 +764,9 @@ dsref = ["GPCC-monthly"]
 data_to_stat = data_yearlysum
 
 # choose common period (only datasets that cover the whole period are included)
-tslice = slice("2016","2020") # this covers all
-tslice = slice("2013","2020") # this excludes GPROF
-tslice = slice("2006","2020") # this excludes GPROF and EURADCLIM
+tslice = slice("2015","2020") # this covers all
+# tslice = slice("2013","2020") # this excludes GPROF
+# tslice = slice("2006","2020") # this excludes GPROF and EURADCLIM
 tslice = slice("2001","2020") # this excludes GPROF, EURADCLIM and RADOLAN
 
 ccoef = dict()
@@ -786,6 +792,7 @@ except AttributeError:
 # Get mask
 mask = utils.get_regionmask(region)
 mask_ref = mask.mask(ds_ref)
+if mask_TSMP_nudge: mask_ref = TSMP_no_nudge.mask(ds_ref).where(mask_ref.notnull())
 ds_ref = ds_ref.where(mask_ref.notnull())#.mean(tuple([cn for cn in ds_ref.coords if cn!="time"]))
 
 # Normalize weights in the mask
