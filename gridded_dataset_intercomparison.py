@@ -240,6 +240,36 @@ plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
 plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
 plt.title(dsname)
 
+#%%%% Simple map plot (for number of stations per gridcell)
+dsname = "GPCC-monthly"
+vname = "numgauge"
+savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/maps/Turkey/"
+
+for yy in np.arange(2000,2021):
+    ysel = str(yy)
+    mask = utils.get_regionmask(region)
+    mask0 = mask.mask(data_yearlysum[dsname])
+    # if mask_TSMP_nudge: mask0 = TSMP_no_nudge.mask(data_yearlysum[dsname]).where(mask0.notnull())
+    f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
+    cmap1 = copy.copy(plt.cm.Blues)
+    cmap1.set_under("lightgray")
+    plot = (data_yearlysum[dsname][vname].sel(time=ysel)/12).where(mask0.notnull(), drop=True).plot(x="lon", y="lat", 
+                                            levels=3, cmap=cmap1, vmin=1, vmax=3, 
+                                             subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
+                                             cbar_kwargs={'label': "", 'shrink':0.88})
+    # ax1.set_extent([-20,50,30,60])
+    plot.axes.coastlines(alpha=0.7)
+    plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
+    plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
+    plt.title(dsname+" number of stations per gridcell "+ysel)
+    # save figure
+    savepath_yy = savepath+ysel+"/"
+    if not os.path.exists(savepath_yy):
+        os.makedirs(savepath_yy)
+    filename = "numgauge_"+region+"_"+dsname+"_"+ysel+".png"
+    plt.savefig(savepath_yy+filename, bbox_inches="tight")
+    # plt.show()
+
 #%%%% Interannual variability area-means plot
 # make a list with the names of the precipitation variables
 var_names = ["TOT_PREC", "precipitation", "pr", "surfacePrecipitation", "precip", "Precip", 
@@ -334,7 +364,7 @@ layout.opts(title="Area-mean annual total precip "+region+" [mm]", xlabel="Time"
             height=600, width=1200)
 
 # Save to HTML file
-hv.save(layout, "/user/jgiles/area_mean_annual_total_precip_"+region+".html")
+hv.save(layout, "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/interannual/"+region+"/lineplots/area_mean_annual_total_precip_"+region+".html")
 
 #%%%% Plot the period from each dataset
 # make a list with the names of the precipitation variables
@@ -413,7 +443,7 @@ for idx, (key, value) in enumerate(data_bias.items()):
     value_padded = value.broadcast_like(data_to_bias[dsref[0]])
     time_values = value_padded['time']
     bar_positions = np.arange(len(time_values)) + idx * bar_width
-    plt.bar(bar_positions, value_padded, width=bar_width, label=key)
+    plt.bar(bar_positions, value_padded, width=bar_width, label=key, color=colors[key])
 
 plt.xlabel('Time')
 plt.ylabel(value.attrs['units'])
@@ -430,7 +460,7 @@ for idx, (key, value) in enumerate(data_bias_relative.items()):
     value_padded = value.broadcast_like(data_to_bias[dsref[0]])
     time_values = value_padded['time']
     bar_positions = np.arange(len(time_values)) + idx * bar_width
-    plt.bar(bar_positions, value_padded, width=bar_width, label=key)
+    plt.bar(bar_positions, value_padded, width=bar_width, label=key, color=colors[key])
 
 plt.xlabel('Time')
 plt.ylabel("%")
@@ -532,6 +562,7 @@ for dsname in data_to_bias.keys():
                     dataref = data_to_bias[dsref[0]][vvref]
                     
                     mask0 = mask.mask(data_to_bias[dsref[0]])
+                    if mask_TSMP_nudge: mask0 = TSMP_no_nudge.mask(data_to_bias[dsref[0]]).where(mask0.notnull())
 
                     data_bias_map[dsname] = ( data0 - dataref ).compute()
                     data_bias_relative_map[dsname] = ( data_bias_map[dsname] / dataref ).compute() *100
