@@ -85,13 +85,13 @@ paths_yearly = {
     "TSMP-DETECT-Baseline": loadpath_yearly+"TSMP-DETECT-Baseline/TSMP-DETECT-Baseline_precipitation_yearlysum_2000-2022.nc",
     "ERA5-monthly": loadpath_yearly+"ERA5-monthly/ERA5-monthly_precipitation_yearlysum_1979-2020.nc",
     # "ERA5-hourly": loadpath_yearly+,
-    "RADKLIM": loadpath_yearly+"RADKLIM/RADKLIM_precipitation_yearlysum_2001-2022.nc",
-    "RADOLAN": loadpath_yearly+"RADOLAN/RADOLAN_precipitation_yearlysum_2006-2022.nc",
+    # "RADKLIM": loadpath_yearly+"RADKLIM/RADKLIM_precipitation_yearlysum_2001-2022.nc",
+    # "RADOLAN": loadpath_yearly+"RADOLAN/RADOLAN_precipitation_yearlysum_2006-2022.nc",
     "EURADCLIM": loadpath_yearly+"EURADCLIM/EURADCLIM_precipitation_yearlysum_2013-2020.nc",
     "GPCC-monthly": loadpath_yearly+"GPCC-monthly/GPCC-monthly_precipitation_yearlysum_1991-2020.nc",
     # "GPCC-daily": loadpath_yearly+"GPCC-daily/GPCC-daily_precipitation_yearlysum_2000-2020.nc",
     "GPROF": loadpath_yearly+"GPROF/GPROF_precipitation_yearlysum_2014-2023.nc",
-    "HYRAS": loadpath_yearly+"HYRAS/HYRAS_precipitation_yearlysum_1931-2020.nc", 
+    # "HYRAS": loadpath_yearly+"HYRAS/HYRAS_precipitation_yearlysum_1931-2020.nc", 
     "E-OBS": loadpath_yearly+"E-OBS/E-OBS_precipitation_yearlysum_1950-2023.nc", 
     "CPC": loadpath_yearly+"CPC/CPC_precipitation_yearlysum_1979-2024.nc", 
     }
@@ -151,7 +151,11 @@ if "CPC" in data_yearlysum.keys():
 #%%%% Calculate area means (regional averages)
 data_to_avg = data_yearlysum # select which data to average (yearly, monthly, daily...)
 
-region ="Germany"#"land"
+region =["Portugal", "Spain", "France", "United Kingdom", "Ireland", 
+         "Belgium", "Netherlands", "Luxembourg", "Germany", "Switzerland",
+         "Austria", "Poland", "Denmark", "Slovenia", "Liechtenstein", "Andorra", 
+         "Monaco", "Czechia", "Slovakia", "Hungary", "Slovenia", "Romania"]#"land"
+region_name = "Europe_EURADCLIM" # name for plots
 mask = utils.get_regionmask(region)
 TSMP_nudge_margin = 13 # number of gridpoints to mask out the relaxation zone at the margins
 
@@ -180,7 +184,7 @@ if dsname in data_to_avg.keys():
 
 data_avgreg = {}
 # Means over region
-print("Calculating means over "+region)
+print("Calculating means over "+region_name)
 to_add = {} # dictionary to add rotated versions
 for dsname in data_to_avg.keys():
     print("... "+dsname)
@@ -272,7 +276,7 @@ for yy in np.arange(2000,2021):
     savepath_yy = savepath+ysel+"/"
     if not os.path.exists(savepath_yy):
         os.makedirs(savepath_yy)
-    filename = "numgauge_"+region+"_"+dsname+"_"+ysel+".png"
+    filename = "numgauge_"+region_name+"_"+dsname+"_"+ysel+".png"
     plt.savefig(savepath_yy+filename, bbox_inches="tight")
     # plt.show()
 
@@ -324,7 +328,7 @@ for dsname in data_avgreg.keys():
         raise Warning("Nothing plotted for "+dsname)
 
 plt.legend(ncols=3, fontsize=7)
-plt.title("Area-mean annual total precip "+region+" [mm]")
+plt.title("Area-mean annual total precip "+region_name+" [mm]")
 plt.xlim(datetime(2000,1,1), datetime(2020,1,1))
 # plt.xlim(2000, 2020)
 plt.grid()
@@ -366,11 +370,11 @@ layout = hvplots[0]
 for nplot in np.arange(1, len(hvplots)):
     layout = layout * hvplots[nplot]
 
-layout.opts(title="Area-mean annual total precip "+region+" [mm]", xlabel="Time", show_grid=True, legend_position='right',
+layout.opts(title="Area-mean annual total precip "+region_name+" [mm]", xlabel="Time", show_grid=True, legend_position='right',
             height=600, width=1200)
 
 # Save to HTML file
-hv.save(layout, "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/interannual/"+region+"/lineplots/area_mean_annual_total_precip_"+region+".html")
+hv.save(layout, "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/interannual/"+region_name+"/lineplots/area_mean_annual_total_precip_"+region_name+".html")
 
 #%%%% Plot the period from each dataset
 # make a list with the names of the precipitation variables
@@ -453,7 +457,7 @@ for idx, (key, value) in enumerate(data_bias.items()):
 
 plt.xlabel('Time')
 plt.ylabel(value.attrs['units'])
-plt.title("Area-mean annual total precip BIAS with respect to "+dsref[0]+" "+region)
+plt.title("Area-mean annual total precip BIAS with respect to "+dsref[0]+" "+region_name)
 plt.xticks(np.arange(len(time_values)) + 0.4, time_values_ref.dt.year.values, rotation=45)  # Rotate x-axis labels for better readability
 plt.legend()
 plt.grid(True)
@@ -470,7 +474,7 @@ for idx, (key, value) in enumerate(data_bias_relative.items()):
 
 plt.xlabel('Time')
 plt.ylabel("%")
-plt.title("Area-mean annual total precip RELATIVE BIAS with respect to "+dsref[0]+" "+region)
+plt.title("Area-mean annual total precip RELATIVE BIAS with respect to "+dsref[0]+" "+region_name)
 plt.xticks(np.arange(len(time_values)) + 0.4, time_values_ref.dt.year.values, rotation=45)  # Rotate x-axis labels for better readability
 plt.legend()
 plt.grid(True)
@@ -597,14 +601,15 @@ data_yearlysum = {**data_yearlysum, **to_add}
 
 #%%%% Relative bias and error plots
 #%%%%% Simple map plot
-region = "Germany" #"land" 
-to_plot = data_bias_relative_map
+# region = "Germany" #"land" 
+to_plot = data_bias_map
 dsname = "TSMP-DETECT-Baseline-EURregLonLat01deg"
 title = "BIAS"
 yearsel = "2016"
-cbarlabel = "%" # mm
-vmin = -50
-vmax = 50
+cbarlabel = "mm" # mm
+vmin = -250
+vmax = 250
+lonlat_slice = [slice(-43.4,63.65), slice(22.6, 71.15)]
 mask = utils.get_regionmask(region)
 mask0 = mask.mask(to_plot[dsname])
 dropna = True
@@ -612,7 +617,10 @@ if mask_TSMP_nudge:
     mask0 = TSMP_no_nudge.mask(to_plot[dsname]).where(mask0.notnull())
     dropna=False
 f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
-plot = to_plot[dsname].loc[{"time":yearsel}].where(mask0.notnull(), drop=dropna).plot(x="lon", y="lat", cmap="RdBu_r", 
+plot = to_plot[dsname].loc[{"time":yearsel}].where(mask0.notnull(), drop=dropna).loc[{"lon":lonlat_slice[0], 
+                                                                                      "lat":lonlat_slice[1]}].plot(x="lon", 
+                                                                                                                   y="lat", 
+                                                                                                                   cmap="RdBu_r", 
                                                                                     vmin=vmin, vmax=vmax, 
                                          subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
                                          cbar_kwargs={'label': cbarlabel, 'shrink':0.88})
@@ -620,17 +628,18 @@ if mask_TSMP_nudge: plot.axes.set_extent([-43.4, 63.65, 22.6, 71.15], crs=ccrs.P
 plot.axes.coastlines(alpha=0.7)
 plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
 plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
-plt.title(title+" "+yearsel+"\n"+dsname+"\n "+region+" Ref.: "+dsref[0])
+plt.title(title+" "+yearsel+"\n"+dsname+"\n "+region_name+" Ref.: "+dsref[0])
 
 #%%%%% Simple map plot (loop)
 # Like previous but for saving all plots
-region = "Germany" #"land" 
-savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/maps/Germany/"
+# region = "Germany" #"land" 
+savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/maps/"+region_name+"/"
 period = np.arange(2000,2024)
 to_plot_dict = [
             (data_bias_map, "BIAS", "mm", -250, 250),
             (data_bias_relative_map, "RELATIVE BIAS", "%", -75, 75),
            ]
+lonlat_slice = [slice(-43.4,63.65), slice(22.6, 71.15)]
 for to_plot, title, cbarlabel, vmin, vmax in to_plot_dict:
     print("Plotting "+title)
     for dsname in to_plot.keys():
@@ -646,7 +655,11 @@ for to_plot, title, cbarlabel, vmin, vmax in to_plot_dict:
             try:
                 plt.close()
                 # f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
-                plot = to_plot[dsname].loc[{"time":str(yearsel)}].where(mask0.notnull(), drop=dropna).plot(x="lon", y="lat", cmap="RdBu_r", 
+                plot = to_plot[dsname].loc[{"time":str(yearsel)}].where(mask0.notnull(), 
+                                                                        drop=dropna).loc[{"lon":lonlat_slice[0],
+                                                                                          "lat":lonlat_slice[1]}].plot(x="lon",
+                                                                                                                       y="lat",
+                                                                                                                       cmap="RdBu_r", 
                                                                                                     vmin=vmin, vmax=vmax, 
                                                          subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
                                                          cbar_kwargs={'label': cbarlabel, 'shrink':0.88})
@@ -654,13 +667,13 @@ for to_plot, title, cbarlabel, vmin, vmax in to_plot_dict:
                 plot.axes.coastlines(alpha=0.7)
                 plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
                 plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
-                plt.title(title+" "+str(yearsel)+"\n"+dsname_short+"\n "+region+" Ref.: "+dsref[0])
+                plt.title(title+" "+str(yearsel)+"\n"+dsname_short+"\n "+region_name+" Ref.: "+dsref[0])
                 
                 # save figure
                 savepath_yy = savepath+str(yearsel)+"/"
                 if not os.path.exists(savepath_yy):
                     os.makedirs(savepath_yy)
-                filename = "_".join([title.lower().replace(" ","_"), region, dsname_short,dsref[0],str(yearsel)])+".png"
+                filename = "_".join([title.lower().replace(" ","_"), region_name, dsname_short,dsref[0],str(yearsel)])+".png"
                 plt.savefig(savepath_yy+filename, bbox_inches="tight")
                 plt.close()
             except KeyError:
@@ -669,9 +682,9 @@ for to_plot, title, cbarlabel, vmin, vmax in to_plot_dict:
 #%%%%% Box plots of BIAS and ERRORS
 # the box plots are made up of the yearly bias or error values, and the datasets are ordered according to their median
 to_plot0 = data_bias_relative_gp.copy() # data_mean_abs_error_gp # data_bias_relative_gp # data_norm_mean_abs_error_gp
-savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/interannual/Germany/boxplots/relative_bias/"
+savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/interannual/"+region_name+"/boxplots/relative_bias/"
 savefilename = "boxplot_relative_bias_yearly"
-title = "Relative bias (yearly values) "+region+". Ref.: "+dsref[0]
+title = "Relative bias (yearly values) "+region_name+". Ref.: "+dsref[0]
 ylabel = "%" # % # mm
 dsignore = [] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', "E-OBS", "CPC"] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
 tsel = [
@@ -1023,7 +1036,7 @@ sm.taylor_diagram(lsdev,lcrmsd,lccoef, markerLabel = labels, #markerLabelColor =
                           )
 
 ax = plt.gca()
-ax.set_title(mode_name+" Taylor Diagram over "+region+"\n"+
+ax.set_title(mode_name+" Taylor Diagram over "+region_name+"\n"+
              "Area-weighted yearly gridded precipitation \n"+
              str(tslice_array[0].dt.year.values)+"-"+str(tslice_array[-1].dt.year.values),
              x=1.2, y=1,)
