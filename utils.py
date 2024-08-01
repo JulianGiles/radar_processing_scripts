@@ -4743,8 +4743,8 @@ def get_regionmask(regionname):
     
     Parameters
     ----------
-    regionname: str
-        Name of the region. Can be a country of region name or "land" for a global land-ocean mask.
+    regionname: str or list
+        Name or list of names of the region(s). Can be a country of region name or "land" for a global land-ocean mask.
 
     Returns
     -------
@@ -4759,6 +4759,10 @@ def get_regionmask(regionname):
             rmcountries = rm.defined_regions.natural_earth_v5_1_2.countries_10
             mask = rmcountries[[regionname]]
             return mask
+        except TypeError:
+            rmcountries = rm.defined_regions.natural_earth_v5_1_2.countries_10
+            mask = rmcountries[regionname]
+            return mask            
         except KeyError:
             raise KeyError("Desired region "+regionname+" is not available.")
 
