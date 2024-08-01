@@ -1028,6 +1028,29 @@ ax.set_title(mode_name+" Taylor Diagram over "+region+"\n"+
              str(tslice_array[0].dt.year.values)+"-"+str(tslice_array[-1].dt.year.values),
              x=1.2, y=1,)
 
+# Create custom legend manually (because otherwise it may end in the wrong place and cannot be specified within skillmetrics)
+handles_legend = []
+labels_legend = []
+
+for labeln, paramn in MARKERS.items():
+    if labeln in labels and labeln != labels[0]:
+        handlen = plt.Line2D(
+            [], [],
+            marker=paramn['symbol'],
+            color=paramn['labelColor'],
+            markersize=paramn['size'],
+            markerfacecolor=paramn['faceColor'],
+            markeredgewidth=1.5,
+            markeredgecolor=paramn['edgeColor'],
+            linestyle='None',
+            # axes=ax
+        )
+        handles_legend.append(handlen)
+        labels_legend.append(labeln)
+
+# Place the custom legend
+plt.legend(handles_legend, labels_legend, loc='center left', bbox_to_anchor=(1.05, 0.5), borderaxespad=0.)
+
 # To check that the equation that defines the diagram is closed (negligible residue)
 sm.check_taylor_stats(lsdev, lcrmsd, lccoef, threshold=1000000000000000000000)
 # 24.05.24: the check does not close but the weighted calculations seem to be fine
