@@ -229,12 +229,15 @@ dsname = "GPCC-monthly"
 vname = "precip"
 mask = utils.get_regionmask(region)
 mask0 = mask.mask(data_yearlysum[dsname])
-if mask_TSMP_nudge: mask0 = TSMP_no_nudge.mask(data_yearlysum[dsname]).where(mask0.notnull())
+dropna = True
+if mask_TSMP_nudge: 
+    mask0 = TSMP_no_nudge.mask(data_yearlysum[dsname]).where(mask0.notnull())
+    dropna=False
 f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
-plot = data_yearlysum[dsname][vname][0].where(mask0.notnull(), drop=True).plot(x="lon", y="lat", cmap="Blues", vmin=0, vmax=1000, 
+plot = data_yearlysum[dsname][vname][0].where(mask0.notnull(), drop=dropna).plot(x="lon", y="lat", cmap="Blues", vmin=0, vmax=1000, 
                                          subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
                                          cbar_kwargs={'label': "mm", 'shrink':0.88})
-# ax1.set_extent([float(a) for a in lonlat_limits])
+if mask_TSMP_nudge: ax1.set_extent([-43.4, 63.65, 22.6, 71.15], crs=ccrs.PlateCarree())
 plot.axes.coastlines(alpha=0.7)
 plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
 plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
@@ -249,15 +252,18 @@ for yy in np.arange(2000,2021):
     ysel = str(yy)
     mask = utils.get_regionmask(region)
     mask0 = mask.mask(data_yearlysum[dsname])
-    # if mask_TSMP_nudge: mask0 = TSMP_no_nudge.mask(data_yearlysum[dsname]).where(mask0.notnull())
+    dropna = True
+    if mask_TSMP_nudge: 
+        mask0 = TSMP_no_nudge.mask(data_yearlysum[dsname]).where(mask0.notnull())
+        dropna=False
     f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
     cmap1 = copy.copy(plt.cm.Blues)
     cmap1.set_under("lightgray")
-    plot = (data_yearlysum[dsname][vname].sel(time=ysel)/12).where(mask0.notnull(), drop=True).plot(x="lon", y="lat", 
+    plot = (data_yearlysum[dsname][vname].sel(time=ysel)/12).where(mask0.notnull(), drop=dropna).plot(x="lon", y="lat", 
                                             levels=3, cmap=cmap1, vmin=1, vmax=3, 
                                              subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
                                              cbar_kwargs={'label': "", 'shrink':0.88})
-    # ax1.set_extent([-20,50,30,60])
+    if mask_TSMP_nudge: plot.axes.set_extent([-43.4, 63.65, 22.6, 71.15], crs=ccrs.PlateCarree())
     plot.axes.coastlines(alpha=0.7)
     plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
     plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
@@ -509,7 +515,7 @@ data_yearlysum = {**data_yearlysum, **to_add}
     
 # Compute the biases
 dsignore = ["EURADCLIM", "RADOLAN", "HYRAS", "RADKLIM", 'TSMP-old', 'TSMP-DETECT-Baseline'] # datasets to ignore (because we want the regridded version)
-data_to_bias = copy.deepcopy(data_yearlysum)
+data_to_bias = copy.copy(data_yearlysum)
 
 to_add = {} # dictionary to add regridded versions
 
@@ -601,13 +607,16 @@ vmin = -50
 vmax = 50
 mask = utils.get_regionmask(region)
 mask0 = mask.mask(to_plot[dsname])
-if mask_TSMP_nudge: mask0 = TSMP_no_nudge.mask(to_plot[dsname]).where(mask0.notnull())
+dropna = True
+if mask_TSMP_nudge: 
+    mask0 = TSMP_no_nudge.mask(to_plot[dsname]).where(mask0.notnull())
+    dropna=False
 f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
-plot = to_plot[dsname].loc[{"time":yearsel}].where(mask0.notnull(), drop=True).plot(x="lon", y="lat", cmap="RdBu_r", 
+plot = to_plot[dsname].loc[{"time":yearsel}].where(mask0.notnull(), drop=dropna).plot(x="lon", y="lat", cmap="RdBu_r", 
                                                                                     vmin=vmin, vmax=vmax, 
                                          subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
                                          cbar_kwargs={'label': cbarlabel, 'shrink':0.88})
-# ax1.set_extent([float(a) for a in lonlat_limits])
+if mask_TSMP_nudge: plot.axes.set_extent([-43.4, 63.65, 22.6, 71.15], crs=ccrs.PlateCarree())
 plot.axes.coastlines(alpha=0.7)
 plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
 plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
@@ -629,16 +638,19 @@ for to_plot, title, cbarlabel, vmin, vmax in to_plot_dict:
         dsname_short = dsname.split("_")[0]
         mask = utils.get_regionmask(region)
         mask0 = mask.mask(to_plot[dsname])
-        if mask_TSMP_nudge: mask0 = TSMP_no_nudge.mask(to_plot[dsname]).where(mask0.notnull())
+        dropna = True
+        if mask_TSMP_nudge: 
+            mask0 = TSMP_no_nudge.mask(to_plot[dsname]).where(mask0.notnull())
+            dropna=False
         for yearsel in period:
             try:
                 plt.close()
                 # f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
-                plot = to_plot[dsname].loc[{"time":str(yearsel)}].where(mask0.notnull(), drop=True).plot(x="lon", y="lat", cmap="RdBu_r", 
+                plot = to_plot[dsname].loc[{"time":str(yearsel)}].where(mask0.notnull(), drop=dropna).plot(x="lon", y="lat", cmap="RdBu_r", 
                                                                                                     vmin=vmin, vmax=vmax, 
                                                          subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
                                                          cbar_kwargs={'label': cbarlabel, 'shrink':0.88})
-                # ax1.set_extent([float(a) for a in lonlat_limits])
+                if mask_TSMP_nudge: plot.axes.set_extent([-43.4, 63.65, 22.6, 71.15], crs=ccrs.PlateCarree())
                 plot.axes.coastlines(alpha=0.7)
                 plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
                 plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
