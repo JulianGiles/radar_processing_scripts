@@ -79,13 +79,13 @@ ds_to_load = [
     # "TSMP-Ben",
     # "ERA5-monthly",
     # "ERA5-hourly",
-    # "RADKLIM",
+    "RADKLIM",
     # "RADOLAN",
     # "EURADCLIM",
     # "GPCC-monthly",
     # "GPCC-daily",
-    "E-OBS",
-    "CPC",
+    # "E-OBS",
+    # "CPC",
     # "GPROF",
     # "HYRAS", # do not load this unless necessary, currently the calculations are done with cdo
     # "GRACE-GDO",
@@ -491,6 +491,10 @@ for dsname in ds_to_load:
                       "EURADCLIM", "GPCC-monthly", 'GPROF']:
         print("... "+dsname)
         data_monthlysum[dsname] = data[dsname].resample({"time": "MS"}).sum().compute()
+    if dsname in ["GPROF"]:
+        print("... "+dsname)
+        # GPROF is already monthly but we process it anyway so it is easier to read later
+        data_monthlysum[dsname] = data[dsname][["surfacePrecipitation", "convectivePrecipitation", "frozenPrecipitation", "npixPrecipitation", "npixTotal"]].resample({"time": "MS"}).sum().compute()
 
 # save the processed datasets
 print("Saving file ...")
@@ -500,12 +504,12 @@ for dsname in ds_to_load:
     if not os.path.exists(savepath_dsname):
         os.makedirs(savepath_dsname)
     if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
-                  "EURADCLIM", "GPCC-monthly", 'GPROF']:
+                  "EURADCLIM", "GPCC-monthly"]:
         # special treatment for these datasets, otherwise it will crash
         if dsname == "HYRAS":
             Cdo().monsum(input="/automount/ags/jgiles/HYRAS-PRE-DE/daily/hyras_de/precipitation/pr_hyras_1_1931_2020_v5-0_de.nc", 
                           output="/automount/agradar/jgiles/gridded_data/monthly/HYRAS/HYRAS_precipitation_monthlysum_1931-2020.nc", options="-z zip_6")
-        if dsname in ["GPCC-monthly", 'GPROF']:
+        if dsname in ["GPCC-monthly", "ERA5-monthly"]:
             raise Warning(dsname+" is already monthly!")
         if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly"]:
             raise Warning("Do not compute monthly sums from "+dsname+". Use the monthly version.")
