@@ -437,7 +437,8 @@ for dsname in ds_to_load:
     if dsname not in ["IMERG-V07B-30min", "IMERG-V06B-30min", "HYRAS", 
                       "EURADCLIM", "GPCC-monthly", "GPCC-daily", 'GPROF']:
         print("... "+dsname)
-        data_dailysum[dsname] = data[dsname].resample({"time": "D"}).sum().compute()
+        with ProgressBar():
+            data_dailysum[dsname] = data[dsname].resample({"time": "D"}).sum().compute()
 
 # save the processed datasets
 print("Saving file ...")
