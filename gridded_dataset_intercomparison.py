@@ -1149,9 +1149,9 @@ if "EURADCLIM" in data_monthlysum.keys():
 
 # Shift HYRAS and EURADCLIM timeaxis
 if "EURADCLIM" in data_monthlysum.keys():
-    data_monthlysum["EURADCLIM"] = data_monthlysum["EURADCLIM"].resample({"time":"MS"}).first()
+    data_monthlysum["EURADCLIM"]["time"] = data_monthlysum["EURADCLIM"]["time"].resample({"time":"MS"}).first()["time"]
 if "HYRAS" in data_monthlysum.keys():
-    data_monthlysum["HYRAS"] = data_monthlysum["HYRAS"].resample({"time":"MS"}).mean()
+    data_monthlysum["HYRAS"]["time"] = data_monthlysum["HYRAS"]["time"].resample({"time":"MS"}).first()["time"]
 
 # Convert all non datetime axes (cf Julian calendars) into datetime 
 for dsname in data_monthlysum.keys():
