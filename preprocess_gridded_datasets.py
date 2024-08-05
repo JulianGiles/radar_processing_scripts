@@ -451,11 +451,11 @@ for dsname in ds_to_load:
                   "EURADCLIM", "GPCC-monthly", "GPCC-daily", 'GPROF']:
         # special treatment for these datasets, otherwise it will crash
         if dsname in ["HYRAS", "GPCC-daily"]:
-            raise Warning(dsname+" is already daily!")
+            warnings.warn(dsname+" is already daily!")
         if dsname in ["GPCC-monthly", 'GPROF', "IMERG-V07B-monthly", "IMERG-V06B-monthly", "ERA5-monthly"]:
-            raise Warning(dsname+" is monthly!")
+            warnings.warn(dsname+" is monthly!")
         if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min"]:
-            raise Warning("Do not compute daily sums from "+dsname+". Use CDO.")
+            warnings.warn("Do not compute daily sums from "+dsname+". Use CDO.")
         if dsname in ["IMERG-V07B-30min"]:
             data[dsname]["MWobservationTime"] = data[dsname]["MWobservationTime"].astype(data[dsname]["time"].dtype)
             if not os.path.exists(savepath_dsname+"/temp"):
@@ -511,9 +511,9 @@ for dsname in ds_to_load:
             Cdo().monsum(input="/automount/ags/jgiles/HYRAS-PRE-DE/daily/hyras_de/precipitation/pr_hyras_1_1931_2020_v5-0_de.nc", 
                           output="/automount/agradar/jgiles/gridded_data/monthly/HYRAS/HYRAS_precipitation_monthlysum_1931-2020.nc", options="-z zip_6")
         if dsname in ["GPCC-monthly", "ERA5-monthly"]:
-            raise Warning(dsname+" is already monthly!")
+            warnings.warn(dsname+" is already monthly!")
         if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly"]:
-            raise Warning("Do not compute monthly sums from "+dsname+". Use the monthly version.")
+            warnings.warn("Do not compute monthly sums from "+dsname+". Use the monthly version.")
         if dsname in ["EURADCLIM"]:
             Cdo().monsum(input="/automount/agradar/jgiles/gridded_data/daily/EURADCLIM/EURADCLIM_precipitation_dailysum_2013-2020.nc", 
                          output="/automount/agradar/jgiles/gridded_data/monthly/EURADCLIM/EURADCLIM_precipitation_monthlysum_2013-2020.nc", options="-z zip_6")
@@ -560,7 +560,7 @@ for dsname in ds_to_load:
             Cdo().yearsum(input="/automount/ags/jgiles/HYRAS-PRE-DE/daily/hyras_de/precipitation/pr_hyras_1_1931_2020_v5-0_de.nc", 
                           output="/automount/agradar/jgiles/gridded_data/yearly/HYRAS/HYRAS_precipitation_yearlysum_1931-2020.nc", options="-z zip_6")
         if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly"]:
-            raise Warning("Do not compute yearly sums from "+dsname+". Use the monthly version.")
+            warnings.warn("Do not compute yearly sums from "+dsname+". Use the monthly version.")
         if dsname in ["EURADCLIM"]:
             Cdo().yearsum(input="/automount/agradar/jgiles/gridded_data/monthly/EURADCLIM/EURADCLIM_precipitation_monthlysum_2013-2020.nc", 
                          output="/automount/agradar/jgiles/gridded_data/yearly/EURADCLIM/EURADCLIM_precipitation_yearlysum_2013-2020.nc", options="-z zip_6")
