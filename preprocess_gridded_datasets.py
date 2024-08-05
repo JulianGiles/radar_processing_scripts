@@ -266,7 +266,7 @@ if "ERA5-hourly" in ds_to_load:
             ds["tp"] = ds["tp"].assign_attrs(units="mm", Units="mm")
             return ds
         data["ERA5-hourly"] = xr.open_mfdataset('/automount/ags/jgiles/ERA5/hourly/europe/single_level_vars/total_precipitation/total_precipitation_*', 
-                                         preprocess=preprocess_era5_totprec)
+                                         preprocess=preprocess_era5_totprec, chunks={"time":100})
         data["ERA5-hourly"] = data["ERA5-hourly"].assign_coords(longitude=(((data["ERA5-hourly"].longitude + 180) % 360) - 180)).sortby('longitude')
         data["ERA5-hourly"] = data["ERA5-hourly"].isel(latitude=slice(None, None, -1))
         data["ERA5-hourly"]["time"] = data["ERA5-hourly"].get_index("time").shift(-1, "h") # shift the values forward to the start of the interval
@@ -434,7 +434,7 @@ else:
 print("Calculating daily sums ...")
 data_dailysum = {}
 for dsname in ds_to_load:
-    if dsname not in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
+    if dsname not in ["IMERG-V07B-30min", "IMERG-V06B-30min", "HYRAS", 
                       "EURADCLIM", "GPCC-monthly", "GPCC-daily", 'GPROF']:
         print("... "+dsname)
         data_dailysum[dsname] = data[dsname].resample({"time": "D"}).sum().compute()
@@ -446,14 +446,14 @@ for dsname in ds_to_load:
     savepath_dsname = savepath+"/daily/"+dsname
     if not os.path.exists(savepath_dsname):
         os.makedirs(savepath_dsname)
-    if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
+    if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "HYRAS", 
                   "EURADCLIM", "GPCC-monthly", "GPCC-daily", 'GPROF']:
         # special treatment for these datasets, otherwise it will crash
         if dsname in ["HYRAS", "GPCC-daily"]:
             raise Warning(dsname+" is already daily!")
         if dsname in ["GPCC-monthly", 'GPROF', "IMERG-V07B-monthly", "IMERG-V06B-monthly", "ERA5-monthly"]:
             raise Warning(dsname+" is monthly!")
-        if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly"]:
+        if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min"]:
             raise Warning("Do not compute daily sums from "+dsname+". Use CDO.")
         if dsname in ["IMERG-V07B-30min"]:
             data[dsname]["MWobservationTime"] = data[dsname]["MWobservationTime"].astype(data[dsname]["time"].dtype)
