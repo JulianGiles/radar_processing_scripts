@@ -22,7 +22,6 @@ import xarray as xr
 from datetime import datetime
 import matplotlib.colors as mcolors
 import os
-os.chdir('/home/jgiles/radarmeteorology/notebooks/')
 from matplotlib import gridspec
 import scipy.stats
 from scipy import signal
@@ -225,6 +224,7 @@ if "CMORPH-daily" in ds_to_load:
     if "precipitation" in var_to_load:
         data["CMORPH-daily"] = xr.open_mfdataset('/automount/agradar/jgiles/cmorph-high-resolution-global-precipitation-estimates/access/daily/0.25deg/*/*/CMORPH_V1.0_ADJ_0.25deg-DLY_00Z_*.nc') #, preprocess=preprocess_imerg_europe).transpose('time', 'lat', 'lon', ...)
         data["CMORPH-daily"] = data["CMORPH-daily"].assign_coords(lon=(((data["CMORPH-daily"].lon + 180) % 360) - 180)).sortby('lon').assign_attrs(units="mm")
+        data["CMORPH-daily"]["cmorph"] = data["CMORPH-daily"]["cmorph"].assign_attrs(units="mm")
 
 #### ERA5 (GLOBAL MONTHLY)
 if "ERA5-monthly" in ds_to_load:
@@ -522,6 +522,72 @@ for dsname in ds_to_load:
         ed = str(data_monthlysum[dsname].time[-1].values)[0:4]
         data_monthlysum[dsname].to_netcdf(savepath_dsname+"/"+dsname+"_"+vname+"_monthlysum_"+sd+"-"+ed+".nc",
                                          encoding=dict([(vv,{"zlib":True, "complevel":6}) for vv in data_monthlysum[dsname].data_vars]))
+
+#%% SEASONAL SUM
+# CAREFUL WITH THIS PART, DO NOT RUN THE WHOLE CELL AT ONCE IF HANDLING MORE
+# THAN ONE DATASET BECAUSE IT WILL PROBABLY CRASH OR TAKE FOREVER
+# Set a path to save and load the reduced datasets
+savepath = "/automount/agradar/jgiles/gridded_data/"
+
+if len(var_to_load) == 1:
+    vname = var_to_load[0]
+else:
+    raise ValueError("Either no variable or more than one variable was selected in 'var_to_load'")
+
+# accumulate to monthly values
+print("Calculating seasonal sums ...")
+data_seasonsum = {}
+for dsname in ds_to_load:
+    if dsname not in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
+                      "EURADCLIM", 'GPROF']:
+        print("... "+dsname)
+        #!!! Resampling with QE does not work but apparently it has been fixed in the latest xarray version. Check again later
+        # data_seasonsum[dsname] = data_monthlysum[dsname].resample(time="QE-DEC").sum().compute()
+        data_seasonsum[dsname] = data[dsname].resample(time="QS-DEC", skipna=False).sum()
+        data_seasonsum[dsname]["time"] = data_seasonsum[dsname]["time"].get_index('time').shift(3, "M") # We place the seasonal value in the last month
+        # condition for filtering out the incomplete periods at the edges
+        if dsname in ["CMORPH-daily", "TSMP-old", "TSMP-DETECT-Baseline", "RADKLIM", "RADOLAN", "GPCC-daily", "E-OBS", "CPC"]:
+            # this datasets come in daily or hourly resolution
+            cond = xr.ones_like(data[dsname].time.resample(time="MS").mean().time, dtype=int).rolling(time=3).mean().dropna("time")
+        else:
+            # for the rest we assume monthly resolution
+            cond = xr.ones_like(data[dsname].time, dtype=int).rolling(time=3).mean().dropna("time")
+        cond["time"] = cond["time"].get_index('time').shift(1, "M") # We place the seasonal value by the end of the month
+        data_seasonsum[dsname] = data_seasonsum[dsname].where(cond).compute()
+    if dsname in ["GPROF"]:
+        print("... "+dsname)
+        #!!! Resampling with QE does not work but apparently it has been fixed in the latest xarray version. Check again later
+        # data_seasonsum[dsname] = data_monthlysum[dsname].resample(time="QE-DEC").sum().compute()
+        data_seasonsum[dsname] = data[dsname][["surfacePrecipitation", "convectivePrecipitation", "frozenPrecipitation", "npixPrecipitation", "npixTotal"]].resample(time="QS-DEC", skipna=False).sum()
+        data_seasonsum[dsname]["time"] = data_seasonsum[dsname]["time"].get_index('time').shift(3, "ME") # We place the seasonal value in the last month
+        # condition for filtering out the incomplete periods at the edges
+        cond = xr.ones_like(data[dsname].time, dtype=int).rolling(time=3).mean().dropna("time")
+        cond["time"] = cond["time"].get_index('time').shift(3, "ME") # We place the seasonal value in the last month
+        data_seasonsum[dsname] = data_seasonsum[dsname].where(cond).compute()
+
+# save the processed datasets
+print("Saving file ...")
+for dsname in ds_to_load:
+    print("... "+dsname)
+    savepath_dsname = savepath+"/seasonal/"+dsname
+    if not os.path.exists(savepath_dsname):
+        os.makedirs(savepath_dsname)
+    if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
+                  "EURADCLIM"]:
+        # special treatment for these datasets, otherwise it will crash
+        if dsname == "HYRAS":
+            Cdo().seassum(input="/automount/ags/jgiles/HYRAS-PRE-DE/daily/hyras_de/precipitation/pr_hyras_1_1931_2020_v5-0_de.nc", 
+                          output="/automount/agradar/jgiles/gridded_data/seasonal/HYRAS/HYRAS_precipitation_seasonalsum_1931-2020.nc", options="-z zip_6")
+        if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly"]:
+            warnings.warn("Do not compute seasonal sums from "+dsname+". Use the monthly version.")
+        if dsname in ["EURADCLIM"]:
+            Cdo().seassum(input="/automount/agradar/jgiles/gridded_data/daily/EURADCLIM/EURADCLIM_precipitation_dailysum_2013-2020.nc", 
+                         output="/automount/agradar/jgiles/gridded_data/seasonal/EURADCLIM/EURADCLIM_precipitation_seasonalsum_2013-2020.nc", options="-z zip_6")
+    else:
+        sd = str(data_seasonsum[dsname].time[0].values)[0:4]
+        ed = str(data_seasonsum[dsname].time[-1].values)[0:4]
+        data_seasonsum[dsname].to_netcdf(savepath_dsname+"/"+dsname+"_"+vname+"_seasonalsum_"+sd+"-"+ed+".nc",
+                                         encoding=dict([(vv,{"zlib":True, "complevel":6}) for vv in data_seasonsum[dsname].data_vars]))
 
 #%% YEARLY SUM
 # CAREFUL WITH THIS PART, DO NOT RUN THE WHOLE CELL AT ONCE IF HANDLING MORE
