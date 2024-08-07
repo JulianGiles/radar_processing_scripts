@@ -84,13 +84,13 @@ paths_yearly = {
     "TSMP-DETECT-Baseline": loadpath_yearly+"TSMP-DETECT-Baseline/TSMP-DETECT-Baseline_precipitation_yearlysum_2000-2022.nc",
     "ERA5-monthly": loadpath_yearly+"ERA5-monthly/ERA5-monthly_precipitation_yearlysum_1979-2020.nc",
     # "ERA5-hourly": loadpath_yearly+,
-    # "RADKLIM": loadpath_yearly+"RADKLIM/RADKLIM_precipitation_yearlysum_2001-2022.nc",
-    # "RADOLAN": loadpath_yearly+"RADOLAN/RADOLAN_precipitation_yearlysum_2006-2022.nc",
+    "RADKLIM": loadpath_yearly+"RADKLIM/RADKLIM_precipitation_yearlysum_2001-2022.nc",
+    "RADOLAN": loadpath_yearly+"RADOLAN/RADOLAN_precipitation_yearlysum_2006-2022.nc",
     "EURADCLIM": loadpath_yearly+"EURADCLIM/EURADCLIM_precipitation_yearlysum_2013-2020.nc",
     "GPCC-monthly": loadpath_yearly+"GPCC-monthly/GPCC-monthly_precipitation_yearlysum_1991-2020.nc",
     # "GPCC-daily": loadpath_yearly+"GPCC-daily/GPCC-daily_precipitation_yearlysum_2000-2020.nc",
     "GPROF": loadpath_yearly+"GPROF/GPROF_precipitation_yearlysum_2014-2023.nc",
-    # "HYRAS": loadpath_yearly+"HYRAS/HYRAS_precipitation_yearlysum_1931-2020.nc", 
+    "HYRAS": loadpath_yearly+"HYRAS/HYRAS_precipitation_yearlysum_1931-2020.nc", 
     "E-OBS": loadpath_yearly+"E-OBS/E-OBS_precipitation_yearlysum_1950-2023.nc", 
     "CPC": loadpath_yearly+"CPC/CPC_precipitation_yearlysum_1979-2024.nc", 
     }
@@ -146,6 +146,28 @@ if "GPROF" in data_yearlysum.keys():
 if "CPC" in data_yearlysum.keys():
     data_yearlysum["CPC"] = data_yearlysum["CPC"].loc[{"time":slice("1979", "2023")}]
 
+colors = {
+    "IMERG-V07B-monthly": "#FF6347", # Tomato
+    "IMERG-V06B-monthly": "crimson", # crimson
+    "CMORPH-daily": "#A52A2A", # Brown
+    "TSMP-old": "#4682B4", # SteelBlue
+    "TSMP-DETECT-Baseline": "#1E90FF", # DodgerBlue
+    "ERA5-monthly": "#8A2BE2", # BlueViolet
+    "RADKLIM": "#006400", # DarkGreen
+    "RADOLAN": "#228B22", # ForestGreen
+    "EURADCLIM": "#32CD32", # LimeGreen
+    "GPCC-monthly": "black", # Black
+    "GPROF": "#FF1493", # DeepPink
+    "HYRAS": "#FFD700", # Gold
+    "E-OBS": "#FFA500", # Orange
+    "CPC": "#FF8C00", # DarkOrange
+    }
+
+var_names = ["TOT_PREC", "precipitation", "pr", "surfacePrecipitation", "precip", "Precip", 
+             "RW", "RR", "tp", "cmorph", "rr"]
+dsignore = [] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
+dsref = ["GPCC-monthly"] # dataset to take as reference (black and bold curve)
+
 #%%% Regional averages
 #%%%% Calculate area means (regional averages)
 data_to_avg = data_yearlysum # select which data to average (yearly, monthly, daily...)
@@ -154,7 +176,8 @@ region =["Portugal", "Spain", "France", "United Kingdom", "Ireland",
          "Belgium", "Netherlands", "Luxembourg", "Germany", "Switzerland",
          "Austria", "Poland", "Denmark", "Slovenia", "Liechtenstein", "Andorra", 
          "Monaco", "Czechia", "Slovakia", "Hungary", "Slovenia", "Romania"]#"land"
-region_name = "Europe_EURADCLIM" # name for plots
+region = "Germany"
+region_name = "Germany" # "Europe_EURADCLIM" # name for plots
 mask = utils.get_regionmask(region)
 TSMP_nudge_margin = 13 # number of gridpoints to mask out the relaxation zone at the margins
 
@@ -632,7 +655,7 @@ plt.title(title+" "+yearsel+"\n"+dsname+"\n "+region_name+" Ref.: "+dsref[0])
 #%%%%% Simple map plot (loop)
 # Like previous but for saving all plots
 # region = "Germany" #"land" 
-savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/maps/"+region_name+"/"
+savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/maps/annual/"+region_name+"/"
 period = np.arange(2000,2024)
 to_plot_dict = [
             (data_bias_map, "BIAS", "mm", -250, 250),
@@ -1147,6 +1170,28 @@ if "EURADCLIM" in data_seasonalsum.keys():
 if "HYRAS" in data_seasonalsum.keys():
     data_seasonalsum["HYRAS"] = data_seasonalsum["HYRAS"].loc[{"time":slice("1931-02", "2020-11")}]
 
+colors = {
+    "IMERG-V07B-monthly": "#FF6347", # Tomato
+    "IMERG-V06B-monthly": "crimson", # crimson
+    "CMORPH-daily": "#A52A2A", # Brown
+    "TSMP-old": "#4682B4", # SteelBlue
+    "TSMP-DETECT-Baseline": "#1E90FF", # DodgerBlue
+    "ERA5-monthly": "#8A2BE2", # BlueViolet
+    "RADKLIM": "#006400", # DarkGreen
+    "RADOLAN": "#228B22", # ForestGreen
+    "EURADCLIM": "#32CD32", # LimeGreen
+    "GPCC-monthly": "black", # Black
+    "GPROF": "#FF1493", # DeepPink
+    "HYRAS": "#FFD700", # Gold
+    "E-OBS": "#FFA500", # Orange
+    "CPC": "#FF8C00", # DarkOrange
+    }
+
+var_names = ["TOT_PREC", "precipitation", "pr", "surfacePrecipitation", "precip", "Precip", 
+             "RW", "RR", "tp", "cmorph", "rr"]
+dsignore = [] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
+dsref = ["GPCC-monthly"] # dataset to take as reference (black and bold curve)
+
 #%%% Regional averages
 #%%%% Calculate area means (regional averages)
 data_to_avg = data_seasonalsum.copy() # select which data to average (yearly, monthly, daily...)
@@ -1302,22 +1347,6 @@ dsref = ["GPCC-monthly"] # dataset to take as reference (black and bold curve)
 
 savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/interannual_by_seasons/"+region_name+"/"
 
-colors = {
-    "IMERG-V07B-monthly": "#FF6347", # Tomato
-    "IMERG-V06B-monthly": "crimson", # crimson
-    "CMORPH-daily": "#A52A2A", # Brown
-    "TSMP-old": "#4682B4", # SteelBlue
-    "TSMP-DETECT-Baseline": "#1E90FF", # DodgerBlue
-    "ERA5-monthly": "#8A2BE2", # BlueViolet
-    "RADKLIM": "#006400", # DarkGreen
-    "RADOLAN": "#228B22", # ForestGreen
-    "EURADCLIM": "#32CD32", # LimeGreen
-    "GPCC-monthly": "black", # Black
-    "GPROF": "#FF1493", # DeepPink
-    "HYRAS": "#FFD700", # Gold
-    "E-OBS": "#FFA500", # Orange
-    "CPC": "#FF8C00", # DarkOrange
-    }
 
 for selseas in selseaslist:
     for dsname in data_avgreg.keys():
@@ -1505,10 +1534,13 @@ for selseas in selseaslist:
 
 #%%%% Relative bias and errors calculation (at gridpoint level, not with the area means)
 # First we need to transform EURADCLIM, RADKLIM, RADOLAN and HYRAS to regular grids
-# We use the DETECT 1 km grid for this
+# We use the DETECT 1 km grid for this (actually, I did not manage to make that work)
+lonlims = slice(TSMP_no_nudge.bounds_global[0], TSMP_no_nudge.bounds_global[2])
+latlims = slice(TSMP_no_nudge.bounds_global[1], TSMP_no_nudge.bounds_global[3])
+
 to_add = {} # dictionary to add regridded versions
 for dsname in ["EURADCLIM", "RADOLAN", "HYRAS", "RADKLIM"]:
-    if dsname not in data_yearlysum: continue
+    if dsname not in data_seasonalsum: continue
     print("Regridding "+dsname+" ...")
 
     grid_out = xe.util.cf_grid_2d(-49.746,70.655,0.01,19.854,74.654,0.01) # manually recreate the EURregLonLat001deg grid
@@ -1519,13 +1551,13 @@ for dsname in ["EURADCLIM", "RADOLAN", "HYRAS", "RADKLIM"]:
     # grid_out = grid_out.chunk({"x": 50, "y": 50, "x_b": 50, "y_b": 50,})
 
     # # we then try parallel regridding: slower but less memory-intensive (this takes forever)
-    # regridder = xe.Regridder(data_yearlysum[dsname].cf.add_bounds(["lon", "lat"]), 
+    # regridder = xe.Regridder(data_seasonalsum[dsname].cf.add_bounds(["lon", "lat"]), 
     #                           grid_out, 
     #                           "conservative", parallel=True)
     # to_add[dsname+"-EURregLonLat001deg"] = regridder(data_to_avg[dsname])
     # regridder.to_netcdf() # we save the weights
     # # to reuse the weigths:
-    # xe.Regridder(data_yearlysum[dsname].cf.add_bounds(["lon", "lat"]), 
+    # xe.Regridder(data_seasonalsum[dsname].cf.add_bounds(["lon", "lat"]), 
     #                           grid_out, 
     #                           "conservative", parallel=True, weights="/path/to/weights") #!!! Can I use CDO weights here?
     # Cdo().gencon()
@@ -1533,15 +1565,17 @@ for dsname in ["EURADCLIM", "RADOLAN", "HYRAS", "RADKLIM"]:
 
     # Instead, just regrid to the reference dataset grid (this is fast)
 
-    regridder = xe.Regridder(data_yearlysum[dsname].cf.add_bounds(["lon", "lat"]), data_yearlysum[dsref[0]], "conservative")
-    to_add[dsname+"_"+dsref[0]+"-grid"] = regridder(data_yearlysum[dsname])
+    regridder = xe.Regridder(data_seasonalsum[dsname].cf.add_bounds(["lon", "lat"]), 
+                             data_seasonalsum[dsref[0]].loc[{"lon": lonlims, "lat": latlims}], 
+                             "conservative")
+    to_add[dsname+"_"+dsref[0]+"-grid"] = regridder(data_seasonalsum[dsname])
     
 # add the regridded datasets to the original dictionary
-data_yearlysum = {**data_yearlysum, **to_add}
+data_seasonalsum = {**data_seasonalsum, **to_add}
     
 # Compute the biases
 dsignore = ["EURADCLIM", "RADOLAN", "HYRAS", "RADKLIM", 'TSMP-old', 'TSMP-DETECT-Baseline'] # datasets to ignore (because we want the regridded version)
-data_to_bias = copy.copy(data_yearlysum)
+data_to_bias = copy.copy(data_seasonalsum)
 
 to_add = {} # dictionary to add regridded versions
 
@@ -1583,18 +1617,20 @@ for dsname in data_to_bias.keys():
 
                         # regridder = xe.Regridder(data_to_bias[dsname].cf.add_bounds(["lon", "lat"]), data_to_bias[dsref[0]], "conservative")
 
-                        regridder = xe.Regridder(data_to_bias[dsname], data_to_bias[dsref[0]], "conservative")
+                        regridder = xe.Regridder(data_to_bias[dsname], 
+                                                 data_to_bias[dsref[0]].loc[{"lon": lonlims, "lat": latlims}], 
+                                                 "conservative")
 
-                        data0 = regridder(data_to_bias[dsname][vv])
                         to_add[dsname+"_"+dsref[0]+"-grid"] = regridder(data_to_bias[dsname][vv])
+                        data0 = to_add[dsname+"_"+dsref[0]+"-grid"].copy()
                     else:
-                        data0 = data_to_bias[dsname][vv]
+                        data0 = data_to_bias[dsname][vv].copy()
 
                     data0 = data0.where(data0>0)
-                    dataref = data_to_bias[dsref[0]][vvref]
+                    dataref = data_to_bias[dsref[0]][vvref].loc[{"lon": lonlims, "lat": latlims}]
                     
-                    mask0 = mask.mask(data_to_bias[dsref[0]])
-                    if mask_TSMP_nudge: mask0 = TSMP_no_nudge.mask(data_to_bias[dsref[0]]).where(mask0.notnull())
+                    mask0 = mask.mask(dataref)
+                    if mask_TSMP_nudge: mask0 = TSMP_no_nudge.mask(dataref).where(mask0.notnull())
 
                     data_bias_map[dsname] = ( data0 - dataref ).compute()
                     data_bias_relative_map[dsname] = ( data_bias_map[dsname] / dataref ).compute() *100
@@ -1619,15 +1655,15 @@ for dsname in data_to_bias.keys():
                     break
 
 # add the regridded datasets to the original dictionary
-data_yearlysum = {**data_yearlysum, **to_add}
+data_seasonalsum = {**data_seasonalsum, **to_add}
 
 #%%%% Relative bias and error plots
 #%%%%% Simple map plot
 # region = "Germany" #"land" 
 to_plot = data_bias_map
-dsname = "TSMP-DETECT-Baseline-EURregLonLat01deg"
+dsname = "IMERG-V07B-monthly"
 title = "BIAS"
-yearsel = "2016"
+yearsel = "2016-02"
 cbarlabel = "mm" # mm
 vmin = -250
 vmax = 250
@@ -1655,13 +1691,20 @@ plt.title(title+" "+yearsel+"\n"+dsname+"\n "+region_name+" Ref.: "+dsref[0])
 #%%%%% Simple map plot (loop)
 # Like previous but for saving all plots
 # region = "Germany" #"land" 
-savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/maps/"+region_name+"/"
+savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/maps/seasons/"+region_name+"/"
 period = np.arange(2000,2024)
 to_plot_dict = [
             (data_bias_map, "BIAS", "mm", -250, 250),
             (data_bias_relative_map, "RELATIVE BIAS", "%", -75, 75),
            ]
 lonlat_slice = [slice(-43.4,63.65), slice(22.6, 71.15)]
+
+selseaslist = [("DJF", "02"),
+           ("MAM", "05"),
+           ("JJA", "08"),
+           ("SON", "11")
+           ] # ("nameofseas", "ending_month")
+
 for to_plot, title, cbarlabel, vmin, vmax in to_plot_dict:
     print("Plotting "+title)
     for dsname in to_plot.keys():
@@ -1670,36 +1713,38 @@ for to_plot, title, cbarlabel, vmin, vmax in to_plot_dict:
         mask = utils.get_regionmask(region)
         mask0 = mask.mask(to_plot[dsname])
         dropna = True
-        if mask_TSMP_nudge: 
+        if not mask_TSMP_nudge:  # Remove/add "not" here to change the extent of the map
             mask0 = TSMP_no_nudge.mask(to_plot[dsname]).where(mask0.notnull())
             dropna=False
         for yearsel in period:
-            try:
-                plt.close()
-                # f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
-                plot = to_plot[dsname].loc[{"time":str(yearsel)}].where(mask0.notnull(), 
-                                                                        drop=dropna).loc[{"lon":lonlat_slice[0],
-                                                                                          "lat":lonlat_slice[1]}].plot(x="lon",
-                                                                                                                       y="lat",
-                                                                                                                       cmap="RdBu_r", 
-                                                                                                    vmin=vmin, vmax=vmax, 
-                                                         subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
-                                                         cbar_kwargs={'label': cbarlabel, 'shrink':0.88})
-                if mask_TSMP_nudge: plot.axes.set_extent([-43.4, 63.65, 22.6, 71.15], crs=ccrs.PlateCarree())
-                plot.axes.coastlines(alpha=0.7)
-                plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
-                plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
-                plt.title(title+" "+str(yearsel)+"\n"+dsname_short+"\n "+region_name+" Ref.: "+dsref[0])
-                
-                # save figure
-                savepath_yy = savepath+str(yearsel)+"/"
-                if not os.path.exists(savepath_yy):
-                    os.makedirs(savepath_yy)
-                filename = "_".join([title.lower().replace(" ","_"), region_name, dsname_short,dsref[0],str(yearsel)])+".png"
-                plt.savefig(savepath_yy+filename, bbox_inches="tight")
-                plt.close()
-            except KeyError:
-                continue
+            for selseas in selseaslist:
+                try:
+                    plt.close()
+                    yearseas = str(yearsel)+"-"+str(selseas[1])
+                    # f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
+                    plot = to_plot[dsname].loc[{"time":yearseas}].where(mask0.notnull(), 
+                                                                            drop=dropna).loc[{"lon":lonlat_slice[0],
+                                                                                              "lat":lonlat_slice[1]}].plot(x="lon",
+                                                                                                                           y="lat",
+                                                                                                                           cmap="RdBu_r", 
+                                                                                                        vmin=vmin, vmax=vmax, 
+                                                             subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
+                                                             cbar_kwargs={'label': cbarlabel, 'shrink':0.88})
+                    # if mask_TSMP_nudge: plot.axes.set_extent([-43.4, 63.65, 22.6, 71.15], crs=ccrs.PlateCarree())
+                    plot.axes.coastlines(alpha=0.7)
+                    plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
+                    plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
+                    plt.title(title+" "+str(yearsel)+" "+selseas[0]+"\n"+dsname_short+"\n "+region_name+" Ref.: "+dsref[0])
+                    
+                    # save figure
+                    savepath_yy = savepath+str(yearsel)+"/"+selseas[0]+"/"
+                    if not os.path.exists(savepath_yy):
+                        os.makedirs(savepath_yy)
+                    filename = "_".join([title.lower().replace(" ","_"), region_name, dsname_short,dsref[0],str(yearsel),selseas[0]])+".png"
+                    plt.savefig(savepath_yy+filename, bbox_inches="tight")
+                    plt.close()
+                except KeyError:
+                    continue
 
 #%%%%% Box plots of BIAS and ERRORS
 # the box plots are made up of the yearly bias or error values, and the datasets are ordered according to their median
