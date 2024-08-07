@@ -22,7 +22,6 @@ import xarray as xr
 from datetime import datetime
 import matplotlib.colors as mcolors
 import os
-os.chdir('/home/jgiles/radarmeteorology/notebooks/')
 from matplotlib import gridspec
 import scipy.stats
 from scipy import signal
@@ -1070,129 +1069,79 @@ sm.check_taylor_stats(lsdev, lcrmsd, lccoef, threshold=1000000000000000000000)
 
 #%% Seasonal analysis (interannual)
 
-#%%% Load monthly datasets
+#%%% Load seasonal datasets
 
-loadpath_monthly = "/automount/agradar/jgiles/gridded_data/monthly/"
+loadpath_seasonal = "/automount/agradar/jgiles/gridded_data/seasonal/"
 loadpath_agradar = "/automount/agradar/jgiles/"
 loadpath_ags = "/automount/ags/jgiles/"
-paths_monthly = {
-    "IMERG-V07B-monthly": loadpath_agradar+"IMERG_V07B/global_monthly/3B-MO.MS.MRG.3IMERG.*.V07B.HDF5.nc4",
-    "IMERG-V06B-monthly": loadpath_agradar+"IMERG_V06B/global_monthly/3B-MO.MS.MRG.3IMERG.*.V06B.HDF5.nc4",
+paths_seasonal = {
+    "IMERG-V07B-monthly": loadpath_seasonal+"/IMERG-V07B-monthly/IMERG-V07B-monthly_precipitation_seasonalsum_2000-2023.nc",
+    "IMERG-V06B-monthly": loadpath_seasonal+"/IMERG-V06B-monthly/IMERG-V06B-monthly_precipitation_seasonalsum_2000-2021.nc",
     # "IMERG-V07B-30min": loadpath_monthly+, 
     # "IMERG-V06B-30min": loadpath_monthly+, 
-    "CMORPH-daily": loadpath_monthly+"CMORPH-daily/CMORPH-daily_precipitation_monthlysum_1998-2023.nc",
-    "TSMP-old": loadpath_monthly+"TSMP-old/TSMP-old_precipitation_monthlysum_2000-2021.nc",
-    "TSMP-DETECT-Baseline": loadpath_monthly+"TSMP-DETECT-Baseline/TSMP-DETECT-Baseline_precipitation_monthlysum_2000-2022.nc",
-    "ERA5-monthly": loadpath_ags+"ERA5/monthly_averaged/single_level_vars/total_precipitation/total_precipitation_*.nc",
+    "CMORPH-daily": loadpath_seasonal+"CMORPH-daily/CMORPH-daily_precipitation_seasonalsum_1998-2023.nc",
+    "TSMP-old": loadpath_seasonal+"TSMP-old/TSMP-old_precipitation_seasonalsum_2000-2021.nc",
+    "TSMP-DETECT-Baseline": loadpath_seasonal+"TSMP-DETECT-Baseline/TSMP-DETECT-Baseline_precipitation_seasonalsum_2000-2022.nc",
+    "ERA5-monthly": loadpath_seasonal+"ERA5-monthly/ERA5-monthly_precipitation_seasonalsum_1979-2020.nc",
     # "ERA5-hourly": loadpath_monthly+,
-    "RADKLIM": loadpath_monthly+"RADKLIM/RADKLIM_precipitation_monthlysum_2001-2022.nc",
-    "RADOLAN": loadpath_monthly+"RADOLAN/RADOLAN_precipitation_monthlysum_2006-2022.nc",
-    "EURADCLIM": loadpath_monthly+"EURADCLIM/EURADCLIM_precipitation_monthlysum_2013-2020.nc",
-    "GPCC-monthly": loadpath_ags+"GPCC/full_data_monthly_v2022/025/*.nc",
+    "RADKLIM": loadpath_seasonal+"RADKLIM/RADKLIM_precipitation_seasonalsum_2001-2022.nc",
+    "RADOLAN": loadpath_seasonal+"RADOLAN/RADOLAN_precipitation_seasonalsum_2006-2022.nc",
+    "EURADCLIM": loadpath_seasonal+"EURADCLIM/EURADCLIM_precipitation_seasonalsum_2013-2020.nc",
+    "GPCC-monthly": loadpath_seasonal+"GPCC-monthly/GPCC-monthly_precipitation_seasonalsum_1991-2020.nc",
     # "GPCC-daily": ,
-    "GPROF": loadpath_monthly+"GPROF/GPROF_precipitation_monthlysum_2014-2023.nc",
-    "HYRAS": loadpath_monthly+"HYRAS/HYRAS_precipitation_monthlysum_1931-2020.nc", 
-    "E-OBS": loadpath_monthly+"E-OBS/E-OBS_precipitation_monthlysum_1950-2023.nc", 
-    "CPC": loadpath_monthly+"CPC/CPC_precipitation_monthlysum_1979-2024.nc", 
+    "GPROF": loadpath_seasonal+"GPROF/GPROF_precipitation_seasonalsum_2014-2023.nc",
+    "HYRAS": loadpath_seasonal+"HYRAS/HYRAS_precipitation_seasonalsum_1931-2020.nc", 
+    "E-OBS": loadpath_seasonal+"E-OBS/E-OBS_precipitation_seasonalsum_1950-2023.nc", 
+    "CPC": loadpath_seasonal+"CPC/CPC_precipitation_seasonalsum_1979-2024.nc", 
     }
 
-data_monthlysum = {}
+data_seasonalsum = {}
 
 # load the datasets
 print("Loading monthly datasets ...")
-for dsname in paths_monthly.keys():
+for dsname in paths_seasonal.keys():
     print("... "+dsname)
-    if dsname in ["IMERG-V06B-monthly", "IMERG-V07B-monthly"]:
-        def preprocess_imerg(ds):
-            # function to transform to accumulated monthly values
-            days_in_month = [31,28,31,30,31,30,31,31,30,31,30,31]
-            ds["precipitation"] = ds["precipitation"]*days_in_month[ds.time.values[0].month-1]*24
-            ds["precipitation"] = ds["precipitation"].assign_attrs(units="mm", Units="mm")
-            return ds
-
-        data_monthlysum[dsname] = xr.open_mfdataset(paths_monthly[dsname], preprocess=preprocess_imerg)\
-                        .transpose('time', 'lat', 'lon', ...)
-    elif dsname in ["ERA5-monthly"]:
-        def preprocess_era5_totprec(ds):
-            # function to transform to accumulated monthly values
-            days_in_month = [31,28,31,30,31,30,31,31,30,31,30,31]
-            ds["tp"] = ds["tp"]*days_in_month[pd.Timestamp(ds.time.values[0]).month-1]*1000
-            ds["tp"] = ds["tp"].assign_attrs(units="mm", Units="mm")
-            return ds
-        data_monthlysum[dsname] = xr.open_mfdataset(paths_monthly[dsname], 
-                                         preprocess=preprocess_era5_totprec)
-        data_monthlysum[dsname] = data_monthlysum[dsname].assign_coords(longitude=(((data_monthlysum[dsname].longitude + 180) % 360) - 180)).sortby('longitude')
-        data_monthlysum[dsname] = data_monthlysum[dsname].isel(latitude=slice(None, None, -1))
-    elif dsname in ["GPCC-monthly"]:
-        data_monthlysum[dsname] = xr.open_mfdataset(paths_monthly[dsname], chunks={"time":5})
-        data_monthlysum[dsname] = data_monthlysum[dsname].isel(lat=slice(None, None, -1))
-        data_monthlysum[dsname]["precip"] = data_monthlysum[dsname]["precip"].assign_attrs(units="mm", Units="mm")
-    elif dsname in ["EURADCLIM"]:
-        # if we open EURADCLIM without dask it goes way faster for whatever misterious reason
-        data_monthlysum[dsname] = xr.open_dataset(paths_monthly[dsname])
-    else:
-        data_monthlysum[dsname] = xr.open_mfdataset(paths_monthly[dsname])
+    data_seasonalsum[dsname] = xr.open_dataset(paths_seasonal[dsname])
 
 # Special tweaks
 # RADOLAN GRID AND CRS
-if "RADOLAN" in data_monthlysum.keys():
+if "RADOLAN" in data_seasonalsum.keys():
     lonlat_radolan = wrl.georef.rect.get_radolan_grid(900,900, wgs84=True) # these are the left lower edges of each bin
-    data_monthlysum["RADOLAN"] = data_monthlysum["RADOLAN"].assign_coords({"lon":(("y", "x"), lonlat_radolan[:,:,0]), "lat":(("y", "x"), lonlat_radolan[:,:,1])})
-    data_monthlysum["RADOLAN"] = data_monthlysum["RADOLAN"].assign(crs=data_monthlysum['RADKLIM'].crs[0])
-    data_monthlysum["RADOLAN"].attrs["grid_mapping"] = "crs"
-    data_monthlysum["RADOLAN"].lon.attrs = data_monthlysum["RADKLIM"].lon.attrs
-    data_monthlysum["RADOLAN"].lat.attrs = data_monthlysum["RADKLIM"].lat.attrs
+    data_seasonalsum["RADOLAN"] = data_seasonalsum["RADOLAN"].assign_coords({"lon":(("y", "x"), lonlat_radolan[:,:,0]), "lat":(("y", "x"), lonlat_radolan[:,:,1])})
+    data_seasonalsum["RADOLAN"] = data_seasonalsum["RADOLAN"].assign(crs=data_seasonalsum['RADKLIM'].crs[0])
+    data_seasonalsum["RADOLAN"].attrs["grid_mapping"] = "crs"
+    data_seasonalsum["RADOLAN"].lon.attrs = data_seasonalsum["RADKLIM"].lon.attrs
+    data_seasonalsum["RADOLAN"].lat.attrs = data_seasonalsum["RADKLIM"].lat.attrs
 
 # EURADCLIM coords
-if "EURADCLIM" in data_monthlysum.keys():
-    data_monthlysum["EURADCLIM"] = data_monthlysum["EURADCLIM"].set_coords(("lon", "lat"))
+if "EURADCLIM" in data_seasonalsum.keys():
+    data_seasonalsum["EURADCLIM"] = data_seasonalsum["EURADCLIM"].set_coords(("lon", "lat"))
 
 # Shift HYRAS and EURADCLIM timeaxis
-if "EURADCLIM" in data_monthlysum.keys():
-    data_monthlysum["EURADCLIM"]["time"] = data_monthlysum["EURADCLIM"]["time"].resample({"time":"MS"}).first()["time"]
-if "HYRAS" in data_monthlysum.keys():
-    data_monthlysum["HYRAS"]["time"] = data_monthlysum["HYRAS"]["time"].resample({"time":"MS"}).first()["time"]
+if "EURADCLIM" in data_seasonalsum.keys():
+    data_seasonalsum["EURADCLIM"]["time"] = data_seasonalsum["EURADCLIM"]["time"].get_index('time').shift(2, "M") # We place the seasonal value in the last month
+if "HYRAS" in data_seasonalsum.keys():
+    data_seasonalsum["HYRAS"]["time"] = data_seasonalsum["HYRAS"]["time"].get_index('time').shift(2, "M") # We place the seasonal value in the last month
 
 # Convert all non datetime axes (cf Julian calendars) into datetime 
-for dsname in data_monthlysum.keys():
+for dsname in data_seasonalsum.keys():
     try:
-        data_monthlysum[dsname]["time"] = data_monthlysum[dsname].indexes['time'].to_datetimeindex()
+        data_seasonalsum[dsname]["time"] = data_seasonalsum[dsname].indexes['time'].to_datetimeindex()
     except:
         pass
 
-# Convert monthly data to seasonal
-data_seasonsum = {}
-print("Converting to seasonal values ...")
-for dsname in data_monthlysum.keys():
-    print("... "+dsname)
-    #!!! Resampling with QE does not work but apparently it has been fixed in the latest xarray version. Check again later
-    # data_seasonsum[dsname] = data_monthlysum[dsname].resample(time="QE-DEC").sum().compute()
-    data_seasonsum[dsname] = data_monthlysum[dsname].resample(time="QS-DEC", skipna=False).sum()
-    data_seasonsum[dsname]["time"] = data_seasonsum[dsname]["time"].get_index('time').shift(3, "M") # We place the seasonal value in the last month
-    # condition for filtering out the incomplete periods at the edges
-    cond = xr.ones_like(data_monthlysum[dsname].time, dtype=int).rolling(time=3).mean().dropna("time")
-    cond["time"] = cond["time"].get_index('time').shift(3, "M") # We place the seasonal value in the last month
-    data_seasonsum[dsname] = data_seasonsum[dsname].where(cond)
     
 # Special selections for incomplete extreme years
-# IMERG
-if "IMERG-V07B-monthly" in data_monthlysum.keys():
-    data_monthlysum["IMERG-V07B-monthly"] = data_monthlysum["IMERG-V07B-monthly"].loc[{"time":slice("2001", "2022")}]
-if "IMERG-V06B-monthly" in data_monthlysum.keys():
-    data_monthlysum["IMERG-V06B-monthly"] = data_monthlysum["IMERG-V06B-monthly"].loc[{"time":slice("2001", "2020")}]
-# CMORPH
-if "CMORPH-daily" in data_monthlysum.keys():
-    data_monthlysum["CMORPH-daily"] = data_monthlysum["CMORPH-daily"].loc[{"time":slice("1998", "2022")}]
-# GPROF
-if "GPROF" in data_monthlysum.keys():
-    data_monthlysum["GPROF"] = data_monthlysum["GPROF"].loc[{"time":slice("2015", "2022")}]
-# CPC
-if "CPC" in data_monthlysum.keys():
-    data_monthlysum["CPC"] = data_monthlysum["CPC"].loc[{"time":slice("1979", "2023")}]
+# EURADCLIM
+if "EURADCLIM" in data_seasonalsum.keys():
+    data_seasonalsum["EURADCLIM"] = data_seasonalsum["EURADCLIM"].loc[{"time":slice("2013-05", "2020-12")}]
+# HYRAS
+if "HYRAS" in data_seasonalsum.keys():
+    data_seasonalsum["HYRAS"] = data_seasonalsum["HYRAS"].loc[{"time":slice("1931-02", "2020-11")}]
 
 #%%% Regional averages
 #%%%% Calculate area means (regional averages)
-data_to_avg = data_seasonsum.copy() # select which data to average (yearly, monthly, daily...)
+data_to_avg = data_seasonalsum.copy() # select which data to average (yearly, monthly, daily...)
 
 region =["Portugal", "Spain", "France", "United Kingdom", "Ireland", 
          "Belgium", "Netherlands", "Luxembourg", "Germany", "Switzerland",
@@ -1274,7 +1223,7 @@ for dsname in data_to_avg.keys():
         
 # add the rotated datasets to the original dictionary
 data_to_avg = {**data_to_avg, **to_add}
-data_seasonsum = data_to_avg.copy()
+data_seasonalsum = data_to_avg.copy()
 
 #%%%% Simple map plot
 dsname = "GPCC-monthly"
