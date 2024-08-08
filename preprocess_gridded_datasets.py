@@ -78,7 +78,7 @@ ds_to_load = [
     # "TSMP-Ben",
     # "ERA5-monthly",
     # "ERA5-hourly",
-    "RADKLIM",
+    # "RADKLIM",
     # "RADOLAN",
     # "EURADCLIM",
     # "GPCC-monthly",
@@ -86,6 +86,7 @@ ds_to_load = [
     # "E-OBS",
     # "CPC",
     # "GPROF",
+    "GSMaP",
     # "HYRAS", # do not load this unless necessary, currently the calculations are done with cdo
     # "GRACE-GDO",
     # "GRACE-GSFC",
@@ -418,6 +419,30 @@ if "GPROF" in ds_to_load:
         for vv in ["surfacePrecipitation", "convectivePrecipitation", "frozenPrecipitation"]:    
             data["GPROF"][vv] = data["GPROF"][vv]*days_in_month_ds*24
             data["GPROF"][vv] = data["GPROF"][vv].assign_attrs(units="mm", Units="mm")
+
+#### GSMaP
+if "GSMaP" in ds_to_load:
+    print("Loading GSMaP...")
+    
+    def build_time_dim_gsmap(ds):
+        # Extract the time variable and its units
+        time_var = ds['Time']
+        time_units = time_var.attrs['units']
+        
+        # Parse the units attribute to get the reference time
+        time_origin = pd.to_datetime(time_units.split('since')[1].strip())
+        
+        # Decode the time dimension
+        decoded_time = time_origin + pd.to_timedelta(time_var.values, unit='H')
+        
+        # Replace the original Time variable with the decoded time
+        ds = ds.assign_coords(Time=decoded_time).rename({"Time": "time", "Longitude": "lon", "Latitude": "lat"})
+        
+        return ds
+
+    if "precipitation" in var_to_load:    
+        data["GSMaP"] = xr.open_mfdataset("/automount/ags/jgiles/GSMaP/standard/v8/netcdf/2000/01/01/gsmap_mvk.*.v8.*.nc", 
+                                          decode_times=False, preprocess=build_time_dim_gsmap)
 
 #%% DAILY SUM
 # CAREFUL WITH THIS PART, DO NOT RUN THE WHOLE CELL AT ONCE IF HANDLING MORE
