@@ -1689,7 +1689,7 @@ plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha
 plt.title(title+" "+yearsel+"\n"+dsname+"\n "+region_name+" Ref.: "+dsref[0])
 
 #%%%%% Simple map plot (loop)
-# Like previous but for saving all plots
+# Like previous but for saving all plots !! THIS WILL PROBABLY CRASH THE MEMORY
 # region = "Germany" #"land" 
 savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/maps/seasons/"+region_name+"/"
 period = np.arange(2000,2024)
@@ -1749,9 +1749,9 @@ for to_plot, title, cbarlabel, vmin, vmax in to_plot_dict:
 #%%%%% Box plots of BIAS and ERRORS
 # the box plots are made up of the yearly bias or error values, and the datasets are ordered according to their median
 to_plot0 = data_bias_relative_gp.copy() # data_mean_abs_error_gp # data_bias_relative_gp # data_norm_mean_abs_error_gp
-savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/interannual/"+region_name+"/boxplots/relative_bias/"
-savefilename = "boxplot_relative_bias_yearly"
-title = "Relative bias (yearly values) "+region_name+". Ref.: "+dsref[0]
+savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/interannual_by_seasons/"+region_name+"/boxplots/relative_bias/"
+savefilename = "boxplot_relative_bias_" # the season name will be added at the end of savefilename
+title = "relative bias "+region_name+". Ref.: "+dsref[0] # the season name will be added at the beginning of title
 ylabel = "%" # % # mm
 dsignore = [] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', "E-OBS", "CPC"] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
 tsel = [
@@ -1762,84 +1762,97 @@ tsel = [
         slice("2015-01-01", "2020-01-01")
         ] 
 ignore_incomplete = True # flag for ignoring datasets that do not cover the complete period. Only works for specific periods (not for slice(None, None))
+selseaslist = [("DJF", [2]),
+           ("MAM", [5]),
+           ("JJA", [8]),
+           ("SON", [11]),
+           ("full", [1,2,3,4,5,6,7,8,9,10,11,12])] # ("nameofseas", ending_month)
 
-for tseln in tsel:
-    to_plot = to_plot0.copy()
-    savefilenamen = copy.deepcopy(savefilename)
-    titlen = copy.deepcopy(title)
-    
-    if tseln.start is not None and tseln.stop is not None: # add specific period to title
-        titlen = titlen+". "+tseln.start+" - "+tseln.stop
-        savefilenamen = savefilenamen+"_"+tseln.start+"-"+tseln.stop
+for selseas in selseaslist:
+    savepathn = (region_name+"/"+selseas[0]).join(copy.deepcopy(savepath).split(region_name))
+    for tseln in tsel:
+        to_plot = to_plot0.copy()
+        savefilenamen = copy.deepcopy(savefilename)
+        titlen = copy.deepcopy(title)
+        titlen = selseas[0]+" "+titlen
+        savefilenamen = savefilenamen+selseas[0]
         
-        if ignore_incomplete:
-            for key in to_plot.copy().keys():
-                if not (to_plot[key].time[0].dt.date <= datetime.strptime(tseln.start, "%Y-%m-%d").date() and
-                        to_plot[key].time[-1].dt.date >= datetime.strptime(tseln.stop, "%Y-%m-%d").date()):
-                    del(to_plot[key])
-    
-    # Initialize a figure and axis
-    plt.figure(figsize=(1.25*(len(to_plot.keys())-len(dsignore)), 6))
-    ax = plt.subplot(111)
-    
-    # Create a list to hold the data arrays
-    plotted_arrays = []
-    plotted_arrays_lengths = []
-    
-    # Order according to median:
-    to_plot = dict(sorted(to_plot.items(), key=lambda item: item[1].sel(time=tseln).median()))
-    
-    # Iterate over the datasets in the dictionary
-    for key, value in to_plot.items():
-        if key not in dsignore:
-            # Plot a box plot for each dataset
-            value = value.sel(time=tseln)
-            plotted_arrays.append(value.values) # values of each box
-            plotted_arrays_lengths.append(len(value)) # number of values in each box
-            ax.boxplot(value.values, positions=[len(plotted_arrays)], widths=0.6, 
-                       patch_artist=True, boxprops=dict(facecolor='#b6d6e3'),
-                       medianprops=dict(color="#20788e", lw=2))
-    
-    # Set x-axis ticks and labels with dataset names
-    ax.set_xticks(range(1, len(plotted_arrays) + 1))
-    ax.set_xticklabels([dsname.split("_")[0] if "_" in dsname 
-                        else "-".join(dsname.split("-")[:-1]) if "EURreg" in dsname 
-                        else dsname 
-                        for dsname in 
-                        [ds for ds in to_plot.keys() if ds not in dsignore]
-                        ],
-                       rotation=45, fontsize=15)
-    ax.xaxis.label.set_size(15)     # change xlabel size
-    ax.yaxis.label.set_size(15)     # change ylabel size
-    
-    ax.tick_params(axis='x', labelsize=15) # change xtick label size
-    ax.tick_params(axis='y', labelsize=15) # change xtick label size
-    
-    # Make a secondary x axis to display the number of values in each box
-    ax2 = ax.secondary_xaxis('top')
-    ax2.xaxis.set_ticks_position("bottom")
-    ax2.xaxis.set_label_position("top")
-    
-    ax2.set_xticks(range(1, len(plotted_arrays) + 1))
-    ax2.set_xticklabels(plotted_arrays_lengths)
-    ax2.set_xlabel('Number of years', fontsize= 15)
-    
-    # Set labels and title
-    #ax.set_xlabel('')
-    ax.set_ylabel(ylabel)
-    ax.set_title(titlen, fontsize=20)
-    
-    # plot a reference line at zero
-    plt.hlines(y=0, xmin=0, xmax=len(plotted_arrays)+1, colors='black', lw=2, zorder=0)
-    plt.xlim(0.5, len(plotted_arrays) + 0.5)
-    
-    # Show the plot
-    plt.grid(True)
-    plt.tight_layout()
-    if not os.path.exists(savepath):
-        os.makedirs(savepath)
-    plt.savefig(savepath+savefilenamen+".png", bbox_inches="tight")
-    plt.show()
+        if tseln.start is not None and tseln.stop is not None: # add specific period to title
+            titlen = titlen+". "+tseln.start+" - "+tseln.stop
+            savefilenamen = savefilenamen+"_"+tseln.start+"-"+tseln.stop
+            
+            if ignore_incomplete:
+                for key in to_plot.copy().keys():
+                    if not (to_plot[key].time[0].dt.date <= datetime.strptime(tseln.start, "%Y-%m-%d").date() and
+                            to_plot[key].time[-1].dt.date >= datetime.strptime(tseln.stop, "%Y-%m-%d").date()):
+                        del(to_plot[key])
+        
+        # Select the given season
+        for key in to_plot.copy().keys():
+            to_plot[key] = to_plot[key].sel(time=to_plot[key]['time'].dt.month.isin(selseas[1]))
+        
+        # Initialize a figure and axis
+        plt.figure(figsize=(1.25*(len(to_plot.keys())-len(dsignore)), 6))
+        ax = plt.subplot(111)
+        
+        # Create a list to hold the data arrays
+        plotted_arrays = []
+        plotted_arrays_lengths = []
+        
+        # Order according to median:
+        to_plot = dict(sorted(to_plot.items(), key=lambda item: item[1].sel(time=tseln).median()))
+        
+        # Iterate over the datasets in the dictionary
+        for key, value in to_plot.items():
+            if key not in dsignore:
+                # Plot a box plot for each dataset
+                value = value.sel(time=tseln)
+                plotted_arrays.append(value.values) # values of each box
+                plotted_arrays_lengths.append(len(value)) # number of values in each box
+                ax.boxplot(value.values, positions=[len(plotted_arrays)], widths=0.6, 
+                           patch_artist=True, boxprops=dict(facecolor='#b6d6e3'),
+                           medianprops=dict(color="#20788e", lw=2))
+        
+        # Set x-axis ticks and labels with dataset names
+        ax.set_xticks(range(1, len(plotted_arrays) + 1))
+        ax.set_xticklabels([dsname.split("_")[0] if "_" in dsname 
+                            else "-".join(dsname.split("-")[:-1]) if "EURreg" in dsname 
+                            else dsname 
+                            for dsname in 
+                            [ds for ds in to_plot.keys() if ds not in dsignore]
+                            ],
+                           rotation=45, fontsize=15)
+        ax.xaxis.label.set_size(15)     # change xlabel size
+        ax.yaxis.label.set_size(15)     # change ylabel size
+        
+        ax.tick_params(axis='x', labelsize=15) # change xtick label size
+        ax.tick_params(axis='y', labelsize=15) # change xtick label size
+        
+        # Make a secondary x axis to display the number of values in each box
+        ax2 = ax.secondary_xaxis('top')
+        ax2.xaxis.set_ticks_position("bottom")
+        ax2.xaxis.set_label_position("top")
+        
+        ax2.set_xticks(range(1, len(plotted_arrays) + 1))
+        ax2.set_xticklabels(plotted_arrays_lengths)
+        ax2.set_xlabel('Number of years', fontsize= 15)
+        
+        # Set labels and title
+        #ax.set_xlabel('')
+        ax.set_ylabel(ylabel)
+        ax.set_title(titlen, fontsize=20)
+        
+        # plot a reference line at zero
+        plt.hlines(y=0, xmin=0, xmax=len(plotted_arrays)+1, colors='black', lw=2, zorder=0)
+        plt.xlim(0.5, len(plotted_arrays) + 0.5)
+        
+        # Show the plot
+        plt.grid(True)
+        plt.tight_layout()
+        if not os.path.exists(savepathn):
+            os.makedirs(savepathn)
+        plt.savefig(savepathn+savefilenamen+".png", bbox_inches="tight")
+        plt.show()
 
 #%%%%% Taylor diagram
 # The Taylor diagram can be done by computing the stats over all gridpoints and all timesteps (spatiotemporal)
