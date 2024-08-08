@@ -1904,295 +1904,304 @@ selseaslist = [("DJF", [2]),
            ("SON", [11]),
            ("full", [1,2,3,4,5,6,7,8,9,10,11,12])] # ("nameofseas", ending_month)
 
-print("Plotting Taylor diagrams ...")
-for selseas in selseaslist:
-    print("... "+selseas[0])
-    
-    ccoef = dict()
-    crmsd = dict()
-    sdev = dict()
-    
-    for vv in var_names: # get the name of the desired variable in the reference dataset
-        if vv in data_to_stat[dsref[0]]:
-            ref_var_name = vv
-            break
-    
-    # Get reference dataset
-    ds_ref = data_to_stat[dsref[0]][ref_var_name].sel(time=data_to_stat[dsref[0]]['time'].dt.month.isin(selseas[1]))
-    
-    # Get area weights
-    try:
-        weights = xr.DataArray(utils.grid_cell_areas(ds_ref.lon.values, ds_ref.lat.values),
-                               coords=ds_ref.to_dataset()[["lat","lon"]].coords)
-    except AttributeError:
-        weights = xr.DataArray(utils.grid_cell_areas(ds_ref.lon.values, ds_ref.lat.values),
-                               coords=ds_ref.to_dataset()[["latitude","longitude"]].coords)
-    
-    # Get mask
-    mask = utils.get_regionmask(region)
-    mask_ref = mask.mask(ds_ref)
-    if mask_TSMP_nudge: mask_ref = TSMP_no_nudge.mask(ds_ref).where(mask_ref.notnull())
-    ds_ref = ds_ref.where(mask_ref.notnull())#.mean(tuple([cn for cn in ds_ref.coords if cn!="time"]))
-    
-    # Normalize weights in the mask
-    weights = weights.where(mask_ref.notnull(), other=0.)/weights.where(mask_ref.notnull(), other=0.).sum()
-    
-    for dsname in data_to_stat.keys(): # compute the stats
-        if dsref[0]+"-grid" in dsname or dsname==dsref[0]:
-            # get dataset
-            if type(data_to_stat[dsname]) is xr.DataArray:
-                ds_n = data_to_stat[dsname].sel(time=data_to_stat[dsname]['time'].dt.month.isin(selseas[1])).where(mask_ref.notnull())
-            else:
-                for vv in var_names:
-                    if vv in data_to_stat[dsname]:
-                        ds_n = data_to_stat[dsname][vv].sel(time=data_to_stat[dsname]['time'].dt.month.isin(selseas[1])).where(mask_ref.notnull())
-                        break
-    
-            # Subset period
-            tslice_array = ds_ref.sel(time=tslice).time
-    
-            ds_ref_tsel = ds_ref.sel(time=tslice_array)
+# Override options above and sweep over them in a loop
+for mode in ["", "spatial", "temporal"]:
+    for tslice in [
+        slice("2015","2020"), # this covers all
+        slice("2013","2020"), # this excludes GPROF
+        slice("2006","2020"), # this excludes GPROF and EURADCLIM
+        slice("2001","2020"), # this excludes GPROF, EURADCLIM and RADOLAN
+            ]:
+
+        print("Plotting Taylor diagrams (mode: "+mode+", "+tslice.start+"-"+tslice.stop+")...")
+        for selseas in selseaslist:
+            print("... "+selseas[0])
+            
+            ccoef = dict()
+            crmsd = dict()
+            sdev = dict()
+            
+            for vv in var_names: # get the name of the desired variable in the reference dataset
+                if vv in data_to_stat[dsref[0]]:
+                    ref_var_name = vv
+                    break
+            
+            # Get reference dataset
+            ds_ref = data_to_stat[dsref[0]][ref_var_name].sel(time=data_to_stat[dsref[0]]['time'].dt.month.isin(selseas[1]))
+            
+            # Get area weights
             try:
-                ds_n_tsel = ds_n.sel(time=tslice_array)
-            except KeyError:
-                print(dsname+" ignored because it does not cover the selected time period")
-                continue
+                weights = xr.DataArray(utils.grid_cell_areas(ds_ref.lon.values, ds_ref.lat.values),
+                                       coords=ds_ref.to_dataset()[["lat","lon"]].coords)
+            except AttributeError:
+                weights = xr.DataArray(utils.grid_cell_areas(ds_ref.lon.values, ds_ref.lat.values),
+                                       coords=ds_ref.to_dataset()[["latitude","longitude"]].coords)
             
-            # Reduce in case mode is "spatial" or "temporal"
-            if mode=="spatial":
-                ds_ref_tsel = ds_ref_tsel.mean("time")
-                ds_n_tsel = ds_n_tsel.mean("time")
-                mode_name="Spatial"
-            elif mode=="temporal":
-                ds_ref_tsel = ds_ref_tsel.weighted(weights).mean([cn for cn in ds_ref_tsel.dims if cn!="time"])
-                ds_n_tsel = ds_n_tsel.weighted(weights).mean([cn for cn in ds_n_tsel.dims if cn!="time"])
-                mode_name="Temporal"
-            else:
-                mode_name="Spatiotemporal"
+            # Get mask
+            mask = utils.get_regionmask(region)
+            mask_ref = mask.mask(ds_ref)
+            if mask_TSMP_nudge: mask_ref = TSMP_no_nudge.mask(ds_ref).where(mask_ref.notnull())
+            ds_ref = ds_ref.where(mask_ref.notnull())#.mean(tuple([cn for cn in ds_ref.coords if cn!="time"]))
             
-            if mode=="temporal":
-                # Get Correlation Coefficient (ccoef)
+            # Normalize weights in the mask
+            weights = weights.where(mask_ref.notnull(), other=0.)/weights.where(mask_ref.notnull(), other=0.).sum()
+            
+            for dsname in data_to_stat.keys(): # compute the stats
+                if dsref[0]+"-grid" in dsname or dsname==dsref[0]:
+                    # get dataset
+                    if type(data_to_stat[dsname]) is xr.DataArray:
+                        ds_n = data_to_stat[dsname].sel(time=data_to_stat[dsname]['time'].dt.month.isin(selseas[1])).where(mask_ref.notnull())
+                    else:
+                        for vv in var_names:
+                            if vv in data_to_stat[dsname]:
+                                ds_n = data_to_stat[dsname][vv].sel(time=data_to_stat[dsname]['time'].dt.month.isin(selseas[1])).where(mask_ref.notnull())
+                                break
+            
+                    # Subset period
+                    tslice_array = ds_ref.sel(time=tslice).time
+            
+                    ds_ref_tsel = ds_ref.sel(time=tslice_array)
+                    try:
+                        ds_n_tsel = ds_n.sel(time=tslice_array)
+                    except KeyError:
+                        print(dsname+" ignored because it does not cover the selected time period")
+                        continue
                     
-                ccoef[dsname] = xr.corr(ds_n_tsel, ds_ref_tsel).compute()
+                    # Reduce in case mode is "spatial" or "temporal"
+                    if mode=="spatial":
+                        ds_ref_tsel = ds_ref_tsel.mean("time")
+                        ds_n_tsel = ds_n_tsel.mean("time")
+                        mode_name="Spatial"
+                    elif mode=="temporal":
+                        ds_ref_tsel = ds_ref_tsel.weighted(weights).mean([cn for cn in ds_ref_tsel.dims if cn!="time"])
+                        ds_n_tsel = ds_n_tsel.weighted(weights).mean([cn for cn in ds_n_tsel.dims if cn!="time"])
+                        mode_name="Temporal"
+                    else:
+                        mode_name="Spatiotemporal"
+                    
+                    if mode=="temporal":
+                        # Get Correlation Coefficient (ccoef)
+                            
+                        ccoef[dsname] = xr.corr(ds_n_tsel, ds_ref_tsel).compute()
+                        
+                        # Get Centered Root-Mean-Square-Deviation (CRMSD)
                 
-                # Get Centered Root-Mean-Square-Deviation (CRMSD)
-        
-                crmsd_0 = ( (ds_n_tsel - ds_n_tsel.mean() ) - 
-                            (ds_ref_tsel - ds_ref_tsel.mean()) )**2
-                crmsd_1 = crmsd_0.sum()/xr.ones_like(crmsd_0).where(crmsd_0.notnull()).sum()
-                crmsd[dsname] = np.sqrt(crmsd_1)
-                                
-                # Get Standard Deviation (SDEV)
+                        crmsd_0 = ( (ds_n_tsel - ds_n_tsel.mean() ) - 
+                                    (ds_ref_tsel - ds_ref_tsel.mean()) )**2
+                        crmsd_1 = crmsd_0.sum()/xr.ones_like(crmsd_0).where(crmsd_0.notnull()).sum()
+                        crmsd[dsname] = np.sqrt(crmsd_1)
+                                        
+                        # Get Standard Deviation (SDEV)
+                        
+                        sdev[dsname] = ds_n_tsel.std()
+                    else:
+                        # Get Correlation Coefficient (ccoef)
                 
-                sdev[dsname] = ds_n_tsel.std()
-            else:
-                # Get Correlation Coefficient (ccoef)
-        
-                # could work like this but I have to update xarray to include the weights
-                # ccoef[dsname] = xr.corr(ds_n_tsel, ds_ref_tsel, weigths=weights )
+                        # could work like this but I have to update xarray to include the weights
+                        # ccoef[dsname] = xr.corr(ds_n_tsel, ds_ref_tsel, weigths=weights )
+                        
+                        ccoef[dsname] = xr.corr(ds_n_tsel*weights, ds_ref_tsel*weights).compute()
+                        
+                        # Get Centered Root-Mean-Square-Deviation (CRMSD)
                 
-                ccoef[dsname] = xr.corr(ds_n_tsel*weights, ds_ref_tsel*weights).compute()
-                
-                # Get Centered Root-Mean-Square-Deviation (CRMSD)
-        
-                crmsd_0 = ( (ds_n_tsel - ds_n_tsel.mean() ) - 
-                            (ds_ref_tsel - ds_ref_tsel.mean()) )**2
-                crmsd_1 = crmsd_0.weighted(weights).sum()/xr.ones_like(crmsd_0).where(crmsd_0.notnull()).sum()
-                crmsd[dsname] = np.sqrt(crmsd_1)
-                                
-                # Get Standard Deviation (SDEV)
-                
-                sdev[dsname] = ds_n_tsel.weighted(weights).std()
-    
-    # Plot the diagram
-    savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/interannual_by_seasons/"+region_name+"/"+selseas[0]+"/taylor_diagrams/"
-    savefilename = "taylor_"+selseas[0]+"_precip_totals_"+region_name+"_"+tslice.start+"-"+tslice.stop+".png"
-    if mode != "":
-        savefilename = mode+"_"+savefilename
-    '''
-    Specify individual marker label (key), label color, symbol, size, symbol face color, 
-    symbol edge color
-    '''
-    # Define colors for each group
-    color_gauges = "k"
-    color_radar = "r"
-    color_satellite = "b"
-    color_reanalysis = "m"
-    color_model = "c"
-    
-    # Define marker size
-    markersize = 7
-    
-    MARKERS = {
-        "GPCC-monthly": {
-            "labelColor": "k",
-            "symbol": "+",
-            "size": markersize,
-            "faceColor": color_gauges,
-            "edgeColor": color_gauges,
-        },
-        "HYRAS": {
-            "labelColor": "k",
-            "symbol": "o",
-            "size": markersize,
-            "faceColor": color_gauges,
-            "edgeColor": color_gauges,
-        },
-        "E-OBS": {
-            "labelColor": "k",
-            "symbol": "D",
-            "size": markersize,
-            "faceColor": color_gauges,
-            "edgeColor": color_gauges,
-        },
-        "CPC": {
-            "labelColor": "k",
-            "symbol": "X",
-            "size": markersize,
-            "faceColor": color_gauges,
-            "edgeColor": color_gauges,
-        },
-        "EURADCLIM": {
-            "labelColor": "k",
-            "symbol": "^",
-            "size": markersize,
-            "faceColor": color_radar,
-            "edgeColor": color_radar,
-        },
-        "RADOLAN": {
-            "labelColor": "k",
-            "symbol": "s",
-            "size": markersize,
-            "faceColor": color_radar,
-            "edgeColor": color_radar,
-        },
-        "RADKLIM": {
-            "labelColor": "k",
-            "symbol": "v",
-            "size": markersize,
-            "faceColor": color_radar,
-            "edgeColor": color_radar,
-        },
-        "IMERG-V07B-monthly": {
-            "labelColor": "k",
-            "symbol": "d",
-            "size": markersize,
-            "faceColor": color_satellite,
-            "edgeColor": color_satellite,
-        },
-        "IMERG-V06B-monthly": {
-            "labelColor": "k",
-            "symbol": "<",
-            "size": markersize,
-            "faceColor": color_satellite,
-            "edgeColor": color_satellite,
-        },
-        "CMORPH-daily": {
-            "labelColor": "k",
-            "symbol": ">",
-            "size": markersize,
-            "faceColor": color_satellite,
-            "edgeColor": color_satellite,
-        },
-        "GPROF": {
-            "labelColor": "k",
-            "symbol": "p",
-            "size": markersize,
-            "faceColor": color_satellite,
-            "edgeColor": color_satellite,
-        },
-        "ERA5-monthly": {
-            "labelColor": "k",
-            "symbol": "*",
-            "size": markersize,
-            "faceColor": color_reanalysis,
-            "edgeColor": color_reanalysis,
-        },
-        "TSMP-old-EURregLonLat01deg": {
-            "labelColor": "k",
-            "symbol": "h",
-            "size": markersize,
-            "faceColor": color_model,
-            "edgeColor": color_model,
-        },
-        "TSMP-DETECT-Baseline-EURregLonLat01deg": {
-            "labelColor": "k",
-            "symbol": "8",
-            "size": markersize,
-            "faceColor": color_model,
-            "edgeColor": color_model,
-        },
-    }
-    
-    
-    # Set the stats in arrays like the plotting function wants them (the reference first)
-    
-    lccoef = ccoef[dsref[0]].round(3).values # we round the reference so it does not go over 1
-    lcrmsd = crmsd[dsref[0]].values
-    lsdev = sdev[dsref[0]].values
-    labels = [dsref[0]]
-    
-    for dsname in MARKERS.keys():
-        dsname_grid = dsname+"_"+dsref[0]+"-grid"
-        if dsname_grid in ccoef.keys():
-            lccoef = np.append(lccoef, ccoef[dsname_grid].values)
-            lcrmsd = np.append(lcrmsd, crmsd[dsname_grid].values)
-            lsdev = np.append(lsdev, sdev[dsname_grid].values)
-            labels.append(dsname_grid.split("_")[0])
-    
-    # Must set figure size here to prevent legend from being cut off
-    plt.close()
-    plt.figure(num=1, figsize=(8, 6))
-    
-    sm.taylor_diagram(lsdev,lcrmsd,lccoef, markerLabel = labels, #markerLabelColor = 'r', 
-                              markerLegend = 'on', markerColor = 'r',
-                               colCOR = "black", markers = {k: MARKERS[k] for k in labels[1:]}, 
-                              styleOBS = '-', colOBS = 'r', markerobs = 'o', 
-                              markerSize = 7, #tickRMS = [0.0, 1.0, 2.0, 3.0],
-                              tickRMSangle = 115, showlabelsRMS = 'on',
-                              titleRMS = 'on', titleOBS = 'Ref: '+labels[0],
-                                # checkstats = "on"
-                              )
-    
-    ax = plt.gca()
-    ax.set_title(mode_name+" Taylor Diagram over "+region_name+"\n"+
-                 "Area-weighted "+selseas[0]+" gridded precipitation \n"+
-                 str(tslice_array[0].dt.year.values)+"-"+str(tslice_array[-1].dt.year.values),
-                 x=1.2, y=1,)
-    
-    # Create custom legend manually (because otherwise it may end in the wrong place and cannot be specified within skillmetrics)
-    handles_legend = []
-    labels_legend = []
-    
-    for labeln, paramn in MARKERS.items():
-        if labeln in labels and labeln != labels[0]:
-            handlen = plt.Line2D(
-                [], [],
-                marker=paramn['symbol'],
-                color=paramn['labelColor'],
-                markersize=paramn['size'],
-                markerfacecolor=paramn['faceColor'],
-                markeredgewidth=1.5,
-                markeredgecolor=paramn['edgeColor'],
-                linestyle='None',
-                # axes=ax
-            )
-            handles_legend.append(handlen)
-            labels_legend.append(labeln)
-    
-    # Place the custom legend
-    plt.legend(handles_legend, labels_legend, loc='center left', bbox_to_anchor=(1.05, 0.5), borderaxespad=0.)
-    
-    # Save figure
-    savepath_seas = savepath
-    if not os.path.exists(savepath_seas):
-        os.makedirs(savepath_seas)
-    plt.savefig(savepath_seas+savefilename, bbox_inches="tight")
-    plt.close()
-    
-    # To check that the equation that defines the diagram is closed (negligible residue)
-    sm.check_taylor_stats(lsdev, lcrmsd, lccoef, threshold=1000000000000000000000)
-    # 24.05.24: the check does not close but the weighted calculations seem to be fine
+                        crmsd_0 = ( (ds_n_tsel - ds_n_tsel.mean() ) - 
+                                    (ds_ref_tsel - ds_ref_tsel.mean()) )**2
+                        crmsd_1 = crmsd_0.weighted(weights).sum()/xr.ones_like(crmsd_0).where(crmsd_0.notnull()).sum()
+                        crmsd[dsname] = np.sqrt(crmsd_1)
+                                        
+                        # Get Standard Deviation (SDEV)
+                        
+                        sdev[dsname] = ds_n_tsel.weighted(weights).std()
+            
+            # Plot the diagram
+            savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/interannual_by_seasons/"+region_name+"/"+selseas[0]+"/taylor_diagrams/"
+            savefilename = "taylor_"+selseas[0]+"_precip_totals_"+region_name+"_"+tslice.start+"-"+tslice.stop+".png"
+            if mode != "":
+                savefilename = mode+"_"+savefilename
+            '''
+            Specify individual marker label (key), label color, symbol, size, symbol face color, 
+            symbol edge color
+            '''
+            # Define colors for each group
+            color_gauges = "k"
+            color_radar = "r"
+            color_satellite = "b"
+            color_reanalysis = "m"
+            color_model = "c"
+            
+            # Define marker size
+            markersize = 7
+            
+            MARKERS = {
+                "GPCC-monthly": {
+                    "labelColor": "k",
+                    "symbol": "+",
+                    "size": markersize,
+                    "faceColor": color_gauges,
+                    "edgeColor": color_gauges,
+                },
+                "HYRAS": {
+                    "labelColor": "k",
+                    "symbol": "o",
+                    "size": markersize,
+                    "faceColor": color_gauges,
+                    "edgeColor": color_gauges,
+                },
+                "E-OBS": {
+                    "labelColor": "k",
+                    "symbol": "D",
+                    "size": markersize,
+                    "faceColor": color_gauges,
+                    "edgeColor": color_gauges,
+                },
+                "CPC": {
+                    "labelColor": "k",
+                    "symbol": "X",
+                    "size": markersize,
+                    "faceColor": color_gauges,
+                    "edgeColor": color_gauges,
+                },
+                "EURADCLIM": {
+                    "labelColor": "k",
+                    "symbol": "^",
+                    "size": markersize,
+                    "faceColor": color_radar,
+                    "edgeColor": color_radar,
+                },
+                "RADOLAN": {
+                    "labelColor": "k",
+                    "symbol": "s",
+                    "size": markersize,
+                    "faceColor": color_radar,
+                    "edgeColor": color_radar,
+                },
+                "RADKLIM": {
+                    "labelColor": "k",
+                    "symbol": "v",
+                    "size": markersize,
+                    "faceColor": color_radar,
+                    "edgeColor": color_radar,
+                },
+                "IMERG-V07B-monthly": {
+                    "labelColor": "k",
+                    "symbol": "d",
+                    "size": markersize,
+                    "faceColor": color_satellite,
+                    "edgeColor": color_satellite,
+                },
+                "IMERG-V06B-monthly": {
+                    "labelColor": "k",
+                    "symbol": "<",
+                    "size": markersize,
+                    "faceColor": color_satellite,
+                    "edgeColor": color_satellite,
+                },
+                "CMORPH-daily": {
+                    "labelColor": "k",
+                    "symbol": ">",
+                    "size": markersize,
+                    "faceColor": color_satellite,
+                    "edgeColor": color_satellite,
+                },
+                "GPROF": {
+                    "labelColor": "k",
+                    "symbol": "p",
+                    "size": markersize,
+                    "faceColor": color_satellite,
+                    "edgeColor": color_satellite,
+                },
+                "ERA5-monthly": {
+                    "labelColor": "k",
+                    "symbol": "*",
+                    "size": markersize,
+                    "faceColor": color_reanalysis,
+                    "edgeColor": color_reanalysis,
+                },
+                "TSMP-old-EURregLonLat01deg": {
+                    "labelColor": "k",
+                    "symbol": "h",
+                    "size": markersize,
+                    "faceColor": color_model,
+                    "edgeColor": color_model,
+                },
+                "TSMP-DETECT-Baseline-EURregLonLat01deg": {
+                    "labelColor": "k",
+                    "symbol": "8",
+                    "size": markersize,
+                    "faceColor": color_model,
+                    "edgeColor": color_model,
+                },
+            }
+            
+            
+            # Set the stats in arrays like the plotting function wants them (the reference first)
+            
+            lccoef = ccoef[dsref[0]].round(3).values # we round the reference so it does not go over 1
+            lcrmsd = crmsd[dsref[0]].values
+            lsdev = sdev[dsref[0]].values
+            labels = [dsref[0]]
+            
+            for dsname in MARKERS.keys():
+                dsname_grid = dsname+"_"+dsref[0]+"-grid"
+                if dsname_grid in ccoef.keys():
+                    lccoef = np.append(lccoef, ccoef[dsname_grid].values)
+                    lcrmsd = np.append(lcrmsd, crmsd[dsname_grid].values)
+                    lsdev = np.append(lsdev, sdev[dsname_grid].values)
+                    labels.append(dsname_grid.split("_")[0])
+            
+            # Must set figure size here to prevent legend from being cut off
+            plt.close()
+            plt.figure(num=1, figsize=(8, 6))
+            
+            sm.taylor_diagram(lsdev,lcrmsd,lccoef, markerLabel = labels, #markerLabelColor = 'r', 
+                                      markerLegend = 'on', markerColor = 'r',
+                                       colCOR = "black", markers = {k: MARKERS[k] for k in labels[1:]}, 
+                                      styleOBS = '-', colOBS = 'r', markerobs = 'o', 
+                                      markerSize = 7, #tickRMS = [0.0, 1.0, 2.0, 3.0],
+                                      tickRMSangle = 115, showlabelsRMS = 'on',
+                                      titleRMS = 'on', titleOBS = 'Ref: '+labels[0],
+                                        # checkstats = "on"
+                                      )
+            
+            ax = plt.gca()
+            ax.set_title(mode_name+" Taylor Diagram over "+region_name+"\n"+
+                         "Area-weighted "+selseas[0]+" gridded precipitation \n"+
+                         str(tslice_array[0].dt.year.values)+"-"+str(tslice_array[-1].dt.year.values),
+                         x=1.2, y=1,)
+            
+            # Create custom legend manually (because otherwise it may end in the wrong place and cannot be specified within skillmetrics)
+            handles_legend = []
+            labels_legend = []
+            
+            for labeln, paramn in MARKERS.items():
+                if labeln in labels and labeln != labels[0]:
+                    handlen = plt.Line2D(
+                        [], [],
+                        marker=paramn['symbol'],
+                        color=paramn['labelColor'],
+                        markersize=paramn['size'],
+                        markerfacecolor=paramn['faceColor'],
+                        markeredgewidth=1.5,
+                        markeredgecolor=paramn['edgeColor'],
+                        linestyle='None',
+                        # axes=ax
+                    )
+                    handles_legend.append(handlen)
+                    labels_legend.append(labeln)
+            
+            # Place the custom legend
+            plt.legend(handles_legend, labels_legend, loc='center left', bbox_to_anchor=(1.05, 0.5), borderaxespad=0.)
+            
+            # Save figure
+            savepath_seas = savepath
+            if not os.path.exists(savepath_seas):
+                os.makedirs(savepath_seas)
+            plt.savefig(savepath_seas+savefilename, bbox_inches="tight")
+            plt.close()
+            
+            # To check that the equation that defines the diagram is closed (negligible residue)
+            sm.check_taylor_stats(lsdev, lcrmsd, lccoef, threshold=1000000000000000000000)
+            # 24.05.24: the check does not close but the weighted calculations seem to be fine
 
 #%% REGRIDDING TESTS
 #%%% Simple map plot TSMP original
