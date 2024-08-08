@@ -441,7 +441,7 @@ if "GSMaP" in ds_to_load:
         return ds
 
     if "precipitation" in var_to_load:    
-        data["GSMaP"] = xr.open_mfdataset("/automount/ags/jgiles/GSMaP/standard/v8/netcdf/2000/01/01/gsmap_mvk.*.v8.*.nc", 
+        data["GSMaP"] = xr.open_mfdataset("/automount/ags/jgiles/GSMaP/standard/v8/netcdf/*/*/*/gsmap_mvk.*.v8.*.nc", 
                                           decode_times=False, preprocess=build_time_dim_gsmap)
 
 #%% DAILY SUM
