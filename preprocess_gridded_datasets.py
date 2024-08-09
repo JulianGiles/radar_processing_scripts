@@ -86,7 +86,7 @@ ds_to_load = [
     # "E-OBS",
     # "CPC",
     # "GPROF",
-    "GSMaP",
+    "GSMaP",  # avoid loading this, it will take forever and not work efficiently. Calculations below are handled without loading everything.
     # "HYRAS", # do not load this unless necessary, currently the calculations are done with cdo
     # "GRACE-GDO",
     # "GRACE-GSFC",
@@ -439,10 +439,10 @@ if "GSMaP" in ds_to_load:
         ds = ds.assign_coords(Time=decoded_time).rename({"Time": "time", "Longitude": "lon", "Latitude": "lat"})
         
         return ds
-
-    if "precipitation" in var_to_load:    
-        data["GSMaP"] = xr.open_mfdataset("/automount/ags/jgiles/GSMaP/standard/v8/netcdf/*/*/*/gsmap_mvk.*.v8.*.nc", 
-                                          decode_times=False, preprocess=build_time_dim_gsmap)
+    print("... Loading skipped because of inefficiency.")
+    # if "precipitation" in var_to_load:    
+    #     data["GSMaP"] = xr.open_mfdataset("/automount/ags/jgiles/GSMaP/standard/v8/netcdf/*/*/*/gsmap_mvk.*.v8.*.nc", 
+    #                                       decode_times=False, preprocess=build_time_dim_gsmap)
 
 #%% DAILY SUM
 # CAREFUL WITH THIS PART, DO NOT RUN THE WHOLE CELL AT ONCE IF HANDLING MORE
@@ -460,7 +460,8 @@ print("Calculating daily sums ...")
 data_dailysum = {}
 for dsname in ds_to_load:
     if dsname not in ["IMERG-V07B-30min", "IMERG-V06B-30min", "HYRAS", 
-                      "EURADCLIM", "GPCC-monthly", "GPCC-daily", 'GPROF']:
+                      "EURADCLIM", "GPCC-monthly", "GPCC-daily", 'GPROF',
+                      "GSMaP"]:
         print("... "+dsname)
         with ProgressBar():
             data_dailysum[dsname] = data[dsname].resample({"time": "D"}).sum().compute()
@@ -473,7 +474,7 @@ for dsname in ds_to_load:
     if not os.path.exists(savepath_dsname):
         os.makedirs(savepath_dsname)
     if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "HYRAS", 
-                  "EURADCLIM", "GPCC-monthly", "GPCC-daily", 'GPROF']:
+                  "EURADCLIM", "GPCC-monthly", "GPCC-daily", 'GPROF', "GSMaP"]:
         # special treatment for these datasets, otherwise it will crash
         if dsname in ["HYRAS", "GPCC-daily"]:
             warnings.warn(dsname+" is already daily!")
@@ -492,6 +493,17 @@ for dsname in ds_to_load:
         if dsname in ["EURADCLIM"]:
             Cdo().daysum(input="-shifttime,-1hour -cat /automount/agradar/jgiles/EURADCLIM/concat_files/RAD_OPERA_HOURLY_RAINFALL_*.nc", 
                          output="/automount/agradar/jgiles/gridded_data/daily/EURADCLIM/EURADCLIM_precipitation_dailysum_2013-2020.nc", options="-z zip_6")
+        if dsname in ["GSMaP"]:
+            # We will make daily files one by one
+            dayfolders = glob.glob("/automount/ags/jgiles/GSMaP/standard/v8/netcdf/*/*/*")
+            for dayfolder in dayfolders:
+                gsmap = xr.open_mfdataset(dayfolder+"/gsmap_mvk.*.v8.*.nc", 
+                                                  decode_times=False, preprocess=build_time_dim_gsmap)
+                daysdim = gsmap['time'].resample(time="D").first()["time"]
+                day = str(daysdim.values[0])[0:10]
+                print("... ... "+day)
+                gsmap.resample({"time": "D"}).sum().to_netcdf(savepath_dsname+"/"+dsname+"_"+vname+"_dailysum_"+day+".nc",
+                                                 encoding=dict([(vv,{"zlib":True, "complevel":6}) for vv in gsmap.data_vars]))
     else:
         sd = str(data_dailysum[dsname].time[0].values)[0:4]
         ed = str(data_dailysum[dsname].time[-1].values)[0:4]
