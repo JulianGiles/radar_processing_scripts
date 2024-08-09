@@ -2424,13 +2424,13 @@ dsname = "GPCC-monthly"
 vname = "precip"
 tsel = "2015-02"
 mask = utils.get_regionmask(region)
-mask0 = mask.mask(data_seasonalsum[dsname])
+mask0 = mask.mask(data_monthlysum[dsname])
 dropna = True
 if mask_TSMP_nudge: 
-    mask0 = TSMP_no_nudge.mask(data_seasonalsum[dsname]).where(mask0.notnull())
+    mask0 = TSMP_no_nudge.mask(data_monthlysum[dsname]).where(mask0.notnull())
     dropna=False
 f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
-plot = data_seasonalsum[dsname][vname].sel(time=tsel).where(mask0.notnull(), drop=dropna).plot(x="lon", y="lat", cmap="Blues", vmin=0, vmax=1000, 
+plot = data_monthlysum[dsname][vname].sel(time=tsel).where(mask0.notnull(), drop=dropna).plot(x="lon", y="lat", cmap="Blues", vmin=0, vmax=1000, 
                                          subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
                                          cbar_kwargs={'label': "mm", 'shrink':0.88})
 if mask_TSMP_nudge: ax1.set_extent([-43.4, 63.65, 22.6, 71.15], crs=ccrs.PlateCarree())
@@ -2439,7 +2439,7 @@ plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
 plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
 plt.title(dsname)
 
-#%%%% Simple map plot (for number of stations per gridcell) # CHECK THIS FOR SEASONAL SUM BEFORE RUNNING!!
+#%%%% Simple map plot (for number of stations per gridcell) # CHECK THIS FOR MONTHLY SUM BEFORE RUNNING!!
 dsname = "GPCC-monthly"
 vname = "numgauge"
 savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/maps/Turkey/"
@@ -2447,15 +2447,15 @@ savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/ma
 for yy in np.arange(2000,2021):
     ysel = str(yy)
     mask = utils.get_regionmask(region)
-    mask0 = mask.mask(data_seasonalsum[dsname])
+    mask0 = mask.mask(data_monthlysum[dsname])
     dropna = True
     if mask_TSMP_nudge: 
-        mask0 = TSMP_no_nudge.mask(data_seasonalsum[dsname]).where(mask0.notnull())
+        mask0 = TSMP_no_nudge.mask(data_monthlysum[dsname]).where(mask0.notnull())
         dropna=False
     f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
     cmap1 = copy.copy(plt.cm.Blues)
     cmap1.set_under("lightgray")
-    plot = (data_seasonalsum[dsname][vname].sel(time=ysel)/12).where(mask0.notnull(), drop=dropna).plot(x="lon", y="lat", 
+    plot = (data_monthlysum[dsname][vname].sel(time=ysel)/12).where(mask0.notnull(), drop=dropna).plot(x="lon", y="lat", 
                                             levels=3, cmap=cmap1, vmin=1, vmax=3, 
                                              subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
                                              cbar_kwargs={'label': "", 'shrink':0.88})
@@ -2477,19 +2477,17 @@ for yy in np.arange(2000,2021):
 var_names = ["TOT_PREC", "precipitation", "pr", "surfacePrecipitation", "precip", "Precip", 
              "RW", "RR", "tp", "cmorph", "rr"]
 
-selseaslist = [("DJF", [2]),
-           ("MAM", [5]),
-           ("JJA", [8]),
-           ("SON", [11]),
-           ("full", [1,2,3,4,5,6,7,8,9,10,11,12])] # ("nameofseas", [ending_month])
+selmonthlist = [("Jan", [1]),
+           ("Jul", [7]),
+           ("full", [1,2,3,4,5,6,7,8,9,10,11,12])] # ("nameofmonth", [month])
 
 dsignore = [] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
 dsref = ["GPCC-monthly"] # dataset to take as reference (black and bold curve)
 
-savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/interannual_by_seasons/"+region_name+"/"
+savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/monthly/"+region_name+"/"
 
 
-for selseas in selseaslist:
+for selmonth in selmonthlist:
     for dsname in data_avgreg.keys():
         if dsname in dsignore:
             continue
@@ -2504,29 +2502,29 @@ for selseas in selseaslist:
                 else: 
                     color = colors[dsname]
                 try:
-                    plt.plot(data_avgreg[dsname]['time'].sel(time=data_avgreg[dsname]['time'].dt.month.isin(selseas[1])), 
-                             data_avgreg[dsname][vv].sel(time=data_avgreg[dsname]['time'].dt.month.isin(selseas[1])), 
+                    plt.plot(data_avgreg[dsname]['time'].sel(time=data_avgreg[dsname]['time'].dt.month.isin(selmonth[1])), 
+                             data_avgreg[dsname][vv].sel(time=data_avgreg[dsname]['time'].dt.month.isin(selmonth[1])), 
                              label=dsname, c=color, marker=marker)
                 except TypeError:
                     # try to change the time coord to datetime format
-                    plt.plot(data_avgreg[dsname].sel(time=data_avgreg[dsname]['time'].dt.month.isin(selseas[1])).indexes['time'].to_datetimeindex(), 
-                             data_avgreg[dsname][vv].sel(time=data_avgreg[dsname]['time'].dt.month.isin(selseas[1])), 
+                    plt.plot(data_avgreg[dsname].sel(time=data_avgreg[dsname]['time'].dt.month.isin(selmonth[1])).indexes['time'].to_datetimeindex(), 
+                             data_avgreg[dsname][vv].sel(time=data_avgreg[dsname]['time'].dt.month.isin(selmonth[1])), 
                              label=dsname, c=color, marker=marker)
                 plotted = True
         if not plotted:
             raise Warning("Nothing plotted for "+dsname)
     
     plt.legend(ncols=3, fontsize=7)
-    plt.title("Area-mean "+selseas[0]+" total precip "+region_name+" [mm]")
+    plt.title("Area-mean "+selmonth[0]+" total precip "+region_name+" [mm]")
     plt.xlim(datetime(2000,1,1), datetime(2020,1,1))
     # plt.xlim(2000, 2020)
     plt.grid()
     # save figure
-    savepath_seas = savepath+selseas[0]+"/lineplots/"
-    if not os.path.exists(savepath_seas):
-        os.makedirs(savepath_seas)
-    filename = "area_mean_"+selseas[0]+"_total_precip_"+region_name+".png"
-    plt.savefig(savepath_seas+filename, bbox_inches="tight")
+    savepath_month = savepath+selmonth[0]+"/lineplots/"
+    if not os.path.exists(savepath_month):
+        os.makedirs(savepath_month)
+    filename = "area_mean_"+selmonth[0]+"_total_precip_"+region_name+".png"
+    plt.savefig(savepath_month+filename, bbox_inches="tight")
     plt.close()
 
 #%%%% Interannual variability area-means plot (interactive html)
@@ -2534,19 +2532,17 @@ for selseas in selseaslist:
 var_names = ["TOT_PREC", "precipitation", "pr", "surfacePrecipitation", "precip", "Precip", 
              "RW", "RR", "tp", "cmorph", "rr"]
 
-selseaslist = [("DJF", [2]),
-           ("MAM", [5]),
-           ("JJA", [8]),
-           ("SON", [11]),
-           ("full", [1,2,3,4,5,6,7,8,9,10,11,12])] # ("nameofseas", ending_month)
+selmonthlist = [("Jan", [1]),
+           ("Jul", [7]),
+           ("full", [1,2,3,4,5,6,7,8,9,10,11,12])] # ("nameofmonth", [month])
 
 dsignore = [] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
 dsref = ["GPCC-monthly"] # dataset to take as reference (black and bold curve)
 
-savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/interannual_by_seasons/"+region_name+"/"
+savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/monthly/"+region_name+"/"
 
 
-for selseas in selseaslist:
+for selmonth in selmonthlist:
     hvplots = []
     for dsname in data_avgreg.keys():
         if dsname in dsignore:
@@ -2559,12 +2555,12 @@ for selseas in selseaslist:
                     lw = 4
                 
                     hvplots.append(
-                                    data_avgreg[dsname][vv].sel(time=data_avgreg[dsname]['time'].dt.month.isin(selseas[1])).hvplot.line(x='time', label=dsname).opts(color=color, line_width=lw, show_legend=True, muted_alpha=0)
+                                    data_avgreg[dsname][vv].sel(time=data_avgreg[dsname]['time'].dt.month.isin(selmonth[1])).hvplot.line(x='time', label=dsname).opts(color=color, line_width=lw, show_legend=True, muted_alpha=0)
                         )
                 
                 else:
                     hvplots.append(
-                                    data_avgreg[dsname][vv].sel(time=data_avgreg[dsname]['time'].dt.month.isin(selseas[1])).hvplot.line(x='time', label=dsname).opts(show_legend=True, muted_alpha=0)
+                                    data_avgreg[dsname][vv].sel(time=data_avgreg[dsname]['time'].dt.month.isin(selmonth[1])).hvplot.line(x='time', label=dsname).opts(show_legend=True, muted_alpha=0)
                         )
     
                 plotted = True
@@ -2575,15 +2571,15 @@ for selseas in selseaslist:
     for nplot in np.arange(1, len(hvplots)):
         layout = layout * hvplots[nplot]
     
-    layout.opts(title="Area-mean "+selseas[0]+" total precip "+region_name+" [mm]", xlabel="Time", show_grid=True, legend_position='right',
+    layout.opts(title="Area-mean "+selmonth[0]+" total precip "+region_name+" [mm]", xlabel="Time", show_grid=True, legend_position='right',
                 height=600, width=1200)
     
     # Save to HTML file
-    savepath_seas = savepath+selseas[0]+"/lineplots/"
-    if not os.path.exists(savepath_seas):
-        os.makedirs(savepath_seas)
-    filename = "area_mean_"+selseas[0]+"_total_precip_"+region_name+".html"
-    hv.save(layout, savepath_seas+filename)
+    savepath_month = savepath+selmonth[0]+"/lineplots/"
+    if not os.path.exists(savepath_month):
+        os.makedirs(savepath_month)
+    filename = "area_mean_"+selmonth[0]+"_total_precip_"+region_name+".html"
+    hv.save(layout, savepath_month+filename)
 
 #%%% BIAS and ERRORS
 #%%%% Bias (absolute and relative) calculation from regional averages
@@ -2610,67 +2606,65 @@ for dsname in data_to_bias.keys():
 
 #%%%% Region-averages bias bar plot
 
-selseaslist = [("DJF", [2]),
-           ("MAM", [5]),
-           ("JJA", [8]),
-           ("SON", [11]),
-           ("full", [1,2,3,4,5,6,7,8,9,10,11,12])] # ("nameofseas", ending_month)
+selmonthlist = [("Jan", [1]),
+           ("Jul", [7]),
+           ("full", [1,2,3,4,5,6,7,8,9,10,11,12])] # ("nameofmonth", [month])
 
-savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/interannual_by_seasons/"+region_name+"/"
+savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/monthly/"+region_name+"/"
 
-for selseas in selseaslist:
+for selmonth in selmonthlist:
     # Calculate bar width based on the number of data arrays
     bar_width = 0.8 / len(data_bias)
         
     # Get time values
-    time_values_ref = data_to_bias[dsref[0]]['time'].sel(time=data_to_bias[dsref[0]]['time'].dt.month.isin(selseas[1]))
+    time_values_ref = data_to_bias[dsref[0]]['time'].sel(time=data_to_bias[dsref[0]]['time'].dt.month.isin(selmonth[1]))
     
     # Plotting each DataArray in the dictionary
     plt.figure(figsize=(20, 6))  # Adjust figure size as needed
     for idx, (key, value) in enumerate(data_bias.items()):
-        value_padded = value.sel(time=value['time'].dt.month.isin(selseas[1])).broadcast_like(data_to_bias[dsref[0]].sel(time=data_to_bias[dsref[0]]['time'].dt.month.isin(selseas[1])))
+        value_padded = value.sel(time=value['time'].dt.month.isin(selmonth[1])).broadcast_like(data_to_bias[dsref[0]].sel(time=data_to_bias[dsref[0]]['time'].dt.month.isin(selmonth[1])))
         time_values = value_padded['time']
         bar_positions = np.arange(len(time_values)) + idx * bar_width
         plt.bar(bar_positions, value_padded, width=bar_width, label=key, color=colors[key])
     
     plt.xlabel('Time')
     plt.ylabel(value.attrs['units'])
-    plt.title("Area-mean "+selseas[0]+" total precip BIAS with respect to "+dsref[0]+" "+region_name)
+    plt.title("Area-mean "+selmonth[0]+" total precip BIAS with respect to "+dsref[0]+" "+region_name)
     plt.xticks(np.arange(len(time_values)) + 0.4, time_values_ref.dt.year.values, rotation=45)  # Rotate x-axis labels for better readability
     plt.legend(loc="lower left")
     plt.grid(True)
     plt.tight_layout()
     # plt.show()
     # save figure
-    savepath_seas = savepath+selseas[0]+"/barplots/"
-    if not os.path.exists(savepath_seas):
-        os.makedirs(savepath_seas)
-    filename = "area_mean_"+selseas[0]+"_precip_totals_bias_"+region_name+".png"
-    plt.savefig(savepath_seas+filename, bbox_inches="tight")
+    savepath_month = savepath+selmonth[0]+"/barplots/"
+    if not os.path.exists(savepath_month):
+        os.makedirs(savepath_month)
+    filename = "area_mean_"+selmonth[0]+"_precip_totals_bias_"+region_name+".png"
+    plt.savefig(savepath_month+filename, bbox_inches="tight")
     plt.close()
 
     # Plotting each DataArray in the dictionary (same but for relative bias)
     plt.figure(figsize=(20, 6))  # Adjust figure size as needed
     for idx, (key, value) in enumerate(data_bias_relative.items()):
-        value_padded = value.sel(time=value['time'].dt.month.isin(selseas[1])).broadcast_like(data_to_bias[dsref[0]].sel(time=data_to_bias[dsref[0]]['time'].dt.month.isin(selseas[1])))
+        value_padded = value.sel(time=value['time'].dt.month.isin(selmonth[1])).broadcast_like(data_to_bias[dsref[0]].sel(time=data_to_bias[dsref[0]]['time'].dt.month.isin(selmonth[1])))
         time_values = value_padded['time']
         bar_positions = np.arange(len(time_values)) + idx * bar_width
         plt.bar(bar_positions, value_padded, width=bar_width, label=key, color=colors[key])
     
     plt.xlabel('Time')
     plt.ylabel("%")
-    plt.title("Area-mean "+selseas[0]+" total precip RELATIVE BIAS with respect to "+dsref[0]+" "+region_name)
+    plt.title("Area-mean "+selmonth[0]+" total precip RELATIVE BIAS with respect to "+dsref[0]+" "+region_name)
     plt.xticks(np.arange(len(time_values)) + 0.4, time_values_ref.dt.year.values, rotation=45)  # Rotate x-axis labels for better readability
     plt.legend(loc="lower left")
     plt.grid(True)
     plt.tight_layout()
     # plt.show()
     # save figure
-    savepath_seas = savepath+selseas[0]+"/barplots/"
-    if not os.path.exists(savepath_seas):
-        os.makedirs(savepath_seas)
-    filename = "area_mean_"+selseas[0]+"_precip_totals_bias_relative_"+region_name+".png"
-    plt.savefig(savepath_seas+filename, bbox_inches="tight")
+    savepath_month = savepath+selmonth[0]+"/barplots/"
+    if not os.path.exists(savepath_month):
+        os.makedirs(savepath_month)
+    filename = "area_mean_"+selmonth[0]+"_precip_totals_bias_relative_"+region_name+".png"
+    plt.savefig(savepath_month+filename, bbox_inches="tight")
     plt.close()
 
 #%%%% Relative bias and errors calculation (at gridpoint level, not with the area means)
@@ -2681,7 +2675,7 @@ latlims = slice(TSMP_no_nudge.bounds_global[1], TSMP_no_nudge.bounds_global[3])
 
 to_add = {} # dictionary to add regridded versions
 for dsname in ["EURADCLIM", "RADOLAN", "HYRAS", "RADKLIM"]:
-    if dsname not in data_seasonalsum: continue
+    if dsname not in data_monthlysum: continue
     print("Regridding "+dsname+" ...")
 
     grid_out = xe.util.cf_grid_2d(-49.746,70.655,0.01,19.854,74.654,0.01) # manually recreate the EURregLonLat001deg grid
@@ -2692,13 +2686,13 @@ for dsname in ["EURADCLIM", "RADOLAN", "HYRAS", "RADKLIM"]:
     # grid_out = grid_out.chunk({"x": 50, "y": 50, "x_b": 50, "y_b": 50,})
 
     # # we then try parallel regridding: slower but less memory-intensive (this takes forever)
-    # regridder = xe.Regridder(data_seasonalsum[dsname].cf.add_bounds(["lon", "lat"]), 
+    # regridder = xe.Regridder(data_monthlysum[dsname].cf.add_bounds(["lon", "lat"]), 
     #                           grid_out, 
     #                           "conservative", parallel=True)
     # to_add[dsname+"-EURregLonLat001deg"] = regridder(data_to_avg[dsname])
     # regridder.to_netcdf() # we save the weights
     # # to reuse the weigths:
-    # xe.Regridder(data_seasonalsum[dsname].cf.add_bounds(["lon", "lat"]), 
+    # xe.Regridder(data_monthlysum[dsname].cf.add_bounds(["lon", "lat"]), 
     #                           grid_out, 
     #                           "conservative", parallel=True, weights="/path/to/weights") #!!! Can I use CDO weights here?
     # Cdo().gencon()
@@ -2706,17 +2700,17 @@ for dsname in ["EURADCLIM", "RADOLAN", "HYRAS", "RADKLIM"]:
 
     # Instead, just regrid to the reference dataset grid (this is fast)
 
-    regridder = xe.Regridder(data_seasonalsum[dsname].cf.add_bounds(["lon", "lat"]), 
-                             data_seasonalsum[dsref[0]].loc[{"lon": lonlims, "lat": latlims}], 
+    regridder = xe.Regridder(data_monthlysum[dsname].cf.add_bounds(["lon", "lat"]), 
+                             data_monthlysum[dsref[0]].loc[{"lon": lonlims, "lat": latlims}], 
                              "conservative")
-    to_add[dsname+"_"+dsref[0]+"-grid"] = regridder(data_seasonalsum[dsname])
+    to_add[dsname+"_"+dsref[0]+"-grid"] = regridder(data_monthlysum[dsname])
     
 # add the regridded datasets to the original dictionary
-data_seasonalsum = {**data_seasonalsum, **to_add}
+data_monthlysum = {**data_monthlysum, **to_add}
     
 # Compute the biases
 dsignore = ["EURADCLIM", "RADOLAN", "HYRAS", "RADKLIM", 'TSMP-old', 'TSMP-DETECT-Baseline'] # datasets to ignore (because we want the regridded version)
-data_to_bias = copy.copy(data_seasonalsum)
+data_to_bias = copy.copy(data_monthlysum)
 
 to_add = {} # dictionary to add regridded versions
 
@@ -2796,7 +2790,7 @@ for dsname in data_to_bias.keys():
                     break
 
 # add the regridded datasets to the original dictionary
-data_seasonalsum = {**data_seasonalsum, **to_add}
+data_monthlysum = {**data_monthlysum, **to_add}
 
 #%%%% Relative bias and error plots
 #%%%%% Simple map plot
@@ -2832,19 +2826,17 @@ plt.title(title+" "+yearsel+"\n"+dsname+"\n "+region_name+" Ref.: "+dsref[0])
 #%%%%% Simple map plot (loop)
 # Like previous but for saving all plots !! THIS WILL PROBABLY CRASH THE MEMORY
 # region = "Germany" #"land" 
-savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/maps/seasons/"+region_name+"/"
+savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/maps/months/"+region_name+"/"
 period = np.arange(2000,2024)
 to_plot_dict = [
-            (data_bias_map, "BIAS", "mm", -250, 250),
+            (data_bias_map, "BIAS", "mm", -75, 75),
             (data_bias_relative_map, "RELATIVE BIAS", "%", -75, 75),
            ]
 lonlat_slice = [slice(-43.4,63.65), slice(22.6, 71.15)]
 
-selseaslist = [("DJF", "02"),
-           ("MAM", "05"),
-           ("JJA", "08"),
-           ("SON", "11")
-           ] # ("nameofseas", "ending_month")
+selmonthlist = [("Jan", "01"),
+           ("Jul", "07"),
+           ] # ("nameofmonth", "month")
 
 for to_plot, title, cbarlabel, vmin, vmax in to_plot_dict:
     print("Plotting "+title)
@@ -2858,10 +2850,10 @@ for to_plot, title, cbarlabel, vmin, vmax in to_plot_dict:
             mask0 = TSMP_no_nudge.mask(to_plot[dsname]).where(mask0.notnull())
             dropna=False
         for yearsel in period:
-            for selseas in selseaslist:
+            for selmonth in selmonthlist:
                 try:
                     plt.close()
-                    yearseas = str(yearsel)+"-"+str(selseas[1])
+                    yearseas = str(yearsel)+"-"+str(selmonth[1])
                     # f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
                     plot = to_plot[dsname].loc[{"time":yearseas}].where(mask0.notnull(), 
                                                                             drop=dropna).loc[{"lon":lonlat_slice[0],
@@ -2875,13 +2867,13 @@ for to_plot, title, cbarlabel, vmin, vmax in to_plot_dict:
                     plot.axes.coastlines(alpha=0.7)
                     plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
                     plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
-                    plt.title(title+" "+str(yearsel)+" "+selseas[0]+"\n"+dsname_short+"\n "+region_name+" Ref.: "+dsref[0])
+                    plt.title(title+" "+str(yearsel)+" "+selmonth[0]+"\n"+dsname_short+"\n "+region_name+" Ref.: "+dsref[0])
                     
                     # save figure
-                    savepath_yy = savepath+str(yearsel)+"/"+selseas[0]+"/"
+                    savepath_yy = savepath+str(yearsel)+"/"+selmonth[0]+"/"
                     if not os.path.exists(savepath_yy):
                         os.makedirs(savepath_yy)
-                    filename = "_".join([title.lower().replace(" ","_"), region_name, dsname_short,dsref[0],str(yearsel),selseas[0]])+".png"
+                    filename = "_".join([title.lower().replace(" ","_"), region_name, dsname_short,dsref[0],str(yearsel),selmonth[0]])+".png"
                     plt.savefig(savepath_yy+filename, bbox_inches="tight")
                     plt.close()
                 except KeyError:
@@ -2890,14 +2882,14 @@ for to_plot, title, cbarlabel, vmin, vmax in to_plot_dict:
 #%%%%% Box plots of BIAS and ERRORS
 # the box plots are made up of the yearly bias or error values, and the datasets are ordered according to their median
 to_plot0 = data_bias_relative_gp.copy() # data_mean_abs_error_gp # data_bias_relative_gp # data_norm_mean_abs_error_gp
-savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/interannual_by_seasons/"+region_name+"/boxplots/relative_bias/"
+savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/monthly/"+region_name+"/boxplots/relative_bias/"
 savefilename = "boxplot_relative_bias_" # the season name will be added at the end of savefilename
 title = "relative bias "+region_name+". Ref.: "+dsref[0] # the season name will be added at the beginning of title
 ylabel = "%" # % # mm
 dsignore = [] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', "E-OBS", "CPC"] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
 
 # Override the previous with a loop for each case
-savepathbase = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/interannual_by_seasons/"+region_name+"/boxplots/"
+savepathbase = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/monthly/"+region_name+"/boxplots/"
 for to_plot0, savepath, savefilename, title, ylabel in [
         (data_bias_relative_gp.copy(), 
          savepathbase + "relative_bias/",
@@ -2924,20 +2916,18 @@ for to_plot0, savepath, savefilename, title, ylabel in [
             slice("2015-01-01", "2020-01-01")
             ] 
     ignore_incomplete = True # flag for ignoring datasets that do not cover the complete period. Only works for specific periods (not for slice(None, None))
-    selseaslist = [("DJF", [2]),
-               ("MAM", [5]),
-               ("JJA", [8]),
-               ("SON", [11]),
-               ("full", [1,2,3,4,5,6,7,8,9,10,11,12])] # ("nameofseas", ending_month)
+    selmonthlist = [("Jan", [1]),
+               ("Jul", [7]),
+               ("full", [1,2,3,4,5,6,7,8,9,10,11,12])] # ("nameofmonth", [month])
     
-    for selseas in selseaslist:
-        savepathn = (region_name+"/"+selseas[0]).join(copy.deepcopy(savepath).split(region_name))
+    for selmonth in selmonthlist:
+        savepathn = (region_name+"/"+selmonth[0]).join(copy.deepcopy(savepath).split(region_name))
         for tseln in tsel:
             to_plot = to_plot0.copy()
             savefilenamen = copy.deepcopy(savefilename)
             titlen = copy.deepcopy(title)
-            titlen = selseas[0]+" "+titlen
-            savefilenamen = savefilenamen+selseas[0]
+            titlen = selmonth[0]+" "+titlen
+            savefilenamen = savefilenamen+selmonth[0]
             
             if tseln.start is not None and tseln.stop is not None: # add specific period to title
                 titlen = titlen+". "+tseln.start+" - "+tseln.stop
@@ -2951,7 +2941,7 @@ for to_plot0, savepath, savefilename, title, ylabel in [
             
             # Select the given season
             for key in to_plot.copy().keys():
-                to_plot[key] = to_plot[key].sel(time=to_plot[key]['time'].dt.month.isin(selseas[1]))
+                to_plot[key] = to_plot[key].sel(time=to_plot[key]['time'].dt.month.isin(selmonth[1]))
             
             # Initialize a figure and axis
             plt.close()
@@ -3029,7 +3019,7 @@ import skill_metrics as sm
 
 mode = "" # if "spatial" then average in time and compute the diagram in space. Viceversa for "temporal"
 dsref = ["GPCC-monthly"]
-data_to_stat = data_seasonalsum
+data_to_stat = data_monthlysum
 
 # choose common period (only datasets that cover the whole period are included)
 tslice = slice("2015","2020") # this covers all
@@ -3037,11 +3027,9 @@ tslice = slice("2015","2020") # this covers all
 # tslice = slice("2006","2020") # this excludes GPROF and EURADCLIM
 tslice = slice("2001","2020") # this excludes GPROF, EURADCLIM and RADOLAN
 
-selseaslist = [("DJF", [2]),
-           ("MAM", [5]),
-           ("JJA", [8]),
-           ("SON", [11]),
-           ("full", [1,2,3,4,5,6,7,8,9,10,11,12])] # ("nameofseas", ending_month)
+selmonthlist = [("Jan", [1]),
+           ("Jul", [7]),
+           ("full", [1,2,3,4,5,6,7,8,9,10,11,12])] # ("nameofmonth", [month])
 
 # Override options above and sweep over them in a loop
 for mode in ["", "spatial", "temporal"]:
@@ -3053,8 +3041,8 @@ for mode in ["", "spatial", "temporal"]:
             ]:
 
         print("Plotting Taylor diagrams (mode: "+mode+", "+tslice.start+"-"+tslice.stop+")...")
-        for selseas in selseaslist:
-            print("... "+selseas[0])
+        for selmonth in selmonthlist:
+            print("... "+selmonth[0])
             
             ccoef = dict()
             crmsd = dict()
@@ -3066,7 +3054,7 @@ for mode in ["", "spatial", "temporal"]:
                     break
             
             # Get reference dataset
-            ds_ref = data_to_stat[dsref[0]][ref_var_name].sel(time=data_to_stat[dsref[0]]['time'].dt.month.isin(selseas[1]))
+            ds_ref = data_to_stat[dsref[0]][ref_var_name].sel(time=data_to_stat[dsref[0]]['time'].dt.month.isin(selmonth[1]))
             
             # Get area weights
             try:
@@ -3089,11 +3077,11 @@ for mode in ["", "spatial", "temporal"]:
                 if dsref[0]+"-grid" in dsname or dsname==dsref[0]:
                     # get dataset
                     if type(data_to_stat[dsname]) is xr.DataArray:
-                        ds_n = data_to_stat[dsname].sel(time=data_to_stat[dsname]['time'].dt.month.isin(selseas[1])).where(mask_ref.notnull())
+                        ds_n = data_to_stat[dsname].sel(time=data_to_stat[dsname]['time'].dt.month.isin(selmonth[1])).where(mask_ref.notnull())
                     else:
                         for vv in var_names:
                             if vv in data_to_stat[dsname]:
-                                ds_n = data_to_stat[dsname][vv].sel(time=data_to_stat[dsname]['time'].dt.month.isin(selseas[1])).where(mask_ref.notnull())
+                                ds_n = data_to_stat[dsname][vv].sel(time=data_to_stat[dsname]['time'].dt.month.isin(selmonth[1])).where(mask_ref.notnull())
                                 break
             
                     # Subset period
@@ -3153,8 +3141,8 @@ for mode in ["", "spatial", "temporal"]:
                         sdev[dsname] = ds_n_tsel.weighted(weights).std()
             
             # Plot the diagram
-            savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/interannual_by_seasons/"+region_name+"/"+selseas[0]+"/taylor_diagrams/"
-            savefilename = "taylor_"+selseas[0]+"_precip_totals_"+region_name+"_"+tslice.start+"-"+tslice.stop+".png"
+            savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/monthly/"+region_name+"/"+selmonth[0]+"/taylor_diagrams/"
+            savefilename = "taylor_"+selmonth[0]+"_precip_totals_"+region_name+"_"+tslice.start+"-"+tslice.stop+".png"
             if mode != "":
                 savefilename = mode+"_"+savefilename
             '''
@@ -3304,7 +3292,7 @@ for mode in ["", "spatial", "temporal"]:
             
             ax = plt.gca()
             ax.set_title(mode_name+" Taylor Diagram over "+region_name+"\n"+
-                         "Area-weighted "+selseas[0]+" gridded precipitation \n"+
+                         "Area-weighted "+selmonth[0]+" gridded precipitation \n"+
                          str(tslice_array[0].dt.year.values)+"-"+str(tslice_array[-1].dt.year.values),
                          x=1.2, y=1,)
             
