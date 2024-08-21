@@ -455,6 +455,22 @@ if len(var_to_load) == 1:
 else:
     raise ValueError("Either no variable or more than one variable was selected in 'var_to_load'")
 
+def define_encoding(data):
+    encoding = {}
+    
+    # Define the desired chunk sizes
+    desired_chunks = {dim: size for dim, size in data.dims.items()}
+    desired_chunks["time"] = 1  # Set time to chunk size 1
+
+    for var_name, var in data.data_vars.items():
+        # Determine the chunk sizes specific to the variable
+        var_chunks = {dim: desired_chunks[dim] for dim in var.dims}
+    
+        # Combine compression and chunking settings
+        encoding[var_name] = {"zlib": True, "complevel": 6, "chunksizes": tuple(var_chunks[dim] for dim in var.dims)}
+        
+    return encoding
+
 # accumulate to daily values
 print("Calculating daily sums ...")
 data_dailysum = {}
@@ -489,7 +505,7 @@ for dsname in ds_to_load:
             for yy in np.unique(data[dsname].time.dt.year):
                 print("Saving daily "+dsname+" files for "+str(yy))
                 data[dsname].loc[{"time":str(yy)}].resample({"time": "D"}).sum().to_netcdf(savepath_dsname+"/temp/"+dsname+"_"+vname+"_dailysum_"+str(yy)+".nc",
-                                                 encoding=dict([(vv,{"zlib":True, "complevel":6}) for vv in data[dsname].data_vars if "time_" not in vv if "Time" not in vv]))
+                                                 encoding=define_encoding(data[dsname]))
         if dsname in ["EURADCLIM"]:
             Cdo().daysum(input="-shifttime,-1hour -cat /automount/agradar/jgiles/EURADCLIM/concat_files/RAD_OPERA_HOURLY_RAINFALL_*.nc", 
                          output="/automount/agradar/jgiles/gridded_data/daily/EURADCLIM/EURADCLIM_precipitation_dailysum_2013-2020.nc", options="-z zip_6")
@@ -503,12 +519,12 @@ for dsname in ds_to_load:
                 day = str(daysdim.values[0])[0:10]
                 print("... ... "+day)
                 gsmap.resample({"time": "D"}).sum().to_netcdf(savepath_dsname+"/"+dsname+"_"+vname+"_dailysum_"+day+".nc",
-                                                 encoding=dict([(vv,{"zlib":True, "complevel":6}) for vv in gsmap.data_vars]))
+                                                 encoding=define_encoding(gsmap))
     else:
         sd = str(data_dailysum[dsname].time[0].values)[0:4]
         ed = str(data_dailysum[dsname].time[-1].values)[0:4]
         data_dailysum[dsname].to_netcdf(savepath_dsname+"/"+dsname+"_"+vname+"_dailysum_"+sd+"-"+ed+".nc",
-                                         encoding=dict([(vv,{"zlib":True, "complevel":6}) for vv in data_dailysum[dsname].data_vars]))
+                                         encoding=define_encoding(data[dsname]))
 
 #%% MONTHLY SUM
 # CAREFUL WITH THIS PART, DO NOT RUN THE WHOLE CELL AT ONCE IF HANDLING MORE
