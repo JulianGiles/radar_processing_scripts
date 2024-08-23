@@ -754,7 +754,7 @@ slices_list = []
 # Iterate over the dataset in steps of 'timesteps_per_slice'
 for i in range(0, len(dataset['time']), timesteps_per_slice):
     # Define the slice
-    slice_ = dataset.isel(time=slice(i, i + timesteps_per_slice))
+    slice_ = dataset_regridded.isel(time=slice(i, i + timesteps_per_slice))
     # Append to the list
     slices_list.append(slice_)
 
@@ -776,10 +776,10 @@ def regrid_dataset_serial(ds, i):
 # List to store slices of the dataset
 slices_list = []
 
-# Iterate over the dataset in steps of 'timesteps_per_slice'
-for i in range(0, len(dataset['time']), timesteps_per_slice):
+# Iterate over the regridded dataset in steps of 'timesteps_per_slice'
+for i in range(0, len(dataset_regridded['time']), timesteps_per_slice):
     # Define the slice
-    slice_ = dataset.isel(time=slice(i, i + timesteps_per_slice))
+    slice_ = dataset_regridded.isel(time=slice(i, i + timesteps_per_slice))
     # Append to the list
     slices_list.append(slice_)
 
