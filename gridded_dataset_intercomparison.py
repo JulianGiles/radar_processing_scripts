@@ -3420,13 +3420,13 @@ for dsname in paths_daily.keys():
             data_dailysum["GPROF"][vv] = data_dailysum["GPROF"][vv]*24
             data_dailysum["GPROF"][vv] = data_dailysum["GPROF"][vv].assign_attrs(units="mm", Units="mm")
     elif dsname == "HYRAS":
-        data_dailysum["HYRAS"] = xr.open_mfdataset("/automount/ags/jgiles/HYRAS-PRE-DE/daily/hyras_de/precipitation/pr_hyras_1_1931_2020_v5-0_de.nc")
+        data_dailysum["HYRAS"] = xr.open_dataset("/automount/ags/jgiles/HYRAS-PRE-DE/daily/hyras_de/precipitation/pr_hyras_1_1931_2020_v5-0_de.nc")
     elif dsname == "E-OBS":
-        data_dailysum["E-OBS"] = xr.open_mfdataset("/automount/ags/jgiles/E-OBS/RR/rr_ens_mean_0.25deg_reg_v29.0e.nc")
+        data_dailysum["E-OBS"] = xr.open_dataset("/automount/ags/jgiles/E-OBS/RR/rr_ens_mean_0.25deg_reg_v29.0e.nc")
     elif dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "GSMaP"]:
         data_dailysum[dsname] = xr.open_mfdataset(paths_daily[dsname])
     else:
-        data_dailysum[dsname] = xr.open_mfdataset(paths_daily[dsname])
+        data_dailysum[dsname] = xr.open_dataset(paths_daily[dsname])
 
 # Special tweaks
 print("Applying tweaks ...")
@@ -3509,7 +3509,7 @@ colors = {
     }
 
 var_names = ["TOT_PREC", "precipitation", "pr", "surfacePrecipitation", "precip", "Precip", 
-             "RW", "RR", "tp", "cmorph", "rr", "hourlyPrecipRateGC"]
+             "RW", "RR", "tp", "cmorph", "rr", "hourlyPrecipRateGC", "precipitationCal"]
 dsignore = [] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-30min", "ERA5-hourly"] # datasets to ignore in the plotting
 dsref = ["E-OBS"] # dataset to take as reference (black and bold curve)
 
@@ -3524,6 +3524,8 @@ region = "Germany"
 region_name = "Germany" # name for plots
 mask = utils.get_regionmask(region)
 TSMP_nudge_margin = 13 # number of gridpoints to mask out the relaxation zone at the margins
+
+start_time = time.time()
 
 # TSMP-case: we make a specific mask to cut out the edge of the european domain + country
 dsname = "TSMP-DETECT-Baseline"
@@ -3553,16 +3555,32 @@ to_add = {} # dictionary to add rotated versions
 for dsname in data_to_avg.keys():
 
     if dsname in ["TSMP-DETECT-Baseline", "TSMP-old"]:
-        print("... "+dsname)
-        # we need to unrotate the TSMP grid and then average over the region considering the area weights
+        regsavepath = paths_daily[dsname].rsplit('/', 1)[0] + '/' + paths_daily[dsname].rsplit('/', 1)[1].replace(dsname, dsname+"-EURregLonLat01deg")
 
-        grid_out = xe.util.cf_grid_2d(-49.75,70.65,0.1,19.85,74.65,0.1) # manually recreate the EURregLonLat01deg grid
-        regridder = xe.Regridder(data_to_avg[dsname].cf.add_bounds(["lon", "lat"]), grid_out, "conservative")
-        to_add[dsname+"-EURregLonLat01deg"] = regridder(data_to_avg[dsname])
+        try:
+            to_add[dsname+"-EURregLonLat01deg"] = xr.open_dataset(regsavepath)
+            print("Previously regridded "+dsname+" was loaded")
+        except FileNotFoundError:
+            print("... "+dsname)
+            # we need to unrotate the TSMP grid 
+            
+            encoding = {}
+            for vv in data_to_avg[dsname].data_vars:
+                valid_encodings = ['contiguous', 'complevel', 'compression', 'zlib', '_FillValue', 'shuffle', 'fletcher32', 'dtype', 'least_significant_digit']
+                encoding[vv] = dict((k, data_to_avg[dsname][vv].encoding[k]) for k in valid_encodings if k in data_to_avg[dsname][vv].encoding) #!!! For now we keep the same enconding, check later if change it
+    
+            grid_out = xe.util.cf_grid_2d(-49.75,70.65,0.1,19.85,74.65,0.1) # manually recreate the EURregLonLat01deg grid
+            regridder = xe.Regridder(data_to_avg[dsname].cf.add_bounds(["lon", "lat"]), grid_out, "conservative")
+            to_add[dsname+"-EURregLonLat01deg"] = regridder(data_to_avg[dsname])
+            to_add[dsname+"-EURregLonLat01deg"].to_netcdf(regsavepath, encoding=encoding)
+            to_add[dsname+"-EURregLonLat01deg"] = xr.open_dataset(regsavepath) # reload the dataset
                 
 # add the unrotated datasets to the original dictionary
 data_to_avg = {**data_to_avg, **to_add}
 data_dailysum = data_to_avg.copy()
+
+total_time = time.time() - start_time
+print(f"Elapsed time: {total_time/60:.2f} minutes.")
 
 #%%%% Simple map plot
 dsname = "E-OBS"
@@ -3621,7 +3639,25 @@ for yy in np.arange(2000,2021):
 #%%% Metrics
 #%%%% Metrics calculation at gridpoint level
 minpre = 1 # minimum precipitation in mm/day for a day to be considered a wet day (i.e., minimum measurable precipitation considered)
-metricssavepath = "/automount/agradar/jgiles/gridded_data/daily_metrics/ref_"+dsref[0]+"/"+region_name+"/" # path to save the results of the metrics
+metricssavepath = "/automount/agradar/jgiles/gridded_data/daily_metrics_test/ref_"+dsref[0]+"/"+region_name+"/" # path to save the results of the metrics
+tempsavepath = "/automount/agradar/jgiles/gridded_data/daily/temp/ref_"+dsref[0]+"/" # path so save regridded datasets
+timesel = "2016-06" 
+print("!!!!!!!!!!!!!! WE ARE TESTING A PARTICULAR SHORT PERIOD !!!!!!!!!!!!!!!!!!!!!")
+
+# Define a function to set the encoding compression
+def define_encoding(data):
+    encoding = {}
+
+
+    for var_name, var in data.data_vars.items():
+        # Combine compression and chunking settings
+        encoding[var_name] = {"zlib": True, "complevel": 6}
+
+    return encoding
+
+# Check if temporary folder to save the regridded datasets exist, if not then create it
+if not os.path.exists(tempsavepath):
+    os.makedirs(tempsavepath)
 
 # First we need to transform EURADCLIM, RADKLIM, RADOLAN and HYRAS to regular grids
 # We use the DETECT 1 km grid for this (actually, I did not manage to make that work)
@@ -3631,35 +3667,48 @@ latlims = slice(TSMP_no_nudge.bounds_global[1], TSMP_no_nudge.bounds_global[3])
 to_add = {} # dictionary to add regridded versions
 for dsname in ["EURADCLIM", "RADOLAN", "HYRAS", "RADKLIM"]:
     if dsname not in data_dailysum: continue
-    print("Regridding "+dsname+" ...")
-
-    grid_out = xe.util.cf_grid_2d(-49.746,70.655,0.01,19.854,74.654,0.01) # manually recreate the EURregLonLat001deg grid
-    grid_out = xe.util.grid_2d(-49.746,70.655,0.01,19.854,74.654,0.01) # manually recreate the EURregLonLat001deg grid
-    # # I tried to use dask for the weight generation to avoid memory crash
-    # # but I did not manage to make it work: https://xesmf.readthedocs.io/en/latest/notebooks/Dask.html
-
-    # grid_out = grid_out.chunk({"x": 50, "y": 50, "x_b": 50, "y_b": 50,})
-
-    # # we then try parallel regridding: slower but less memory-intensive (this takes forever)
-    # regridder = xe.Regridder(data_dailysum[dsname].cf.add_bounds(["lon", "lat"]), 
-    #                           grid_out, 
-    #                           "conservative", parallel=True)
-    # to_add[dsname+"-EURregLonLat001deg"] = regridder(data_to_avg[dsname])
-    # regridder.to_netcdf() # we save the weights
-    # # to reuse the weigths:
-    # xe.Regridder(data_dailysum[dsname].cf.add_bounds(["lon", "lat"]), 
-    #                           grid_out, 
-    #                           "conservative", parallel=True, weights="/path/to/weights") #!!! Can I use CDO weights here?
-    # Cdo().gencon()
-    # cdo gencon,/automount/ags/jgiles/IMERG_V06B/global_monthly/griddes.txt -setgrid,/automount/agradar/jgiles/TSMP/griddes_mod.txt /automount/agradar/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020.nc weights_to_IMERG.nc
-
-    # Instead, just regrid to the reference dataset grid (this is fast)
-
-    regridder = xe.Regridder(data_dailysum[dsname].cf.add_bounds(["lon", "lat"]), 
-                             data_dailysum[dsref[0]].loc[{"lon": lonlims, "lat": latlims}], 
-                             "conservative")
-    to_add[dsname+"_"+dsref[0]+"-grid"] = regridder(data_dailysum[dsname])
+    dstempsavepath = tempsavepath+dsname+"_"+dsref[0]+"-grid.nc"
+    try:
+        to_add[dsname+"_"+dsref[0]+"-grid"] = xr.open_dataset(dstempsavepath)
+        print("Previously regridded "+dsname+" was loaded")
+    except FileNotFoundError:
+        
+        print("Regridding "+dsname+" ...")
     
+        grid_out = xe.util.cf_grid_2d(-49.746,70.655,0.01,19.854,74.654,0.01) # manually recreate the EURregLonLat001deg grid
+        grid_out = xe.util.grid_2d(-49.746,70.655,0.01,19.854,74.654,0.01) # manually recreate the EURregLonLat001deg grid
+        # # I tried to use dask for the weight generation to avoid memory crash
+        # # but I did not manage to make it work: https://xesmf.readthedocs.io/en/latest/notebooks/Dask.html
+    
+        # grid_out = grid_out.chunk({"x": 50, "y": 50, "x_b": 50, "y_b": 50,})
+    
+        # # we then try parallel regridding: slower but less memory-intensive (this takes forever)
+        # regridder = xe.Regridder(data_dailysum[dsname].cf.add_bounds(["lon", "lat"]), 
+        #                           grid_out, 
+        #                           "conservative", parallel=True)
+        # to_add[dsname+"-EURregLonLat001deg"] = regridder(data_to_avg[dsname])
+        # regridder.to_netcdf() # we save the weights
+        # # to reuse the weigths:
+        # xe.Regridder(data_dailysum[dsname].cf.add_bounds(["lon", "lat"]), 
+        #                           grid_out, 
+        #                           "conservative", parallel=True, weights="/path/to/weights") #!!! Can I use CDO weights here?
+        # Cdo().gencon()
+        # cdo gencon,/automount/ags/jgiles/IMERG_V06B/global_monthly/griddes.txt -setgrid,/automount/agradar/jgiles/TSMP/griddes_mod.txt /automount/agradar/jgiles/TSMP/postprocessed/TSMP_TOT_PREC_yearlysum_2001-2020.nc weights_to_IMERG.nc
+    
+        # Instead, just regrid to the reference dataset grid (this is fast)
+    
+        regridder = xe.Regridder(data_dailysum[dsname].cf.add_bounds(["lon", "lat"]), 
+                                 data_dailysum[dsref[0]].loc[{"lon": lonlims, "lat": latlims}], 
+                                 "conservative")
+        to_add[dsname+"_"+dsref[0]+"-grid"] = regridder(data_dailysum[dsname], skipna=True, na_thres=1)
+        
+        # Save to file
+        encoding = define_encoding(to_add[dsname+"_"+dsref[0]+"-grid"])
+        to_add[dsname+"_"+dsref[0]+"-grid"].to_netcdf(dstempsavepath, encoding=encoding)
+
+        # Reload
+        to_add[dsname+"_"+dsref[0]+"-grid"] = xr.open_dataset(dstempsavepath)
+
 # add the regridded datasets to the original dictionary
 data_dailysum = {**data_dailysum, **to_add}
     
@@ -3684,38 +3733,58 @@ for dsname in data_to_bias.keys():
             for vvref in var_names:
                 if vvref in data_to_bias[dsref[0]].data_vars:
                     if dsref[0]+"-grid" not in dsname: # if no regridded already, do it now
-                        if "longitude" in data_to_bias[dsname].coords or "latitude" in data_to_bias[dsname].coords:
-                            # if the names of the coords are longitude and latitude, change them to lon, lat
-                            data_to_bias[dsname] = data_to_bias[dsname].rename({"longitude":"lon", "latitude":"lat"})
-                        
-                        if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min"]:
-                            # we need to remove the default defined bounds or the regridding will fail
-                            data_to_bias[dsname] = data_to_bias[dsname].drop_vars(["lon_bnds", "lat_bnds"])
-                            del(data_to_bias[dsname].lon.attrs["bounds"])
-                            del(data_to_bias[dsname].lat.attrs["bounds"])
+                        dstempsavepath = tempsavepath+dsname+"_"+dsref[0]+"-grid.nc"
+                        try:
+                            to_add[dsname+"_"+dsref[0]+"-grid"] = xr.open_dataset(dstempsavepath)
+                            print("Previously regridded "+dsname+" was loaded")
+                        except FileNotFoundError:
+                            if "longitude" in data_to_bias[dsname].coords or "latitude" in data_to_bias[dsname].coords:
+                                # if the names of the coords are longitude and latitude, change them to lon, lat
+                                data_to_bias[dsname] = data_to_bias[dsname].rename({"longitude":"lon", "latitude":"lat"})
                             
-                        if dsname in ["CMORPH-daily"]:
-                            # we need to remove the default defined bounds or the regridding will fail
-                            data_to_bias[dsname] = data_to_bias[dsname].drop_vars(["lon_bounds", "lat_bounds"])
-                            del(data_to_bias[dsname].lon.attrs["bounds"])
-                            del(data_to_bias[dsname].lat.attrs["bounds"])
+                            if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min"]:
+                                # we need to remove the default defined bounds or the regridding will fail
+                                data_to_bias[dsname] = data_to_bias[dsname].drop_vars(["lon_bnds", "lat_bnds"])
+                                del(data_to_bias[dsname].lon.attrs["bounds"])
+                                del(data_to_bias[dsname].lat.attrs["bounds"])
+                                
+                            if dsname in ["CMORPH-daily"]:
+                                # we need to remove the default defined bounds or the regridding will fail
+                                data_to_bias[dsname] = data_to_bias[dsname].drop_vars(["lon_bounds", "lat_bounds"])
+                                del(data_to_bias[dsname].lon.attrs["bounds"])
+                                del(data_to_bias[dsname].lat.attrs["bounds"])
+    
+                            if dsname in ["GPROF", "TSMP-old-EURregLonLat01deg", "TSMP-DETECT-Baseline-EURregLonLat01deg"]:
+                                # we need to remove the default defined bounds or the regridding will fail
+                                del(data_to_bias[dsname].lon.attrs["bounds"])
+                                del(data_to_bias[dsname].lat.attrs["bounds"])
+    
+                            # regridder = xe.Regridder(data_to_bias[dsname].cf.add_bounds(["lon", "lat"]), data_to_bias[dsref[0]], "conservative")
+                            print("... regridding")
+                            reg_start_time = time.time()
 
-                        if dsname in ["GPROF", "TSMP-old-EURregLonLat01deg", "TSMP-DETECT-Baseline-EURregLonLat01deg"]:
-                            # we need to remove the default defined bounds or the regridding will fail
-                            del(data_to_bias[dsname].lon.attrs["bounds"])
-                            del(data_to_bias[dsname].lat.attrs["bounds"])
+                            regridder = xe.Regridder(data_to_bias[dsname], 
+                                                     data_to_bias[dsref[0]].loc[{"lon": lonlims, "lat": latlims}], 
+                                                     "conservative")
+    
+                            to_add[dsname+"_"+dsref[0]+"-grid"] = regridder(data_to_bias[dsname][vv], skipna=True, na_thres=1)
+                            
+                            # Save to file
+                            encoding = define_encoding(to_add[dsname+"_"+dsref[0]+"-grid"])
+                            to_add[dsname+"_"+dsref[0]+"-grid"].to_netcdf(dstempsavepath, encoding=encoding)
+                    
+                            # Reload
+                            to_add[dsname+"_"+dsref[0]+"-grid"] = xr.open_dataset(dstempsavepath)
+                            
+                            reg_total_time = time.time() - reg_start_time
+                            print(f"... ... took {total_time/60:.2f} minutes.")
 
-                        # regridder = xe.Regridder(data_to_bias[dsname].cf.add_bounds(["lon", "lat"]), data_to_bias[dsref[0]], "conservative")
-                        print("... regridding")
-                        regridder = xe.Regridder(data_to_bias[dsname], 
-                                                 data_to_bias[dsref[0]].loc[{"lon": lonlims, "lat": latlims}], 
-                                                 "conservative")
+                            data0 = to_add[dsname+"_"+dsref[0]+"-grid"].copy()
 
-                        to_add[dsname+"_"+dsref[0]+"-grid"] = regridder(data_to_bias[dsname][vv])
-                        data0 = to_add[dsname+"_"+dsref[0]+"-grid"].copy()
                     else:
                         data0 = data_to_bias[dsname][vv].copy()
 
+                    data0 = data0.loc[{"time":timesel}] #!!! THIS IS A TEST
                     data0 = data0.where(data0>0)
                     dataref = data_to_bias[dsref[0]][vvref].loc[{"lon": lonlims, "lat": latlims}]
                     
@@ -3728,7 +3797,7 @@ for dsname in data_to_bias.keys():
                     # BIAS
                     print("... ... BIAS")
                     metrics["bias"] = dict()
-                    metrics["bias"][dsname] = ( data0.where(mask0.notnull()) - dataref )
+                    metrics["bias"][dsname] = ( data0.where(mask0.notnull(), drop=True) - dataref )
 
                     metrics_spatial["bias"] = dict()
                     metrics_spatial["bias"][dsname] = metrics["bias"][dsname].mean("time").compute()
@@ -3782,19 +3851,19 @@ for dsname in data_to_bias.keys():
                     metrics_temporal["nmae"] = dict()
                     metrics_temporal["nmae"][dsname] = utils.calc_spatial_integral(metrics["absolute_error"][dsname],
                                                 lon_name="lon", lat_name="lat").compute() / \
-                                                    utils.calc_spatial_integral(dataref.where(mask0.notnull()),
+                                                    utils.calc_spatial_integral(dataref.where(mask0.notnull(), drop=True),
                                                 lon_name="lon", lat_name="lat").compute() *100
 
                     metrics_spatem["nmae"] = dict()
                     metrics_spatem["nmae"][dsname] = utils.calc_spatial_integral(metrics["absolute_error"][dsname],
                                                 lon_name="lon", lat_name="lat").sum("time").compute() / \
-                                                    utils.calc_spatial_integral(dataref.where(mask0.notnull()),
+                                                    utils.calc_spatial_integral(dataref.where(mask0.notnull(), drop=True),
                                                 lon_name="lon", lat_name="lat").sum("time").compute() *100
 
                     # For the categorical metrics we need the following
                     print("... ... Categorical metrics")
-                    data0_wet = (data0 > minpre).where(mask0.notnull()).astype(bool)
-                    dataref_wet = (dataref > minpre).where(mask0.notnull()).astype(bool)
+                    data0_wet = (data0 > minpre).where(mask0.notnull(), drop=True).astype(bool)
+                    dataref_wet = (dataref > minpre).where(mask0.notnull(), drop=True).astype(bool)
                     
                     hits = data0_wet*dataref_wet
                     misses = (~data0_wet)*dataref_wet
