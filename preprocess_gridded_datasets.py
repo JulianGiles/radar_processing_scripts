@@ -32,6 +32,8 @@ import wradlib as wrl
 import glob
 import regionmask as rm
 from cdo import Cdo
+import xesmf as xe
+import time
 
 import warnings
 #ignore by message
@@ -688,3 +690,110 @@ for dsname in ds_to_load:
         ed = str(data_yearlysum[dsname].time[-1].values)[0:4]
         data_yearlysum[dsname].to_netcdf(savepath_dsname+"/"+dsname+"_"+vname+"_yearlysum_"+sd+"-"+ed+".nc",
                                          encoding=dict([(vv,{"zlib":True, "complevel":6}) for vv in data_yearlysum[dsname].data_vars]))
+
+#%% Regrid files
+filepath = "/automount/agradar/jgiles/gridded_data/daily/RADOLAN/RADOLAN_precipitation_dailysum_2006-2022_new.nc"
+regfilesavepath = "/automount/agradar/jgiles/gridded_data/daily/RADOLAN/RADOLAN-EURregLonLat001deg_precipitation_dailysum_2006-2022_new.nc"
+dataset = xr.open_dataset(filepath)
+
+# Rechunk to not blow up the memory
+new_chunks = {dim: size for dim, size in dataset.dims.items()}
+new_chunks["time"] = 10
+try:
+    dataset = dataset.chunk(new_chunks)
+except: # rechunking may fail due to some not unified chunks, then try again
+    dataset = dataset.unify_chunks().chunk(new_chunks)
+
+
+# Define target grid
+grid_out = xe.util.cf_grid_2d(-49.746,70.655,0.01,19.854,74.654,0.01) # manually recreate the EURregLonLat001deg grid
+grid_out_cut = grid_out.loc[{"lon": slice(float(dataset.lon.min().values), 
+                                          float(dataset.lon.max().values)), 
+                             "lat": slice(float(dataset.lat.min().values), 
+                                          float(dataset.lat.max().values))}]
+
+# Define a function to set the encoding compression
+def define_encoding(data):
+    encoding = {}
+
+
+    for var_name, var in data.data_vars.items():
+        # Combine compression and chunking settings
+        encoding[var_name] = {"zlib": True, "complevel": 6}
+
+    return encoding
+
+regridder = xe.Regridder(dataset.cf.add_bounds(["lon", "lat"]), 
+                         grid_out_cut, 
+                         "conservative")
+dataset_regridded = regridder(dataset, skipna=True, na_thres=1)
+
+# Save to file
+encoding = define_encoding(dataset_regridded)
+
+start_time = time.time()
+
+dataset_regridded.to_netcdf(regfilesavepath, encoding=encoding)
+
+total_time = time.time() - start_time
+print(f"Regridding took {total_time/60:.2f} minutes to run.")
+
+# Alternative with multiprocessing (THIS TAKES FOREVER)
+# Number of timesteps per slice
+timesteps_per_slice = 20
+from multiprocessing import Pool
+
+encoding = define_encoding(dataset_regridded)
+def regrid_dataset(ds, i):
+    partfilename = "/automount/agradar/jgiles/gridded_data/daily/RADOLAN/temp/RADOLAN-EURregLonLat001deg_precipitation_dailysum_2006-2022_new_part"+str(i)+".nc"
+    ds.to_netcdf(partfilename, encoding=encoding)
+
+# List to store slices of the dataset
+slices_list = []
+
+# Iterate over the dataset in steps of 'timesteps_per_slice'
+for i in range(0, len(dataset['time']), timesteps_per_slice):
+    # Define the slice
+    slice_ = dataset.isel(time=slice(i, i + timesteps_per_slice))
+    # Append to the list
+    slices_list.append(slice_)
+
+start_time = time.time()
+with Pool() as P:
+    results = P.starmap( regrid_dataset, [(f, i) for i, f in enumerate(slices_list)] )
+total_time = time.time() - start_time
+print(f"Multiprocessing regridding took {total_time/60:.2f} minutes to run.")
+
+# Alternative with multiple files (but no multiprocessing)
+# Number of timesteps per slice
+timesteps_per_slice = 20
+
+encoding = define_encoding(dataset_regridded)
+def regrid_dataset_serial(ds, i):
+    partfilename = "/automount/agradar/jgiles/gridded_data/daily/RADOLAN/temp_serial/RADOLAN-EURregLonLat001deg_precipitation_dailysum_2006-2022_new"
+    ds.to_netcdf(f"{partfilename}_part_{i:03d}.nc", encoding=encoding)
+
+# List to store slices of the dataset
+slices_list = []
+
+# Iterate over the dataset in steps of 'timesteps_per_slice'
+for i in range(0, len(dataset['time']), timesteps_per_slice):
+    # Define the slice
+    slice_ = dataset.isel(time=slice(i, i + timesteps_per_slice))
+    # Append to the list
+    slices_list.append(slice_)
+
+start_time = time.time()
+for i, f in enumerate(slices_list):
+    regrid_dataset_serial(f, i)
+total_time = time.time() - start_time
+print(f"Serial multifile regridding took {total_time/60:.2f} minutes to run.")
+
+# reload and save to a single file
+partfilename = "/automount/agradar/jgiles/gridded_data/daily/RADOLAN/temp_serial/RADOLAN-EURregLonLat001deg_precipitation_dailysum_2006-2022_new_part*.nc"
+singlefilename = "/automount/agradar/jgiles/gridded_data/daily/RADOLAN/RADOLAN-EURregLonLat001deg_precipitation_dailysum_2006-2022_new_fromparts.nc"
+start_time = time.time()
+dataset_reload = xr.open_mfdataset(partfilename)
+dataset_reload.to_netcdf(singlefilename, encoding=encoding)
+total_time = time.time() - start_time
+print(f"Reloading and saving to single file took {total_time/60:.2f} minutes to run.")
