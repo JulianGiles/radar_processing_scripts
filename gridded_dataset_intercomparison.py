@@ -3342,7 +3342,7 @@ loadpath_ags = "/automount/ags/jgiles/"
 paths_daily = {
     "IMERG-V07B-30min": loadpath_daily+"IMERG-V07B-30min/IMERG-V07B-30min_precipitation_dailysum_*.nc",
     "IMERG-V06B-30min": loadpath_daily+"IMERG-V06B-30min/IMERG-V06B-30min_precipitation_dailysum_*.nc",
-    "CMORPH-daily": loadpath_daily+"this one does not matter",
+    # "CMORPH-daily": loadpath_daily+"this one does not matter",
     "TSMP-old": loadpath_daily+"TSMP-old/TSMP-old_precipitation_dailysum_2000-2021.nc",
     "TSMP-DETECT-Baseline": loadpath_daily+"TSMP-DETECT-Baseline/TSMP-DETECT-Baseline_precipitation_dailysum_2000-2022.nc",
     "ERA5-hourly": loadpath_daily+"ERA5-hourly/ERA5-hourly_precipitation_dailysum_1999-2021.nc",
@@ -3350,10 +3350,10 @@ paths_daily = {
     "RADOLAN": loadpath_daily+"RADOLAN/RADOLAN-EURregLonLat001deg_precipitation_dailysum_2006-2022.nc",
     "EURADCLIM": loadpath_daily+"EURADCLIM/temp_serial/EURADCLIM-EURregLonLat002deg_precipitation_dailysum_2013-2020_part*.nc",
     # "GPCC-daily": ,
-    "GPROF": loadpath_daily+"this one does not matter",
+    # "GPROF": loadpath_daily+"this one does not matter",
     "HYRAS": loadpath_daily+"HYRAS/temp_serial/HYRAS-EURregLonLat001deg_precipitation_dailysum_1930-2020_part*.nc", 
     "E-OBS": loadpath_daily+"this one does not matter", 
-    "GSMaP": loadpath_daily+"GSMaP/GSMaP_precipitation_dailysum_*.nc", 
+    # "GSMaP": loadpath_daily+"GSMaP/GSMaP_precipitation_dailysum_*.nc", 
     }
 
 data_dailysum = {}
@@ -3657,10 +3657,12 @@ for yy in np.arange(2000,2021):
 
 #%%% Metrics
 #%%%% Metrics calculation at gridpoint level
-minpre = 1 # minimum precipitation in mm/day for a day to be considered a wet day (i.e., minimum measurable precipitation considered)
-timesel = slice("2016-06-01", "2016-06-30") # should be given in a slice with YYYY-MM-DD
+reload_metrics = True # reload previously calculated metrics if available?
+calc_if_no_reload = False # calculate metrics if not available from previously calculated files? #!!! NOT IMPLEMENTED YET!!
+minpre = 1 # minimum precipitation in mm/day for a day to be considered a wet day (i.e., minimum measurable precipitation considered). Relevant for categorical metrics
+timesel = slice("2016-01-01", "2016-12-31") # should be given in a slice with YYYY-MM-DD
 timeperiod = "_".join([timesel.start, timesel.stop])
-metricssavepath = "/automount/agradar/jgiles/gridded_data/daily_metrics_test/"+timeperiod+"/ref_"+dsref[0]+"/"+region_name+"/" # path to save the results of the metrics
+metricssavepath = "/automount/agradar/jgiles/gridded_data/daily_metrics/"+timeperiod+"/ref_"+dsref[0]+"/"+region_name+"/" # path to save the results of the metrics
 tempsavepath = "/automount/agradar/jgiles/gridded_data/daily/temp/ref_"+dsref[0]+"/" # path so save regridded datasets
 print("!!!!!!!!!!!!!! WE ARE TESTING A PARTICULAR SHORT PERIOD !!!!!!!!!!!!!!!!!!!!!")
 
@@ -3754,6 +3756,14 @@ metrics = {} # dictionary to store all metrics in full form (all gridpoints and 
 metrics_spatial = {} # dictionary to store all metrics averaged in time (one map)
 metrics_temporal = {} # dictionary to store all metrics averaged in space (timeseries)
 metrics_spatem = {} # dictionary to store all metrics averaged in space and time (one value per dataset)
+metric_types = ["bias", "absolute_error"]
+metric_types2 = ["bias", "mae", "nmae", "pod", "far", "csi", "biass"]
+for metric_type in metric_types:
+    metrics[metric_type] = dict()
+for metric_type in metric_types2:
+    metrics_spatial[metric_type] = dict()
+    metrics_temporal[metric_type] = dict()
+    metrics_spatem[metric_type] = dict()
 for dsname in data_to_bias.keys():
     if dsname in dsignore+dsref:
         continue
@@ -3769,7 +3779,7 @@ for dsname in data_to_bias.keys():
                     if dsref[0]+"-grid" not in dsname: # if no regridded already, do it now
                         dstempsavepath = tempsavepath+dsname+"_"+dsref[0]+"-grid.nc"
                         try:
-                            to_add[dsname+"_"+dsref[0]+"-grid"] = xr.open_dataset(dstempsavepath)
+                            to_add[dsname+"_"+dsref[0]+"-grid"] = xr.open_dataset(dstempsavepath)[vv]
                             print("Previously regridded "+dsname+" was loaded")
                         except FileNotFoundError:
                             if "longitude" in data_to_bias[dsname].coords or "latitude" in data_to_bias[dsname].coords:
@@ -3802,152 +3812,159 @@ for dsname in data_to_bias.keys():
                             to_add[dsname+"_"+dsref[0]+"-grid"].to_netcdf(dstempsavepath, encoding=encoding)
                     
                             # Reload
-                            to_add[dsname+"_"+dsref[0]+"-grid"] = xr.open_dataset(dstempsavepath)
+                            to_add[dsname+"_"+dsref[0]+"-grid"] = xr.open_dataset(dstempsavepath)[vv]
                             
                             reg_total_time = time.time() - reg_start_time
                             print(f"... ... took {reg_total_time/60:.2f} minutes.")
 
-                            data0 = to_add[dsname+"_"+dsref[0]+"-grid"].copy()
+                        data0 = to_add[dsname+"_"+dsref[0]+"-grid"].copy()
+                        
+                        dsname_metric = dsname
 
                     else:
                         data0 = data_to_bias[dsname][vv].copy()
+                        
+                        dsname_metric = dsname.split("_")[0]
 
-                    data0 = data0.loc[{"time":timesel}] #!!! THIS IS A TEST
-                    data0 = data0.where(data0>0)
-                    dataref = data_to_bias[dsref[0]][vvref].loc[{"lon": lonlims, "lat": latlims}]
+                    data0 = data0.loc[{"time":timesel}].chunk(time=100) #!!! THIS IS A TEST
+                    # data0 = data0.where(data0>0) # do not filter out the zero values, otherwise we will not check for detection correcly
+                    dataref = data_to_bias[dsref[0]][vvref].loc[{"lon": lonlims, "lat": latlims}].chunk(time=100)
                     
                     mask0 = mask.mask(dataref)
                     if mask_TSMP_nudge: mask0 = TSMP_no_nudge.mask(dataref).where(mask0.notnull())
-
-                    # Calculte metrics
-                    print("... calculating metrics")
-
-                    # BIAS
-                    print("... ... BIAS")
-                    metrics["bias"] = dict()
-                    metrics["bias"][dsname] = ( data0.where(mask0.notnull(), drop=True) - dataref )
-
-                    metrics_spatial["bias"] = dict()
-                    metrics_spatial["bias"][dsname] = metrics["bias"][dsname].mean("time").compute()
-
-                    metrics_temporal["bias"] = dict()
-                    metrics_temporal["bias"][dsname] = utils.calc_spatial_mean(metrics["bias"][dsname],
-                                                lon_name="lon", lat_name="lat").compute()
-
-                    metrics_spatem["bias"] = dict()
-                    metrics_spatem["bias"][dsname] = metrics_temporal["bias"][dsname].mean("time").compute()
                     
-                    # relative BIAS
-                    print("... ... relative BIAS")
-                    metrics["relative_bias"] = dict()
-                    metrics["relative_bias"][dsname] = ( metrics["bias"][dsname] / dataref )*100
-
-                    metrics_spatial["relative_bias"] = dict()
-                    metrics_spatial["relative_bias"][dsname] = metrics["relative_bias"][dsname].mean("time").compute()
-
-                    metrics_temporal["relative_bias"] = dict()
-                    metrics_temporal["relative_bias"][dsname] = utils.calc_spatial_mean(metrics["relative_bias"][dsname],
-                                                lon_name="lon", lat_name="lat").compute()
-
-                    metrics_spatem["relative_bias"] = dict()
-                    metrics_spatem["relative_bias"][dsname] = metrics_temporal["relative_bias"][dsname].mean("time").compute()
-
-                    # AE
-                    print("... ... AE")
-                    metrics["absolute_error"] = dict()
-                    metrics["absolute_error"][dsname] = abs( metrics["bias"][dsname] )
-
-                    # MAE
-                    print("... ... MAE")
-                    metrics_spatial["mae"] = dict()
-                    metrics_spatial["mae"][dsname] = metrics["absolute_error"][dsname].mean("time").compute()
-
-                    metrics_temporal["mae"] = dict()
-                    metrics_temporal["mae"][dsname] = utils.calc_spatial_mean(metrics["absolute_error"][dsname],
-                                                lon_name="lon", lat_name="lat").compute()
-
-                    metrics_spatem["mae"] = dict()
-                    metrics_spatem["mae"][dsname] = metrics_temporal["mae"][dsname].mean("time").compute()
-
-                    # NMAE
-                    print("... ... NMAE")
-                    metrics_spatial["nmae"] = dict()
-                    metrics_spatial["nmae"][dsname] = ( metrics["absolute_error"][dsname].sum("time") /
-                                                       dataref.sum("time")
-                                                       ).compute() *100
-
-                    metrics_temporal["nmae"] = dict()
-                    metrics_temporal["nmae"][dsname] = utils.calc_spatial_integral(metrics["absolute_error"][dsname],
-                                                lon_name="lon", lat_name="lat").compute() / \
-                                                    utils.calc_spatial_integral(dataref.where(mask0.notnull(), drop=True),
-                                                lon_name="lon", lat_name="lat").compute() *100
-
-                    metrics_spatem["nmae"] = dict()
-                    metrics_spatem["nmae"][dsname] = utils.calc_spatial_integral(metrics["absolute_error"][dsname],
-                                                lon_name="lon", lat_name="lat").sum("time").compute() / \
-                                                    utils.calc_spatial_integral(dataref.where(mask0.notnull(), drop=True),
-                                                lon_name="lon", lat_name="lat").sum("time").compute() *100
-
-                    # For the categorical metrics we need the following
-                    print("... ... Categorical metrics")
-                    data0_wet = (data0 > minpre).where(mask0.notnull(), drop=True).astype(bool)
-                    dataref_wet = (dataref > minpre).where(mask0.notnull(), drop=True).astype(bool)
-                    
-                    hits = data0_wet*dataref_wet
-                    misses = (~data0_wet)*dataref_wet
-                    false_alarms = data0_wet*(~dataref_wet)
-                    
-                    hits_spatial = hits.sum("time").compute()
-                    hits_temporal = hits.sum(("lon", "lat")).compute()
-                    hits_spatem = hits_temporal.sum("time").compute()
-
-                    misses_spatial = misses.sum("time").compute()
-                    misses_temporal = misses.sum(("lon", "lat")).compute()
-                    misses_spatem = misses_temporal.sum("time").compute()
-
-                    false_alarms_spatial = false_alarms.sum("time").compute()
-                    false_alarms_temporal = false_alarms.sum(("lon", "lat")).compute()
-                    false_alarms_spatem = false_alarms_temporal.sum("time").compute()
-
-                    # POD
-                    metrics_spatial["pod"] = dict()
-                    metrics_spatial["pod"][dsname] = hits_spatial / (hits_spatial + misses_spatial)
-
-                    metrics_temporal["pod"] = dict()
-                    metrics_temporal["pod"][dsname] = hits_temporal / (hits_temporal + misses_temporal)
-
-                    metrics_spatem["pod"] = dict()
-                    metrics_spatem["pod"][dsname] = hits_spatem / (hits_spatem + misses_spatem)
-                    
-                    # FAR/POFA
-                    metrics_spatial["far"] = dict()
-                    metrics_spatial["far"][dsname] = false_alarms_spatial / (hits_spatial + false_alarms_spatial)
-
-                    metrics_temporal["far"] = dict()
-                    metrics_temporal["far"][dsname] = false_alarms_temporal / (hits_temporal + false_alarms_temporal)
-
-                    metrics_spatem["far"] = dict()
-                    metrics_spatem["far"][dsname] = false_alarms_spatem / (hits_spatem + false_alarms_spatem)
-                    
-                    # CSI
-                    metrics_spatial["csi"] = dict()
-                    metrics_spatial["csi"][dsname] = hits_spatial / (hits_spatial + misses_spatial + false_alarms_spatial)
-
-                    metrics_temporal["csi"] = dict()
-                    metrics_temporal["csi"][dsname] = hits_temporal / (hits_temporal + misses_temporal + false_alarms_temporal)
-
-                    metrics_spatem["csi"] = dict()
-                    metrics_spatem["csi"][dsname] = hits_spatem / (hits_spatem + misses_spatem + false_alarms_spatem)
-
-                    # BIASS
-                    metrics_spatial["biass"] = dict()
-                    metrics_spatial["biass"][dsname] = (hits_spatial + false_alarms_spatial) / (hits_spatial + misses_spatial)
-
-                    metrics_temporal["biass"] = dict()
-                    metrics_temporal["biass"][dsname] = (hits_temporal + false_alarms_temporal) / (hits_temporal + misses_temporal)
-
-                    metrics_spatem["biass"] = dict()
-                    metrics_spatem["biass"][dsname] = (hits_spatem + false_alarms_spatem) / (hits_spatem + misses_spatem)
+                    # Reload metrics
+                    if reload_metrics:
+                        print("... reloading metrics")
+                        for metric_type in metric_types:
+                            try:
+                                metric_path = "/".join([metricssavepath, metric_type, dsname_metric, "_".join([metric_type,dsname_metric])+".nc"])
+                                metrics[metric_type][dsname_metric] = xr.open_dataset(metric_path)
+                            except:
+                                print("... ... metric "+metric_type+" could not be loaded!!")
+                        for metric_type in metric_types2:
+                            try: # try spatem
+                                metric_path = "/".join([metricssavepath, "spatem_"+metric_type, dsname_metric, "_".join(["spatem_"+metric_type, dsname_metric])+".nc"])
+                                metrics_spatem[metric_type][dsname_metric] = xr.open_dataset(metric_path)
+                            except:
+                                print("... ... metric spatem "+metric_type+" could not be loaded!!")
+                            try: # try spatial
+                                metric_path = "/".join([metricssavepath, "spatial_"+metric_type, dsname_metric, "_".join(["spatial_"+metric_type, dsname_metric])+".nc"])
+                                metrics_spatem[metric_type][dsname_metric] = xr.open_dataset(metric_path)
+                            except:
+                                print("... ... metric spatial "+metric_type+" could not be loaded!!")
+                            try: # try temporal
+                                metric_path = "/".join([metricssavepath, "temporal_"+metric_type, dsname_metric, "_".join(["temporal_"+metric_type, dsname_metric])+".nc"])
+                                metrics_spatem[metric_type][dsname_metric] = xr.open_dataset(metric_path)
+                            except:
+                                print("... ... metric temporal "+metric_type+" could not be loaded!!")
+                    else:
+                        # Calculte metrics
+                        print("... calculating metrics")
+                        met_start_time = time.time()
+    
+                        # BIAS
+                        print("... ... BIAS")
+                        metrics["bias"][dsname_metric] = ( data0.where(mask0.notnull(), drop=True) - dataref )
+    
+                        metrics_spatial["bias"][dsname_metric] = metrics["bias"][dsname_metric].mean("time").compute()
+    
+                        metrics_temporal["bias"][dsname_metric] = utils.calc_spatial_mean(metrics["bias"][dsname_metric],
+                                                    lon_name="lon", lat_name="lat").compute()
+    
+                        metrics_spatem["bias"][dsname_metric] = metrics_temporal["bias"][dsname_metric].mean("time").compute()
+                        
+                        # # relative BIAS (this may not be so useful due to divisions by zero)
+                        # print("... ... relative BIAS")
+                        # metrics["relative_bias"][dsname_metric] = ( metrics["bias"][dsname_metric] / dataref )*100
+    
+                        # metrics_spatial["relative_bias"][dsname_metric] = metrics["relative_bias"][dsname_metric].mean("time").compute()
+    
+                        # metrics_temporal["relative_bias"][dsname_metric] = utils.calc_spatial_mean(metrics["relative_bias"][dsname_metric],
+                        #                             lon_name="lon", lat_name="lat").compute()
+    
+                        # metrics_spatem["relative_bias"][dsname_metric] = metrics_temporal["relative_bias"][dsname_metric].mean("time").compute()
+    
+                        # AE
+                        print("... ... AE")
+                        metrics["absolute_error"][dsname_metric] = abs( metrics["bias"][dsname_metric] )
+    
+                        # MAE
+                        print("... ... MAE")
+                        metrics_spatial["mae"][dsname_metric] = metrics["absolute_error"][dsname_metric].mean("time").compute()
+    
+                        metrics_temporal["mae"][dsname_metric] = utils.calc_spatial_mean(metrics["absolute_error"][dsname_metric],
+                                                    lon_name="lon", lat_name="lat").compute()
+    
+                        metrics_spatem["mae"][dsname_metric] = metrics_temporal["mae"][dsname_metric].mean("time").compute()
+    
+                        # NMAE
+                        print("... ... NMAE")
+                        metrics_spatial["nmae"][dsname_metric] = ( metrics["absolute_error"][dsname_metric].sum("time", min_count=1) /
+                                                           dataref.sum("time")
+                                                           ).compute() *100
+    
+                        metrics_temporal["nmae"][dsname_metric] = utils.calc_spatial_integral(metrics["absolute_error"][dsname_metric],
+                                                    lon_name="lon", lat_name="lat").compute() / \
+                                                        utils.calc_spatial_integral(dataref.where(mask0.notnull(), drop=True),
+                                                    lon_name="lon", lat_name="lat").compute() *100
+    
+                        metrics_spatem["nmae"][dsname_metric] = utils.calc_spatial_integral(metrics["absolute_error"][dsname_metric],
+                                                    lon_name="lon", lat_name="lat").sum("time").compute() / \
+                                                        utils.calc_spatial_integral(dataref.where(mask0.notnull(), drop=True),
+                                                    lon_name="lon", lat_name="lat").sum("time").compute() *100
+    
+                        # For the categorical metrics we need the following
+                        print("... ... Categorical metrics")
+                        data0_wet = (data0 > minpre).astype(bool)
+                        dataref_wet = (dataref > minpre).astype(bool)
+                        
+                        hits = data0_wet*dataref_wet.where(mask0.notnull(), drop=True)
+                        misses = (~data0_wet)*dataref_wet.where(mask0.notnull(), drop=True)
+                        false_alarms = data0_wet*(~dataref_wet).where(mask0.notnull(), drop=True)
+                        
+                        hits_spatial = hits.sum("time").compute()
+                        hits_temporal = hits.sum(("lon", "lat")).compute()
+                        hits_spatem = hits_temporal.sum("time").compute()
+    
+                        misses_spatial = misses.sum("time").compute()
+                        misses_temporal = misses.sum(("lon", "lat")).compute()
+                        misses_spatem = misses_temporal.sum("time").compute()
+    
+                        false_alarms_spatial = false_alarms.sum("time").compute()
+                        false_alarms_temporal = false_alarms.sum(("lon", "lat")).compute()
+                        false_alarms_spatem = false_alarms_temporal.sum("time").compute()
+    
+                        # POD
+                        metrics_spatial["pod"][dsname_metric] = hits_spatial / (hits_spatial + misses_spatial)
+    
+                        metrics_temporal["pod"][dsname_metric] = hits_temporal / (hits_temporal + misses_temporal)
+    
+                        metrics_spatem["pod"][dsname_metric] = hits_spatem / (hits_spatem + misses_spatem)
+                        
+                        # FAR/POFA
+                        metrics_spatial["far"][dsname_metric] = false_alarms_spatial / (hits_spatial + false_alarms_spatial)
+    
+                        metrics_temporal["far"][dsname_metric] = false_alarms_temporal / (hits_temporal + false_alarms_temporal)
+    
+                        metrics_spatem["far"][dsname_metric] = false_alarms_spatem / (hits_spatem + false_alarms_spatem)
+                        
+                        # CSI
+                        metrics_spatial["csi"][dsname_metric] = hits_spatial / (hits_spatial + misses_spatial + false_alarms_spatial)
+    
+                        metrics_temporal["csi"][dsname_metric] = hits_temporal / (hits_temporal + misses_temporal + false_alarms_temporal)
+    
+                        metrics_spatem["csi"][dsname_metric] = hits_spatem / (hits_spatem + misses_spatem + false_alarms_spatem)
+    
+                        # BIASS
+                        metrics_spatial["biass"][dsname_metric] = (hits_spatial + false_alarms_spatial) / (hits_spatial + misses_spatial)
+    
+                        metrics_temporal["biass"][dsname_metric] = (hits_temporal + false_alarms_temporal) / (hits_temporal + misses_temporal)
+    
+                        metrics_spatem["biass"][dsname_metric] = (hits_spatem + false_alarms_spatem) / (hits_spatem + misses_spatem)
+    
+                        met_total_time = time.time() - met_start_time
+                        print(f"... ... took {met_total_time/60:.2f} minutes.")
                     
                     break
 
@@ -3956,43 +3973,44 @@ data_dailysum = {**data_dailysum, **to_add}
 total_time = time.time() - start_time
 print(f"Calculating metrics took {total_time/60:.2f} minutes to run.")
 
-# Save the metrics to files
-print("Saving the metrics to files")
-# Save metrics to files
-for metric_type, datasets in metrics.items():
-    metric_dir = os.path.join(metricssavepath, metric_type)
-    if not os.path.exists(metric_dir):
-        os.makedirs(metric_dir)
-
-    for dsname, metric_data in datasets.items():
-        ds_dir = os.path.join(metric_dir, dsname)
-        if not os.path.exists(ds_dir):
-            os.makedirs(ds_dir)
-
-        # Convert the data to an xarray Dataset and save as NetCDF
-        metric_dataset = xr.Dataset({f"{metric_type}": metric_data})
-        metric_filename = os.path.join(ds_dir, f"{metric_type}_{dsname}.nc")
-        metric_dataset.to_netcdf(metric_filename, encoding={metric_type: {"zlib":True, "complevel":6}})
-        print(f"Saved {metric_type} for {dsname} to {metric_filename}")
-
-# Repeat the same for spatial, temporal, and spatio-temporal metrics
-for metric_dict, name in zip([metrics_spatial, metrics_temporal, metrics_spatem],
-                             ['spatial', 'temporal', 'spatem']):
-    for metric_type, datasets in metric_dict.items():
-        metric_dir = os.path.join(metricssavepath, f"{name}_{metric_type}")
+if not reload_metrics:
+    # Save the metrics to files
+    print("Saving the metrics to files")
+    # Save metrics to files
+    for metric_type, datasets in metrics.items():
+        metric_dir = os.path.join(metricssavepath, metric_type)
         if not os.path.exists(metric_dir):
             os.makedirs(metric_dir)
-
+    
         for dsname, metric_data in datasets.items():
             ds_dir = os.path.join(metric_dir, dsname)
             if not os.path.exists(ds_dir):
                 os.makedirs(ds_dir)
-
+    
             # Convert the data to an xarray Dataset and save as NetCDF
-            metric_dataset = xr.Dataset({f"{name}_{metric_type}": metric_data})
-            metric_filename = os.path.join(ds_dir, f"{name}_{metric_type}_{dsname}.nc")
+            metric_dataset = xr.Dataset({f"{metric_type}": metric_data})
+            metric_filename = os.path.join(ds_dir, f"{metric_type}_{dsname}.nc")
             metric_dataset.to_netcdf(metric_filename, encoding={metric_type: {"zlib":True, "complevel":6}})
-            print(f"Saved {name}_{metric_type} for {dsname} to {metric_filename}")
+            print(f"Saved {metric_type} for {dsname} to {metric_filename}")
+    
+    # Repeat the same for spatial, temporal, and spatio-temporal metrics
+    for metric_dict, name in zip([metrics_spatial, metrics_temporal, metrics_spatem],
+                                 ['spatial', 'temporal', 'spatem']):
+        for metric_type, datasets in metric_dict.items():
+            metric_dir = os.path.join(metricssavepath, f"{name}_{metric_type}")
+            if not os.path.exists(metric_dir):
+                os.makedirs(metric_dir)
+    
+            for dsname, metric_data in datasets.items():
+                ds_dir = os.path.join(metric_dir, dsname)
+                if not os.path.exists(ds_dir):
+                    os.makedirs(ds_dir)
+    
+                # Convert the data to an xarray Dataset and save as NetCDF
+                metric_dataset = xr.Dataset({f"{name}_{metric_type}": metric_data})
+                metric_filename = os.path.join(ds_dir, f"{name}_{metric_type}_{dsname}.nc")
+                metric_dataset.to_netcdf(metric_filename, encoding={f"{name}_{metric_type}": {"zlib":True, "complevel":6}})
+                print(f"Saved {name}_{metric_type} for {dsname} to {metric_filename}")
 
 #%%%% Relative bias and error plots
 #%%%%% Simple map plot
