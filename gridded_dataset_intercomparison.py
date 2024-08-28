@@ -3664,7 +3664,7 @@ timesel = slice("2016-01-01", "2016-12-31") # should be given in a slice with YY
 timeperiod = "_".join([timesel.start, timesel.stop])
 metricssavepath = "/automount/agradar/jgiles/gridded_data/daily_metrics/"+timeperiod+"/ref_"+dsref[0]+"/"+region_name+"/" # path to save the results of the metrics
 tempsavepath = "/automount/agradar/jgiles/gridded_data/daily/temp/ref_"+dsref[0]+"/" # path so save regridded datasets
-print("!!!!!!!!!!!!!! WE ARE TESTING A PARTICULAR SHORT PERIOD !!!!!!!!!!!!!!!!!!!!!")
+print("!! Period selected: "+timeperiod+" !!")
 
 # Define a function to set the encoding compression
 def define_encoding(data):
@@ -3756,14 +3756,23 @@ metrics = {} # dictionary to store all metrics in full form (all gridpoints and 
 metrics_spatial = {} # dictionary to store all metrics averaged in time (one map)
 metrics_temporal = {} # dictionary to store all metrics averaged in space (timeseries)
 metrics_spatem = {} # dictionary to store all metrics averaged in space and time (one value per dataset)
-metric_types = ["bias", "absolute_error"]
-metric_types2 = ["bias", "mae", "nmae", "pod", "far", "csi", "biass"]
+metric_types = ["bias", "absolute_error", "bias_concurrent", "absolute_error_concurrent", "relative_bias_concurrent"]
+metric_types2 = ["bias", "mae", "nmae", "pod", "far", "csi", "biass", "bias_concurrent", "relative_bias_concurrent", "mae_concurrent", "nmae_concurrent"]
 for metric_type in metric_types:
     metrics[metric_type] = dict()
 for metric_type in metric_types2:
     metrics_spatial[metric_type] = dict()
     metrics_temporal[metric_type] = dict()
     metrics_spatem[metric_type] = dict()
+
+# We first define the reference dataset
+for vvref in var_names:
+    if vvref in data_to_bias[dsref[0]].data_vars:
+        dataref = data_to_bias[dsref[0]][vvref].loc[{"lon": lonlims, "lat": latlims}].chunk(time=100)
+        mask0 = mask.mask(dataref)
+        if mask_TSMP_nudge: mask0 = TSMP_no_nudge.mask(dataref).where(mask0.notnull())
+
+# We then loop through all the datasets we want to process
 for dsname in data_to_bias.keys():
     if dsname in dsignore+dsref:
         continue
@@ -3774,199 +3783,245 @@ for dsname in data_to_bias.keys():
     print("Processing "+dsname+" ...")
     for vv in var_names:
         if vv in data_to_bias[dsname].data_vars:
-            for vvref in var_names:
-                if vvref in data_to_bias[dsref[0]].data_vars:
-                    if dsref[0]+"-grid" not in dsname: # if no regridded already, do it now
-                        dstempsavepath = tempsavepath+dsname+"_"+dsref[0]+"-grid.nc"
-                        try:
-                            to_add[dsname+"_"+dsref[0]+"-grid"] = xr.open_dataset(dstempsavepath)[vv]
-                            print("Previously regridded "+dsname+" was loaded")
-                        except FileNotFoundError:
-                            if "longitude" in data_to_bias[dsname].coords or "latitude" in data_to_bias[dsname].coords:
-                                # if the names of the coords are longitude and latitude, change them to lon, lat
-                                data_to_bias[dsname] = data_to_bias[dsname].rename({"longitude":"lon", "latitude":"lat"})
-                            
-                            if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min"]:
-                                if "lon_bnds" in data_to_bias[dsname]:
-                                    # we need to remove the default defined bounds or the regridding will fail
-                                    data_to_bias[dsname] = data_to_bias[dsname].drop_vars(["lon_bnds", "lat_bnds"])
-                                
-                            if dsname in ["CMORPH-daily"]:
-                                if "lon_bounds" in data_to_bias[dsname]:
-                                    # we need to remove the default defined bounds or the regridding will fail
-                                    data_to_bias[dsname] = data_to_bias[dsname].drop_vars(["lon_bounds", "lat_bounds"])
-        
-                            # regridder = xe.Regridder(data_to_bias[dsname].cf.add_bounds(["lon", "lat"]), data_to_bias[dsref[0]], "conservative")
-                            print("... regridding")
-                            reg_start_time = time.time()
-
-                            regridder = xe.Regridder(data_to_bias[dsname], 
-                                                     data_to_bias[dsref[0]].loc[{"lon": lonlims, "lat": latlims}], 
-                                                     "conservative")
-    
-                            to_add[dsname+"_"+dsref[0]+"-grid"] = regridder(data_to_bias[dsname][vv], 
-                                                                            skipna=True, na_thres=1).to_dataset(name=vv)
-                            
-                            # Save to file
-                            encoding = define_encoding(to_add[dsname+"_"+dsref[0]+"-grid"])
-                            to_add[dsname+"_"+dsref[0]+"-grid"].to_netcdf(dstempsavepath, encoding=encoding)
+            if dsref[0]+"-grid" not in dsname: # if no regridded already, do it now
+                dstempsavepath = tempsavepath+dsname+"_"+dsref[0]+"-grid.nc"
+                try:
+                    to_add[dsname+"_"+dsref[0]+"-grid"] = xr.open_dataset(dstempsavepath)[vv]
+                    print("Previously regridded "+dsname+" was loaded")
+                except FileNotFoundError:
+                    if "longitude" in data_to_bias[dsname].coords or "latitude" in data_to_bias[dsname].coords:
+                        # if the names of the coords are longitude and latitude, change them to lon, lat
+                        data_to_bias[dsname] = data_to_bias[dsname].rename({"longitude":"lon", "latitude":"lat"})
                     
-                            # Reload
-                            to_add[dsname+"_"+dsref[0]+"-grid"] = xr.open_dataset(dstempsavepath)[vv]
-                            
-                            reg_total_time = time.time() - reg_start_time
-                            print(f"... ... took {reg_total_time/60:.2f} minutes.")
+                    if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min"]:
+                        if "lon_bnds" in data_to_bias[dsname]:
+                            # we need to remove the default defined bounds or the regridding will fail
+                            data_to_bias[dsname] = data_to_bias[dsname].drop_vars(["lon_bnds", "lat_bnds"])
+                        
+                    if dsname in ["CMORPH-daily"]:
+                        if "lon_bounds" in data_to_bias[dsname]:
+                            # we need to remove the default defined bounds or the regridding will fail
+                            data_to_bias[dsname] = data_to_bias[dsname].drop_vars(["lon_bounds", "lat_bounds"])
 
-                        data0 = to_add[dsname+"_"+dsref[0]+"-grid"].copy()
-                        
-                        dsname_metric = dsname
+                    # regridder = xe.Regridder(data_to_bias[dsname].cf.add_bounds(["lon", "lat"]), data_to_bias[dsref[0]], "conservative")
+                    print("... regridding")
+                    reg_start_time = time.time()
 
-                    else:
-                        data0 = data_to_bias[dsname][vv].copy()
-                        
-                        dsname_metric = dsname.split("_")[0]
+                    regridder = xe.Regridder(data_to_bias[dsname], 
+                                             data_to_bias[dsref[0]].loc[{"lon": lonlims, "lat": latlims}], 
+                                             "conservative")
 
-                    data0 = data0.loc[{"time":timesel}].chunk(time=100) #!!! THIS IS A TEST
-                    # data0 = data0.where(data0>0) # do not filter out the zero values, otherwise we will not check for detection correcly
-                    dataref = data_to_bias[dsref[0]][vvref].loc[{"lon": lonlims, "lat": latlims}].chunk(time=100)
+                    to_add[dsname+"_"+dsref[0]+"-grid"] = regridder(data_to_bias[dsname][vv], 
+                                                                    skipna=True, na_thres=1).to_dataset(name=vv)
                     
-                    mask0 = mask.mask(dataref)
-                    if mask_TSMP_nudge: mask0 = TSMP_no_nudge.mask(dataref).where(mask0.notnull())
+                    # Save to file
+                    encoding = define_encoding(to_add[dsname+"_"+dsref[0]+"-grid"])
+                    to_add[dsname+"_"+dsref[0]+"-grid"].to_netcdf(dstempsavepath, encoding=encoding)
+            
+                    # Reload
+                    to_add[dsname+"_"+dsref[0]+"-grid"] = xr.open_dataset(dstempsavepath)[vv]
                     
-                    # Reload metrics
-                    if reload_metrics:
-                        print("... reloading metrics")
-                        for metric_type in metric_types:
-                            try:
-                                metric_path = "/".join([metricssavepath, metric_type, dsname_metric, "_".join([metric_type,dsname_metric])+".nc"])
-                                metrics[metric_type][dsname_metric] = xr.open_dataset(metric_path)
-                            except:
-                                print("... ... metric "+metric_type+" could not be loaded!!")
-                        for metric_type in metric_types2:
-                            try: # try spatem
-                                metric_path = "/".join([metricssavepath, "spatem_"+metric_type, dsname_metric, "_".join(["spatem_"+metric_type, dsname_metric])+".nc"])
-                                metrics_spatem[metric_type][dsname_metric] = xr.open_dataset(metric_path)
-                            except:
-                                print("... ... metric spatem "+metric_type+" could not be loaded!!")
-                            try: # try spatial
-                                metric_path = "/".join([metricssavepath, "spatial_"+metric_type, dsname_metric, "_".join(["spatial_"+metric_type, dsname_metric])+".nc"])
-                                metrics_spatem[metric_type][dsname_metric] = xr.open_dataset(metric_path)
-                            except:
-                                print("... ... metric spatial "+metric_type+" could not be loaded!!")
-                            try: # try temporal
-                                metric_path = "/".join([metricssavepath, "temporal_"+metric_type, dsname_metric, "_".join(["temporal_"+metric_type, dsname_metric])+".nc"])
-                                metrics_spatem[metric_type][dsname_metric] = xr.open_dataset(metric_path)
-                            except:
-                                print("... ... metric temporal "+metric_type+" could not be loaded!!")
-                    else:
-                        # Calculte metrics
-                        print("... calculating metrics")
-                        met_start_time = time.time()
-    
-                        # BIAS
-                        print("... ... BIAS")
-                        metrics["bias"][dsname_metric] = ( data0.where(mask0.notnull(), drop=True) - dataref )
-    
-                        metrics_spatial["bias"][dsname_metric] = metrics["bias"][dsname_metric].mean("time").compute()
-    
-                        metrics_temporal["bias"][dsname_metric] = utils.calc_spatial_mean(metrics["bias"][dsname_metric],
-                                                    lon_name="lon", lat_name="lat").compute()
-    
-                        metrics_spatem["bias"][dsname_metric] = metrics_temporal["bias"][dsname_metric].mean("time").compute()
-                        
-                        # # relative BIAS (this may not be so useful due to divisions by zero)
-                        # print("... ... relative BIAS")
-                        # metrics["relative_bias"][dsname_metric] = ( metrics["bias"][dsname_metric] / dataref )*100
-    
-                        # metrics_spatial["relative_bias"][dsname_metric] = metrics["relative_bias"][dsname_metric].mean("time").compute()
-    
-                        # metrics_temporal["relative_bias"][dsname_metric] = utils.calc_spatial_mean(metrics["relative_bias"][dsname_metric],
-                        #                             lon_name="lon", lat_name="lat").compute()
-    
-                        # metrics_spatem["relative_bias"][dsname_metric] = metrics_temporal["relative_bias"][dsname_metric].mean("time").compute()
-    
-                        # AE
-                        print("... ... AE")
-                        metrics["absolute_error"][dsname_metric] = abs( metrics["bias"][dsname_metric] )
-    
-                        # MAE
-                        print("... ... MAE")
-                        metrics_spatial["mae"][dsname_metric] = metrics["absolute_error"][dsname_metric].mean("time").compute()
-    
-                        metrics_temporal["mae"][dsname_metric] = utils.calc_spatial_mean(metrics["absolute_error"][dsname_metric],
-                                                    lon_name="lon", lat_name="lat").compute()
-    
-                        metrics_spatem["mae"][dsname_metric] = metrics_temporal["mae"][dsname_metric].mean("time").compute()
-    
-                        # NMAE
-                        print("... ... NMAE")
-                        metrics_spatial["nmae"][dsname_metric] = ( metrics["absolute_error"][dsname_metric].sum("time", min_count=1) /
-                                                           dataref.sum("time")
-                                                           ).compute() *100
-    
-                        metrics_temporal["nmae"][dsname_metric] = utils.calc_spatial_integral(metrics["absolute_error"][dsname_metric],
-                                                    lon_name="lon", lat_name="lat").compute() / \
-                                                        utils.calc_spatial_integral(dataref.where(mask0.notnull(), drop=True),
-                                                    lon_name="lon", lat_name="lat").compute() *100
-    
-                        metrics_spatem["nmae"][dsname_metric] = utils.calc_spatial_integral(metrics["absolute_error"][dsname_metric],
-                                                    lon_name="lon", lat_name="lat").sum("time").compute() / \
-                                                        utils.calc_spatial_integral(dataref.where(mask0.notnull(), drop=True),
-                                                    lon_name="lon", lat_name="lat").sum("time").compute() *100
-    
-                        # For the categorical metrics we need the following
-                        print("... ... Categorical metrics")
-                        data0_wet = (data0 > minpre).astype(bool)
-                        dataref_wet = (dataref > minpre).astype(bool)
-                        
-                        hits = data0_wet*dataref_wet.where(mask0.notnull(), drop=True)
-                        misses = (~data0_wet)*dataref_wet.where(mask0.notnull(), drop=True)
-                        false_alarms = data0_wet*(~dataref_wet).where(mask0.notnull(), drop=True)
-                        
-                        hits_spatial = hits.sum("time").compute()
-                        hits_temporal = hits.sum(("lon", "lat")).compute()
-                        hits_spatem = hits_temporal.sum("time").compute()
-    
-                        misses_spatial = misses.sum("time").compute()
-                        misses_temporal = misses.sum(("lon", "lat")).compute()
-                        misses_spatem = misses_temporal.sum("time").compute()
-    
-                        false_alarms_spatial = false_alarms.sum("time").compute()
-                        false_alarms_temporal = false_alarms.sum(("lon", "lat")).compute()
-                        false_alarms_spatem = false_alarms_temporal.sum("time").compute()
-    
-                        # POD
-                        metrics_spatial["pod"][dsname_metric] = hits_spatial / (hits_spatial + misses_spatial)
-    
-                        metrics_temporal["pod"][dsname_metric] = hits_temporal / (hits_temporal + misses_temporal)
-    
-                        metrics_spatem["pod"][dsname_metric] = hits_spatem / (hits_spatem + misses_spatem)
-                        
-                        # FAR/POFA
-                        metrics_spatial["far"][dsname_metric] = false_alarms_spatial / (hits_spatial + false_alarms_spatial)
-    
-                        metrics_temporal["far"][dsname_metric] = false_alarms_temporal / (hits_temporal + false_alarms_temporal)
-    
-                        metrics_spatem["far"][dsname_metric] = false_alarms_spatem / (hits_spatem + false_alarms_spatem)
-                        
-                        # CSI
-                        metrics_spatial["csi"][dsname_metric] = hits_spatial / (hits_spatial + misses_spatial + false_alarms_spatial)
-    
-                        metrics_temporal["csi"][dsname_metric] = hits_temporal / (hits_temporal + misses_temporal + false_alarms_temporal)
-    
-                        metrics_spatem["csi"][dsname_metric] = hits_spatem / (hits_spatem + misses_spatem + false_alarms_spatem)
-    
-                        # BIASS
-                        metrics_spatial["biass"][dsname_metric] = (hits_spatial + false_alarms_spatial) / (hits_spatial + misses_spatial)
-    
-                        metrics_temporal["biass"][dsname_metric] = (hits_temporal + false_alarms_temporal) / (hits_temporal + misses_temporal)
-    
-                        metrics_spatem["biass"][dsname_metric] = (hits_spatem + false_alarms_spatem) / (hits_spatem + misses_spatem)
-    
-                        met_total_time = time.time() - met_start_time
-                        print(f"... ... took {met_total_time/60:.2f} minutes.")
-                    
-                    break
+                    reg_total_time = time.time() - reg_start_time
+                    print(f"... ... took {reg_total_time/60:.2f} minutes.")
+
+                data0 = to_add[dsname+"_"+dsref[0]+"-grid"].copy()
+                
+                dsname_metric = dsname
+
+            else:
+                data0 = data_to_bias[dsname][vv].copy()
+                
+                dsname_metric = dsname.split("_")[0]
+
+            data0 = data0.loc[{"time":timesel}].chunk(time=100)
+            # data0 = data0.where(data0>0) # do not filter out the zero values, otherwise we will not check for detection correcly
+            
+            # Reload metrics
+            if reload_metrics:
+                print("... reloading metrics")
+                for metric_type in metric_types:
+                    try:
+                        metric_path = "/".join([metricssavepath, metric_type, dsname_metric, "_".join([metric_type,dsname_metric])+".nc"])
+                        metrics[metric_type][dsname_metric] = xr.open_dataset(metric_path)
+                    except:
+                        print("... ... metric "+metric_type+" could not be loaded!!")
+                for metric_type in metric_types2:
+                    try: # try spatem
+                        metric_path = "/".join([metricssavepath, "spatem_"+metric_type, dsname_metric, "_".join(["spatem_"+metric_type, dsname_metric])+".nc"])
+                        metrics_spatem[metric_type][dsname_metric] = xr.open_dataset(metric_path)
+                    except:
+                        print("... ... metric spatem "+metric_type+" could not be loaded!!")
+                    try: # try spatial
+                        metric_path = "/".join([metricssavepath, "spatial_"+metric_type, dsname_metric, "_".join(["spatial_"+metric_type, dsname_metric])+".nc"])
+                        metrics_spatem[metric_type][dsname_metric] = xr.open_dataset(metric_path)
+                    except:
+                        print("... ... metric spatial "+metric_type+" could not be loaded!!")
+                    try: # try temporal
+                        metric_path = "/".join([metricssavepath, "temporal_"+metric_type, dsname_metric, "_".join(["temporal_"+metric_type, dsname_metric])+".nc"])
+                        metrics_spatem[metric_type][dsname_metric] = xr.open_dataset(metric_path)
+                    except:
+                        print("... ... metric temporal "+metric_type+" could not be loaded!!")
+            else:
+                # Calculte metrics
+                print("... calculating metrics")
+                met_start_time = time.time()
+
+                # BIAS
+                print("... ... BIAS")
+                metrics["bias"][dsname_metric] = ( data0.where(mask0.notnull(), drop=True) - dataref )
+
+                metrics_spatial["bias"][dsname_metric] = metrics["bias"][dsname_metric].mean("time").compute()
+
+                metrics_temporal["bias"][dsname_metric] = utils.calc_spatial_mean(metrics["bias"][dsname_metric],
+                                            lon_name="lon", lat_name="lat").compute()
+
+                metrics_spatem["bias"][dsname_metric] = metrics_temporal["bias"][dsname_metric].mean("time").compute()
+                
+                # # relative BIAS (this may not be so useful due to divisions by zero)
+                # print("... ... relative BIAS")
+                # metrics["relative_bias"][dsname_metric] = ( metrics["bias"][dsname_metric] / dataref )*100
+
+                # metrics_spatial["relative_bias"][dsname_metric] = metrics["relative_bias"][dsname_metric].mean("time").compute()
+
+                # metrics_temporal["relative_bias"][dsname_metric] = utils.calc_spatial_mean(metrics["relative_bias"][dsname_metric],
+                #                             lon_name="lon", lat_name="lat").compute()
+
+                # metrics_spatem["relative_bias"][dsname_metric] = metrics_temporal["relative_bias"][dsname_metric].mean("time").compute()
+
+                # AE
+                print("... ... AE")
+                metrics["absolute_error"][dsname_metric] = abs( metrics["bias"][dsname_metric] )
+
+                # MAE
+                print("... ... MAE")
+                metrics_spatial["mae"][dsname_metric] = metrics["absolute_error"][dsname_metric].mean("time").compute()
+
+                metrics_temporal["mae"][dsname_metric] = utils.calc_spatial_mean(metrics["absolute_error"][dsname_metric],
+                                            lon_name="lon", lat_name="lat").compute()
+
+                metrics_spatem["mae"][dsname_metric] = metrics_temporal["mae"][dsname_metric].mean("time").compute()
+
+                # NMAE
+                print("... ... NMAE")
+                metrics_spatial["nmae"][dsname_metric] = ( metrics["absolute_error"][dsname_metric].sum("time", min_count=1) /
+                                                   dataref.sum("time")
+                                                   ).compute() *100
+
+                metrics_temporal["nmae"][dsname_metric] = utils.calc_spatial_integral(metrics["absolute_error"][dsname_metric],
+                                            lon_name="lon", lat_name="lat").compute() / \
+                                                utils.calc_spatial_integral(dataref.where(mask0.notnull(), drop=True),
+                                            lon_name="lon", lat_name="lat").compute() *100
+
+                metrics_spatem["nmae"][dsname_metric] = utils.calc_spatial_integral(metrics["absolute_error"][dsname_metric],
+                                            lon_name="lon", lat_name="lat").sum("time").compute() / \
+                                                utils.calc_spatial_integral(dataref.where(mask0.notnull(), drop=True),
+                                            lon_name="lon", lat_name="lat").sum("time").compute() *100
+
+                # For the categorical metrics we need the following
+                print("... ... Categorical metrics")
+                data0_wet = (data0 > minpre).astype(bool)
+                dataref_wet = (dataref > minpre).astype(bool).where(dataref.notnull())
+                
+                hits = data0_wet*dataref_wet.where(mask0.notnull(), drop=True)
+                misses = (~data0_wet)*dataref_wet.where(mask0.notnull(), drop=True)
+                false_alarms = data0_wet*(~dataref_wet).where(mask0.notnull(), drop=True)
+                
+                hits_spatial = hits.sum("time").compute()
+                hits_temporal = hits.sum(("lon", "lat")).compute()
+                hits_spatem = hits_temporal.sum("time").compute()
+
+                misses_spatial = misses.sum("time").compute()
+                misses_temporal = misses.sum(("lon", "lat")).compute()
+                misses_spatem = misses_temporal.sum("time").compute()
+
+                false_alarms_spatial = false_alarms.sum("time").compute()
+                false_alarms_temporal = false_alarms.sum(("lon", "lat")).compute()
+                false_alarms_spatem = false_alarms_temporal.sum("time").compute()
+
+                # POD
+                metrics_spatial["pod"][dsname_metric] = hits_spatial / (hits_spatial + misses_spatial)
+
+                metrics_temporal["pod"][dsname_metric] = hits_temporal / (hits_temporal + misses_temporal)
+
+                metrics_spatem["pod"][dsname_metric] = hits_spatem / (hits_spatem + misses_spatem)
+                
+                # FAR/POFA
+                metrics_spatial["far"][dsname_metric] = false_alarms_spatial / (hits_spatial + false_alarms_spatial)
+
+                metrics_temporal["far"][dsname_metric] = false_alarms_temporal / (hits_temporal + false_alarms_temporal)
+
+                metrics_spatem["far"][dsname_metric] = false_alarms_spatem / (hits_spatem + false_alarms_spatem)
+                
+                # CSI
+                metrics_spatial["csi"][dsname_metric] = hits_spatial / (hits_spatial + misses_spatial + false_alarms_spatial)
+
+                metrics_temporal["csi"][dsname_metric] = hits_temporal / (hits_temporal + misses_temporal + false_alarms_temporal)
+
+                metrics_spatem["csi"][dsname_metric] = hits_spatem / (hits_spatem + misses_spatem + false_alarms_spatem)
+
+                # BIASS
+                metrics_spatial["biass"][dsname_metric] = (hits_spatial + false_alarms_spatial) / (hits_spatial + misses_spatial)
+
+                metrics_temporal["biass"][dsname_metric] = (hits_temporal + false_alarms_temporal) / (hits_temporal + misses_temporal)
+
+                metrics_spatem["biass"][dsname_metric] = (hits_spatem + false_alarms_spatem) / (hits_spatem + misses_spatem)
+
+                # Calculate the same initial metrics but for concurrent events (i.e., correcly detected events)
+                # BIAS
+                print("... ... concurrent BIAS")
+                metrics["bias_concurrent"][dsname_metric] = ( data0.where(mask0.notnull(), drop=True) - dataref ).where(hits>0)
+
+                metrics_spatial["bias_concurrent"][dsname_metric] = metrics["bias_concurrent"][dsname_metric].mean("time").compute()
+
+                metrics_temporal["bias_concurrent"][dsname_metric] = utils.calc_spatial_mean(metrics["bias_concurrent"][dsname_metric],
+                                            lon_name="lon", lat_name="lat").compute()
+
+                metrics_spatem["bias_concurrent"][dsname_metric] = metrics_temporal["bias_concurrent"][dsname_metric].mean("time").compute()
+                
+                # relative BIAS (this may not be so useful due to divisions by zero)
+                print("... ... concurrent relative BIAS")
+                metrics["relative_bias_concurrent"][dsname_metric] = ( metrics["bias_concurrent"][dsname_metric] / dataref )*100
+
+                metrics_spatial["relative_bias_concurrent"][dsname_metric] = metrics["relative_bias_concurrent"][dsname_metric].mean("time").compute()
+
+                metrics_temporal["relative_bias_concurrent"][dsname_metric] = utils.calc_spatial_mean(metrics["relative_bias_concurrent"][dsname_metric],
+                                            lon_name="lon", lat_name="lat").compute()
+
+                metrics_spatem["relative_bias_concurrent"][dsname_metric] = metrics_temporal["relative_bias_concurrent"][dsname_metric].mean("time").compute()
+
+                # AE
+                print("... ... concurrent AE")
+                metrics["absolute_error_concurrent"][dsname_metric] = abs( metrics["bias_concurrent"][dsname_metric] )
+
+                # MAE
+                print("... ... concurrent MAE")
+                metrics_spatial["mae_concurrent"][dsname_metric] = metrics["absolute_error_concurrent"][dsname_metric].mean("time").compute()
+
+                metrics_temporal["mae_concurrent"][dsname_metric] = utils.calc_spatial_mean(metrics["absolute_error_concurrent"][dsname_metric],
+                                            lon_name="lon", lat_name="lat").compute()
+
+                metrics_spatem["mae_concurrent"][dsname_metric] = metrics_temporal["mae_concurrent"][dsname_metric].mean("time").compute()
+
+                # NMAE
+                print("... ... concurrent NMAE")
+                metrics_spatial["nmae_concurrent"][dsname_metric] = ( metrics["absolute_error_concurrent"][dsname_metric].sum("time", min_count=1) /
+                                                   dataref.sum("time")
+                                                   ).compute() *100
+
+                metrics_temporal["nmae_concurrent"][dsname_metric] = utils.calc_spatial_integral(metrics["absolute_error_concurrent"][dsname_metric],
+                                            lon_name="lon", lat_name="lat").compute() / \
+                                                utils.calc_spatial_integral(dataref.where(mask0.notnull(), drop=True),
+                                            lon_name="lon", lat_name="lat").compute() *100
+
+                metrics_spatem["nmae_concurrent"][dsname_metric] = utils.calc_spatial_integral(metrics["absolute_error_concurrent"][dsname_metric],
+                                            lon_name="lon", lat_name="lat").sum("time").compute() / \
+                                                utils.calc_spatial_integral(dataref.where(mask0.notnull(), drop=True),
+                                            lon_name="lon", lat_name="lat").sum("time").compute() *100
+
+                met_total_time = time.time() - met_start_time
+                print(f"... ... took {met_total_time/60:.2f} minutes.")
+
+            break
 
 # add the regridded datasets to the original dictionary
 data_dailysum = {**data_dailysum, **to_add}
@@ -4012,153 +4067,126 @@ if not reload_metrics:
                 metric_dataset.to_netcdf(metric_filename, encoding={f"{name}_{metric_type}": {"zlib":True, "complevel":6}})
                 print(f"Saved {name}_{metric_type} for {dsname} to {metric_filename}")
 
-#%%%% Relative bias and error plots
+#%%%% Metrics plots
 #%%%%% Simple map plot
 # region = "Germany" #"land" 
-to_plot = data_bias_map
-dsname = "IMERG-V07B-monthly"
+to_plot = metrics["bias"]
+dsname = "IMERG-V07B-30min"
 title = "BIAS"
-yearsel = "2016-02"
+timesel0 = "2016-06-01"
 cbarlabel = "mm" # mm
-vmin = -250
-vmax = 250
+vmin = -10
+vmax = 10
 lonlat_slice = [slice(-43.4,63.65), slice(22.6, 71.15)]
 mask = utils.get_regionmask(region)
 mask0 = mask.mask(to_plot[dsname])
 dropna = True
 if mask_TSMP_nudge: 
     mask0 = TSMP_no_nudge.mask(to_plot[dsname]).where(mask0.notnull())
-    dropna=False
+    # dropna=False
 f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
-plot = to_plot[dsname].loc[{"time":yearsel}].where(mask0.notnull(), drop=dropna).loc[{"lon":lonlat_slice[0], 
+plot = to_plot[dsname].loc[{"time":timesel0}].where(mask0.notnull(), drop=dropna).loc[{"lon":lonlat_slice[0], 
                                                                                       "lat":lonlat_slice[1]}].plot(x="lon", 
                                                                                                                    y="lat", 
                                                                                                                    cmap="RdBu_r", 
                                                                                     vmin=vmin, vmax=vmax, 
                                          subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
                                          cbar_kwargs={'label': cbarlabel, 'shrink':0.88})
-if mask_TSMP_nudge: plot.axes.set_extent([-43.4, 63.65, 22.6, 71.15], crs=ccrs.PlateCarree())
+# if mask_TSMP_nudge: plot.axes.set_extent([-43.4, 63.65, 22.6, 71.15], crs=ccrs.PlateCarree())
 plot.axes.coastlines(alpha=0.7)
 plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
 plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
-plt.title(title+" "+yearsel+"\n"+dsname+"\n "+region_name+" Ref.: "+dsref[0])
+plt.title(title+" "+timesel0+"\n"+dsname+"\n "+region_name+" Ref.: "+dsref[0])
 
-#%%%%% Simple map plot (loop)
-# Like previous but for saving all plots !! THIS WILL PROBABLY CRASH THE MEMORY
-# region = "Germany" #"land" 
-savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/maps/months/"+region_name+"/"
-period = np.arange(2000,2024)
+#%%%%% Plots in space (maps)
+savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/daily/"+region_name+"/maps/"
 to_plot_dict = [
-            (data_bias_map, "BIAS", "mm", -75, 75),
-            (data_bias_relative_map, "RELATIVE BIAS", "%", -75, 75),
+            (metrics_spatial['bias'], "BIAS", "mm", -1, 1, "BrBG"),
+            (metrics_spatial['mae'], "MAE", "mm", 0, 3, "Reds"),
+            (metrics_spatial['nmae'], "NMAE", "%", 0, 10, "Reds"),
+            (metrics_spatial['pod'], "POD", "", 0.6, 1, "Blues"),
+            (metrics_spatial['far'], "FAR", "", 0, 0.5, "Reds"),
+            (metrics_spatial['csi'], "CSI", "", 0.4, 1, "Blues"),
+            (metrics_spatial['biass'], "BIASS", "", 0.7, 1.3, "BrBG"),
+            (metrics_spatial['bias_concurrent'], "Concurrent BIAS", "mm", -1, 1, "BrBG"),
+            (metrics_spatial['relative_bias_concurrent'], "Concurrent relative BIAS", "%", -10, 10, "BrBG"),
+            (metrics_spatial['mae_concurrent'], "Concurrent MAE", "mm", 0, 3, "Reds"),
+            (metrics_spatial['nmae_concurrent'], "Concurrent NMAE", "%", 0, 10, "Reds"),
            ]
 lonlat_slice = [slice(-43.4,63.65), slice(22.6, 71.15)]
 
-selmonthlist = [("Jan", "01"),
-           ("Jul", "07"),
-           ] # ("nameofmonth", "month")
-
-for to_plot, title, cbarlabel, vmin, vmax in to_plot_dict:
+for to_plot, title, cbarlabel, vmin, vmax, cmap in to_plot_dict:
     print("Plotting "+title)
     for dsname in to_plot.keys():
         print("... "+dsname)
         dsname_short = dsname.split("_")[0]
-        mask = utils.get_regionmask(region)
-        mask0 = mask.mask(to_plot[dsname])
-        dropna = True
-        if not mask_TSMP_nudge:  # Remove/add "not" here to change the extent of the map
-            mask0 = TSMP_no_nudge.mask(to_plot[dsname]).where(mask0.notnull())
-            dropna=False
-        for yearsel in period:
-            for selmonth in selmonthlist:
-                try:
-                    plt.close()
-                    yearseas = str(yearsel)+"-"+str(selmonth[1])
-                    # f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
-                    plot = to_plot[dsname].loc[{"time":yearseas}].where(mask0.notnull(), 
-                                                                            drop=dropna).loc[{"lon":lonlat_slice[0],
-                                                                                              "lat":lonlat_slice[1]}].plot(x="lon",
-                                                                                                                           y="lat",
-                                                                                                                           cmap="RdBu_r", 
-                                                                                                        vmin=vmin, vmax=vmax, 
-                                                             subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
-                                                             cbar_kwargs={'label': cbarlabel, 'shrink':0.88})
-                    # if mask_TSMP_nudge: plot.axes.set_extent([-43.4, 63.65, 22.6, 71.15], crs=ccrs.PlateCarree())
-                    plot.axes.coastlines(alpha=0.7)
-                    plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
-                    plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
-                    plt.title(title+" "+str(yearsel)+" "+selmonth[0]+"\n"+dsname_short+"\n "+region_name+" Ref.: "+dsref[0])
-                    
-                    # save figure
-                    savepath_yy = savepath+str(yearsel)+"/"+selmonth[0]+"/"
-                    if not os.path.exists(savepath_yy):
-                        os.makedirs(savepath_yy)
-                    filename = "_".join([title.lower().replace(" ","_"), region_name, dsname_short,dsref[0],str(yearsel),selmonth[0]])+".png"
-                    plt.savefig(savepath_yy+filename, bbox_inches="tight")
-                    plt.close()
-                except KeyError:
-                    continue
+        try:
+            plt.close()
+            # f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
+            plot = to_plot[dsname].plot(x="lon", y="lat", cmap=cmap, 
+                                            vmin=vmin, vmax=vmax, 
+                                                     subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
+                                                     cbar_kwargs={'label': cbarlabel, 'shrink':0.88})
+            plot.axes.coastlines(alpha=0.7)
+            plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
+            plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
+            plt.title(title+" "+timeperiod+"\n"+dsname_short+"\n "+region_name+" Ref.: "+dsref[0])
+            
+            # save figure
+            savepath_period = savepath+timeperiod+"/"
+            if not os.path.exists(savepath_period):
+                os.makedirs(savepath_period)
+            filename = "_".join([title.lower().replace(" ","_"), region_name, dsname_short,dsref[0],timeperiod])+".png"
+            plt.savefig(savepath_period+filename, bbox_inches="tight")
+            plt.close()
+        except KeyError:
+            continue
 
-#%%%%% Box plots of BIAS and ERRORS
-# the box plots are made up of the yearly bias or error values, and the datasets are ordered according to their median
-to_plot0 = data_bias_relative_gp.copy() # data_mean_abs_error_gp # data_bias_relative_gp # data_norm_mean_abs_error_gp
-savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/monthly/"+region_name+"/boxplots/relative_bias/"
-savefilename = "boxplot_relative_bias_" # the season name will be added at the end of savefilename
-title = "relative bias "+region_name+". Ref.: "+dsref[0] # the season name will be added at the beginning of title
-ylabel = "%" # % # mm
+#%%%%% Box plots
 dsignore = [] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', "E-OBS", "CPC"] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
 
 # Override the previous with a loop for each case
-savepathbase = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/monthly/"+region_name+"/boxplots/"
-for to_plot0, savepath, savefilename, title, ylabel in [
-        (data_bias_relative_gp.copy(), 
-         savepathbase + "relative_bias/",
-         "boxplot_relative_bias_",
-         "relative bias "+region_name+". Ref.: "+dsref[0],
-         "%"),
-        (data_mean_abs_error_gp.copy(), 
-         savepathbase + "mean_absolute_error/",
-         "boxplot_mean_absolute_error_",
-         "mean absolute error "+region_name+". Ref.: "+dsref[0],
-         "mm"),
-        (data_norm_mean_abs_error_gp.copy(), 
-         savepathbase + "normalized_mean_absolute_error/",
-         "boxplot_normalized_mean_absolute_error_",
-         "normalized mean absolute error "+region_name+". Ref.: "+dsref[0],
-         "%"),
-        ]:
+savepathbase = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/daily/"+region_name+"/boxplots/"
 
-    tsel = [
-            slice(None, None), # if I want to consider only certain period. Otherwise set to (None, None). Multiple options possible
-            slice("2001-01-01", "2020-01-01"), 
-            slice("2006-01-01", "2020-01-01"), 
-            slice("2013-01-01", "2020-01-01"), 
-            slice("2015-01-01", "2020-01-01")
-            ] 
-    ignore_incomplete = True # flag for ignoring datasets that do not cover the complete period. Only works for specific periods (not for slice(None, None))
-    selmonthlist = [("Jan", [1]),
-               ("Jul", [7]),
-               ("full", [1,2,3,4,5,6,7,8,9,10,11,12])] # ("nameofmonth", [month])
-    
+to_plot0 = metrics_temporal
+
+to_plot_dict = [ # name, title, units, reference_line, vmin, vmax, cmap
+            ('bias', "BIAS", "mm", 0, -1, 1, "BrBG"), # vmin, vmax and cmap are not necessary
+            ('mae', "MAE", "mm", 0, 0, 3, "Reds"),
+            ('nmae', "NMAE", "%", 0, 0, 10, "Reds"),
+            ('pod', "POD", "", 1, 0.6, 1, "Blues"),
+            ('far', "FAR", "", 0, 0, 0.5, "Reds"),
+            ('csi', "CSI", "", 1, 0.4, 1, "Blues"),
+            ('biass', "BIASS", "", 1, 0.7, 1.3, "BrBG"),
+            ('bias_concurrent', "Concurrent BIAS", "mm", 0, -1, 1, "BrBG"),
+            ('relative_bias_concurrent', "Concurrent relative BIAS", "%", 0, -10, 10, "BrBG"),
+            ('mae_concurrent', "Concurrent MAE", "mm", 0, 0, 3, "Reds"),
+            ('nmae_concurrent', "Concurrent NMAE", "%", 0, 0, 10, "Reds"),
+           ]
+
+tsel = [timesel] #!!! Improvement idea: the temporal metrics could be calculated for a longer period that could then be cut down here, and the spatial and spatem metrics could be calculated for different periods all at once based on subsets
+ignore_incomplete = True # flag for ignoring datasets that do not cover the complete period. Only works for specific periods (not for slice(None, None))
+
+selmonthlist = [("DJF" , [12, 1, 2]),
+           ("JJA", [6, 7, 8]),
+           ("", [1,2,3,4,5,6,7,8,9,10,11,12])] # ("nameofmonth", [month])
+
+print("Plotting boxplots ...")
+for metric_type, title, ylabel, reference_line, vmin, vmax, cmap in to_plot_dict:
+    print("... "+metric_type)
     for selmonth in selmonthlist:
-        savepathn = (region_name+"/"+selmonth[0]).join(copy.deepcopy(savepath).split(region_name))
         for tseln in tsel:
-            to_plot = to_plot0.copy()
-            savefilenamen = copy.deepcopy(savefilename)
-            titlen = copy.deepcopy(title)
-            titlen = selmonth[0]+" "+titlen
-            savefilenamen = savefilenamen+selmonth[0]
-            
+            to_plot = to_plot0[metric_type].copy()
+            timeperiodn = timeperiod
             if tseln.start is not None and tseln.stop is not None: # add specific period to title
-                titlen = titlen+". "+tseln.start+" - "+tseln.stop
-                savefilenamen = savefilenamen+"_"+tseln.start+"-"+tseln.stop
+                timeperiodn = "_".join([timesel.start, timesel.stop])
                 
                 if ignore_incomplete:
                     for key in to_plot.copy().keys():
                         if not (to_plot[key].time[0].dt.date <= datetime.strptime(tseln.start, "%Y-%m-%d").date() and
                                 to_plot[key].time[-1].dt.date >= datetime.strptime(tseln.stop, "%Y-%m-%d").date()):
                             del(to_plot[key])
-            
+                
             # Select the given season
             for key in to_plot.copy().keys():
                 to_plot[key] = to_plot[key].sel(time=to_plot[key]['time'].dt.month.isin(selmonth[1]))
@@ -4179,12 +4207,17 @@ for to_plot0, savepath, savefilename, title, ylabel in [
             for key, value in to_plot.items():
                 if key not in dsignore:
                     # Plot a box plot for each dataset
-                    value = value.sel(time=tseln)
+                    value = value.sel(time=tseln).dropna("time")
                     plotted_arrays.append(value.values) # values of each box
                     plotted_arrays_lengths.append(len(value)) # number of values in each box
                     ax.boxplot(value.values, positions=[len(plotted_arrays)], widths=0.6, 
-                               patch_artist=True, boxprops=dict(facecolor='#b6d6e3'),
-                               medianprops=dict(color="#20788e", lw=2))
+                                patch_artist=True, boxprops=dict(facecolor='#b6d6e3'), showfliers=False,
+                                medianprops=dict(color="#20788e", lw=2))
+                    # Add the spatem value as another line (like the median)
+                    ax.boxplot(value.values, positions=[len(plotted_arrays)], widths=0.6, 
+                                patch_artist=True, boxprops=dict(facecolor='#b6d6e3'), showfliers=False, showbox=False, showcaps=False, 
+                                usermedians=[float(metrics_spatem[metric_type][key])],
+                                medianprops=dict(color="crimson", lw=2, ls=":"))
             
             # Set x-axis ticks and labels with dataset names
             ax.set_xticks(range(1, len(plotted_arrays) + 1))
@@ -4201,27 +4234,32 @@ for to_plot0, savepath, savefilename, title, ylabel in [
             ax.tick_params(axis='x', labelsize=15) # change xtick label size
             ax.tick_params(axis='y', labelsize=15) # change xtick label size
             
-            # Make a secondary x axis to display the number of values in each box
-            ax2 = ax.secondary_xaxis('top')
-            ax2.xaxis.set_ticks_position("bottom")
-            ax2.xaxis.set_label_position("top")
+            # # Make a secondary x axis to display the number of values in each box
+            # ax2 = ax.secondary_xaxis('top')
+            # ax2.xaxis.set_ticks_position("bottom")
+            # ax2.xaxis.set_label_position("top")
             
-            ax2.set_xticks(range(1, len(plotted_arrays) + 1))
-            ax2.set_xticklabels(plotted_arrays_lengths)
-            ax2.set_xlabel('Number of years', fontsize= 15)
+            # ax2.set_xticks(range(1, len(plotted_arrays) + 1))
+            # ax2.set_xticklabels(plotted_arrays_lengths)
+            # ax2.set_xlabel('Number of years', fontsize= 15)
             
             # Set labels and title
+            titlen = " ".join([selmonth[0], title, region_name+".", "Ref.: "+dsref[0]+".", timeperiodn])
             #ax.set_xlabel('')
             ax.set_ylabel(ylabel)
             ax.set_title(titlen, fontsize=20)
             
-            # plot a reference line at zero
-            plt.hlines(y=0, xmin=0, xmax=len(plotted_arrays)+1, colors='black', lw=2, zorder=0)
+            # plot a reference line
+            plt.hlines(y=reference_line, xmin=0, xmax=len(plotted_arrays)+1, colors='black', lw=2, zorder=0)
+            
             plt.xlim(0.5, len(plotted_arrays) + 0.5)
             
-            # Show the plot
+            # Show and save the plot
             plt.grid(True)
             plt.tight_layout()
+            
+            savepathn = savepathbase+timeperiodn+"/"+metric_type+"/"
+            savefilenamen = "_".join(["boxplot", metric_type, selmonth[0], timeperiodn])+".png"
             if not os.path.exists(savepathn):
                 os.makedirs(savepathn)
             plt.savefig(savepathn+savefilenamen+".png", bbox_inches="tight")
