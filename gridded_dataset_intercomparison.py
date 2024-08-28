@@ -3660,7 +3660,7 @@ for yy in np.arange(2000,2021):
 reload_metrics = True # reload previously calculated metrics if available?
 calc_if_no_reload = False # calculate metrics if not available from previously calculated files? #!!! NOT IMPLEMENTED YET!!
 minpre = 1 # minimum precipitation in mm/day for a day to be considered a wet day (i.e., minimum measurable precipitation considered). Relevant for categorical metrics
-timesel = slice("2016-01-01", "2016-12-31") # should be given in a slice with YYYY-MM-DD
+timesel = slice("2015-01-01", "2020-12-31") # should be given in a slice with YYYY-MM-DD
 timeperiod = "_".join([timesel.start, timesel.stop])
 metricssavepath = "/automount/agradar/jgiles/gridded_data/daily_metrics/"+timeperiod+"/ref_"+dsref[0]+"/"+region_name+"/" # path to save the results of the metrics
 tempsavepath = "/automount/agradar/jgiles/gridded_data/daily/temp/ref_"+dsref[0]+"/" # path so save regridded datasets
@@ -3920,11 +3920,11 @@ for dsname in data_to_bias.keys():
                 # For the categorical metrics we need the following
                 print("... ... Categorical metrics")
                 data0_wet = (data0 > minpre).astype(bool)
-                dataref_wet = (dataref > minpre).astype(bool).where(dataref.notnull())
+                dataref_wet = (dataref > minpre).astype(bool)
                 
-                hits = data0_wet*dataref_wet.where(mask0.notnull(), drop=True)
-                misses = (~data0_wet)*dataref_wet.where(mask0.notnull(), drop=True)
-                false_alarms = data0_wet*(~dataref_wet).where(mask0.notnull(), drop=True)
+                hits = data0_wet*dataref_wet.where(mask0.notnull(), drop=True).where(dataref.notnull())
+                misses = (~data0_wet)*dataref_wet.where(mask0.notnull(), drop=True).where(dataref.notnull())
+                false_alarms = data0_wet*(~dataref_wet).where(mask0.notnull(), drop=True).where(dataref.notnull())
                 
                 hits_spatial = hits.sum("time").compute()
                 hits_temporal = hits.sum(("lon", "lat")).compute()
