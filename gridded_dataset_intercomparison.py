@@ -4409,8 +4409,8 @@ for tseln in tsel:
             timeperiodn = "_".join([tseln.start, tseln.stop])
             
             if ignore_incomplete:
-                if not (to_plot.time[0].dt.date <= datetime.strptime(tseln.start, "%Y-%m-%d").date() and
-                        to_plot.time[-1].dt.date >= datetime.strptime(tseln.stop, "%Y-%m-%d").date()):
+                if not (to_plot_ref.time[0].dt.date <= datetime.strptime(tseln.start, "%Y-%m-%d").date() and
+                        to_plot_ref.time[-1].dt.date >= datetime.strptime(tseln.stop, "%Y-%m-%d").date()):
                     raise ValueError("The reference dataset selected does not cover the requested period")
             
         # Select the given season and mask
