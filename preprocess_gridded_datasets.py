@@ -286,7 +286,7 @@ if "TSMP-old" in ds_to_load:
     print("Loading TSMP-old...")
     ## precipitation
     if "precipitation" in var_to_load:    
-        data["TSMP-old"] = xr.open_mfdataset('/automount/agradar/jgiles/TSMP/rcsm_TSMP-ERA5-eval_IBG3/o.data_v01/*/*TOT_PREC*',
+        data["TSMP-old"] = xr.open_mfdataset('/automount/ags/jgiles/TSMP/rcsm_TSMP-ERA5-eval_IBG3/o.data_v01/*/*TOT_PREC*',
                                      preprocess=preprocess_tsmp, chunks={"time":1000})
 
         # data["TSMP-old"] = data["TSMP-old"].assign( xr.open_mfdataset('/automount/agradar/jgiles/TSMP/rcsm_TSMP-ERA5-eval_IBG3/o.data_v01/*/*WT*',
@@ -298,7 +298,7 @@ if "TSMP-DETECT-Baseline" in ds_to_load:
     print("Loading TSMP-DETECT-Baseline...")
     ## precipitation
     if "precipitation" in var_to_load:    
-        data["TSMP-DETECT-Baseline"] = xr.open_mfdataset('/automount/agradar/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/postpro/ProductionV1/*/cosmo/TOT_PREC_ts.nc',
+        data["TSMP-DETECT-Baseline"] = xr.open_mfdataset('/automount/ags/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/postpro/ProductionV1/*/cosmo/TOT_PREC_ts.nc',
                                      preprocess=preprocess_tsmp, chunks={"time":1000})
 
         data["TSMP-DETECT-Baseline"]["time"] = data["TSMP-DETECT-Baseline"].get_index("time").shift(-0.5, "h") # shift the values forward to the start of the interval
