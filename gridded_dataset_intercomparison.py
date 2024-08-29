@@ -70,6 +70,18 @@ rp = ccrs.RotatedPole(pole_longitude=198.0,
                       globe=ccrs.Globe(semimajor_axis=6370000,
                                        semiminor_axis=6370000))
 
+# Define a function to reduce the name of the datasets to the minimum
+def reduce_dsname(dsname):
+    reduced_names=["IMERG-V07B", "IMERG-V06B", "CMORPH", "TSMP-old", "TSMP-DETECT", "ERA5",
+                   "RADKLIM", "RADOLAN", "EURADCLIM", "GPCC", "GPROF", "HYRAS", "E-OBS",
+                   "CPC", "GSMaP"]
+    for reddsname in reduced_names:
+        if reddsname in dsname:
+            return reddsname
+    warnmsg = ("No reduced name found for "+dsname+". Returning the same input name")
+    warnings.warn(warnmsg)
+    return dsname
+
 #%% YEARLY analysis
 
 #%%% Load yearly datasets
@@ -3503,16 +3515,16 @@ if "CPC" in data_dailysum.keys():
     data_dailysum["CPC"] = data_dailysum["CPC"].loc[{"time":slice("1979", "2023")}]
 
 colors = {
-    "IMERG-V07B-30min": "#FF6347", # Tomato
-    "IMERG-V06B-30min": "crimson", # crimson
-    "CMORPH-daily": "#A52A2A", # Brown
+    "IMERG-V07B-30min": "#FF6347",    "IMERG-V07B": "#FF6347", # Tomato
+    "IMERG-V06B-30min": "crimson",    "IMERG-V06B": "crimson",  # crimson
+    "CMORPH-daily": "#A52A2A",        "CMORPH": "#A52A2A", # Brown
     "TSMP-old": "#4682B4", # SteelBlue
-    "TSMP-DETECT-Baseline": "#1E90FF", # DodgerBlue
-    "ERA5-hourly": "#8A2BE2", # BlueViolet
+    "TSMP-DETECT-Baseline": "#1E90FF", "TSMP-DETECT": "#1E90FF", # DodgerBlue
+    "ERA5-hourly": "#8A2BE2",         "ERA5": "#8A2BE2", # BlueViolet
     "RADKLIM": "#006400", # DarkGreen
     "RADOLAN": "#228B22", # ForestGreen
     "EURADCLIM": "#32CD32", # LimeGreen
-    "GPCC-monthly": "black", # Black
+    "GPCC-monthly": "black",          "GPCC": "black", # Black
     "GPROF": "#FF1493", # DeepPink
     "HYRAS": "#FFD700", # Gold
     "E-OBS": "#FFA500", # Orange
@@ -3523,6 +3535,8 @@ var_names = ["TOT_PREC", "precipitation", "pr", "surfacePrecipitation", "precip"
              "RW", "RR", "tp", "cmorph", "rr", "hourlyPrecipRateGC", "precipitationCal"]
 dsignore = [] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-30min", "ERA5-hourly"] # datasets to ignore in the plotting
 dsref = ["E-OBS"] # dataset to take as reference (black and bold curve)
+
+colors[dsref[0]] = "black"
 
 #%%%% Define region and regrid
 data_to_avg = data_dailysum.copy() # select which data to process
@@ -3807,7 +3821,7 @@ for dsname in data_to_bias.keys():
                     print("... regridding")
                     reg_start_time = time.time()
 
-                    regridder = xe.Regridder(data_to_bias[dsname], 
+                    regridder = xe.Regridder(data_to_bias[dsname], #!!! To improve: select here a reduced domain, otherwise global datasets take forever
                                              data_to_bias[dsref[0]].loc[{"lon": lonlims, "lat": latlims}], 
                                              "conservative")
 
@@ -4145,7 +4159,6 @@ for to_plot, title, cbarlabel, vmin, vmax, cmap in to_plot_dict:
 #%%%%% Box plots
 dsignore = [] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', "E-OBS", "CPC"] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
 
-# Override the previous with a loop for each case
 savepathbase = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/daily/"+region_name+"/boxplots/"
 
 to_plot0 = metrics_temporal
@@ -4179,7 +4192,7 @@ for metric_type, title, ylabel, reference_line, vmin, vmax, cmap in to_plot_dict
             to_plot = to_plot0[metric_type].copy()
             timeperiodn = timeperiod
             if tseln.start is not None and tseln.stop is not None: # add specific period to title
-                timeperiodn = "_".join([timesel.start, timesel.stop])
+                timeperiodn = "_".join([tseln.start, tseln.stop])
                 
                 if ignore_incomplete:
                     for key in to_plot.copy().keys():
@@ -4262,8 +4275,216 @@ for metric_type, title, ylabel, reference_line, vmin, vmax, cmap in to_plot_dict
             savefilenamen = "_".join(["boxplot", metric_type, selmonth[0], timeperiodn])+".png"
             if not os.path.exists(savepathn):
                 os.makedirs(savepathn)
-            plt.savefig(savepathn+savefilenamen+".png", bbox_inches="tight")
+            plt.savefig(savepathn+savefilenamen, bbox_inches="tight")
             plt.close()
+
+#%%%%% PDF
+dsignore = [] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', "E-OBS", "CPC"] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
+
+# List of datasets to plot, do not add the reference dataset, it will be added automatically at the end
+dstoplot = [
+    'IMERG-V07B-30min_E-OBS-grid', 'IMERG-V06B-30min_E-OBS-grid',
+    # "CMORPH-daily_E-OBS-grid",
+    'TSMP-old-EURregLonLat01deg_E-OBS-grid', 'TSMP-DETECT-Baseline-EURregLonLat01deg_E-OBS-grid',
+    'ERA5-hourly_E-OBS-grid',
+    'RADKLIM_E-OBS-grid', 'RADOLAN_E-OBS-grid', 'EURADCLIM_E-OBS-grid', 
+    # "GPROF_E-OBS-grid",
+    # "GSMaP_E-OBS-grid",
+    'HYRAS_E-OBS-grid',
+    ]
+
+savepathbase = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/daily/"+region_name+"/PDF/"
+
+to_plot0 = data_dailysum.copy()
+
+tsel = [timesel]
+ignore_incomplete = True # flag for ignoring datasets that do not cover the complete period. Only works for specific periods (not for slice(None, None))
+
+selmonthlist = [("DJF" , [12, 1, 2]),
+           ("JJA", [6, 7, 8]),
+           ("", [1,2,3,4,5,6,7,8,9,10,11,12])] # ("nameofmonth", [month])
+
+bins = np.arange(1, 200)
+
+print("Plotting PDFs ...")
+for tseln in tsel:
+    print("... "+"_".join([tseln.start, tseln.stop]))
+    for selmonth in selmonthlist:
+        print("... ... "+selmonth[0])
+        for dsname in dstoplot+[dsref[0]]:
+            print(dsname)
+            if dsname not in dsignore:
+                to_plot = to_plot0[dsname].copy()
+                if type(to_plot) is xr.DataArray: to_plot = to_plot.to_dataset()
+                timeperiodn = timeperiod
+                if tseln.start is not None and tseln.stop is not None: # add specific period to title
+                    timeperiodn = "_".join([tseln.start, tseln.stop])
+                    
+                    if ignore_incomplete:
+                        if not (to_plot.time[0].dt.date <= datetime.strptime(tseln.start, "%Y-%m-%d").date() and
+                                to_plot.time[-1].dt.date >= datetime.strptime(tseln.stop, "%Y-%m-%d").date()):
+                            print("Ignoring "+dsname+" because it does not cover the requested period")
+                            continue
+                    
+                # Select the given season and mask
+                to_plot = to_plot.sel(time=tseln)
+                to_plot = to_plot.sel(time=to_plot['time'].dt.month.isin(selmonth[1])).where(mask0.notnull(), drop=True)
+                                
+                for vv in var_names:
+                    if vv in to_plot.data_vars:
+                        # Plot
+                        to_plot[vv].where(to_plot[vv]>minpre).plot.hist(bins=bins, density=True, histtype="step", 
+                                              label=reduce_dsname(dsname), color=colors[reduce_dsname(dsname)])
+                        plt.xscale('log')  # Set the x-axis to logarithmic scale
+                        plt.xlim(minpre, 150)
+                        break
+        
+        # Beautify plot
+        plt.legend()
+        plt.title('PDF Histograms (X-Log Scale) '+region_name+" "+selmonth[0]+" "+timeperiodn)
+        plt.xlabel('Precipitation (mm/day)')
+        plt.ylabel('Probability Density')
+
+        # Save the plot
+        plt.tight_layout()
+                
+        savepathn = savepathbase+timeperiodn+"/xlog/"
+        savefilenamen = "_".join(["pdfs_xlog", selmonth[0], timeperiodn])+".png"
+        if not os.path.exists(savepathn):
+            os.makedirs(savepathn)
+        plt.savefig(savepathn+savefilenamen, bbox_inches="tight")
+        
+        # Modify the y scale to log and save again        
+        plt.yscale('log')  # Set the x-axis to logarithmic scale
+        plt.title('PDF Histograms (XY-Log Scale) '+region_name+" "+selmonth[0]+" "+timeperiodn)
+
+        savepathn = savepathbase+timeperiodn+"/xylog/"
+        savefilenamen = "_".join(["pdfs_xylog", selmonth[0], timeperiodn])+".png"
+        if not os.path.exists(savepathn):
+            os.makedirs(savepathn)
+        plt.savefig(savepathn+savefilenamen, bbox_inches="tight")
+
+        plt.close()
+
+#%%%%% 2d histograms (scatterplots)
+dsignore = [] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', "E-OBS", "CPC"] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
+
+# List of datasets to plot, do not add the reference dataset, it will be taken automatically from dsref
+dstoplot = [
+    'IMERG-V07B-30min_E-OBS-grid', 'IMERG-V06B-30min_E-OBS-grid',
+    # "CMORPH-daily_E-OBS-grid",
+    'TSMP-old-EURregLonLat01deg_E-OBS-grid', 'TSMP-DETECT-Baseline-EURregLonLat01deg_E-OBS-grid',
+    'ERA5-hourly_E-OBS-grid',
+    'RADKLIM_E-OBS-grid', 'RADOLAN_E-OBS-grid', 'EURADCLIM_E-OBS-grid', 
+    # "GPROF_E-OBS-grid",
+    # "GSMaP_E-OBS-grid",
+    'HYRAS_E-OBS-grid',
+    ]
+
+savepathbase = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/daily/"+region_name+"/2dhist/"
+
+to_plot0 = data_dailysum.copy()
+
+tsel = [timesel]
+ignore_incomplete = True # flag for ignoring datasets that do not cover the complete period. Only works for specific periods (not for slice(None, None))
+
+selmonthlist = [("DJF" , [12, 1, 2]),
+           ("JJA", [6, 7, 8]),
+           ("", [1,2,3,4,5,6,7,8,9,10,11,12])] # ("nameofmonth", [month])
+
+bins = np.arange(1, 125)
+
+print("Plotting 2D histograms ...")
+for tseln in tsel:
+    print("... "+"_".join([tseln.start, tseln.stop]))
+    for selmonth in selmonthlist:
+        print("... ... "+selmonth[0])
+        
+        dsnameref = dsref[0]
+        print(dsnameref)
+        to_plot_ref = to_plot0[dsnameref].copy()
+        if type(to_plot_ref) is xr.DataArray: to_plot_ref = to_plot_ref.to_dataset()
+        timeperiodn = timeperiod
+        if tseln.start is not None and tseln.stop is not None: # add specific period to title
+            timeperiodn = "_".join([tseln.start, tseln.stop])
+            
+            if ignore_incomplete:
+                if not (to_plot.time[0].dt.date <= datetime.strptime(tseln.start, "%Y-%m-%d").date() and
+                        to_plot.time[-1].dt.date >= datetime.strptime(tseln.stop, "%Y-%m-%d").date()):
+                    raise ValueError("The reference dataset selected does not cover the requested period")
+            
+        # Select the given season and mask
+        to_plot_ref = to_plot_ref.sel(time=tseln)
+        to_plot_ref = to_plot_ref.sel(time=to_plot_ref['time'].dt.month.isin(selmonth[1])).where(mask0.notnull(), drop=True)
+        if type(to_plot_ref) is xr.Dataset:
+            for vv in var_names:
+                if vv in to_plot_ref.data_vars:
+                    to_plot_ref = to_plot_ref[vv].where(to_plot_ref[vv]>minpre)
+                    break
+
+        for dsname in dstoplot:
+            print(dsname)
+            if dsname not in dsignore:
+                to_plot = to_plot0[dsname].copy()
+                if type(to_plot) is xr.DataArray: to_plot = to_plot.to_dataset()
+                timeperiodn = timeperiod
+                if tseln.start is not None and tseln.stop is not None: # add specific period to title
+                    timeperiodn = "_".join([tseln.start, tseln.stop])
+                    
+                    if ignore_incomplete:
+                        if not (to_plot.time[0].dt.date <= datetime.strptime(tseln.start, "%Y-%m-%d").date() and
+                                to_plot.time[-1].dt.date >= datetime.strptime(tseln.stop, "%Y-%m-%d").date()):
+                            print("Ignoring "+dsname+" because it does not cover the requested period")
+                            continue
+                    
+                # Select the given season and mask
+                to_plot = to_plot.sel(time=tseln)
+                to_plot = to_plot.sel(time=to_plot['time'].dt.month.isin(selmonth[1])).where(mask0.notnull(), drop=True)
+                                
+                for vv in var_names:
+                    if vv in to_plot.data_vars:
+                        # Plot
+                        plt.figure(figsize=(7,5))
+                        ax = plt.gca()
+                        to_plot_ref_sel = to_plot_ref.sel(time=to_plot.time)
+                        utils.hist_2d(to_plot_ref_sel.values.flatten(), # we need to sel the reference to the to_plot time in case of leap years not present
+                                      to_plot[vv].where(to_plot[vv]>minpre).values.flatten(), 
+                                      bins1=bins, bins2=bins, mini=None, maxi=None, cmap='viridis', 
+                                      colsteps=30, alpha=1, mode='absolute', fsize=10, colbar=True)
+                        plt.plot([bins[0], bins[-1]], [bins[0], bins[-1]], color="black")
+                        ax.set_aspect('equal', adjustable='box')
+                                                
+                        plt.grid()
+                        
+                        # Plot % of hits and R2
+                        nhits = np.sum(~np.isnan(to_plot_ref_sel.values.flatten()) & ~np.isnan(to_plot[vv].where(to_plot[vv]>minpre).values.flatten()))
+                        nhits_norm = nhits/ np.sum(~np.isnan(to_plot_ref_sel.values.flatten()))
+                        r2 = float(xr.corr(to_plot_ref_sel, to_plot[vv].where(to_plot[vv]>minpre)))
+                        
+                        plt.text(bins[-1]*0.95, bins[-1]*0.2, 
+                                 "hits: "+str(round(nhits_norm*100))+"%\n $R^2$: "+str(round(r2,2)),
+                                 ha="right", size="large")
+                        
+                        # plt.xscale('log')  # Set the x-axis to logarithmic scale
+                        # plt.yscale('log')  # Set the x-axis to logarithmic scale
+                        
+                        # Beautify plot
+                        plt.title('2D Histogram of precip days with more than '+str(minpre)+"mm\n"+region_name+" "+selmonth[0]+" "+timeperiodn)
+                        plt.xlabel(reduce_dsname(dsnameref)+' [mm/day]')
+                        plt.ylabel(reduce_dsname(dsname)+' [mm/day]')
+                
+                        # Save the plot
+                        plt.tight_layout()
+                                
+                        savepathn = savepathbase+timeperiodn+"/"
+                        savefilenamen = "_".join(["2dhist",dsname, selmonth[0], timeperiodn])+".png"
+                        if not os.path.exists(savepathn):
+                            os.makedirs(savepathn)
+                        plt.savefig(savepathn+savefilenamen, bbox_inches="tight")
+                        
+                        plt.close()
+
+                        break
 
 #%%%%% Taylor diagram
 # The Taylor diagram can be done by computing the stats over all gridpoints and all timesteps (spatiotemporal)
@@ -4276,26 +4497,32 @@ import skill_metrics as sm
 # nan values (because of the masks) so the result is erroneous. They also do not handle weighted arrays.
 
 mode = "" # if "spatial" then average in time and compute the diagram in space. Viceversa for "temporal"
-dsref = ["GPCC-monthly"]
-data_to_stat = data_monthlysum
+data_to_stat = data_dailysum
+savepathbase = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/daily/"+region_name+"/taylor_diagrams/"
 
-# choose common period (only datasets that cover the whole period are included)
-tslice = slice("2015","2020") # this covers all
-# tslice = slice("2013","2020") # this excludes GPROF
-# tslice = slice("2006","2020") # this excludes GPROF and EURADCLIM
-tslice = slice("2001","2020") # this excludes GPROF, EURADCLIM and RADOLAN
+# List of datasets to plot, do not add the reference dataset, it will be taken automatically from dsref
+dstoplot = [
+    'IMERG-V07B-30min_E-OBS-grid', 'IMERG-V06B-30min_E-OBS-grid',
+    # "CMORPH-daily_E-OBS-grid",
+    'TSMP-old-EURregLonLat01deg_E-OBS-grid', 'TSMP-DETECT-Baseline-EURregLonLat01deg_E-OBS-grid',
+    'ERA5-hourly_E-OBS-grid',
+    'RADKLIM_E-OBS-grid', 'RADOLAN_E-OBS-grid', 'EURADCLIM_E-OBS-grid', 
+    # "GPROF_E-OBS-grid",
+    # "GSMaP_E-OBS-grid",
+    'HYRAS_E-OBS-grid',
+    ]
 
-selmonthlist = [("Jan", [1]),
-           ("Jul", [7]),
-           ("full", [1,2,3,4,5,6,7,8,9,10,11,12])] # ("nameofmonth", [month])
+selmonthlist = [("DJF" , [12, 1, 2]),
+           ("JJA", [6, 7, 8]),
+           ("", [1,2,3,4,5,6,7,8,9,10,11,12])] # ("nameofmonth", [month])
 
 # Override options above and sweep over them in a loop
 for mode in ["", "spatial", "temporal"]:
     for tslice in [
         slice("2015","2020"), # this covers all
-        slice("2013","2020"), # this excludes GPROF
-        slice("2006","2020"), # this excludes GPROF and EURADCLIM
-        slice("2001","2020"), # this excludes GPROF, EURADCLIM and RADOLAN
+        # slice("2013","2020"), # this excludes GPROF
+        # slice("2006","2020"), # this excludes GPROF and EURADCLIM
+        # slice("2001","2020"), # this excludes GPROF, EURADCLIM and RADOLAN
             ]:
 
         print("Plotting Taylor diagrams (mode: "+mode+", "+tslice.start+"-"+tslice.stop+")...")
@@ -4331,7 +4558,7 @@ for mode in ["", "spatial", "temporal"]:
             # Normalize weights in the mask
             weights = weights.where(mask_ref.notnull(), other=0.)/weights.where(mask_ref.notnull(), other=0.).sum()
             
-            for dsname in data_to_stat.keys(): # compute the stats
+            for dsname in dstoplot: # compute the stats
                 if dsref[0]+"-grid" in dsname or dsname==dsref[0]:
                     # get dataset
                     if type(data_to_stat[dsname]) is xr.DataArray:
@@ -4399,7 +4626,7 @@ for mode in ["", "spatial", "temporal"]:
                         sdev[dsname] = ds_n_tsel.weighted(weights).std()
             
             # Plot the diagram
-            savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/monthly/"+region_name+"/"+selmonth[0]+"/taylor_diagrams/"
+            savepath = savepathbase+"/"
             savefilename = "taylor_"+selmonth[0]+"_precip_totals_"+region_name+"_"+tslice.start+"-"+tslice.stop+".png"
             if mode != "":
                 savefilename = mode+"_"+savefilename
@@ -4587,6 +4814,333 @@ for mode in ["", "spatial", "temporal"]:
             # To check that the equation that defines the diagram is closed (negligible residue)
             sm.check_taylor_stats(lsdev, lcrmsd, lccoef, threshold=1000000000000000000000)
             # 24.05.24: the check does not close but the weighted calculations seem to be fine
+
+#%% Hourly analysis
+
+#%%% Load hourly datasets
+
+loadpath_hourly = "/automount/agradar/jgiles/gridded_data/daily/"
+loadpath_agradar = "/automount/agradar/jgiles/"
+loadpath_ags = "/automount/ags/jgiles/"
+paths_daily = {
+    "IMERG-V07B-30min": loadpath_daily+"IMERG-V07B-30min/IMERG-V07B-30min_precipitation_dailysum_*.nc",
+    "IMERG-V06B-30min": loadpath_daily+"IMERG-V06B-30min/IMERG-V06B-30min_precipitation_dailysum_*.nc",
+    # "CMORPH-daily": loadpath_daily+"this one does not matter",
+    "TSMP-old": loadpath_daily+"TSMP-old/TSMP-old_precipitation_dailysum_2000-2021.nc",
+    "TSMP-DETECT-Baseline": loadpath_daily+"TSMP-DETECT-Baseline/TSMP-DETECT-Baseline_precipitation_dailysum_2000-2022.nc",
+    "ERA5-hourly": loadpath_daily+"ERA5-hourly/ERA5-hourly_precipitation_dailysum_1999-2021.nc",
+    "RADKLIM": loadpath_daily+"RADKLIM/temp_serial/RADKLIM-EURregLonLat001deg_precipitation_dailysum_2001-2022_new_part*.nc",
+    "RADOLAN": loadpath_daily+"RADOLAN/RADOLAN-EURregLonLat001deg_precipitation_dailysum_2006-2022.nc",
+    "EURADCLIM": loadpath_daily+"EURADCLIM/temp_serial/EURADCLIM-EURregLonLat002deg_precipitation_dailysum_2013-2020_part*.nc",
+    # "GPCC-daily": ,
+    # "GPROF": loadpath_daily+"this one does not matter",
+    "HYRAS": loadpath_daily+"HYRAS/temp_serial/HYRAS-EURregLonLat001deg_precipitation_dailysum_1930-2020_part*.nc", 
+    "E-OBS": loadpath_daily+"this one does not matter", 
+    # "GSMaP": loadpath_daily+"GSMaP/GSMaP_precipitation_dailysum_*.nc", 
+    }
+
+data_dailysum = {}
+
+# load the datasets
+print("Loading daily datasets ...")
+for dsname in paths_daily.keys():
+    print("... "+dsname)
+    if dsname == "CMORPH-daily":
+        data_dailysum["CMORPH-daily"] = xr.open_mfdataset('/automount/agradar/jgiles/cmorph-high-resolution-global-precipitation-estimates/access/daily/0.25deg/*/*/CMORPH_V1.0_ADJ_0.25deg-DLY_00Z_*.nc') 
+        data_dailysum["CMORPH-daily"] = data_dailysum["CMORPH-daily"].assign_coords(lon=(((data_dailysum["CMORPH-daily"].lon + 180) % 360) - 180)).sortby('lon').assign_attrs(units="mm")
+        data_dailysum["CMORPH-daily"]["cmorph"] = data_dailysum["CMORPH-daily"]["cmorph"].assign_attrs(units="mm")
+    elif dsname == "GPROF":
+        gprof_files = sorted(glob.glob("/automount/ags/jgiles/GPM_L3/GPM_3GPROFGPMGMI_DAY.07/20*/*/*HDF5"))
+        
+        # We need to extract the time dimension from the metadata on each file
+        # we create a function for that
+        def extract_time(ds):
+            # Split the string into key-value pairs
+            pairs = [pair.split('=') for pair in ds.FileHeader.strip().split(';\n') if pair]
+            
+            # Create a dictionary from the key-value pairs
+            result_dict = dict((key, value) for key, value in pairs)
+            
+            # Extract time and set as dim
+            date_time = pd.to_datetime(result_dict["StartGranuleDateTime"])
+            
+            # Add it to ds as dimension
+            ds = ds.assign_coords(time=date_time).expand_dims("time")
+            
+            # Extract if file is empty into a new coordinate
+            if result_dict["EmptyGranule"] == "EMPTY":
+                ds = ds.assign_coords(empty=np.array(1))
+            else:
+                ds = ds.assign_coords(empty=np.array(0))
+            return ds
+        
+        gprof_attrs= xr.open_mfdataset(gprof_files, engine="h5netcdf", phony_dims='sort', preprocess=extract_time)
+        
+        # create a new list of filenames without the empty files
+        gprof_files_noempty = [f for n,f in enumerate(gprof_files) if gprof_attrs.empty[n]!=1]
+        
+        # We create another function for adding the time dim to the dataset
+        def add_tdim(ds):
+            return ds.expand_dims("time")
+        
+        # Open the dataset
+        data_dailysum["GPROF"] = xr.open_mfdataset(gprof_files_noempty, engine="h5netcdf", group="Grid", 
+                                          concat_dim="time", combine="nested", preprocess=add_tdim)
+        
+        # Set the time coordinate (without empty timesteps)
+        data_dailysum["GPROF"] = data_dailysum["GPROF"].assign_coords(
+                                {"time": gprof_attrs.time.where(gprof_attrs.empty!=1, drop=True).drop_vars("empty")}
+                                )
+        
+        # Fill the empty timesteps with NaN
+        data_dailysum["GPROF"] = data_dailysum["GPROF"].broadcast_like(gprof_attrs.empty, exclude=[dim for dim in data_dailysum["GPROF"].dims if dim !="time"])
+        
+        # Remove the variables that we don't need
+        data_dailysum["GPROF"] = data_dailysum["GPROF"][["surfacePrecipitation", "convectivePrecipitation", "frozenPrecipitation", "npixPrecipitation", "npixTotal"]]
+        
+        # We need to transform the data from mm/h to mm/day
+        for vv in ["surfacePrecipitation", "convectivePrecipitation", "frozenPrecipitation"]:
+            data_dailysum["GPROF"][vv] = data_dailysum["GPROF"][vv]*24
+            data_dailysum["GPROF"][vv] = data_dailysum["GPROF"][vv].assign_attrs(units="mm", Units="mm")
+    elif dsname == "E-OBS":
+        data_dailysum["E-OBS"] = xr.open_dataset("/automount/ags/jgiles/E-OBS/RR/rr_ens_mean_0.25deg_reg_v29.0e.nc")
+    elif dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "GSMaP"]:
+        data_dailysum[dsname] = xr.open_mfdataset(paths_daily[dsname])
+    else:
+        if "*" in paths_daily[dsname]:
+            data_dailysum[dsname] = xr.open_mfdataset(paths_daily[dsname])
+        else:
+            data_dailysum[dsname] = xr.open_dataset(paths_daily[dsname])
+        
+
+# Special tweaks
+print("Applying tweaks ...")
+# RADOLAN GRID AND CRS
+if "RADOLAN" in data_dailysum.keys() and "LonLat" not in paths_daily["RADOLAN"]:
+    lonlat_radolan = wrl.georef.rect.get_radolan_grid(900,900, wgs84=True) # these are the left lower edges of each bin
+    data_dailysum["RADOLAN"] = data_dailysum["RADOLAN"].assign_coords({"lon":(("y", "x"), lonlat_radolan[:,:,0]), "lat":(("y", "x"), lonlat_radolan[:,:,1])})
+    data_dailysum["RADOLAN"] = data_dailysum["RADOLAN"].assign(crs=data_dailysum['RADKLIM'].crs[0])
+    data_dailysum["RADOLAN"].attrs["grid_mapping"] = "crs"
+    data_dailysum["RADOLAN"].lon.attrs = data_dailysum["RADKLIM"].lon.attrs
+    data_dailysum["RADOLAN"].lat.attrs = data_dailysum["RADKLIM"].lat.attrs
+
+# EURADCLIM coords
+if "EURADCLIM" in data_dailysum.keys():
+    data_dailysum["EURADCLIM"] = data_dailysum["EURADCLIM"].set_coords(("lon", "lat"))
+
+# Shift HYRAS and EURADCLIM timeaxis
+if "EURADCLIM" in data_dailysum.keys():
+    data_dailysum["EURADCLIM"]["time"] = data_dailysum["EURADCLIM"]["time"].resample(time="D").first()["time"] # We place the daily value at day start
+if "HYRAS" in data_dailysum.keys(): # HYRAS is shifted 6 h (the sum is from 6 to 6 UTC)
+    data_dailysum["HYRAS"]["time"] = data_dailysum["HYRAS"]["time"].resample(time="D").first()["time"] # We place the daily value at day start
+
+# Convert all non datetime axes (cf Julian calendars) into datetime 
+for dsname in data_dailysum.keys():
+    try:
+        data_dailysum[dsname]["time"] = data_dailysum[dsname].indexes['time'].to_datetimeindex()
+        print(dsname+" time dimension transformed to datetime format")
+    except:
+        pass
+    
+# Rechunk to one chunk per timestep (unless it is already regridded to EURregLonLat)
+for dsname in ["RADOLAN", "RADKLIM", "EURADCLIM", "HYRAS"]:
+    if dsname in data_dailysum.keys() and "LonLat" not in paths_daily["RADOLAN"]:
+        print("Rechunking "+dsname)
+        new_chunks = {dim: size for dim, size in data_dailysum[dsname].dims.items()}
+        new_chunks["time"] = 1
+        try:
+            data_dailysum[dsname] = data_dailysum[dsname].chunk(new_chunks)
+        except: # rechunking may fail due to some not unified chunks, then try again
+            data_dailysum[dsname] = data_dailysum[dsname].unify_chunks().chunk(new_chunks)
+
+# Rename coordinates to lat/lon in case they are not
+for dsname in data_dailysum.keys():
+    if "longitude" in data_dailysum[dsname].coords:
+        data_dailysum[dsname] = data_dailysum[dsname].rename({"longitude": "lon"})
+    if "latitude" in data_dailysum[dsname].coords:
+        data_dailysum[dsname] = data_dailysum[dsname].rename({"latitude": "lat"})
+
+# Remove "bounds" attribute from lon and lat coords to avoid regridding fails
+for dsname in data_dailysum.keys():
+    if "lon" in data_dailysum[dsname].coords:
+        if "bounds" in data_dailysum[dsname].lon.attrs:
+            del(data_dailysum[dsname].lon.attrs["bounds"])
+    if "lat" in data_dailysum[dsname].coords:
+        if "bounds" in data_dailysum[dsname].lat.attrs:
+            del(data_dailysum[dsname].lat.attrs["bounds"])
+
+# Special selections for incomplete extreme years
+# IMERG
+if "IMERG-V07B-30min" in data_dailysum.keys():
+    data_dailysum["IMERG-V07B-30min"] = data_dailysum["IMERG-V07B-30min"].loc[{"time":slice("2001", "2022")}]
+if "IMERG-V06B-30min" in data_dailysum.keys():
+    data_dailysum["IMERG-V06B-30min"] = data_dailysum["IMERG-V06B-30min"].loc[{"time":slice("2001", "2020")}]
+# CMORPH
+if "CMORPH-daily" in data_dailysum.keys():
+    data_dailysum["CMORPH-daily"] = data_dailysum["CMORPH-daily"].loc[{"time":slice("1998", "2022")}]
+# GPROF
+if "GPROF" in data_dailysum.keys():
+    data_dailysum["GPROF"] = data_dailysum["GPROF"].loc[{"time":slice("2015", "2022")}]
+# CPC
+if "CPC" in data_dailysum.keys():
+    data_dailysum["CPC"] = data_dailysum["CPC"].loc[{"time":slice("1979", "2023")}]
+
+colors = {
+    "IMERG-V07B-30min": "#FF6347",    "IMERG-V07B": "#FF6347", # Tomato
+    "IMERG-V06B-30min": "crimson",    "IMERG-V06B": "crimson",  # crimson
+    "CMORPH-daily": "#A52A2A",        "CMORPH": "#A52A2A", # Brown
+    "TSMP-old": "#4682B4", # SteelBlue
+    "TSMP-DETECT-Baseline": "#1E90FF", "TSMP-DETECT": "#1E90FF", # DodgerBlue
+    "ERA5-hourly": "#8A2BE2",         "ERA5": "#8A2BE2", # BlueViolet
+    "RADKLIM": "#006400", # DarkGreen
+    "RADOLAN": "#228B22", # ForestGreen
+    "EURADCLIM": "#32CD32", # LimeGreen
+    "GPCC-monthly": "black",          "GPCC": "black", # Black
+    "GPROF": "#FF1493", # DeepPink
+    "HYRAS": "#FFD700", # Gold
+    "E-OBS": "#FFA500", # Orange
+    "CPC": "#FF8C00", # DarkOrange
+    }
+
+var_names = ["TOT_PREC", "precipitation", "pr", "surfacePrecipitation", "precip", "Precip", 
+             "RW", "RR", "tp", "cmorph", "rr", "hourlyPrecipRateGC", "precipitationCal"]
+dsignore = [] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-30min", "ERA5-hourly"] # datasets to ignore in the plotting
+dsref = ["E-OBS"] # dataset to take as reference (black and bold curve)
+
+colors[dsref[0]] = "black"
+
+#%%%% Define region and regrid
+data_to_avg = data_dailysum.copy() # select which data to process
+
+region =["Portugal", "Spain", "France", "United Kingdom", "Ireland", 
+         "Belgium", "Netherlands", "Luxembourg", "Germany", "Switzerland",
+         "Austria", "Poland", "Denmark", "Slovenia", "Liechtenstein", "Andorra", 
+         "Monaco", "Czechia", "Slovakia", "Hungary", "Slovenia", "Romania"]#"land"
+region = "Germany"
+region_name = "Germany" # name for plots
+mask = utils.get_regionmask(region)
+TSMP_nudge_margin = 13 # number of gridpoints to mask out the relaxation zone at the margins
+
+start_time = time.time()
+
+# TSMP-case: we make a specific mask to cut out the edge of the european domain + country
+dsname = "TSMP-DETECT-Baseline"
+mask_TSMP_nudge = False
+if dsname in data_to_avg.keys():
+    mask_TSMP_nudge = True # This will be used later as a trigger for this extra mask
+    lon_bot = data_to_avg[dsname].lon[TSMP_nudge_margin:-TSMP_nudge_margin,TSMP_nudge_margin:-TSMP_nudge_margin][0].lon.values
+    lat_bot = data_to_avg[dsname].lat[TSMP_nudge_margin:-TSMP_nudge_margin,TSMP_nudge_margin:-TSMP_nudge_margin][0].lat.values
+    lon_top = data_to_avg[dsname].lon[TSMP_nudge_margin:-TSMP_nudge_margin,TSMP_nudge_margin:-TSMP_nudge_margin][-1].lon.values
+    lat_top = data_to_avg[dsname].lat[TSMP_nudge_margin:-TSMP_nudge_margin,TSMP_nudge_margin:-TSMP_nudge_margin][-1].lat.values
+    lon_right = data_to_avg[dsname].lon[TSMP_nudge_margin:-TSMP_nudge_margin,TSMP_nudge_margin:-TSMP_nudge_margin][:,-1].lon.values
+    lat_right = data_to_avg[dsname].lat[TSMP_nudge_margin:-TSMP_nudge_margin,TSMP_nudge_margin:-TSMP_nudge_margin][:,-1].lat.values
+    lon_left = data_to_avg[dsname].lon[TSMP_nudge_margin:-TSMP_nudge_margin,TSMP_nudge_margin:-TSMP_nudge_margin][:,0].lon.values
+    lat_left = data_to_avg[dsname].lat[TSMP_nudge_margin:-TSMP_nudge_margin,TSMP_nudge_margin:-TSMP_nudge_margin][:,0].lat.values
+    
+    lon_tsmp_edge = np.concatenate((lon_bot, lon_right, lon_top[::-1], lon_left[::-1]))
+    lat_tsmp_edge = np.concatenate((lat_bot, lat_right, lat_top[::-1], lat_left[::-1]))
+    
+    lonlat_tsmp_edge = list(zip(lon_tsmp_edge, lat_tsmp_edge))
+    
+    TSMP_no_nudge = rm.Regions([ lonlat_tsmp_edge ], names=["TSMP_no_nudge"], abbrevs=["TSMP_NE"], name="TSMP")
+    # I did not find a way to directly combine this custom region with a predefined country region. I will 
+    # have to just apply the masks consecutively
+
+print("Unrotating datasets")
+to_add = {} # dictionary to add rotated versions
+for dsname in data_to_avg.keys():
+
+    if dsname in ["TSMP-DETECT-Baseline", "TSMP-old"]:
+        regsavepath = paths_daily[dsname].rsplit('/', 1)[0] + '/' + paths_daily[dsname].rsplit('/', 1)[1].replace(dsname, dsname+"-EURregLonLat01deg")
+
+        try:
+            to_add[dsname+"-EURregLonLat01deg"] = xr.open_dataset(regsavepath)
+            print("Previously regridded "+dsname+" was loaded")
+        except FileNotFoundError:
+            print("... "+dsname)
+            # we need to unrotate the TSMP grid 
+            
+            encoding = {}
+            for vv in data_to_avg[dsname].data_vars:
+                valid_encodings = ['contiguous', 'complevel', 'compression', 'zlib', '_FillValue', 'shuffle', 'fletcher32', 'dtype', 'least_significant_digit']
+                encoding[vv] = dict((k, data_to_avg[dsname][vv].encoding[k]) for k in valid_encodings if k in data_to_avg[dsname][vv].encoding) #!!! For now we keep the same enconding, check later if change it
+    
+            grid_out = xe.util.cf_grid_2d(-49.75,70.65,0.1,19.85,74.65,0.1) # manually recreate the EURregLonLat01deg grid
+            regridder = xe.Regridder(data_to_avg[dsname].cf.add_bounds(["lon", "lat"]), grid_out, "conservative")
+            to_add[dsname+"-EURregLonLat01deg"] = regridder(data_to_avg[dsname])
+            to_add[dsname+"-EURregLonLat01deg"].to_netcdf(regsavepath, encoding=encoding)
+            to_add[dsname+"-EURregLonLat01deg"] = xr.open_dataset(regsavepath) # reload the dataset
+
+        # Remove "bounds" attribute from lon and lat coords to avoid regridding fails
+        if "lon" in to_add[dsname+"-EURregLonLat01deg"].coords:
+            if "bounds" in to_add[dsname+"-EURregLonLat01deg"].lon.attrs:
+                del(to_add[dsname+"-EURregLonLat01deg"].lon.attrs["bounds"])
+        if "lat" in to_add[dsname+"-EURregLonLat01deg"].coords:
+            if "bounds" in to_add[dsname+"-EURregLonLat01deg"].lat.attrs:
+                del(to_add[dsname+"-EURregLonLat01deg"].lat.attrs["bounds"])
+
+# add the unrotated datasets to the original dictionary
+data_to_avg = {**data_to_avg, **to_add}
+data_dailysum = data_to_avg.copy()
+
+total_time = time.time() - start_time
+print(f"Elapsed time: {total_time/60:.2f} minutes.")
+
+#%%%% Simple map plot
+dsname = "E-OBS"
+vname = "rr"
+tsel = "2015-02-01"
+mask = utils.get_regionmask(region)
+mask0 = mask.mask(data_dailysum[dsname])
+dropna = True
+if mask_TSMP_nudge: 
+    mask0 = TSMP_no_nudge.mask(data_dailysum[dsname]).where(mask0.notnull())
+    # dropna=False
+f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
+plot = data_dailysum[dsname][vname].sel(time=tsel).where(mask0.notnull(), drop=dropna).plot(x="longitude", y="latitude", 
+                                                                                            cmap="Blues", vmin=0, vmax=10, 
+                                         subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
+                                         cbar_kwargs={'label': "mm", 'shrink':0.88})
+# if mask_TSMP_nudge: ax1.set_extent([-43.4, 63.65, 22.6, 71.15], crs=ccrs.PlateCarree())
+plot.axes.coastlines(alpha=0.7)
+plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
+plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
+plt.title(dsname)
+
+#%%%% Simple map plot (for number of stations per gridcell) # CHECK THIS FOR DAILY SUM BEFORE RUNNING!!
+dsname = "GPCC-monthly"
+vname = "numgauge"
+savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/maps/Turkey/"
+
+for yy in np.arange(2000,2021):
+    ysel = str(yy)
+    mask = utils.get_regionmask(region)
+    mask0 = mask.mask(data_dailysum[dsname])
+    dropna = True
+    if mask_TSMP_nudge: 
+        mask0 = TSMP_no_nudge.mask(data_dailysum[dsname]).where(mask0.notnull())
+        dropna=False
+    f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
+    cmap1 = copy.copy(plt.cm.Blues)
+    cmap1.set_under("lightgray")
+    plot = (data_dailysum[dsname][vname].sel(time=ysel)/12).where(mask0.notnull(), drop=dropna).plot(x="lon", y="lat", 
+                                            levels=3, cmap=cmap1, vmin=1, vmax=3, 
+                                             subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
+                                             cbar_kwargs={'label': "", 'shrink':0.88})
+    if mask_TSMP_nudge: plot.axes.set_extent([-43.4, 63.65, 22.6, 71.15], crs=ccrs.PlateCarree())
+    plot.axes.coastlines(alpha=0.7)
+    plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
+    plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
+    plt.title(dsname+" number of stations per gridcell "+ysel)
+    # save figure
+    savepath_yy = savepath+ysel+"/"
+    if not os.path.exists(savepath_yy):
+        os.makedirs(savepath_yy)
+    filename = "numgauge_"+region_name+"_"+dsname+"_"+ysel+".png"
+    plt.savefig(savepath_yy+filename, bbox_inches="tight")
+    # plt.show()
+
+
 
 #%% REGRIDDING TESTS
 #%%% Simple map plot TSMP original
