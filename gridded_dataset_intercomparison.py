@@ -72,11 +72,15 @@ rp = ccrs.RotatedPole(pole_longitude=198.0,
 
 # Define a function to reduce the name of the datasets to the minimum
 def reduce_dsname(dsname):
+    if "_" in dsname: 
+        dsname0 = dsname.split("_")[0]
+    else:
+        dsname0 = dsname
     reduced_names=["IMERG-V07B", "IMERG-V06B", "CMORPH", "TSMP-old", "TSMP-DETECT", "ERA5",
                    "RADKLIM", "RADOLAN", "EURADCLIM", "GPCC", "GPROF", "HYRAS", "E-OBS",
                    "CPC", "GSMaP"]
     for reddsname in reduced_names:
-        if reddsname in dsname:
+        if reddsname in dsname0:
             return reddsname
     warnmsg = ("No reduced name found for "+dsname+". Returning the same input name")
     warnings.warn(warnmsg)
@@ -3354,7 +3358,7 @@ loadpath_ags = "/automount/ags/jgiles/"
 paths_daily = {
     "IMERG-V07B-30min": loadpath_daily+"IMERG-V07B-30min/IMERG-V07B-30min_precipitation_dailysum_*.nc",
     "IMERG-V06B-30min": loadpath_daily+"IMERG-V06B-30min/IMERG-V06B-30min_precipitation_dailysum_*.nc",
-    # "CMORPH-daily": loadpath_daily+"this one does not matter",
+    "CMORPH-daily": loadpath_daily+"this one does not matter",
     "TSMP-old": loadpath_daily+"TSMP-old/TSMP-old_precipitation_dailysum_2000-2021.nc",
     "TSMP-DETECT-Baseline": loadpath_daily+"TSMP-DETECT-Baseline/TSMP-DETECT-Baseline_precipitation_dailysum_2000-2022.nc",
     "ERA5-hourly": loadpath_daily+"ERA5-hourly/ERA5-hourly_precipitation_dailysum_1999-2021.nc",
@@ -3362,10 +3366,10 @@ paths_daily = {
     "RADOLAN": loadpath_daily+"RADOLAN/RADOLAN-EURregLonLat001deg_precipitation_dailysum_2006-2022.nc",
     "EURADCLIM": loadpath_daily+"EURADCLIM/temp_serial/EURADCLIM-EURregLonLat002deg_precipitation_dailysum_2013-2020_part*.nc",
     # "GPCC-daily": ,
-    # "GPROF": loadpath_daily+"this one does not matter",
+    "GPROF": loadpath_daily+"this one does not matter",
     "HYRAS": loadpath_daily+"HYRAS/temp_serial/HYRAS-EURregLonLat001deg_precipitation_dailysum_1930-2020_part*.nc", 
     "E-OBS": loadpath_daily+"this one does not matter", 
-    # "GSMaP": loadpath_daily+"GSMaP/GSMaP_precipitation_dailysum_*.nc", 
+    "GSMaP": loadpath_daily+"GSMaP/GSMaP_precipitation_dailysum_*.nc", 
     }
 
 data_dailysum = {}
@@ -3525,7 +3529,8 @@ colors = {
     "RADOLAN": "#228B22", # ForestGreen
     "EURADCLIM": "#32CD32", # LimeGreen
     "GPCC-monthly": "black",          "GPCC": "black", # Black
-    "GPROF": "#FF1493", # DeepPink
+    "GPROF": "#FF1493", # DeepPink #FF7BA6
+    "GSMaP": "#FF7BA6", # PalePink
     "HYRAS": "#FFD700", # Gold
     "E-OBS": "#FFA500", # Orange
     "CPC": "#FF8C00", # DarkOrange
@@ -3856,23 +3861,23 @@ for dsname in data_to_bias.keys():
                 for metric_type in metric_types:
                     try:
                         metric_path = "/".join([metricssavepath, metric_type, dsname_metric, "_".join([metric_type,dsname_metric])+".nc"])
-                        metrics[metric_type][dsname_metric] = xr.open_dataset(metric_path)
+                        metrics[metric_type][dsname_metric] = xr.open_dataset(metric_path)[metric_type]
                     except:
                         print("... ... metric "+metric_type+" could not be loaded!!")
                 for metric_type in metric_types2:
                     try: # try spatem
                         metric_path = "/".join([metricssavepath, "spatem_"+metric_type, dsname_metric, "_".join(["spatem_"+metric_type, dsname_metric])+".nc"])
-                        metrics_spatem[metric_type][dsname_metric] = xr.open_dataset(metric_path)
+                        metrics_spatem[metric_type][dsname_metric] = xr.open_dataset(metric_path)["spatem_"+metric_type]
                     except:
                         print("... ... metric spatem "+metric_type+" could not be loaded!!")
                     try: # try spatial
                         metric_path = "/".join([metricssavepath, "spatial_"+metric_type, dsname_metric, "_".join(["spatial_"+metric_type, dsname_metric])+".nc"])
-                        metrics_spatem[metric_type][dsname_metric] = xr.open_dataset(metric_path)
+                        metrics_spatial[metric_type][dsname_metric] = xr.open_dataset(metric_path)["spatial_"+metric_type]
                     except:
                         print("... ... metric spatial "+metric_type+" could not be loaded!!")
                     try: # try temporal
                         metric_path = "/".join([metricssavepath, "temporal_"+metric_type, dsname_metric, "_".join(["temporal_"+metric_type, dsname_metric])+".nc"])
-                        metrics_spatem[metric_type][dsname_metric] = xr.open_dataset(metric_path)
+                        metrics_temporal[metric_type][dsname_metric] = xr.open_dataset(metric_path)["temporal_"+metric_type]
                     except:
                         print("... ... metric temporal "+metric_type+" could not be loaded!!")
             else:
@@ -4284,12 +4289,10 @@ dsignore = [] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', "E-OBS", "C
 # List of datasets to plot, do not add the reference dataset, it will be added automatically at the end
 dstoplot = [
     'IMERG-V07B-30min_E-OBS-grid', 'IMERG-V06B-30min_E-OBS-grid',
-    # "CMORPH-daily_E-OBS-grid",
+    "CMORPH-daily_E-OBS-grid", "GPROF_E-OBS-grid", "GSMaP_E-OBS-grid",
     'TSMP-old-EURregLonLat01deg_E-OBS-grid', 'TSMP-DETECT-Baseline-EURregLonLat01deg_E-OBS-grid',
     'ERA5-hourly_E-OBS-grid',
     'RADKLIM_E-OBS-grid', 'RADOLAN_E-OBS-grid', 'EURADCLIM_E-OBS-grid', 
-    # "GPROF_E-OBS-grid",
-    # "GSMaP_E-OBS-grid",
     'HYRAS_E-OBS-grid',
     ]
 
@@ -4369,15 +4372,13 @@ for tseln in tsel:
 #%%%%% 2d histograms (scatterplots)
 dsignore = [] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', "E-OBS", "CPC"] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
 
-# List of datasets to plot, do not add the reference dataset, it will be taken automatically from dsref
+# List of datasets to plot, do not add the reference dataset, it will be added automatically from dsref
 dstoplot = [
     'IMERG-V07B-30min_E-OBS-grid', 'IMERG-V06B-30min_E-OBS-grid',
-    # "CMORPH-daily_E-OBS-grid",
+    "CMORPH-daily_E-OBS-grid", "GPROF_E-OBS-grid", "GSMaP_E-OBS-grid",
     'TSMP-old-EURregLonLat01deg_E-OBS-grid', 'TSMP-DETECT-Baseline-EURregLonLat01deg_E-OBS-grid',
     'ERA5-hourly_E-OBS-grid',
     'RADKLIM_E-OBS-grid', 'RADOLAN_E-OBS-grid', 'EURADCLIM_E-OBS-grid', 
-    # "GPROF_E-OBS-grid",
-    # "GSMaP_E-OBS-grid",
     'HYRAS_E-OBS-grid',
     ]
 
@@ -4819,36 +4820,36 @@ for mode in ["", "spatial", "temporal"]:
 
 #%%% Load hourly datasets
 
-loadpath_hourly = "/automount/agradar/jgiles/gridded_data/daily/"
+loadpath_hourly = "/automount/agradar/jgiles/gridded_data/hourly/"
 loadpath_agradar = "/automount/agradar/jgiles/"
 loadpath_ags = "/automount/ags/jgiles/"
-paths_daily = {
-    "IMERG-V07B-30min": loadpath_daily+"IMERG-V07B-30min/IMERG-V07B-30min_precipitation_dailysum_*.nc",
-    "IMERG-V06B-30min": loadpath_daily+"IMERG-V06B-30min/IMERG-V06B-30min_precipitation_dailysum_*.nc",
-    # "CMORPH-daily": loadpath_daily+"this one does not matter",
-    "TSMP-old": loadpath_daily+"TSMP-old/TSMP-old_precipitation_dailysum_2000-2021.nc",
-    "TSMP-DETECT-Baseline": loadpath_daily+"TSMP-DETECT-Baseline/TSMP-DETECT-Baseline_precipitation_dailysum_2000-2022.nc",
-    "ERA5-hourly": loadpath_daily+"ERA5-hourly/ERA5-hourly_precipitation_dailysum_1999-2021.nc",
-    "RADKLIM": loadpath_daily+"RADKLIM/temp_serial/RADKLIM-EURregLonLat001deg_precipitation_dailysum_2001-2022_new_part*.nc",
-    "RADOLAN": loadpath_daily+"RADOLAN/RADOLAN-EURregLonLat001deg_precipitation_dailysum_2006-2022.nc",
-    "EURADCLIM": loadpath_daily+"EURADCLIM/temp_serial/EURADCLIM-EURregLonLat002deg_precipitation_dailysum_2013-2020_part*.nc",
+paths_hourly = {
+    "IMERG-V07B-30min": loadpath_hourly+"IMERG-V07B-30min/this one does not matter",
+    "IMERG-V06B-30min": loadpath_hourly+"IMERG-V06B-30min/this one does not matter",
+    # "CMORPH-daily": loadpath_hourly+"this one does not matter",
+    "TSMP-old": loadpath_hourly+"TSMP-old/this one does not matter",
+    "TSMP-DETECT-Baseline": loadpath_hourly+"TSMP-DETECT-Baseline/this one does not matter",
+    "ERA5-hourly": loadpath_hourly+"ERA5-hourly/this one does not matter",
+    "RADKLIM": loadpath_hourly+"RADKLIM/this one does not matter",
+    "RADOLAN": loadpath_hourly+"RADOLAN/this one does not matter",
+    "EURADCLIM": loadpath_hourly+"EURADCLIM/this one does not matter",
     # "GPCC-daily": ,
-    # "GPROF": loadpath_daily+"this one does not matter",
-    "HYRAS": loadpath_daily+"HYRAS/temp_serial/HYRAS-EURregLonLat001deg_precipitation_dailysum_1930-2020_part*.nc", 
-    "E-OBS": loadpath_daily+"this one does not matter", 
-    # "GSMaP": loadpath_daily+"GSMaP/GSMaP_precipitation_dailysum_*.nc", 
+    # "GPROF": loadpath_hourly+"this one does not matter",
+    # "HYRAS": loadpath_hourly+"HYRAS/temp_serial/HYRAS-EURregLonLat001deg_precipitation_dailysum_1930-2020_part*.nc", 
+    # "E-OBS": loadpath_hourly+"this one does not matter", 
+    "GSMaP": loadpath_hourly+"GSMaP/this one does not matter", 
     }
 
-data_dailysum = {}
+data_hourlysum = {}
 
 # load the datasets
-print("Loading daily datasets ...")
-for dsname in paths_daily.keys():
+print("Loading hourly datasets ...")
+for dsname in paths_hourly.keys():
     print("... "+dsname)
-    if dsname == "CMORPH-daily":
-        data_dailysum["CMORPH-daily"] = xr.open_mfdataset('/automount/agradar/jgiles/cmorph-high-resolution-global-precipitation-estimates/access/daily/0.25deg/*/*/CMORPH_V1.0_ADJ_0.25deg-DLY_00Z_*.nc') 
-        data_dailysum["CMORPH-daily"] = data_dailysum["CMORPH-daily"].assign_coords(lon=(((data_dailysum["CMORPH-daily"].lon + 180) % 360) - 180)).sortby('lon').assign_attrs(units="mm")
-        data_dailysum["CMORPH-daily"]["cmorph"] = data_dailysum["CMORPH-daily"]["cmorph"].assign_attrs(units="mm")
+    if dsname == "CMORPH-hourly":
+        data_hourlysum["CMORPH-daily"] = xr.open_mfdataset('/automount/agradar/jgiles/cmorph-high-resolution-global-precipitation-estimates/access/daily/0.25deg/*/*/CMORPH_V1.0_ADJ_0.25deg-DLY_00Z_*.nc') 
+        data_hourlysum["CMORPH-daily"] = data_hourlysum["CMORPH-daily"].assign_coords(lon=(((data_hourlysum["CMORPH-daily"].lon + 180) % 360) - 180)).sortby('lon').assign_attrs(units="mm")
+        data_hourlysum["CMORPH-daily"]["cmorph"] = data_hourlysum["CMORPH-daily"]["cmorph"].assign_attrs(units="mm")
     elif dsname == "GPROF":
         gprof_files = sorted(glob.glob("/automount/ags/jgiles/GPM_L3/GPM_3GPROFGPMGMI_DAY.07/20*/*/*HDF5"))
         
@@ -4884,106 +4885,185 @@ for dsname in paths_daily.keys():
             return ds.expand_dims("time")
         
         # Open the dataset
-        data_dailysum["GPROF"] = xr.open_mfdataset(gprof_files_noempty, engine="h5netcdf", group="Grid", 
+        data_hourlysum["GPROF"] = xr.open_mfdataset(gprof_files_noempty, engine="h5netcdf", group="Grid", 
                                           concat_dim="time", combine="nested", preprocess=add_tdim)
         
         # Set the time coordinate (without empty timesteps)
-        data_dailysum["GPROF"] = data_dailysum["GPROF"].assign_coords(
+        data_hourlysum["GPROF"] = data_hourlysum["GPROF"].assign_coords(
                                 {"time": gprof_attrs.time.where(gprof_attrs.empty!=1, drop=True).drop_vars("empty")}
                                 )
         
         # Fill the empty timesteps with NaN
-        data_dailysum["GPROF"] = data_dailysum["GPROF"].broadcast_like(gprof_attrs.empty, exclude=[dim for dim in data_dailysum["GPROF"].dims if dim !="time"])
+        data_hourlysum["GPROF"] = data_hourlysum["GPROF"].broadcast_like(gprof_attrs.empty, exclude=[dim for dim in data_hourlysum["GPROF"].dims if dim !="time"])
         
         # Remove the variables that we don't need
-        data_dailysum["GPROF"] = data_dailysum["GPROF"][["surfacePrecipitation", "convectivePrecipitation", "frozenPrecipitation", "npixPrecipitation", "npixTotal"]]
+        data_hourlysum["GPROF"] = data_hourlysum["GPROF"][["surfacePrecipitation", "convectivePrecipitation", "frozenPrecipitation", "npixPrecipitation", "npixTotal"]]
         
         # We need to transform the data from mm/h to mm/day
         for vv in ["surfacePrecipitation", "convectivePrecipitation", "frozenPrecipitation"]:
-            data_dailysum["GPROF"][vv] = data_dailysum["GPROF"][vv]*24
-            data_dailysum["GPROF"][vv] = data_dailysum["GPROF"][vv].assign_attrs(units="mm", Units="mm")
-    elif dsname == "E-OBS":
-        data_dailysum["E-OBS"] = xr.open_dataset("/automount/ags/jgiles/E-OBS/RR/rr_ens_mean_0.25deg_reg_v29.0e.nc")
-    elif dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "GSMaP"]:
-        data_dailysum[dsname] = xr.open_mfdataset(paths_daily[dsname])
+            data_hourlysum["GPROF"][vv] = data_hourlysum["GPROF"][vv]*24
+            data_hourlysum["GPROF"][vv] = data_hourlysum["GPROF"][vv].assign_attrs(units="mm", Units="mm")
+    elif dsname == "IMERG-V06B-30min":
+        def preprocess_imerg_europe(ds):
+            for vv in ds.data_vars:
+                try:
+                    if "mm/hr" in ds[vv].units:
+                        ds[vv] = ds[vv]*0.5 # values come in mm/h but the timestep is 30 min, so we have to divide by 2
+                        ds[vv] = ds[vv].assign_attrs(units="mm", Units="mm")
+                except AttributeError:
+                    pass
+            return ds
+        data_hourlysum["IMERG-V06B-30min"] = xr.open_mfdataset('/automount/agradar/jgiles/IMERG_V06B/europe/concat_files/*.nc4', preprocess=preprocess_imerg_europe).transpose('time', 'lat', 'lon', ...)
+    elif dsname == "IMERG-V07B-30min":
+        def preprocess_imerg_europe(ds):
+            for vv in ds.data_vars:
+                try:
+                    if "mm/hr" in ds[vv].units:
+                        ds[vv] = ds[vv]*0.5 # values come in mm/h but the timestep is 30 min, so we have to divide by 2
+                        ds[vv] = ds[vv].assign_attrs(units="mm", Units="mm")
+                except AttributeError:
+                    pass
+            return ds
+        data_hourlysum["IMERG-V07B-30min"] = xr.open_mfdataset('/automount/agradar/jgiles/IMERG_V07B/europe/concat_files/*.nc4', preprocess=preprocess_imerg_europe).transpose('time', 'lat', 'lon', ...)
+        
+    elif dsname == "TSMP-old":
+        def preprocess_tsmp(ds): # discard the first timestep of every monthly file (discard overlapping data)
+            return ds.isel({"time":slice(1,None)})
+        data_hourlysum["TSMP-old"] = xr.open_mfdataset('/automount/ags/jgiles/TSMP/rcsm_TSMP-ERA5-eval_IBG3/o.data_v01/*/*TOT_PREC*',
+                                     preprocess=preprocess_tsmp, chunks={"time":1000})
+
+        # data["TSMP-old"] = data["TSMP-old"].assign( xr.open_mfdataset('/automount/agradar/jgiles/TSMP/rcsm_TSMP-ERA5-eval_IBG3/o.data_v01/*/*WT*',
+        #                              chunks={"time":1000}) )
+        data_hourlysum["TSMP-old"]["time"] = data_hourlysum["TSMP-old"].get_index("time").shift(-1.5, "h") # shift the values forward to the start of the interval
+    
+    elif dsname == "TSMP-DETECT-Baseline":
+        def preprocess_tsmp(ds): # discard the first timestep of every monthly file (discard overlapping data)
+            return ds.isel({"time":slice(1,None)})
+        data_hourlysum["TSMP-DETECT-Baseline"] = xr.open_mfdataset('/automount/ags/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/postpro/ProductionV1/*/cosmo/TOT_PREC_ts.nc',
+                                     preprocess=preprocess_tsmp, chunks={"time":1000})
+
+        data_hourlysum["TSMP-DETECT-Baseline"]["time"] = data_hourlysum["TSMP-DETECT-Baseline"].get_index("time").shift(-0.5, "h") # shift the values forward to the start of the interval
+
+    elif dsname == "ERA5-hourly":
+        def preprocess_era5_totprec(ds):
+            ds["tp"] = ds["tp"]*1000
+            ds["tp"] = ds["tp"].assign_attrs(units="mm", Units="mm")
+            return ds
+        data_hourlysum["ERA5-hourly"] = xr.open_mfdataset('/automount/ags/jgiles/ERA5/hourly/europe/single_level_vars/total_precipitation/total_precipitation_*', 
+                                         preprocess=preprocess_era5_totprec, chunks={"time":100})
+        data_hourlysum["ERA5-hourly"] = data_hourlysum["ERA5-hourly"].assign_coords(longitude=(((data_hourlysum["ERA5-hourly"].longitude + 180) % 360) - 180)).sortby('longitude')
+        data_hourlysum["ERA5-hourly"] = data_hourlysum["ERA5-hourly"].isel(latitude=slice(None, None, -1))
+        data_hourlysum["ERA5-hourly"]["time"] = data_hourlysum["ERA5-hourly"].get_index("time").shift(-1, "h") # shift the values forward to the start of the interval
+    elif dsname == "EURADCLIM":
+        data_hourlysum["EURADCLIM"] = xr.open_mfdataset("/automount/agradar/jgiles/EURADCLIM/concat_files/RAD_OPERA_HOURLY_RAINFALL_*.nc")
+        data_hourlysum["EURADCLIM"] = data_hourlysum["EURADCLIM"].set_coords(("lon", "lat"))
+        data_hourlysum["EURADCLIM"]["lon"] = data_hourlysum["EURADCLIM"]["lon"][0]
+        data_hourlysum["EURADCLIM"]["lat"] = data_hourlysum["EURADCLIM"]["lat"][0]
+    elif dsname == "RADKLIM":
+        data_hourlysum["RADKLIM"] = xr.open_mfdataset("/automount/ags/jgiles/RADKLIM/20*/*.nc")
+    
+    elif dsname == "RADOLAN":
+        data_hourlysum["RADOLAN"] = xr.open_mfdataset("/automount/ags/jgiles/RADOLAN/hourly/radolan/historical/concat_files/20*/*.nc")
+        data_hourlysum["RADOLAN"]["RW"].attrs["unit"] = "mm"
+    elif dsname == "GSMaP":
+        def build_time_dim_gsmap(ds):
+            # Extract the time variable and its units
+            time_var = ds['Time']
+            time_units = time_var.attrs['units']
+            
+            # Parse the units attribute to get the reference time
+            time_origin = pd.to_datetime(time_units.split('since')[1].strip())
+            
+            # Decode the time dimension
+            decoded_time = time_origin + pd.to_timedelta(time_var.values, unit='H')
+            
+            # Replace the original Time variable with the decoded time
+            ds = ds.assign_coords(Time=decoded_time).rename({"Time": "time", "Longitude": "lon", "Latitude": "lat"})
+            
+            return ds
+        print("... Loading skipped because of inefficiency.")
+        data_hourlysum[dsname] = None
+        # if "precipitation" in var_to_load:    
+            # data_hourlysum["GSMaP"] = xr.open_mfdataset("/automount/ags/jgiles/GSMaP/standard/v8/netcdf/*/*/*/gsmap_mvk.*.v8.*.nc", 
+            #                                   decode_times=False, preprocess=build_time_dim_gsmap)
     else:
-        if "*" in paths_daily[dsname]:
-            data_dailysum[dsname] = xr.open_mfdataset(paths_daily[dsname])
+        if "*" in paths_hourly[dsname]:
+            data_hourlysum[dsname] = xr.open_mfdataset(paths_hourly[dsname])
         else:
-            data_dailysum[dsname] = xr.open_dataset(paths_daily[dsname])
+            data_hourlysum[dsname] = xr.open_dataset(paths_hourly[dsname])
         
 
 # Special tweaks
 print("Applying tweaks ...")
 # RADOLAN GRID AND CRS
-if "RADOLAN" in data_dailysum.keys() and "LonLat" not in paths_daily["RADOLAN"]:
+if "RADOLAN" in data_hourlysum.keys() and "LonLat" not in paths_hourly["RADOLAN"]:
     lonlat_radolan = wrl.georef.rect.get_radolan_grid(900,900, wgs84=True) # these are the left lower edges of each bin
-    data_dailysum["RADOLAN"] = data_dailysum["RADOLAN"].assign_coords({"lon":(("y", "x"), lonlat_radolan[:,:,0]), "lat":(("y", "x"), lonlat_radolan[:,:,1])})
-    data_dailysum["RADOLAN"] = data_dailysum["RADOLAN"].assign(crs=data_dailysum['RADKLIM'].crs[0])
-    data_dailysum["RADOLAN"].attrs["grid_mapping"] = "crs"
-    data_dailysum["RADOLAN"].lon.attrs = data_dailysum["RADKLIM"].lon.attrs
-    data_dailysum["RADOLAN"].lat.attrs = data_dailysum["RADKLIM"].lat.attrs
+    data_hourlysum["RADOLAN"] = data_hourlysum["RADOLAN"].assign_coords({"lon":(("y", "x"), lonlat_radolan[:,:,0]), "lat":(("y", "x"), lonlat_radolan[:,:,1])})
+    data_hourlysum["RADOLAN"] = data_hourlysum["RADOLAN"].assign(crs=data_hourlysum['RADKLIM'].crs[0])
+    data_hourlysum["RADOLAN"].attrs["grid_mapping"] = "crs"
+    data_hourlysum["RADOLAN"].lon.attrs = data_hourlysum["RADKLIM"].lon.attrs
+    data_hourlysum["RADOLAN"].lat.attrs = data_hourlysum["RADKLIM"].lat.attrs
 
 # EURADCLIM coords
-if "EURADCLIM" in data_dailysum.keys():
-    data_dailysum["EURADCLIM"] = data_dailysum["EURADCLIM"].set_coords(("lon", "lat"))
-
-# Shift HYRAS and EURADCLIM timeaxis
-if "EURADCLIM" in data_dailysum.keys():
-    data_dailysum["EURADCLIM"]["time"] = data_dailysum["EURADCLIM"]["time"].resample(time="D").first()["time"] # We place the daily value at day start
-if "HYRAS" in data_dailysum.keys(): # HYRAS is shifted 6 h (the sum is from 6 to 6 UTC)
-    data_dailysum["HYRAS"]["time"] = data_dailysum["HYRAS"]["time"].resample(time="D").first()["time"] # We place the daily value at day start
+if "EURADCLIM" in data_hourlysum.keys():
+    data_hourlysum["EURADCLIM"] = data_hourlysum["EURADCLIM"].set_coords(("lon", "lat"))
 
 # Convert all non datetime axes (cf Julian calendars) into datetime 
-for dsname in data_dailysum.keys():
+for dsname in data_hourlysum.keys():
     try:
-        data_dailysum[dsname]["time"] = data_dailysum[dsname].indexes['time'].to_datetimeindex()
+        data_hourlysum[dsname]["time"] = data_hourlysum[dsname].indexes['time'].to_datetimeindex()
         print(dsname+" time dimension transformed to datetime format")
     except:
         pass
     
-# Rechunk to one chunk per timestep (unless it is already regridded to EURregLonLat)
-for dsname in ["RADOLAN", "RADKLIM", "EURADCLIM", "HYRAS"]:
-    if dsname in data_dailysum.keys() and "LonLat" not in paths_daily["RADOLAN"]:
-        print("Rechunking "+dsname)
-        new_chunks = {dim: size for dim, size in data_dailysum[dsname].dims.items()}
-        new_chunks["time"] = 1
-        try:
-            data_dailysum[dsname] = data_dailysum[dsname].chunk(new_chunks)
-        except: # rechunking may fail due to some not unified chunks, then try again
-            data_dailysum[dsname] = data_dailysum[dsname].unify_chunks().chunk(new_chunks)
+# # Rechunk to one chunk per timestep (unless it is already regridded to EURregLonLat)
+# for dsname in ["RADOLAN", "RADKLIM", "EURADCLIM", "HYRAS"]:
+#     if dsname in data_hourlysum.keys() and "LonLat" not in paths_hourly["RADOLAN"]:
+#         print("Rechunking "+dsname)
+#         new_chunks = {dim: size for dim, size in data_hourlysum[dsname].dims.items()}
+#         new_chunks["time"] = 1
+#         try:
+#             data_hourlysum[dsname] = data_hourlysum[dsname].chunk(new_chunks)
+#         except: # rechunking may fail due to some not unified chunks, then try again
+#             data_hourlysum[dsname] = data_hourlysum[dsname].unify_chunks().chunk(new_chunks)
 
 # Rename coordinates to lat/lon in case they are not
-for dsname in data_dailysum.keys():
-    if "longitude" in data_dailysum[dsname].coords:
-        data_dailysum[dsname] = data_dailysum[dsname].rename({"longitude": "lon"})
-    if "latitude" in data_dailysum[dsname].coords:
-        data_dailysum[dsname] = data_dailysum[dsname].rename({"latitude": "lat"})
+for dsname in data_hourlysum.keys():
+    try:
+        if "longitude" in data_hourlysum[dsname].coords:
+            data_hourlysum[dsname] = data_hourlysum[dsname].rename({"longitude": "lon"})
+        if "latitude" in data_hourlysum[dsname].coords:
+            data_hourlysum[dsname] = data_hourlysum[dsname].rename({"latitude": "lat"})
+    except:
+        continue
 
 # Remove "bounds" attribute from lon and lat coords to avoid regridding fails
-for dsname in data_dailysum.keys():
-    if "lon" in data_dailysum[dsname].coords:
-        if "bounds" in data_dailysum[dsname].lon.attrs:
-            del(data_dailysum[dsname].lon.attrs["bounds"])
-    if "lat" in data_dailysum[dsname].coords:
-        if "bounds" in data_dailysum[dsname].lat.attrs:
-            del(data_dailysum[dsname].lat.attrs["bounds"])
+for dsname in data_hourlysum.keys():
+    try:
+        if "lon" in data_hourlysum[dsname].coords:
+            if "bounds" in data_hourlysum[dsname].lon.attrs:
+                del(data_hourlysum[dsname].lon.attrs["bounds"])
+        if "lat" in data_hourlysum[dsname].coords:
+            if "bounds" in data_hourlysum[dsname].lat.attrs:
+                del(data_hourlysum[dsname].lat.attrs["bounds"])
+    except:
+        continue
 
 # Special selections for incomplete extreme years
 # IMERG
-if "IMERG-V07B-30min" in data_dailysum.keys():
-    data_dailysum["IMERG-V07B-30min"] = data_dailysum["IMERG-V07B-30min"].loc[{"time":slice("2001", "2022")}]
-if "IMERG-V06B-30min" in data_dailysum.keys():
-    data_dailysum["IMERG-V06B-30min"] = data_dailysum["IMERG-V06B-30min"].loc[{"time":slice("2001", "2020")}]
+if "IMERG-V07B-30min" in data_hourlysum.keys():
+    data_hourlysum["IMERG-V07B-30min"] = data_hourlysum["IMERG-V07B-30min"].loc[{"time":slice("2001", "2022")}]
+if "IMERG-V06B-30min" in data_hourlysum.keys():
+    data_hourlysum["IMERG-V06B-30min"] = data_hourlysum["IMERG-V06B-30min"].loc[{"time":slice("2001", "2020")}]
 # CMORPH
-if "CMORPH-daily" in data_dailysum.keys():
-    data_dailysum["CMORPH-daily"] = data_dailysum["CMORPH-daily"].loc[{"time":slice("1998", "2022")}]
+if "CMORPH-daily" in data_hourlysum.keys():
+    data_hourlysum["CMORPH-daily"] = data_hourlysum["CMORPH-daily"].loc[{"time":slice("1998", "2022")}]
 # GPROF
-if "GPROF" in data_dailysum.keys():
-    data_dailysum["GPROF"] = data_dailysum["GPROF"].loc[{"time":slice("2015", "2022")}]
+if "GPROF" in data_hourlysum.keys():
+    data_hourlysum["GPROF"] = data_hourlysum["GPROF"].loc[{"time":slice("2015", "2022")}]
 # CPC
-if "CPC" in data_dailysum.keys():
-    data_dailysum["CPC"] = data_dailysum["CPC"].loc[{"time":slice("1979", "2023")}]
+if "CPC" in data_hourlysum.keys():
+    data_hourlysum["CPC"] = data_hourlysum["CPC"].loc[{"time":slice("1979", "2023")}]
 
 colors = {
     "IMERG-V07B-30min": "#FF6347",    "IMERG-V07B": "#FF6347", # Tomato
@@ -5010,7 +5090,8 @@ dsref = ["E-OBS"] # dataset to take as reference (black and bold curve)
 colors[dsref[0]] = "black"
 
 #%%%% Define region and regrid
-data_to_avg = data_dailysum.copy() # select which data to process
+timesel = slice("2015-01-01", "2020-12-31") # select a slice to regrid, to save time.
+data_to_avg = data_hourlysum.copy() # select which data to process
 
 region =["Portugal", "Spain", "France", "United Kingdom", "Ireland", 
          "Belgium", "Netherlands", "Luxembourg", "Germany", "Switzerland",
@@ -5046,58 +5127,185 @@ if dsname in data_to_avg.keys():
     # I did not find a way to directly combine this custom region with a predefined country region. I will 
     # have to just apply the masks consecutively
 
-print("Unrotating datasets")
+# We will regrid everything to a 0.25 de grid
+grid_out = xe.util.cf_grid_2d(-49.875,70.75,0.25,19.725,74.475,0.25) # manually recreate an EURregLonLat025deg grid that matches ERA5
+lonres = 0.25
+latres = 0.25
+dsignore = ["ERA5-hourly"] # We ignore ERA5 because we are regridding to a matching grid
+
+# variables to remove because they are problematic to regrid (because of their type)
+delvars = ['HQobservationTime', "MWobservationTime"]
+
+# Define a function to get the minimum lon lat box between two datasets
+def get_smaller_domain(ds1, ds2):
+    """
+    Returns smallest box: lonleft, lonright, latbottom, lattop
+    """
+    lon10 = float(ds1.lon.min())
+    lon11 = float(ds1.lon.max())
+    lat10 = float(ds1.lat.min())
+    lat11 = float(ds1.lat.max())
+
+    lon20 = float(ds2.lon.min())
+    lon21 = float(ds2.lon.max())
+    lat20 = float(ds2.lat.min())
+    lat21 = float(ds2.lat.max())
+    
+    return np.max([lon10, lon20]), np.min([lon11, lon21]), np.max([lat10, lat20]), np.min([lat11, lat21])
+
+print("Regridding datasets ...")
+print("Ignoring:")
+print(dsignore)
+
 to_add = {} # dictionary to add rotated versions
 for dsname in data_to_avg.keys():
-
-    if dsname in ["TSMP-DETECT-Baseline", "TSMP-old"]:
-        regsavepath = paths_daily[dsname].rsplit('/', 1)[0] + '/' + paths_daily[dsname].rsplit('/', 1)[1].replace(dsname, dsname+"-EURregLonLat01deg")
+    regsavepath = paths_hourly[dsname].rsplit('/', 1)[0] + '/' + dsname+"-EURregLonLat025deg"
+    if dsname not in dsignore:
+        if not os.path.exists(os.path.dirname(regsavepath)):
+            os.makedirs(os.path.dirname(regsavepath))
 
         try:
-            to_add[dsname+"-EURregLonLat01deg"] = xr.open_dataset(regsavepath)
+            to_add[dsname+"-EURregLonLat025deg"] = xr.open_mfdataset(regsavepath+"*")
             print("Previously regridded "+dsname+" was loaded")
-        except FileNotFoundError:
+        except (FileNotFoundError, OSError):
             print("... "+dsname)
-            # we need to unrotate the TSMP grid 
-            
-            encoding = {}
-            for vv in data_to_avg[dsname].data_vars:
-                valid_encodings = ['contiguous', 'complevel', 'compression', 'zlib', '_FillValue', 'shuffle', 'fletcher32', 'dtype', 'least_significant_digit']
-                encoding[vv] = dict((k, data_to_avg[dsname][vv].encoding[k]) for k in valid_encodings if k in data_to_avg[dsname][vv].encoding) #!!! For now we keep the same enconding, check later if change it
-    
-            grid_out = xe.util.cf_grid_2d(-49.75,70.65,0.1,19.85,74.65,0.1) # manually recreate the EURregLonLat01deg grid
-            regridder = xe.Regridder(data_to_avg[dsname].cf.add_bounds(["lon", "lat"]), grid_out, "conservative")
-            to_add[dsname+"-EURregLonLat01deg"] = regridder(data_to_avg[dsname])
-            to_add[dsname+"-EURregLonLat01deg"].to_netcdf(regsavepath, encoding=encoding)
-            to_add[dsname+"-EURregLonLat01deg"] = xr.open_dataset(regsavepath) # reload the dataset
+            if dsname == "GSMaP":
+                # We will make daily files one by one
+                dayfolders = glob.glob("/automount/ags/jgiles/GSMaP/standard/v8/netcdf/*/*/*")
+                st = time.time()
+                
+                # Select only the folders that belong to the requested timesel (slice)
+                start_date = datetime.strptime(timesel.start, "%Y-%m-%d")
+                end_date = datetime.strptime(timesel.stop, "%Y-%m-%d")
 
-        # Remove "bounds" attribute from lon and lat coords to avoid regridding fails
-        if "lon" in to_add[dsname+"-EURregLonLat01deg"].coords:
-            if "bounds" in to_add[dsname+"-EURregLonLat01deg"].lon.attrs:
-                del(to_add[dsname+"-EURregLonLat01deg"].lon.attrs["bounds"])
-        if "lat" in to_add[dsname+"-EURregLonLat01deg"].coords:
-            if "bounds" in to_add[dsname+"-EURregLonLat01deg"].lat.attrs:
-                del(to_add[dsname+"-EURregLonLat01deg"].lat.attrs["bounds"])
+                def filter_files_in_range(file_path, start_date, end_date):
+                    # Extract date part from the file path
+                    date_str = '/'.join(file_path.split('/')[-3:])
+                    file_date = datetime.strptime(date_str, "%Y/%m/%d")
+
+                    return start_date <= file_date <= end_date
+
+                dayfolderssel = [f for f in dayfolders if filter_files_in_range(f, start_date, end_date)]
+                dayfolderssel.sort()
+                
+                for nday, dayfolder in enumerate(dayfolderssel):
+                    gsmap = xr.open_mfdataset(dayfolder+"/gsmap_mvk.*.v8.*.nc", 
+                                                      decode_times=False, preprocess=build_time_dim_gsmap)
+                    daysdim = gsmap['time'].resample(time="D").first()["time"]
+                    day = str(daysdim.values[0])[0:10]
+                    
+                    if nday==0:
+                        # Build regridder
+                        lon0, lon1, lat0, lat1 = get_smaller_domain(grid_out, gsmap)
+                        lon0 -= lonres
+                        lon1 += lonres
+                        lat0 -= latres
+                        lat1 += latres
+                        
+                        regridder = xe.Regridder(gsmap.cf.add_bounds(["lon", "lat"]), 
+                                                 grid_out.loc[{"lon": slice(lon0, lon1), "lat": slice(lat0, lat1)}], "conservative")
+            
+                    to_add[dsname+"-EURregLonLat025deg"] = regridder(gsmap, 
+                                                                     skipna=True, na_thres=1)
+                    
+                    encoding = {}
+                    for vv in to_add[dsname+"-EURregLonLat025deg"].data_vars:
+                        valid_encodings = ['contiguous', 'complevel', 'compression', 'zlib', '_FillValue', 'shuffle', 'fletcher32', 'dtype', 'least_significant_digit']
+                        encoding[vv] = dict((k, gsmap[vv].encoding[k]) for k in valid_encodings if k in gsmap[vv].encoding) #!!! For now we keep the same enconding, check later if change it
+                        encoding[vv]["zlib"] = True
+                        encoding[vv]["complevel"] = 6
+                    
+                    to_add[dsname+"-EURregLonLat025deg"].to_netcdf(regsavepath+"_"+day+".nc", encoding=encoding)
+                tt = time.time() - st
+                print(f"Regridding time: {tt/60:.2f} minutes.")
+                    
+            else:
+                # Remove "bounds" attribute from lon and lat coords to avoid regridding fails
+                if "lon" in data_to_avg[dsname].coords:
+                    if "bounds" in data_to_avg[dsname].lon.attrs:
+                        del(data_to_avg[dsname].lon.attrs["bounds"])
+                if "lat" in data_to_avg[dsname].coords:
+                    if "bounds" in data_to_avg[dsname].lat.attrs:
+                        del(data_to_avg[dsname].lat.attrs["bounds"])
+                # Remove bounds variables, we will do them ourselves
+                for vv in ["lon_bnds", "lon_bounds", "lat_bnds", "lon_bounds", "time_bnds", "time_bounds"]+delvars:
+                    if vv in data_to_avg[dsname]:
+                        del(data_to_avg[dsname][vv])
+                
+                # Build regridder
+                lon0, lon1, lat0, lat1 = get_smaller_domain(grid_out, data_to_avg[dsname])
+                lon0 -= lonres
+                lon1 += lonres
+                lat0 -= latres
+                lat1 += latres
+                
+                if dsname in ["EURADCLIM", "RADOLAN", "HYRAS", "RADKLIM"]:
+                    regridder = xe.Regridder(data_to_avg[dsname].cf.add_bounds(["lon", "lat"]), 
+                                             grid_out.loc[{"lon": slice(lon0, lon1), "lat": slice(lat0, lat1)}], "conservative")
+        
+                    to_add[dsname+"-EURregLonLat025deg"] = regridder(data_to_avg[dsname].sel(time=timesel), 
+                                                                     skipna=True, na_thres=1)
+                elif dsname in ['TSMP-old', 'TSMP-DETECT-Baseline']:
+                    regridder = xe.Regridder(data_to_avg[dsname].cf.add_bounds(["lon", "lat"]), 
+                                             grid_out.loc[{"lon": slice(lon0, lon1), "lat": slice(lat0, lat1)}], "conservative")
+        
+                    to_add[dsname+"-EURregLonLat025deg"] = regridder(data_to_avg[dsname].loc[{"time": timesel }], 
+                                                                     skipna=True, na_thres=1)
+                    
+                else: 
+                    regridder = xe.Regridder(data_to_avg[dsname].loc[{"lon": slice(lon0, lon1),
+                                                                      "lat": slice(lat0, lat1)}].cf.add_bounds(["lon", "lat"]), 
+                                             grid_out.loc[{"lon": slice(lon0, lon1), "lat": slice(lat0, lat1)}], "conservative")
+        
+                    to_add[dsname+"-EURregLonLat025deg"] = regridder(data_to_avg[dsname].loc[{"lon": slice(lon0, lon1),
+                                                                                              "lat": slice(lat0, lat1),
+                                                                                              "time": timesel }], 
+                                                                     skipna=True, na_thres=1)
+        
+                encoding = {}
+                for vv in to_add[dsname+"-EURregLonLat025deg"].data_vars:
+                    valid_encodings = ['contiguous', 'complevel', 'compression', 'zlib', '_FillValue', 'shuffle', 'fletcher32', 'dtype', 'least_significant_digit']
+                    encoding[vv] = dict((k, data_to_avg[dsname][vv].encoding[k]) for k in valid_encodings if k in data_to_avg[dsname][vv].encoding) #!!! For now we keep the same enconding, check later if change it
+                    encoding[vv]["zlib"] = True
+                    encoding[vv]["complevel"] = 6
+    
+                # Save files by day
+                time_index = to_add[dsname+"-EURregLonLat025deg"].time.to_index()
+                unique_dates = time_index.normalize().strftime('%Y-%m-%d').unique()
+                date_list = unique_dates.tolist()
+                
+                st = time.time()
+                for date in date_list:
+                    # print(date)
+                    to_add[dsname+"-EURregLonLat025deg"].sel(time=date).to_netcdf(regsavepath+"_"+date+".nc", encoding=encoding)
+                tt = time.time() - st
+                print(f"Regridding time: {tt/60:.2f} minutes.")
+    
+    
+                # for date in np.unique(to_add[dsname+"-EURregLonLat025deg"].time.dt.year.values): # save files by year
+                #     to_add[dsname+"-EURregLonLat025deg"].sel(time=str(yy)).to_netcdf(regsavepath+"_"+str(yy)+".nc", encoding=encoding)
+    
+            to_add[dsname+"-EURregLonLat025deg"] = xr.open_mfdataset(regsavepath+"*") # reload the dataset
 
 # add the unrotated datasets to the original dictionary
 data_to_avg = {**data_to_avg, **to_add}
-data_dailysum = data_to_avg.copy()
+data_hourlysum = data_to_avg.copy()
 
 total_time = time.time() - start_time
-print(f"Elapsed time: {total_time/60:.2f} minutes.")
+print(f"Total elapsed time: {total_time/60:.2f} minutes.")
 
 #%%%% Simple map plot
-dsname = "E-OBS"
-vname = "rr"
-tsel = "2015-02-01"
+dsname = "GSMaP-EURregLonLat025deg"
+vname = "hourlyPrecipRateGC"
+tsel = "2015-01-02T00"
 mask = utils.get_regionmask(region)
-mask0 = mask.mask(data_dailysum[dsname])
+mask0 = mask.mask(data_hourlysum[dsname])
 dropna = True
 if mask_TSMP_nudge: 
-    mask0 = TSMP_no_nudge.mask(data_dailysum[dsname]).where(mask0.notnull())
+    mask0 = TSMP_no_nudge.mask(data_hourlysum[dsname]).where(mask0.notnull())
     # dropna=False
 f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
-plot = data_dailysum[dsname][vname].sel(time=tsel).where(mask0.notnull(), drop=dropna).plot(x="longitude", y="latitude", 
+plot = data_hourlysum[dsname][vname].sel(time=tsel).where(mask0.notnull(), drop=dropna).plot(x="lon", y="lat", 
                                                                                             cmap="Blues", vmin=0, vmax=10, 
                                          subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
                                          cbar_kwargs={'label': "mm", 'shrink':0.88})
@@ -5107,7 +5315,7 @@ plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
 plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
 plt.title(dsname)
 
-#%%%% Simple map plot (for number of stations per gridcell) # CHECK THIS FOR DAILY SUM BEFORE RUNNING!!
+#%%%% Simple map plot (for number of stations per gridcell) # CHECK THIS FOR HOURLY SUM BEFORE RUNNING!!
 dsname = "GPCC-monthly"
 vname = "numgauge"
 savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/maps/Turkey/"
