@@ -5276,8 +5276,11 @@ for dsname in data_to_avg.keys():
                 
                 st = time.time()
                 for date in date_list:
-                    # print(date)
-                    to_add[dsname+"-EURregLonLat025deg"].sel(time=date).to_netcdf(regsavepath+"_"+date+".nc", encoding=encoding)
+                    if "IMERG" in dsname:
+                        # For IMERG we also need to transform from 30-min to hourly
+                        to_add[dsname+"-EURregLonLat025deg"].sel(time=date).resample(time="H").sum().to_netcdf(regsavepath+"_"+date+".nc", encoding=encoding)
+                    else:
+                        to_add[dsname+"-EURregLonLat025deg"].sel(time=date).to_netcdf(regsavepath+"_"+date+".nc", encoding=encoding)
                 tt = time.time() - st
                 print(f"Regridding time: {tt/60:.2f} minutes.")
     
