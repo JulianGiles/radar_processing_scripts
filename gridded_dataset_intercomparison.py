@@ -5297,6 +5297,15 @@ data_hourlysum = data_to_avg.copy()
 total_time = time.time() - start_time
 print(f"Total elapsed time: {total_time/60:.2f} minutes.")
 
+#%%%% Fix time axes of some shifted datasets
+for dsname in data_hourlysum.keys():
+    if "EURADCLIM" in dsname:
+        data_hourlysum[dsname].coords["time"] = data_hourlysum[dsname].time.dt.floor('H')
+    if "RADOLAN" in dsname:
+        data_hourlysum[dsname].coords["time"] = data_hourlysum[dsname].time.dt.floor('H')
+    if "RADKLIM" in dsname:
+        data_hourlysum[dsname].coords["time"] = data_hourlysum[dsname].time.dt.floor('H')
+
 #%%%% Simple map plot
 dsname = "GSMaP-EURregLonLat025deg"
 vname = "hourlyPrecipRateGC"
