@@ -5085,9 +5085,10 @@ colors = {
 var_names = ["TOT_PREC", "precipitation", "pr", "surfacePrecipitation", "precip", "Precip", 
              "RW", "RR", "tp", "cmorph", "rr", "hourlyPrecipRateGC", "precipitationCal"]
 dsignore = [] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-30min", "ERA5-hourly"] # datasets to ignore in the plotting
-dsref = ["RADOLAN"] # dataset to take as reference (black and bold curve)
+dsref = ["RADOLAN-EURregLonLat025deg"] # dataset to take as reference (black and bold curve)
 
 colors[dsref[0]] = "black"
+colors["RADOLAN"] = "black"
 
 #%%%% Define region and regrid
 timesel = slice("2015-01-01", "2020-12-31") # select a slice to regrid, to save time.
@@ -5362,7 +5363,7 @@ for yy in np.arange(2000,2021):
 
 #%%% Metrics
 #%%%% Metrics calculation at gridpoint level
-reload_metrics = True # reload previously calculated metrics if available?
+reload_metrics = False # reload previously calculated metrics if available?
 calc_if_no_reload = False # calculate metrics if not available from previously calculated files? #!!! NOT IMPLEMENTED YET!!
 minpre = 0.1 # minimum precipitation in mm/h for a timestep to be considered a wet day (i.e., minimum measurable precipitation considered). Relevant for categorical metrics
 timesel = slice("2015-01-01", "2020-12-31") # should be given in a slice with YYYY-MM-DD
@@ -5383,7 +5384,7 @@ def define_encoding(data):
     
 # Compute the biases
 dsignore = ["EURADCLIM", "RADOLAN", "HYRAS", "RADKLIM", 'TSMP-old', 'TSMP-DETECT-Baseline', 
-            "GSMaP"] # datasets to ignore (because we want the regridded version)
+            "GSMaP", 'IMERG-V07B-30min', 'IMERG-V06B-30min'] # datasets to ignore (because we want the regridded version)
 data_to_bias = copy.copy(data_hourlysum)
 
 start_time = time.time()
@@ -5425,6 +5426,11 @@ for dsname in data_to_bias.keys():
 
             data0 = data0.loc[{"time":timesel}].chunk(time=100)
             # data0 = data0.where(data0>0) # do not filter out the zero values, otherwise we will not check for detection correcly
+            
+            if "ERA5" in dsname:
+                # For ERA5 there are tiny differences in the coordinates that I need to solve, otherwise the datasets
+                # will not align and the .where() will fail
+                data0 = data0.interp_like(mask0, method="nearest")
             
             # Reload metrics
             if reload_metrics:
