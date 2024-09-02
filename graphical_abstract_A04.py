@@ -33,6 +33,27 @@ import cordex as cx
 # load TSMP only for the grid 
 tsmp = xr.open_mfdataset('/automount/ags/jgiles/TSMP/rcsm_TSMP-ERA5-eval_IBG3/o.data_v01/2002_02/*TOT_PREC*',
                              )
+
+# Get edges of Euro CORDEX
+# Compute the values to handle dask arrays
+lon = tsmp.lon.compute()
+lat = tsmp.lat.compute()
+
+# Extract the edges of the lon/lat grid (all four edges of the array)
+lon_bottom_edge = lon.isel(rlat=0)                    # bottom edge
+lat_bottom_edge = lat.isel(rlat=0)
+
+lon_top_edge = lon.isel(rlat=-1)                      # top edge
+lat_top_edge = lat.isel(rlat=-1)
+
+lon_left_edge = lon.isel(rlon=0).isel(rlat=slice(1, -1))  # left edge (excluding corners)
+lat_left_edge = lat.isel(rlon=0).isel(rlat=slice(1, -1))
+
+lon_right_edge = lon.isel(rlon=-1).isel(rlat=slice(1, -1))  # right edge (excluding corners)
+lat_right_edge = lat.isel(rlon=-1).isel(rlat=slice(1, -1))
+
+
+
 # Euro-CORDEX rotated pole coordinates RotPole (198.0; 39.25) 
 rp = ccrs.RotatedPole(pole_longitude=198.0,
                       pole_latitude=39.25,
@@ -40,7 +61,7 @@ rp = ccrs.RotatedPole(pole_longitude=198.0,
                                        semiminor_axis=6370000))
 
 
-proj = cartopy.crs.Orthographic(central_longitude=15.0, central_latitude=10, globe=None)
+proj = cartopy.crs.Orthographic(central_longitude=15.0, central_latitude=40, globe=None)
 ax = plt.axes(projection = proj)
 ax.add_feature(cartopy.feature.COASTLINE, linewidth=0.5)
 plt.gca().coastlines('50m')
@@ -80,6 +101,14 @@ turkey = [country for country in reader.records() if country.attributes["NAME_LO
 # Display turkey's shape
 shape_feature = cartopy.feature.ShapelyFeature([turkey.geometry], ccrs.PlateCarree(), facecolor="#932e2e", edgecolor='black', lw=1)
 ax.add_feature(shape_feature)
+
+
+
+# Step 3: Plot edges of EURO-CORDEX
+ax.plot(lon_bottom_edge, lat_bottom_edge, transform=ccrs.PlateCarree(), color='red', linewidth=2, linestyle='--')
+ax.plot(lon_top_edge, lat_top_edge, transform=ccrs.PlateCarree(), color='red', linewidth=2, linestyle='--')
+ax.plot(lon_left_edge, lat_left_edge, transform=ccrs.PlateCarree(), color='red', linewidth=2, linestyle='--')
+ax.plot(lon_right_edge, lat_right_edge, transform=ccrs.PlateCarree(), color='red', linewidth=2, linestyle='--', label='Dataset Boundary')
 
 
 # # Make figure larger
