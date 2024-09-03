@@ -5086,10 +5086,10 @@ colors = {
 var_names = ["TOT_PREC", "precipitation", "pr", "surfacePrecipitation", "precip", "Precip", 
              "RW", "RR", "tp", "cmorph", "rr", "hourlyPrecipRateGC", "precipitationCal"]
 dsignore = [] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-30min", "ERA5-hourly"] # datasets to ignore in the plotting
-dsref = ["RADOLAN-EURregLonLat025deg"] # dataset to take as reference (black and bold curve)
+dsref = ["RADKLIM-EURregLonLat025deg"] # dataset to take as reference (black and bold curve)
 
 colors[dsref[0]] = "black"
-colors["RADOLAN"] = "black"
+colors["RADKLIM"] = "black"
 
 #%%%% Define region and regrid
 timesel = slice("2015-01-01", "2020-12-31") # select a slice to regrid, to save time.
@@ -5307,12 +5307,10 @@ for dsname in data_hourlysum.keys():
         data_hourlysum[dsname].coords["time"] = data_hourlysum[dsname].time.dt.floor('H')
     if "RADOLAN" in dsname:
         data_hourlysum[dsname].coords["time"] = data_hourlysum[dsname].time.dt.floor('H')
+        data_hourlysum[dsname] = data_hourlysum[dsname].round(1)
     if "RADKLIM" in dsname:
         data_hourlysum[dsname].coords["time"] = data_hourlysum[dsname].time.dt.floor('H')
 
-# if "RADOLAN-EURregLonLat025deg" in data_hourlysum.keys(): #!!!  DELETE THIS IF THE CURRENT TEST WORKED!!
-#     print("MULTIPLYING RADOLAN-EURregLonLat025deg BY 0.1, THIS SHOULD BE BETTER FIXED!!!!")
-#     data_hourlysum["RADOLAN-EURregLonLat025deg"]["RW"] = data_hourlysum["RADOLAN-EURregLonLat025deg"]["RW"]*0.1
 
 #%%%% Simple map plot
 dsname = "RADOLAN-EURregLonLat025deg"
@@ -5370,7 +5368,7 @@ for yy in np.arange(2000,2021):
 
 #%%% Metrics
 #%%%% Metrics calculation at gridpoint level
-reload_metrics = False # reload previously calculated metrics if available?
+reload_metrics = True # reload previously calculated metrics if available?
 calc_if_no_reload = False # calculate metrics if not available from previously calculated files? #!!! NOT IMPLEMENTED YET!!
 minpre = 0.1 # minimum precipitation in mm/h for a timestep to be considered a wet day (i.e., minimum measurable precipitation considered). Relevant for categorical metrics
 timesel = slice("2015-01-01", "2020-12-31") # should be given in a slice with YYYY-MM-DD
@@ -5522,8 +5520,8 @@ for dsname in data_to_bias.keys():
 
                 # For the categorical metrics we need the following
                 print("... ... Categorical metrics")
-                data0_wet = (data0 > minpre).astype(bool)
-                dataref_wet = (dataref > minpre).astype(bool)
+                data0_wet = (data0 >= minpre).astype(bool)
+                dataref_wet = (dataref >= minpre).astype(bool)
                 
                 hits = data0_wet*dataref_wet.where(mask0.notnull(), drop=True).where(dataref.notnull())
                 misses = (~data0_wet)*dataref_wet.where(mask0.notnull(), drop=True).where(dataref.notnull())
@@ -5668,6 +5666,204 @@ if not reload_metrics:
                 metric_dataset.to_netcdf(metric_filename, encoding={f"{name}_{metric_type}": {"zlib":True, "complevel":6}})
                 print(f"Saved {name}_{metric_type} for {dsname} to {metric_filename}")
 
+#%%%% Metrics plots
+#%%%%% Simple map plot # CAREFUL THAT I DID NOT SAVE-RELOAD THE FULL METRICS
+# region = "Germany" #"land" 
+to_plot = metrics_spatial["relative_bias_concurrent"]
+dsname = "IMERG-V07B"
+title = "Concurrent relative BIAS"
+timesel0 = ""
+cbarlabel = "%" # mm
+vmin = -80
+vmax = 80
+lonlat_slice = [slice(-43.4,63.65), slice(22.6, 71.15)]
+# mask = utils.get_regionmask(region)
+# mask0 = mask.mask(to_plot[dsname])
+dropna = True
+# if mask_TSMP_nudge: 
+#     mask0 = TSMP_no_nudge.mask(to_plot[dsname]).where(mask0.notnull())
+#     # dropna=False
+f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
+plot = to_plot[dsname].where(mask0.notnull(), drop=dropna).loc[{"lon":lonlat_slice[0], 
+                                                                                      "lat":lonlat_slice[1]}].plot(x="lon", 
+                                                                                                                   y="lat", 
+                                                                                                                   cmap="RdBu_r", 
+                                                                                    vmin=vmin, vmax=vmax, 
+                                         subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
+                                         cbar_kwargs={'label': cbarlabel, 'shrink':0.88})
+# if mask_TSMP_nudge: plot.axes.set_extent([-43.4, 63.65, 22.6, 71.15], crs=ccrs.PlateCarree())
+plot.axes.coastlines(alpha=0.7)
+plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
+plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
+plt.title(title+" "+timesel0+"\n"+dsname+"\n "+region_name+" Ref.: "+dsref[0])
+
+#%%%%% Plots in space (maps)
+savepath = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/hourly/"+region_name+"/maps/"
+to_plot_dict = [
+            (metrics_spatial['bias'], "BIAS", "mm", -1, 1, "BrBG"),
+            (metrics_spatial['mae'], "MAE", "mm", 0, 1, "Reds"),
+            (metrics_spatial['nmae'], "NMAE", "%", 0, 10, "Reds"),
+            (metrics_spatial['pod'], "POD", "", 0.6, 1, "Blues"),
+            (metrics_spatial['far'], "FAR", "", 0, 0.5, "Reds"),
+            (metrics_spatial['csi'], "CSI", "", 0.4, 1, "Blues"),
+            (metrics_spatial['biass'], "BIASS", "", 0.7, 1.3, "BrBG"),
+            (metrics_spatial['bias_concurrent'], "Concurrent BIAS", "mm", -0.5, 0.5, "BrBG"),
+            (metrics_spatial['relative_bias_concurrent'], "Concurrent relative BIAS", "%", -80, 80, "BrBG"),
+            (metrics_spatial['mae_concurrent'], "Concurrent MAE", "mm", 0, 1, "Reds"),
+            (metrics_spatial['nmae_concurrent'], "Concurrent NMAE", "%", 0, 80, "Reds"),
+           ]
+lonlat_slice = [slice(-43.4,63.65), slice(22.6, 71.15)]
+
+for to_plot, title, cbarlabel, vmin, vmax, cmap in to_plot_dict:
+    print("Plotting "+title)
+    for dsname in to_plot.keys():
+        print("... "+dsname)
+        dsname_short = dsname.split("_")[0]
+        try:
+            plt.close()
+            # f, ax1 = plt.subplots(1, 1, figsize=(8, 4), subplot_kw=dict(projection=proj))
+            plot = to_plot[dsname].plot(x="lon", y="lat", cmap=cmap, 
+                                            vmin=vmin, vmax=vmax, 
+                                                     subplot_kws={"projection":proj}, transform=ccrs.PlateCarree(),
+                                                     cbar_kwargs={'label': cbarlabel, 'shrink':0.88})
+            plot.axes.coastlines(alpha=0.7)
+            plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
+            plot.axes.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4) #countries
+            plt.title(title+" "+timeperiod+"\n"+dsname_short+"\n "+region_name+" Ref.: "+dsref[0])
+            
+            # save figure
+            savepath_period = savepath+timeperiod+"/"
+            if not os.path.exists(savepath_period):
+                os.makedirs(savepath_period)
+            filename = "_".join([title.lower().replace(" ","_"), region_name, dsname_short,dsref[0],timeperiod])+".png"
+            plt.savefig(savepath_period+filename, bbox_inches="tight")
+            plt.close()
+        except KeyError:
+            continue
+
+#%%%%% Box plots
+dsignore = [] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', "E-OBS", "CPC"] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
+
+savepathbase = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/daily/"+region_name+"/boxplots/"
+
+to_plot0 = metrics_temporal
+
+to_plot_dict = [ # name, title, units, reference_line, vmin, vmax, cmap
+            ('bias', "BIAS", "mm", 0, -1, 1, "BrBG"), # vmin, vmax and cmap are not necessary
+            ('mae', "MAE", "mm", 0, 0, 3, "Reds"),
+            ('nmae', "NMAE", "%", 0, 0, 10, "Reds"),
+            ('pod', "POD", "", 1, 0.6, 1, "Blues"),
+            ('far', "FAR", "", 0, 0, 0.5, "Reds"),
+            ('csi', "CSI", "", 1, 0.4, 1, "Blues"),
+            ('biass', "BIASS", "", 1, 0.7, 1.3, "BrBG"),
+            ('bias_concurrent', "Concurrent BIAS", "mm", 0, -1, 1, "BrBG"),
+            ('relative_bias_concurrent', "Concurrent relative BIAS", "%", 0, -10, 10, "BrBG"),
+            ('mae_concurrent', "Concurrent MAE", "mm", 0, 0, 3, "Reds"),
+            ('nmae_concurrent', "Concurrent NMAE", "%", 0, 0, 10, "Reds"),
+           ]
+
+tsel = [timesel] #!!! Improvement idea: the temporal metrics could be calculated for a longer period that could then be cut down here, and the spatial and spatem metrics could be calculated for different periods all at once based on subsets
+ignore_incomplete = True # flag for ignoring datasets that do not cover the complete period. Only works for specific periods (not for slice(None, None))
+
+selmonthlist = [("DJF" , [12, 1, 2]),
+           ("JJA", [6, 7, 8]),
+           ("", [1,2,3,4,5,6,7,8,9,10,11,12])] # ("nameofmonth", [month])
+
+print("Plotting boxplots ...")
+for metric_type, title, ylabel, reference_line, vmin, vmax, cmap in to_plot_dict:
+    print("... "+metric_type)
+    for selmonth in selmonthlist:
+        for tseln in tsel:
+            to_plot = to_plot0[metric_type].copy()
+            timeperiodn = timeperiod
+            if tseln.start is not None and tseln.stop is not None: # add specific period to title
+                timeperiodn = "_".join([tseln.start, tseln.stop])
+                
+                if ignore_incomplete:
+                    for key in to_plot.copy().keys():
+                        if not (to_plot[key].time[0].dt.date <= datetime.strptime(tseln.start, "%Y-%m-%d").date() and
+                                to_plot[key].time[-1].dt.date >= datetime.strptime(tseln.stop, "%Y-%m-%d").date()):
+                            del(to_plot[key])
+                
+            # Select the given season
+            for key in to_plot.copy().keys():
+                to_plot[key] = to_plot[key].sel(time=to_plot[key]['time'].dt.month.isin(selmonth[1]))
+            
+            # Initialize a figure and axis
+            plt.close()
+            plt.figure(figsize=(1.25*(len(to_plot.keys())-len(dsignore)), 6))
+            ax = plt.subplot(111)
+            
+            # Create a list to hold the data arrays
+            plotted_arrays = []
+            plotted_arrays_lengths = []
+            
+            # Order according to median:
+            to_plot = dict(sorted(to_plot.items(), key=lambda item: item[1].sel(time=tseln).median()))
+            
+            # Iterate over the datasets in the dictionary
+            for key, value in to_plot.items():
+                if key not in dsignore:
+                    # Plot a box plot for each dataset
+                    value = value.sel(time=tseln).dropna("time")
+                    plotted_arrays.append(value.values) # values of each box
+                    plotted_arrays_lengths.append(len(value)) # number of values in each box
+                    ax.boxplot(value.values, positions=[len(plotted_arrays)], widths=0.6, 
+                                patch_artist=True, boxprops=dict(facecolor='#b6d6e3'), showfliers=False,
+                                medianprops=dict(color="#20788e", lw=2))
+                    # Add the spatem value as another line (like the median)
+                    ax.boxplot(value.values, positions=[len(plotted_arrays)], widths=0.6, 
+                                patch_artist=True, boxprops=dict(facecolor='#b6d6e3'), showfliers=False, showbox=False, showcaps=False, 
+                                usermedians=[float(metrics_spatem[metric_type][key])],
+                                medianprops=dict(color="crimson", lw=2, ls=":"))
+            
+            # Set x-axis ticks and labels with dataset names
+            ax.set_xticks(range(1, len(plotted_arrays) + 1))
+            ax.set_xticklabels([dsname.split("_")[0] if "_" in dsname 
+                                else "-".join(dsname.split("-")[:-1]) if "EURreg" in dsname 
+                                else dsname 
+                                for dsname in 
+                                [ds for ds in to_plot.keys() if ds not in dsignore]
+                                ],
+                               rotation=45, fontsize=15)
+            ax.xaxis.label.set_size(15)     # change xlabel size
+            ax.yaxis.label.set_size(15)     # change ylabel size
+            
+            ax.tick_params(axis='x', labelsize=15) # change xtick label size
+            ax.tick_params(axis='y', labelsize=15) # change xtick label size
+            
+            # # Make a secondary x axis to display the number of values in each box
+            # ax2 = ax.secondary_xaxis('top')
+            # ax2.xaxis.set_ticks_position("bottom")
+            # ax2.xaxis.set_label_position("top")
+            
+            # ax2.set_xticks(range(1, len(plotted_arrays) + 1))
+            # ax2.set_xticklabels(plotted_arrays_lengths)
+            # ax2.set_xlabel('Number of years', fontsize= 15)
+            
+            # Set labels and title
+            titlen = " ".join([selmonth[0], title, region_name+".", "Ref.: "+dsref[0]+".", timeperiodn])
+            #ax.set_xlabel('')
+            ax.set_ylabel(ylabel)
+            ax.set_title(titlen, fontsize=20)
+            
+            # plot a reference line
+            plt.hlines(y=reference_line, xmin=0, xmax=len(plotted_arrays)+1, colors='black', lw=2, zorder=0)
+            
+            plt.xlim(0.5, len(plotted_arrays) + 0.5)
+            
+            # Show and save the plot
+            plt.grid(True)
+            plt.tight_layout()
+            
+            savepathn = savepathbase+timeperiodn+"/"+metric_type+"/"
+            savefilenamen = "_".join(["boxplot", metric_type, selmonth[0], timeperiodn])+".png"
+            if not os.path.exists(savepathn):
+                os.makedirs(savepathn)
+            plt.savefig(savepathn+savefilenamen, bbox_inches="tight")
+            plt.close()
+
+
 #%%%%% PDF
 dsignore = [] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', "E-OBS", "CPC"] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
 
@@ -5731,7 +5927,7 @@ for tseln in tsel:
                 for vv in var_names:
                     if vv in to_plot.data_vars:
                         # Plot
-                        to_plot[vv].where(to_plot[vv]>minpre).plot.hist(bins=bins, density=True, histtype="step", 
+                        to_plot[vv].where(to_plot[vv]>=minpre).plot.hist(bins=bins, density=True, histtype="step", 
                                               label=reduce_dsname(dsname), color=colors[reduce_dsname(dsname)])
                         plt.xscale('log')  # Set the x-axis to logarithmic scale
                         plt.xlim(minpre, 10)
@@ -5815,7 +6011,7 @@ for tseln in tsel:
         if type(to_plot_ref) is xr.Dataset:
             for vv in var_names:
                 if vv in to_plot_ref.data_vars:
-                    to_plot_ref = to_plot_ref[vv].where(to_plot_ref[vv]>minpre)
+                    to_plot_ref = to_plot_ref[vv].where(to_plot_ref[vv]>=minpre)
                     break
 
         for dsname in dstoplot:
@@ -5844,7 +6040,7 @@ for tseln in tsel:
                         ax = plt.gca()
                         to_plot_ref_sel = to_plot_ref.sel(time=to_plot.time)
                         utils.hist_2d(to_plot_ref_sel.values.flatten(), # we need to sel the reference to the to_plot time in case of leap years not present
-                                      to_plot[vv].where(to_plot[vv]>minpre).values.flatten(), 
+                                      to_plot[vv].where(to_plot[vv]>=minpre).values.flatten(), 
                                       bins1=bins, bins2=bins, mini=None, maxi=None, cmap='viridis', 
                                       colsteps=30, alpha=1, mode='absolute', fsize=10, colbar=True)
                         plt.plot([bins[0], bins[-1]], [bins[0], bins[-1]], color="black")
@@ -5853,9 +6049,9 @@ for tseln in tsel:
                         plt.grid()
                         
                         # Plot % of hits and R2
-                        nhits = np.sum(~np.isnan(to_plot_ref_sel.values.flatten()) & ~np.isnan(to_plot[vv].where(to_plot[vv]>minpre).values.flatten()))
+                        nhits = np.sum(~np.isnan(to_plot_ref_sel.values.flatten()) & ~np.isnan(to_plot[vv].where(to_plot[vv]>=minpre).values.flatten()))
                         nhits_norm = nhits/ np.sum(~np.isnan(to_plot_ref_sel.values.flatten()))
-                        r2 = float(xr.corr(to_plot_ref_sel, to_plot[vv].where(to_plot[vv]>minpre)))
+                        r2 = float(xr.corr(to_plot_ref_sel, to_plot[vv].where(to_plot[vv]>=minpre)))
                         
                         plt.text(bins[-1]*0.95, bins[-1]*0.2, 
                                  "hits: "+str(round(nhits_norm*100))+"%\n $R^2$: "+str(round(r2,2)),
