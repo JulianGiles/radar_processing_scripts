@@ -5742,9 +5742,9 @@ for to_plot, title, cbarlabel, vmin, vmax, cmap in to_plot_dict:
             continue
 
 #%%%%% Box plots
-dsignore = [] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', "E-OBS", "CPC"] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
+dsignore = ['TSMP-old-EURregLonLat025deg', 'TSMP-old'] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', "E-OBS", "CPC"] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
 
-savepathbase = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/daily/"+region_name+"/boxplots/"
+savepathbase = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/hourly/"+region_name+"/boxplots/"
 
 to_plot0 = metrics_temporal
 
@@ -5765,9 +5765,10 @@ to_plot_dict = [ # name, title, units, reference_line, vmin, vmax, cmap
 tsel = [timesel] #!!! Improvement idea: the temporal metrics could be calculated for a longer period that could then be cut down here, and the spatial and spatem metrics could be calculated for different periods all at once based on subsets
 ignore_incomplete = True # flag for ignoring datasets that do not cover the complete period. Only works for specific periods (not for slice(None, None))
 
-selmonthlist = [("DJF" , [12, 1, 2]),
+selmonthlist = [("", [1,2,3,4,5,6,7,8,9,10,11,12]),
+                ("DJF" , [12, 1, 2]),
            ("JJA", [6, 7, 8]),
-           ("", [1,2,3,4,5,6,7,8,9,10,11,12])] # ("nameofmonth", [month])
+           ] # ("nameofmonth", [month])
 
 print("Plotting boxplots ...")
 for metric_type, title, ylabel, reference_line, vmin, vmax, cmap in to_plot_dict:
@@ -5871,9 +5872,9 @@ dsignore = [] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', "E-OBS", "C
 dstoplot = [
     'IMERG-V07B-30min-EURregLonLat025deg', 'IMERG-V06B-30min-EURregLonLat025deg', 
     'GSMaP-EURregLonLat025deg',
-    'TSMP-old-EURregLonLat025deg', 'TSMP-DETECT-Baseline-EURregLonLat025deg', 
+    'TSMP-DETECT-Baseline-EURregLonLat025deg', 
     "ERA5-hourly",
-    'RADKLIM-EURregLonLat025deg', 'EURADCLIM-EURregLonLat025deg', 
+    'RADOLAN-EURregLonLat025deg', 'EURADCLIM-EURregLonLat025deg', 
     ]
 
 savepathbase = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/hourly/"+region_name+"/PDF/"
@@ -5888,7 +5889,7 @@ selmonthlist = [("", [1,2,3,4,5,6,7,8,9,10,11,12]),
                 ("JJA", [6, 7, 8]),
            ] # ("nameofmonth", [month])
 
-bins = np.arange(0.1, 10.1, 0.1)
+bins = np.round(np.arange(0.1, 10.1, 0.1), 1) - 0.001
 
 dataref = to_plot0[dsref[0]]
 mask0 = mask.mask(dataref)
@@ -5965,26 +5966,31 @@ dsignore = [] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', "E-OBS", "C
 
 # List of datasets to plot, do not add the reference dataset, it will be added automatically from dsref
 dstoplot = [
-    'IMERG-V07B-30min_E-OBS-grid', 'IMERG-V06B-30min_E-OBS-grid',
-    "CMORPH-daily_E-OBS-grid", "GPROF_E-OBS-grid", "GSMaP_E-OBS-grid",
-    'TSMP-old-EURregLonLat01deg_E-OBS-grid', 'TSMP-DETECT-Baseline-EURregLonLat01deg_E-OBS-grid',
-    'ERA5-hourly_E-OBS-grid',
-    'RADKLIM_E-OBS-grid', 'RADOLAN_E-OBS-grid', 'EURADCLIM_E-OBS-grid', 
-    'HYRAS_E-OBS-grid',
+    'IMERG-V07B-30min-EURregLonLat025deg', 'IMERG-V06B-30min-EURregLonLat025deg', 
+    'GSMaP-EURregLonLat025deg',
+    'TSMP-DETECT-Baseline-EURregLonLat025deg', 
+    "ERA5-hourly",
+    'RADOLAN-EURregLonLat025deg', 'EURADCLIM-EURregLonLat025deg', 
     ]
 
-savepathbase = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/daily/"+region_name+"/2dhist/"
+savepathbase = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/hourly/"+region_name+"/2dhist/"
 
-to_plot0 = data_dailysum.copy()
+to_plot0 = data_hourlysum.copy()
 
 tsel = [timesel]
 ignore_incomplete = True # flag for ignoring datasets that do not cover the complete period. Only works for specific periods (not for slice(None, None))
 
-selmonthlist = [("DJF" , [12, 1, 2]),
-           ("JJA", [6, 7, 8]),
-           ("", [1,2,3,4,5,6,7,8,9,10,11,12])] # ("nameofmonth", [month])
+selmonthlist = [
+    ("", [1,2,3,4,5,6,7,8,9,10,11,12]),
+                ("DJF" , [12, 1, 2]),
+                ("JJA", [6, 7, 8]),
+           ] # ("nameofmonth", [month])
 
-bins = np.arange(1, 125)
+bins = np.round(np.arange(0.1, 15.1, 0.1), 1) - 0.001
+
+dataref = to_plot0[dsref[0]]
+mask0 = mask.mask(dataref)
+if mask_TSMP_nudge: mask0 = TSMP_no_nudge.mask(dataref).where(mask0.notnull())
 
 print("Plotting 2D histograms ...")
 for tseln in tsel:
@@ -6029,6 +6035,10 @@ for tseln in tsel:
                             print("Ignoring "+dsname+" because it does not cover the requested period")
                             continue
                     
+                if "ERA5" in dsname:
+                    # For ERA5 there are tiny differences in the coordinates that I need to solve, otherwise the datasets
+                    # will not align and the .where() will fail
+                    to_plot = to_plot.interp_like(mask0, method="nearest")
                 # Select the given season and mask
                 to_plot = to_plot.sel(time=tseln)
                 to_plot = to_plot.sel(time=to_plot['time'].dt.month.isin(selmonth[1])).where(mask0.notnull(), drop=True)
@@ -6061,9 +6071,9 @@ for tseln in tsel:
                         # plt.yscale('log')  # Set the x-axis to logarithmic scale
                         
                         # Beautify plot
-                        plt.title('2D Histogram of precip days with more than '+str(minpre)+"mm\n"+region_name+" "+selmonth[0]+" "+timeperiodn)
-                        plt.xlabel(reduce_dsname(dsnameref)+' [mm/day]')
-                        plt.ylabel(reduce_dsname(dsname)+' [mm/day]')
+                        plt.title('2D Histogram of precip hours with more than '+str(minpre)+"mm\n"+region_name+" "+selmonth[0]+" "+timeperiodn)
+                        plt.xlabel(reduce_dsname(dsnameref)+' [mm/h]')
+                        plt.ylabel(reduce_dsname(dsname)+' [mm/h]')
                 
                         # Save the plot
                         plt.tight_layout()
@@ -6077,6 +6087,174 @@ for tseln in tsel:
                         plt.close()
 
                         break
+                    
+#%%%%% Mean diurnal cycles (amount, frequency, intensity)
+reload_cycles = True
+cyclessavepath0 = "/automount/agradar/jgiles/gridded_data/hourly_metrics/" # path to save the results of the metrics
+
+dsignore = ['TSMP-old', 'TSMP-old-EURregLonLat025deg'] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', "E-OBS", "CPC"] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
+
+# List of datasets to plot, do not add the reference dataset, it will be added automatically from dsref
+dstoplot = [
+    'IMERG-V07B-30min-EURregLonLat025deg', 'IMERG-V06B-30min-EURregLonLat025deg', 
+    'GSMaP-EURregLonLat025deg',
+    'TSMP-DETECT-Baseline-EURregLonLat025deg', 
+    "ERA5-hourly",
+    'RADOLAN-EURregLonLat025deg', 'EURADCLIM-EURregLonLat025deg', 
+    ]
+
+
+to_plot0 = data_hourlysum.copy()
+
+tsel = [timesel]
+ignore_incomplete = True # flag for ignoring datasets that do not cover the complete period. Only works for specific periods (not for slice(None, None))
+
+selmonthlist = [("", [1,2,3,4,5,6,7,8,9,10,11,12]),
+                ("DJF" , [12, 1, 2]),
+                ("JJA", [6, 7, 8]),
+           ] # ("nameofmonth", [month])
+
+dataref = to_plot0[dsref[0]]
+mask0 = mask.mask(dataref)
+if mask_TSMP_nudge: mask0 = TSMP_no_nudge.mask(dataref).where(mask0.notnull())
+
+amount = {}
+frequency = {}
+intensity = {}
+
+print("Calculating diurnal cycles ...")
+for tseln in tsel:
+    timeperiodn = "_".join([tseln.start, tseln.stop])
+    amount[timeperiodn] = {}
+    frequency[timeperiodn] = {}
+    intensity[timeperiodn] = {}
+    print("... "+timeperiodn)
+    for selmonth in selmonthlist:
+        print("... ... "+selmonth[0])
+        amount[timeperiodn][selmonth[0]] = {}
+        frequency[timeperiodn][selmonth[0]] = {}
+        intensity[timeperiodn][selmonth[0]] = {}
+        
+        for dsname in dstoplot+dsref:
+            print(dsname)
+            if dsname not in dsignore:
+                if reload_cycles:
+                    cyclessavepath = cyclessavepath0+timeperiodn+"/diurnal_cycles/"+region_name+"/"
+                    amount[timeperiodn][selmonth[0]] = xr.open_dataset(os.path.join(cyclessavepath, f"amount_{selmonth[0]}_{reduce_dsname(dsname)}.nc"))
+                    frequency[timeperiodn][selmonth[0]] = xr.open_dataset(os.path.join(cyclessavepath, f"frequency_{selmonth[0]}_{reduce_dsname(dsname)}.nc"))
+                    intensity[timeperiodn][selmonth[0]] = xr.open_dataset(os.path.join(cyclessavepath, f"intensity_{selmonth[0]}_{reduce_dsname(dsname)}.nc"))
+                    print("Cycles for "+region_name+" "+timeperiodn+" "+selmonth[0]+" "+dsname+" were reloaded")
+                else:
+                    to_plot = to_plot0[dsname].copy()
+                    if type(to_plot) is xr.DataArray: to_plot = to_plot.to_dataset()
+                    if tseln.start is not None and tseln.stop is not None: # add specific period to title
+                        
+                        if ignore_incomplete:
+                            if not (to_plot.time[0].dt.date <= datetime.strptime(tseln.start, "%Y-%m-%d").date() and
+                                    to_plot.time[-1].dt.date >= datetime.strptime(tseln.stop, "%Y-%m-%d").date()):
+                                print("Ignoring "+dsname+" because it does not cover the requested period")
+                                continue
+                        
+                    if "ERA5" in dsname:
+                        # For ERA5 there are tiny differences in the coordinates that I need to solve, otherwise the datasets
+                        # will not align and the .where() will fail
+                        to_plot = to_plot.interp_like(mask0, method="nearest")
+    
+                    # Select the given season and mask
+                    to_plot = to_plot.sel(time=tseln)
+                    to_plot = to_plot.sel(time=to_plot['time'].dt.month.isin(selmonth[1])).where(mask0.notnull(), drop=True)
+                                    
+                    for vv in var_names:
+                        if vv in to_plot.data_vars:
+                            st = time.time()
+                            amount[timeperiodn][selmonth[0]][reduce_dsname(dsname)] = to_plot[vv].groupby("time.hour").mean("time").compute()
+                            intensity[timeperiodn][selmonth[0]][reduce_dsname(dsname)] = to_plot[vv].where(to_plot[vv]>=minpre).groupby("time.hour").mean("time").compute()
+                            frequency[timeperiodn][selmonth[0]][reduce_dsname(dsname)] = (to_plot[vv]>=minpre).groupby("time.hour").sum("time").compute()/to_plot[vv].groupby("time.hour").count("time").compute()*100
+                            
+                            et = time.time() - st
+                            print(f" took {et/60:.2f} minutes.")
+                            # Plot
+                            break
+
+
+if not reload_cycles:
+    # Save the diurnal cycles to files
+    print("Saving the diurnal cycles to files")
+    for metric_dict, name in zip([amount, intensity, frequency],
+                                 ['amount', 'intensity', 'frequency']):
+        for timeperiodn in metric_dict.keys():
+            cyclessavepath = cyclessavepath0+timeperiodn+"/diurnal_cycles/"+region_name+"/"
+            if not os.path.exists(cyclessavepath):
+                os.makedirs(cyclessavepath)
+            for seasname in metric_dict[timeperiodn].keys():
+                for dsname in metric_dict[timeperiodn][seasname].keys():
+                    
+                    # Convert the data to an xarray Dataset and save as NetCDF
+                    metric_dataset = xr.Dataset({f"{name}": metric_dict[timeperiodn][seasname][dsname]})
+                    metric_filename = os.path.join(cyclessavepath, f"{name}_{seasname}_{dsname}.nc")
+                    metric_dataset.to_netcdf(metric_filename)
+                    print(f"Saved {seasname} {name} for {dsname} to {metric_filename}")
+
+#%%%%% Plot mean diurnal cycles (amount, frequency, intensity)
+savepathbase = "/automount/agradar/jgiles/images/gridded_datasets_intercomparison/hourly/"+region_name+"/mean_diurnal_cycles/"
+
+# List of datasets to plot, INCLUDING REFERENCE DATASET
+dstoplot = [
+    'IMERG-V07B', 'IMERG-V06B', 
+    'GSMaP',
+    'TSMP-DETECT', 
+    "ERA5",
+    'RADOLAN', 'EURADCLIM', "RADKLIM",
+    ]
+
+dsignore = ['TSMP-old', 'TSMP-old-EURregLonLat025deg'] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', "E-OBS", "CPC"] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
+
+print("Plotting mean diurnal cycles ...")
+for tseln in tsel:
+    timeperiodn = "_".join([tseln.start, tseln.stop])
+    print("... "+timeperiodn)
+    for selmonth in selmonthlist:
+        print("... ... "+selmonth[0])
+        
+        amount0 = amount[timeperiodn][selmonth[0]]
+        frequency0 = frequency[timeperiodn][selmonth[0]]
+        intensity0 = intensity[timeperiodn][selmonth[0]]
+        
+        for to_plot0, name, units in zip([amount0, frequency0, intensity0],
+                                         ['amount', 'frequency', 'intensity'],
+                                         ["mm", "%", "mm"]):
+            for dsname in dstoplot:
+                if dsname not in dsignore:
+                    to_plot = to_plot0[dsname].copy()
+    
+                    # # Plot
+                    # plt.figure(figsize=(7,5))
+                    # ax = plt.gca()
+                    
+                    to_plot.mean(("lon", "lat")).plot(label = dsname, color=colors[dsname])
+                                            
+                   
+            # Beautify plot
+            plt.title('Diurnal cycle '+name+" \n"+region_name+" "+selmonth[0]+" "+timeperiodn)
+            plt.xlabel('hour')
+            plt.ylabel(units)
+    
+            plt.grid()
+            plt.legend(loc=(1.05, 0.3))
+
+            # Save the plot
+            plt.tight_layout()
+            
+            # plt.show()
+                    
+            savepathn = savepathbase+timeperiodn+"/"
+            savefilenamen = "_".join([name,"diurnal_cycle", selmonth[0], timeperiodn])+".png"
+            if not os.path.exists(savepathn):
+                os.makedirs(savepathn)
+            plt.savefig(savepathn+savefilenamen, bbox_inches="tight")
+            
+            plt.close()
+
 
 #%% REGRIDDING TESTS
 #%%% Simple map plot TSMP original
