@@ -660,7 +660,7 @@ print("Calculating yearly sums ...")
 data_yearlysum = {}
 for dsname in ds_to_load:
     if dsname not in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
-                      "EURADCLIM", "GPROF"]:
+                      "EURADCLIM", "GPROF", "GSMaP"]:
         print("... "+dsname)
         data_yearlysum[dsname] = data[dsname].resample({"time": "YS"}).sum().compute()
     if dsname in ["GPROF"]:
@@ -675,7 +675,7 @@ for dsname in ds_to_load:
     if not os.path.exists(savepath_dsname):
         os.makedirs(savepath_dsname)
     if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
-                  "EURADCLIM"]:
+                  "EURADCLIM", "GSMaP"]:
         # special treatment for these datasets, otherwise it will crash
         if dsname == "HYRAS":
             Cdo().yearsum(input="/automount/ags/jgiles/HYRAS-PRE-DE/daily/hyras_de/precipitation/pr_hyras_1_1931_2020_v5-0_de.nc", 
@@ -685,6 +685,21 @@ for dsname in ds_to_load:
         if dsname in ["EURADCLIM"]:
             Cdo().yearsum(input="/automount/agradar/jgiles/gridded_data/monthly/EURADCLIM/EURADCLIM_precipitation_monthlysum_2013-2020.nc", 
                          output="/automount/agradar/jgiles/gridded_data/yearly/EURADCLIM/EURADCLIM_precipitation_yearlysum_2013-2020.nc", options="-z zip_6")
+        if dsname in "GSMaP":
+            print("... ... from daily files")
+            gsmap_daily_path ="/automount/agradar/jgiles/gridded_data/daily/GSMaP/"
+            gsmap_daily_files = glob.glob(os.path.join(gsmap_daily_path, '*.nc'))
+            for year in range(1998, 2024):  # Adjust the range as needed
+                # Filter the files that correspond to the current year
+                year_files = [f for f in gsmap_daily_files if f"_{year}-" in f]
+                
+                # Load the files for this year into an xarray dataset
+                if year_files:  # Only process if there are files for the current year
+                    gsmap_year = xr.open_mfdataset(year_files)
+                    gsmap_year.resample({"time": "YS"}).sum().to_netcdf(savepath_dsname+"/"+dsname+"_"+vname+"_yearlysum_"+str(year)+".nc", 
+                                                                        encoding=dict([(vv,{"zlib":True, "complevel":6}) for vv in gsmap_year.data_vars]))
+                else:
+                    print(f'No files found for the year {year}')            
     else:
         sd = str(data_yearlysum[dsname].time[0].values)[0:4]
         ed = str(data_yearlysum[dsname].time[-1].values)[0:4]
