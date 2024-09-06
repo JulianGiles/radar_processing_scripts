@@ -86,6 +86,31 @@ def reduce_dsname(dsname):
     warnings.warn(warnmsg)
     return dsname
 
+colors = {
+    "IMERG-V07B-monthly": "#FF6347", "IMERG-V07B-30min": "#FF6347",    "IMERG-V07B": "#FF6347", # Tomato
+    "IMERG-V06B-monthly": "crimson", "IMERG-V06B-30min": "crimson",    "IMERG-V06B": "crimson",  # crimson
+    "CMORPH-daily": "#A52A2A",        "CMORPH": "#A52A2A", # Brown
+    "TSMP-old": "#4682B4", # SteelBlue
+    "TSMP-DETECT-Baseline": "#1E90FF", "TSMP-DETECT": "#1E90FF", # DodgerBlue
+    "ERA5-monthly": "#8A2BE2",       "ERA5-hourly": "#8A2BE2",         "ERA5": "#8A2BE2", # BlueViolet
+    "RADKLIM": "#006400", # DarkGreen
+    "RADOLAN": "#228B22", # ForestGreen
+    "EURADCLIM": "#32CD32", # LimeGreen
+    "GPCC-monthly": "black",          "GPCC": "black", # Black
+    "GPROF": "#FF1493", # DeepPink
+    "GSMaP": "#FF7BA6", # PalePink
+    "HYRAS": "#FFD700", # Gold
+    "E-OBS": "#FFA500", # Orange
+    "CPC": "#FF8C00", # DarkOrange
+    }
+
+def hex_to_rgba(hex_color, alpha=0.5):
+    # Convert HEX to RGB
+    rgb = mcolors.hex2color(hex_color)
+    # Add the alpha (transparency) value
+    rgba = rgb + (alpha,)
+    return rgba
+
 #%% YEARLY analysis
 
 #%%% Load yearly datasets
@@ -110,6 +135,7 @@ paths_yearly = {
     "HYRAS": loadpath_yearly+"HYRAS/HYRAS_precipitation_yearlysum_1931-2020.nc", 
     "E-OBS": loadpath_yearly+"E-OBS/E-OBS_precipitation_yearlysum_1950-2023.nc", 
     "CPC": loadpath_yearly+"CPC/CPC_precipitation_yearlysum_1979-2024.nc", 
+    "GSMaP": loadpath_yearly+"GSMaP/GSMaP_precipitation_yearlysum_*.nc", 
     }
 
 data_yearlysum = {}
@@ -118,7 +144,10 @@ data_yearlysum = {}
 print("Loading yearly datasets ...")
 for dsname in paths_yearly.keys():
     print("... "+dsname)
-    data_yearlysum[dsname] = xr.open_dataset(paths_yearly[dsname])
+    if "*" in paths_yearly[dsname]:
+        data_yearlysum[dsname] = xr.open_mfdataset(paths_yearly[dsname])
+    else:
+        data_yearlysum[dsname] = xr.open_dataset(paths_yearly[dsname])
 
 # Special tweaks
 # RADOLAN GRID AND CRS
@@ -163,22 +192,6 @@ if "GPROF" in data_yearlysum.keys():
 if "CPC" in data_yearlysum.keys():
     data_yearlysum["CPC"] = data_yearlysum["CPC"].loc[{"time":slice("1979", "2023")}]
 
-colors = {
-    "IMERG-V07B-monthly": "#FF6347", # Tomato
-    "IMERG-V06B-monthly": "crimson", # crimson
-    "CMORPH-daily": "#A52A2A", # Brown
-    "TSMP-old": "#4682B4", # SteelBlue
-    "TSMP-DETECT-Baseline": "#1E90FF", # DodgerBlue
-    "ERA5-monthly": "#8A2BE2", # BlueViolet
-    "RADKLIM": "#006400", # DarkGreen
-    "RADOLAN": "#228B22", # ForestGreen
-    "EURADCLIM": "#32CD32", # LimeGreen
-    "GPCC-monthly": "black", # Black
-    "GPROF": "#FF1493", # DeepPink
-    "HYRAS": "#FFD700", # Gold
-    "E-OBS": "#FFA500", # Orange
-    "CPC": "#FF8C00", # DarkOrange
-    }
 
 var_names = ["TOT_PREC", "precipitation", "pr", "surfacePrecipitation", "precip", "Precip", 
              "RW", "RR", "tp", "cmorph", "rr", "hourlyPrecipRateGC"]
@@ -235,7 +248,7 @@ for dsname in data_to_avg.keys():
         data_avgreg[dsname] = data_to_avg[dsname].where(mask0.notnull()).mean(("x", "y")).compute()
 
     if dsname in ["IMERG-V07B-monthly", "IMERG-V06B-monthly", "CMORPH-daily", "ERA5-monthly", 
-                  "GPCC-monthly", "GPCC-daily", "GPROF", "E-OBS", "CPC"]:
+                  "GPCC-monthly", "GPCC-daily", "GPROF", "E-OBS", "CPC", "GSMaP"]:
         # these datasets come in regular lat-lon grids, so we need to average over the region considering the area weights
         variables_to_include = [vv for vv in data_to_avg[dsname].data_vars \
                                 if "lonv" not in data_to_avg[dsname][vv].dims \
@@ -327,24 +340,13 @@ var_names = ["TOT_PREC", "precipitation", "pr", "surfacePrecipitation", "precip"
 dsignore = [] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
 dsref = ["GPCC-monthly"] # dataset to take as reference (black and bold curve)
 
-colors = {
-    "IMERG-V07B-monthly": "#FF6347", # Tomato
-    "IMERG-V06B-monthly": "crimson", # crimson
-    "CMORPH-daily": "#A52A2A", # Brown
-    "TSMP-old": "#4682B4", # SteelBlue
-    "TSMP-DETECT-Baseline": "#1E90FF", # DodgerBlue
-    "ERA5-monthly": "#8A2BE2", # BlueViolet
-    "RADKLIM": "#006400", # DarkGreen
-    "RADOLAN": "#228B22", # ForestGreen
-    "EURADCLIM": "#32CD32", # LimeGreen
-    "GPCC-monthly": "black", # Black
-    "GPROF": "#FF1493", # DeepPink
-    "HYRAS": "#FFD700", # Gold
-    "E-OBS": "#FFA500", # Orange
-    "CPC": "#FF8C00", # DarkOrange
-    }
+dstoplot = ['IMERG-V07B-monthly', 'IMERG-V06B-monthly', 'CMORPH-daily', 'GPROF', "GSMaP",
+            'RADKLIM', 'RADOLAN', 'EURADCLIM', 
+            'TSMP-old', 'TSMP-DETECT-Baseline',
+            'ERA5-monthly', 
+            'GPCC-monthly', 'HYRAS', 'E-OBS', 'CPC']
 
-for dsname in data_avgreg.keys():
+for dsname in dstoplot:
     if dsname in dsignore:
         continue
     plotted = False
@@ -358,10 +360,12 @@ for dsname in data_avgreg.keys():
             else: 
                 color = colors[dsname]
             try:
-                plt.plot(data_avgreg[dsname]['time'], data_avgreg[dsname][vv], label=dsname, c=color, marker=marker)
+                plt.plot(data_avgreg[dsname]['time'], data_avgreg[dsname][vv], 
+                         label=reduce_dsname(dsname), c=color, marker=marker)
             except TypeError:
                 # try to change the time coord to datetime format
-                plt.plot(data_avgreg[dsname].indexes['time'].to_datetimeindex(), data_avgreg[dsname][vv], label=dsname, c=color, marker=marker)
+                plt.plot(data_avgreg[dsname].indexes['time'].to_datetimeindex(), data_avgreg[dsname][vv], 
+                         label=reduce_dsname(dsname), c=color, marker=marker)
             plotted = True
     if not plotted:
         raise Warning("Nothing plotted for "+dsname)
@@ -768,15 +772,19 @@ for tseln in tsel:
             value = value.sel(time=tseln)
             plotted_arrays.append(value.values) # values of each box
             plotted_arrays_lengths.append(len(value)) # number of values in each box
-            ax.boxplot(value.values, positions=[len(plotted_arrays)], widths=0.6, 
-                       patch_artist=True, boxprops=dict(facecolor='#b6d6e3'),
-                       medianprops=dict(color="#20788e", lw=2))
+            box = ax.boxplot(value.values, positions=[len(plotted_arrays)], widths=0.6, 
+                        patch_artist=True, 
+                        boxprops=dict(facecolor=hex_to_rgba(colors[reduce_dsname(key)], 0.2), 
+                                      edgecolor=colors[reduce_dsname(key)], lw = 2), #'#b6d6e3'
+                        medianprops=dict(color=colors[reduce_dsname(key)], lw=2.5), #"#20788e"
+                        whiskerprops=dict(color=colors[reduce_dsname(key)], lw=2),
+                        capprops=dict(color=colors[reduce_dsname(key)], lw=2),
+                        flierprops=dict(markeredgecolor=colors[reduce_dsname(key)], lw=2)
+                        ) 
     
     # Set x-axis ticks and labels with dataset names
     ax.set_xticks(range(1, len(plotted_arrays) + 1))
-    ax.set_xticklabels([dsname.split("_")[0] if "_" in dsname 
-                        else "-".join(dsname.split("-")[:-1]) if "EURreg" in dsname 
-                        else dsname 
+    ax.set_xticklabels([reduce_dsname(dsname) 
                         for dsname in 
                         [ds for ds in to_plot.keys() if ds not in dsignore]
                         ],
@@ -786,6 +794,15 @@ for tseln in tsel:
     
     ax.tick_params(axis='x', labelsize=15) # change xtick label size
     ax.tick_params(axis='y', labelsize=15) # change xtick label size
+    
+    # dsnames=[dsname.split("_")[0] if "_" in dsname 
+    #                 else "-".join(dsname.split("-")[:-1]) if "EURreg" in dsname 
+    #                 else dsname 
+    #                 for dsname in 
+    #                 [ds for ds in to_plot.keys() if ds not in dsignore]
+    #                 ]
+    # for xtick, color in zip(ax.get_xticklabels(), [colors[dsname] for dsname in dsnames]):
+    #     xtick.set_color(color)
     
     # Make a secondary x axis to display the number of values in each box
     ax2 = ax.secondary_xaxis('top')
@@ -831,7 +848,7 @@ data_to_stat = data_yearlysum
 tslice = slice("2015","2020") # this covers all
 # tslice = slice("2013","2020") # this excludes GPROF
 # tslice = slice("2006","2020") # this excludes GPROF and EURADCLIM
-tslice = slice("2001","2020") # this excludes GPROF, EURADCLIM and RADOLAN
+# tslice = slice("2001","2020") # this excludes GPROF, EURADCLIM and RADOLAN
 
 ccoef = dict()
 crmsd = dict()
