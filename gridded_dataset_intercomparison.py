@@ -4306,6 +4306,94 @@ for metric_type, title, ylabel, reference_line, vmin, vmax, cmap in to_plot_dict
             plt.savefig(savepathn+savefilenamen, bbox_inches="tight")
             plt.close()
 
+#%%%%% Table summary of metrics #!!! STILL WORKING ON IT!
+
+# List of metrics and their corresponding attributes (name, title, units, reference_line, vmin, vmax, cmap, bes value)
+to_plot_dict = [ # name, title, units, reference_line, vmin, vmax, cmap, best value
+            ('bias', "BIAS", "mm", 0, -1, 1, "BrBG", 0.), 
+            ('mae', "MAE", "mm", 0, 0, 3, "Reds", 0.),
+            ('nmae', "NMAE", "%", 0, 0, 10, "Reds", 0.),
+            ('pod', "POD", "", 1, 0.6, 1, "Blues_r", 1.),
+            ('far', "FAR", "", 0, 0, 0.5, "Reds", 0.),
+            ('csi', "CSI", "", 1, 0.4, 1, "Blues_r", 1.),
+            ('biass', "BIASS", "", 1, 0.7, 1.3, "BrBG", 1.),
+            ('bias_concurrent', "Concurrent BIAS", "mm", 0, -1, 1, "BrBG", 0.),
+            ('relative_bias_concurrent', "Concurrent relative BIAS", "%", 0, -60, 60, "BrBG", 0.),
+            ('mae_concurrent', "Concurrent MAE", "mm", 0, 0, 5, "Reds", 0.),
+            ('nmae_concurrent', "Concurrent NMAE", "%", 0, 0, 10, "Reds", 0.),
+           ]
+
+# List of datasets to plot, in the order we want it, do not add the reference dataset
+dstoplot = [
+    'IMERG-V07B-30min', 'IMERG-V06B-30min',
+    "CMORPH-daily", "GPROF", "GSMaP",
+    'TSMP-old-EURregLonLat01deg', 'TSMP-DETECT-Baseline-EURregLonLat01deg',
+    'ERA5-hourly',
+    'RADKLIM', 'RADOLAN', 'EURADCLIM', 
+    # 'HYRAS',
+    ]
+
+
+fontsize = 20
+
+num_datasets = len(dstoplot)
+
+# Adjust the figure size and grid to make the cells squared
+fig, ax = plt.subplots(len(to_plot_dict), 1, figsize=(num_datasets * 2, len(to_plot_dict) * 2), gridspec_kw={'hspace': 0.})
+
+for i, (metric, title, unit, ref_line, vmin, vmax, cmap, best) in enumerate(to_plot_dict):
+    # Extract values for the current metric
+    values = np.array([metrics_spatem[metric][dataset].values if hasattr(metrics_spatem[metric][dataset], 'values') else metrics_spatem[metric][dataset] for dataset in dstoplot])
+    
+    # Get the index of the maximum value
+    max_idx = np.argmax(values)
+
+    # Get the index of the best value
+    best_idx = np.argmin(abs(values-best))
+    
+    # Plot the table cells with color
+    for j, value in enumerate(values):
+        # Determine the normalized color value based on vmin, vmax, cmap
+        normalized_value = (value - vmin) / (vmax - vmin)
+        normalized_value = np.clip(normalized_value, 0, 1)  # Ensure values are in [0, 1] range
+        
+        # Use matplotlib colormaps
+        color_map = plt.get_cmap(cmap)
+        cell_color = color_map(normalized_value)
+        
+        # Fill the cell with the calculated color
+        ax[i].add_patch(plt.Rectangle((j, 0), 1, 1, color=cell_color, lw=0))
+        
+        # Annotate the cell with the value (larger font size)
+        ax[i].text(j + 0.5, 0.5, f"{value:.3f}", ha='center', va='center', color='black', 
+                   fontweight='bold' if j == best_idx else 'normal', fontsize=fontsize)
+    
+    # Set x-ticks only for the last row
+    if i == len(to_plot_dict) - 1:
+        ax[i].set_xticks(np.arange(num_datasets) + 0.5)
+        ax[i].set_xticklabels([reduce_dsname(ds) for ds in dstoplot], rotation=45, ha="right", 
+                              fontsize=fontsize, fontweight='bold') 
+    else:
+        ax[i].set_xticks([])
+    
+    # Set y-tick labels with metric titles on the side (larger font size)
+    ax[i].set_yticks([0.5])
+    ax[i].set_yticklabels([f"{title} [{unit}]"], rotation=0, ha="right", va="center", fontsize=fontsize, fontweight='bold')
+    ax[i].tick_params(axis='y', which='both', length=0)  # Hide tick marks
+    
+    # Set square aspect ratio for the cells
+    ax[i].set_aspect('equal')
+    
+    # Set limits
+    ax[i].set_xlim([0, len(dstoplot)])
+    ax[i].set_ylim([0, 1])
+
+# Adjust layout
+plt.tight_layout()
+plt.show()
+
+
+
 #%%%%% PDF
 dsignore = [] # ['CMORPH-daily', 'GPROF', 'HYRAS_GPCC-monthly-grid', "E-OBS", "CPC"] #['CMORPH-daily', 'RADKLIM', 'RADOLAN', 'EURADCLIM', 'GPROF', 'HYRAS', "IMERG-V06B-monthly", "ERA5-monthly"] # datasets to ignore in the plotting
 
