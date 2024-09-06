@@ -4246,19 +4246,25 @@ for metric_type, title, ylabel, reference_line, vmin, vmax, cmap in to_plot_dict
                     plotted_arrays.append(value.values) # values of each box
                     plotted_arrays_lengths.append(len(value)) # number of values in each box
                     ax.boxplot(value.values, positions=[len(plotted_arrays)], widths=0.6, 
-                                patch_artist=True, boxprops=dict(facecolor='#b6d6e3'), showfliers=False,
-                                medianprops=dict(color="#20788e", lw=2))
+                                patch_artist=True, showfliers=False,
+                        boxprops=dict(facecolor=hex_to_rgba(colors[reduce_dsname(key)], 0.2), 
+                                      edgecolor=colors[reduce_dsname(key)], lw = 2), #'#b6d6e3'
+                                        medianprops=dict(color=colors[reduce_dsname(key)], lw=2.5), #"#20788e"
+                                        whiskerprops=dict(color=colors[reduce_dsname(key)], lw=2),
+                                        capprops=dict(color=colors[reduce_dsname(key)], lw=2),
+                                        flierprops=dict(markeredgecolor=colors[reduce_dsname(key)], lw=2)
+                                )
                     # Add the spatem value as another line (like the median)
                     ax.boxplot(value.values, positions=[len(plotted_arrays)], widths=0.6, 
-                                patch_artist=True, boxprops=dict(facecolor='#b6d6e3'), showfliers=False, showbox=False, showcaps=False, 
+                                patch_artist=True, boxprops=dict(facecolor='#b6d6e3'), 
+                                showfliers=False, showbox=False, showcaps=False, 
                                 usermedians=[float(metrics_spatem[metric_type][key])],
+                                whiskerprops=dict(color=colors[reduce_dsname(key)], lw=0),
                                 medianprops=dict(color="crimson", lw=2, ls=":"))
             
             # Set x-axis ticks and labels with dataset names
             ax.set_xticks(range(1, len(plotted_arrays) + 1))
-            ax.set_xticklabels([dsname.split("_")[0] if "_" in dsname 
-                                else "-".join(dsname.split("-")[:-1]) if "EURreg" in dsname 
-                                else dsname 
+            ax.set_xticklabels([reduce_dsname(dsname)
                                 for dsname in 
                                 [ds for ds in to_plot.keys() if ds not in dsignore]
                                 ],
