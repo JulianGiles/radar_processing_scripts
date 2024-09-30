@@ -6251,9 +6251,9 @@ for tseln in tsel:
             if dsname not in dsignore:
                 if reload_cycles:
                     cyclessavepath = cyclessavepath0+timeperiodn+"/diurnal_cycles/"+region_name+"/"
-                    amount[timeperiodn][selmonth[0]] = xr.open_dataset(os.path.join(cyclessavepath, f"amount_{selmonth[0]}_{reduce_dsname(dsname)}.nc"))
-                    frequency[timeperiodn][selmonth[0]] = xr.open_dataset(os.path.join(cyclessavepath, f"frequency_{selmonth[0]}_{reduce_dsname(dsname)}.nc"))
-                    intensity[timeperiodn][selmonth[0]] = xr.open_dataset(os.path.join(cyclessavepath, f"intensity_{selmonth[0]}_{reduce_dsname(dsname)}.nc"))
+                    amount[timeperiodn][selmonth[0]][reduce_dsname(dsname)] = xr.open_dataset(os.path.join(cyclessavepath, f"amount_{selmonth[0]}_{reduce_dsname(dsname)}.nc"))
+                    frequency[timeperiodn][selmonth[0]][reduce_dsname(dsname)] = xr.open_dataset(os.path.join(cyclessavepath, f"frequency_{selmonth[0]}_{reduce_dsname(dsname)}.nc"))
+                    intensity[timeperiodn][selmonth[0]][reduce_dsname(dsname)] = xr.open_dataset(os.path.join(cyclessavepath, f"intensity_{selmonth[0]}_{reduce_dsname(dsname)}.nc"))
                     print("Cycles for "+region_name+" "+timeperiodn+" "+selmonth[0]+" "+dsname+" were reloaded")
                 else:
                     to_plot = to_plot0[dsname].copy()
