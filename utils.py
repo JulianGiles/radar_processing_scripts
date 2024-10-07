@@ -1051,8 +1051,8 @@ def compute_rdqvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1}, max_range=50
     qvps_highres = xr.concat(qvps_highres, dim="sweep_fixed_angle")
     qvps_highres_count = xr.concat(qvps_highres_count, dim="sweep_fixed_angle")
     
-    # weighted average of all elevs
-    ds_qvp = qvps_highres.weighted(qvps_highres_count["DBZH"].fillna(0)).mean("sweep_fixed_angle")
+    # weighted median of all elevs
+    ds_qvp = qvps_highres.weighted(qvps_highres_count["DBZH"].fillna(0)).quantile(q=0.5, dim="sweep_fixed_angle")
     
     return ds_qvp
 
