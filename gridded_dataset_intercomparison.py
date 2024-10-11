@@ -4106,9 +4106,9 @@ if not reload_metrics:
 #%%%% Metrics plots
 #%%%%% Simple map plot
 # region = "Germany" #"land" 
-to_plot = metrics["bias"]
-dsname = "IMERG-V07B-30min"
-title = "BIAS"
+to_plot = metrics["bias_concurrent"]
+dsname = "GSMaP"
+title = "Concurrent bias"
 timesel0 = "2016-06-01"
 cbarlabel = "mm" # mm
 vmin = -10
@@ -4506,6 +4506,16 @@ selmonthlist = [("DJF" , [12, 1, 2]),
 
 bins = np.arange(1, 125)
 
+plot_mean_ds_per_bin = True
+plot_mean_bias_per_bin = True
+plot_mean_relbias_per_bin = True
+
+meanbiascol = "blue" # color for the mean bias and relative bias scatters
+meanbiasmarker = "o"
+meanrelbiasmarker = "^"
+markersize = 8
+simetrical_yaxes = True # force simetrical yaxes scale in the mean bias scatters?
+
 print("Plotting 2D histograms ...")
 for tseln in tsel:
     print("... "+"_".join([tseln.start, tseln.stop]))
@@ -4556,7 +4566,7 @@ for tseln in tsel:
                 for vv in var_names:
                     if vv in to_plot.data_vars:
                         # Plot
-                        plt.figure(figsize=(7,5))
+                        fig = plt.figure(figsize=(7,5))
                         ax = plt.gca()
                         to_plot_ref_sel = to_plot_ref.sel(time=to_plot.time)
                         utils.hist_2d(to_plot_ref_sel.values.flatten(), # we need to sel the reference to the to_plot time in case of leap years not present
@@ -4564,8 +4574,18 @@ for tseln in tsel:
                                       bins1=bins, bins2=bins, mini=None, maxi=None, cmap='viridis', 
                                       colsteps=30, alpha=1, mode='absolute', fsize=10, colbar=True)
                         plt.plot([bins[0], bins[-1]], [bins[0], bins[-1]], color="black")
+                        
+                        # Plot line of mean of dsname per bin
+                        if plot_mean_ds_per_bin:
+                            for binn in np.arange(1, len(bins)):
+                                cond = to_plot[vv].where(to_plot[vv]>minpre).where(to_plot_ref_sel > bins[binn-1]).where(to_plot_ref_sel < bins[binn])
+                                plt.scatter((bins[binn-1]+bins[binn])/2,
+                                            cond.mean(),
+                                            color="r", s=markersize
+                                            )
+
                         ax.set_aspect('equal', adjustable='box')
-                                                
+     
                         plt.grid()
                         
                         # Plot % of hits and R2
@@ -4573,9 +4593,9 @@ for tseln in tsel:
                         nhits_norm = nhits/ np.sum(~np.isnan(to_plot_ref_sel.values.flatten()))
                         r2 = float(xr.corr(to_plot_ref_sel, to_plot[vv].where(to_plot[vv]>minpre)))
                         
-                        plt.text(bins[-1]*0.95, bins[-1]*0.2, 
+                        plt.text(bins[-1]*0.5, bins[-1]*0.9, 
                                  "hits: "+str(round(nhits_norm*100))+"%\n $R^2$: "+str(round(r2,2)),
-                                 ha="right", size="large")
+                                 ha="center", size="large")
                         
                         # plt.xscale('log')  # Set the x-axis to logarithmic scale
                         # plt.yscale('log')  # Set the x-axis to logarithmic scale
@@ -4584,9 +4604,61 @@ for tseln in tsel:
                         plt.title('2D Histogram of precip days with more than '+str(minpre)+"mm\n"+region_name+" "+selmonth[0]+" "+timeperiodn)
                         plt.xlabel(reduce_dsname(dsnameref)+' [mm/day]')
                         plt.ylabel(reduce_dsname(dsname)+' [mm/day]')
+
+
+                        # Plot line of mean bias and relative bias per bin
+                        if plot_mean_relbias_per_bin or plot_mean_bias_per_bin:
+                            xvals = []
+                            yvals = []
+                            yvalsrel = []
+                            for binn in np.arange(1, len(bins)):
+                                xvals.append((bins[binn-1]+bins[binn])/2)
+                                cond = metrics['bias_concurrent']["GSMaP"].where(to_plot[vv]>minpre).where(to_plot_ref_sel > bins[binn-1]).where(to_plot_ref_sel < bins[binn])
+                                condrel = metrics['relative_bias_concurrent']["GSMaP"].where(to_plot[vv]>minpre).where(to_plot_ref_sel > bins[binn-1]).where(to_plot_ref_sel < bins[binn])
+                                yvals.append(float(cond.mean()))
+                                yvalsrel.append(float(condrel.mean()))
+                        
+                        if plot_mean_relbias_per_bin:
+                            ax2 = fig.add_axes(ax.get_position(), sharex=ax)
+                            ax2.set_facecolor("None")
+                            # ax2.set_aspect('equal') # This is for scaling both axes to a 1 to 1 ratio
+                            ax2.plot(ax.get_xlim(), [0, 0], color=meanbiascol) # plot the 0 line
+                            ax2.scatter(xvals,
+                                        yvalsrel,
+                                        color=meanbiascol, s=markersize, marker=meanrelbiasmarker,
+                                        )
+                            plt.xlim(ax.get_xlim())
+                            # ax2.set_xlim(ax.get_xlim()[0], ax.get_xlim()[1])
+                            ax2.tick_params(bottom=0, top=0, left=0, right=1, 
+                                            labelbottom=1, labeltop=0, labelleft=0, labelright=1)
+                            ax2.tick_params(axis="y",direction="in", pad=-30, color= meanbiascol, colors=meanbiascol, which="both")
+                            ax2.yaxis.label.set_color(meanbiascol)
+                            if simetrical_yaxes: ax2.set_ylim(-abs(np.array(ax2.get_ylim())).max(), 
+                                                              abs(np.array(ax2.get_ylim())).max())
+                            ax2.set_box_aspect(1)
+                            
+                        if plot_mean_bias_per_bin:
+                            ax3 = fig.add_axes(ax2.get_position(), sharex=ax)
+                            ax3.set_facecolor("None")
+                            # ax3.set_aspect('equal') # This is for scaling both axes to a 1 to 1 ratio
+                            ax3.scatter(xvals,
+                                        yvals,
+                                        color=meanbiascol, s=markersize, marker=meanbiasmarker,
+                                        )
+                            # plt.xlim(ax.get_xlim())
+                            # ax3.set_xlim(ax2.get_xlim()[0], ax2.get_xlim()[1])
+                            ax3.plot(ax.get_xlim(), [0, 0], color=meanbiascol, ls="--") # plot the 0 line
+                            ax3.tick_params(bottom=0, top=0, left=0, right=1, 
+                                            labelbottom=1, labeltop=0, labelleft=0, labelright=1)
+                            if plot_mean_relbias_per_bin: ax3.set_ylim(ax2.get_ylim()[0], ax2.get_ylim()[1])
+                            elif simetrical_yaxes: ax3.set_ylim(-abs(np.array(ax3.get_ylim())).max(), 
+                                                              abs(np.array(ax3.get_ylim())).max())
+                            ax3.tick_params(axis="y",direction="in", pad=-30, color= meanbiascol, colors=meanbiascol, which="both")
+                            ax3.yaxis.label.set_color(meanbiascol)
+                            ax3.set_box_aspect(1)
                 
                         # Save the plot
-                        plt.tight_layout()
+                        # plt.tight_layout()
                                 
                         savepathn = savepathbase+timeperiodn+"/"
                         savefilenamen = "_".join(["2dhist",dsname, selmonth[0], timeperiodn])+".png"
