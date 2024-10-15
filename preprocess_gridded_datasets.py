@@ -82,13 +82,13 @@ ds_to_load = [
     # "ERA5-hourly",
     # "RADKLIM",
     # "RADOLAN",
-    # "EURADCLIM",
+    "EURADCLIM",
     # "GPCC-monthly",
     # "GPCC-daily",
     # "E-OBS",
     # "CPC",
     # "GPROF",
-    "GSMaP",  # avoid loading this, it will take forever and not work efficiently. Calculations below are handled without loading everything.
+    # "GSMaP",  # avoid loading this, it will take forever and not work efficiently. Calculations below are handled without loading everything.
     # "HYRAS", # do not load this unless necessary, currently the calculations are done with cdo
     # "GRACE-GDO",
     # "GRACE-GSFC",
@@ -314,7 +314,7 @@ if "TSMP-Ben" in ds_to_load:
 if "EURADCLIM" in ds_to_load:
     print("Loading EURADCLIM...")
     if "precipitation" in var_to_load:    
-        data["EURADCLIM"] = xr.open_mfdataset("/automount/agradar/jgiles/EURADCLIM/concat_files/RAD_OPERA_HOURLY_RAINFALL_*.nc")
+        data["EURADCLIM"] = xr.open_mfdataset("/automount/ags/jgiles/EURADCLIM_v2/concat_files/RAD_OPERA_HOURLY_RAINFALL_*.nc")
         data["EURADCLIM"] = data["EURADCLIM"].set_coords(("lon", "lat"))
         data["EURADCLIM"]["lon"] = data["EURADCLIM"]["lon"][0]
         data["EURADCLIM"]["lat"] = data["EURADCLIM"]["lat"][0]
@@ -509,8 +509,8 @@ for dsname in ds_to_load:
                 data[dsname].loc[{"time":str(yy)}].resample({"time": "D"}).sum().to_netcdf(savepath_dsname+"/temp/"+dsname+"_"+vname+"_dailysum_"+str(yy)+".nc",
                                                  encoding=define_encoding(data[dsname]))
         if dsname in ["EURADCLIM"]:
-            Cdo().daysum(input="-shifttime,-1hour -cat /automount/agradar/jgiles/EURADCLIM/concat_files/RAD_OPERA_HOURLY_RAINFALL_*.nc", 
-                         output="/automount/agradar/jgiles/gridded_data/daily/EURADCLIM/EURADCLIM_precipitation_dailysum_2013-2020.nc", options="-z zip_6")
+            Cdo().daysum(input="-shifttime,-1hour -cat /automount/ags/jgiles/EURADCLIM_v2/concat_files/RAD_OPERA_HOURLY_RAINFALL_*.nc", 
+                         output="/automount/agradar/jgiles/gridded_data/daily/EURADCLIM_v2/EURADCLIM_precipitation_dailysum_2013-2020.nc", options="-z zip_6")
         if dsname in ["GSMaP"]:
             # We will make daily files one by one
             dayfolders = glob.glob("/automount/ags/jgiles/GSMaP/standard/v8/netcdf/*/*/*")
@@ -570,8 +570,8 @@ for dsname in ds_to_load:
         if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly"]:
             warnings.warn("Do not compute monthly sums from "+dsname+". Use the monthly version.")
         if dsname in ["EURADCLIM"]:
-            Cdo().monsum(input="/automount/agradar/jgiles/gridded_data/daily/EURADCLIM/EURADCLIM_precipitation_dailysum_2013-2020.nc", 
-                         output="/automount/agradar/jgiles/gridded_data/monthly/EURADCLIM/EURADCLIM_precipitation_monthlysum_2013-2020.nc", options="-z zip_6")
+            Cdo().monsum(input="/automount/agradar/jgiles/gridded_data/daily/EURADCLIM_v2/EURADCLIM_precipitation_dailysum_2013-2020.nc", 
+                         output="/automount/agradar/jgiles/gridded_data/monthly/EURADCLIM_v2/EURADCLIM_precipitation_monthlysum_2013-2020.nc", options="-z zip_6")
     else:
         sd = str(data_monthlysum[dsname].time[0].values)[0:4]
         ed = str(data_monthlysum[dsname].time[-1].values)[0:4]
@@ -636,8 +636,8 @@ for dsname in ds_to_load:
         if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly"]:
             warnings.warn("Do not compute seasonal sums from "+dsname+". Use the monthly version.")
         if dsname in ["EURADCLIM"]:
-            Cdo().seassum(input="/automount/agradar/jgiles/gridded_data/daily/EURADCLIM/EURADCLIM_precipitation_dailysum_2013-2020.nc", 
-                         output="/automount/agradar/jgiles/gridded_data/seasonal/EURADCLIM/EURADCLIM_precipitation_seasonalsum_2013-2020.nc", options="-z zip_6")
+            Cdo().seassum(input="/automount/agradar/jgiles/gridded_data/daily/EURADCLIM_v2/EURADCLIM_precipitation_dailysum_2013-2020.nc", 
+                         output="/automount/agradar/jgiles/gridded_data/seasonal/EURADCLIM_v2/EURADCLIM_precipitation_seasonalsum_2013-2020.nc", options="-z zip_6")
     else:
         sd = str(data_seasonsum[dsname].time[0].values)[0:4]
         ed = str(data_seasonsum[dsname].time[-1].values)[0:4]
@@ -683,8 +683,8 @@ for dsname in ds_to_load:
         if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly"]:
             warnings.warn("Do not compute yearly sums from "+dsname+". Use the monthly version.")
         if dsname in ["EURADCLIM"]:
-            Cdo().yearsum(input="/automount/agradar/jgiles/gridded_data/monthly/EURADCLIM/EURADCLIM_precipitation_monthlysum_2013-2020.nc", 
-                         output="/automount/agradar/jgiles/gridded_data/yearly/EURADCLIM/EURADCLIM_precipitation_yearlysum_2013-2020.nc", options="-z zip_6")
+            Cdo().yearsum(input="/automount/agradar/jgiles/gridded_data/monthly/EURADCLIM_v2/EURADCLIM_precipitation_monthlysum_2013-2020.nc", 
+                         output="/automount/agradar/jgiles/gridded_data/yearly/EURADCLIM_v2/EURADCLIM_precipitation_yearlysum_2013-2020.nc", options="-z zip_6")
         if dsname in "GSMaP":
             print("... ... from daily files")
             gsmap_daily_path ="/automount/agradar/jgiles/gridded_data/daily/GSMaP/"
