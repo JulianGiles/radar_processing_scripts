@@ -552,7 +552,7 @@ Ht = qvps_ML["height_ml_new_gia"].mean().compute()
 # If auto_plot is True, then produce and save the plots automatically based on
 # default configurations. If False, then produce the plot as given below and do not save.
 auto_plot = True 
-savepath = "/automount/agradar/jgiles/images/CFTDs/"
+savepath = "/automount/agradar/jgiles/images/CFTDs/stratiform/"
 
 # adjustment from K to C (disabled now because I know that all qvps have ERA5 data)
 adjtemp = 0
@@ -720,7 +720,7 @@ if country=="dwd":
 # If auto_plot is True, then produce and save the plots automatically based on
 # default configurations. If False, then produce the plot as given below and do not save.
 auto_plot = True 
-savepath = "/automount/agradar/jgiles/images/CFTDs/"
+savepath = "/automount/agradar/jgiles/images/CFTDs/stratiform/"
 
 # top temp limit
 ytlim=-20
