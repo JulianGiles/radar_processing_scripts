@@ -255,6 +255,7 @@ total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
 
 #### Calculate retreivals
+# We do this for both qvps_strat_fil and relaxed qvps_strat_relaxed_fil
 start_time = time.time()
 print("Calculating microphysical retrievals...")
 
@@ -266,46 +267,55 @@ print("Calculating microphysical retrievals...")
 
 Lambda = 53.1 # radar wavelength in mm (pro: 53.138, ANK: 53.1, AFY: 53.3, GZT: 53.3, HTY: 53.3, SVS:53.3)
 
-# LWC 
-lwc_zh_zdr = 10**(0.058*qvps_strat_fil[X_DBZH] - 0.118*qvps_strat_fil[X_ZDR] - 2.36) # Reimann et al 2021 (adjusted for Germany)
-lwc_zh_zdr2 = 1.38*10**(-3) *10**(0.1*qvps_strat_fil[X_DBZH] - 2.43*qvps_strat_fil[X_ZDR] + 1.12*qvps_strat_fil[X_ZDR]**2 - 0.176*qvps_strat_fil[X_ZDR]**3 ) # Ryzhkov et al 2022, used in S band
-lwc_kdp = 10**(0.568*np.log10(qvps_strat_fil[X_KDP]) + 0.06) # Reimann et al 2021(adjusted for Germany)
+# We will put the final retrievals in a dict
+try: # check if exists, if not, create it
+    retrievals
+except NameError:
+    retrievals = {}
 
-# IWC (Collected from Blanke et al 2023)
-iwc_zh_t = 10**(0.06 * qvps_strat_fil[X_DBZH] - 0.0197*qvps_strat_fil["TEMP"] - 1.7) # empirical from Hogan et al 2006
-
-iwc_zdr_zh_kdp = xr.where(qvps_strat_fil[X_ZDR]>0.4, # Carlin et al 2021
-                          4*10**(-3)*( qvps_strat_fil[X_KDP]*Lambda/( 1-wrl.trafo.idecibel(qvps_strat_fil[X_ZDR])**-1 ) ), 
-                          0.031474 * ( qvps_strat_fil[X_KDP]*Lambda )**0.66 * qvps_strat_fil[X_DBZH]**0.28 ) 
-
-# Dm
-Dm_ice_zh = 1.055*qvps_strat_fil[X_DBZH]**0.271 # Matrosov et al. (2019)
-Dm_ice_zh_kdp = 0.67*( qvps_strat_fil[X_DBZH]/(qvps_strat_fil[X_KDP]*Lambda) )**(1/3) # Bukovcic et al. (2020)
-Dm_rain_zdr = 0.3015*qvps_strat_fil[X_ZDR]**3 - 1.2087*qvps_strat_fil[X_ZDR]**2 + 1.9068*qvps_strat_fil[X_ZDR] + 0.5090 # (for rain but tuned for Germany X-band, JuYu Chen, Zdr in dB, Dm in mm)
-Dm_rain_zdr2 = 0.171*qvps_strat_fil[X_ZDR]**3 - 0.725*qvps_strat_fil[X_ZDR]**2 + 1.48*qvps_strat_fil[X_ZDR] + 0.717 # (Hu and Ryzhkov 2022, used in S band data but could work for C band)
-Dm_rain_zdr3 = xr.where(qvps_strat_fil[X_ZDR]<1.25, # Bringi et al 2009 (C-band)
-                        0.0203*qvps_strat_fil[X_ZDR]**4 - 0.149*qvps_strat_fil[X_ZDR]**3 + 0.221*qvps_strat_fil[X_ZDR]**2 + 0.557*qvps_strat_fil[X_ZDR] + 0.801,
-                        0.0355*qvps_strat_fil[X_ZDR]**3 - 0.302*qvps_strat_fil[X_ZDR]**2 + 1.06*qvps_strat_fil[X_ZDR] + 0.684
-                        )
-
-# log(Nt)
-Nt_ice_zh_iwc = (3.39 + 2*np.log10(iwc_zh_t) - 0.1*qvps_strat_fil[X_DBZH]) # (Hu and Ryzhkov 2022, different than Carlin et al 2021 only in the offset, but works better)
-Nt_rain_zh_zdr = ( -2.37 + 0.1*qvps_strat_fil[X_DBZH] - 2.89*qvps_strat_fil[X_ZDR] + 1.28*qvps_strat_fil[X_ZDR]**2 - 0.213*qvps_strat_fil[X_ZDR]**3 )# Hu and Ryzhkov 2022
-
-# Put everything together
-retreivals = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
-                         "lwc_zh_zdr2":lwc_zh_zdr2,
-                         "lwc_kdp": lwc_kdp,
-                         "iwc_zh_t": iwc_zh_t,
-                         "iwc_zdr_zh_kdp": iwc_zdr_zh_kdp,
-                         "Dm_ice_zh": Dm_ice_zh,
-                         "Dm_ice_zh_kdp": Dm_ice_zh_kdp,
-                         "Dm_rain_zdr": Dm_rain_zdr,
-                         "Dm_rain_zdr2": Dm_rain_zdr2,
-                         "Dm_rain_zdr3": Dm_rain_zdr3,
-                         "Nt_ice_zh_iwc": Nt_ice_zh_iwc,
-                         "Nt_rain_zh_zdr": Nt_rain_zh_zdr,
-                         }).compute()
+for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed", qvps_strat_relaxed_fil)]:
+    print("   ... for "+stratname)
+    
+    # LWC 
+    lwc_zh_zdr = 10**(0.058*stratqvp[X_DBZH] - 0.118*stratqvp[X_ZDR] - 2.36) # Reimann et al 2021 (adjusted for Germany)
+    lwc_zh_zdr2 = 1.38*10**(-3) *10**(0.1*stratqvp[X_DBZH] - 2.43*stratqvp[X_ZDR] + 1.12*stratqvp[X_ZDR]**2 - 0.176*stratqvp[X_ZDR]**3 ) # Ryzhkov et al 2022, used in S band
+    lwc_kdp = 10**(0.568*np.log10(stratqvp[X_KDP]) + 0.06) # Reimann et al 2021(adjusted for Germany)
+    
+    # IWC (Collected from Blanke et al 2023)
+    iwc_zh_t = 10**(0.06 * stratqvp[X_DBZH] - 0.0197*stratqvp["TEMP"] - 1.7) # empirical from Hogan et al 2006
+    
+    iwc_zdr_zh_kdp = xr.where(stratqvp[X_ZDR]>0.4, # Carlin et al 2021
+                              4*10**(-3)*( stratqvp[X_KDP]*Lambda/( 1-wrl.trafo.idecibel(stratqvp[X_ZDR])**-1 ) ), 
+                              0.031474 * ( stratqvp[X_KDP]*Lambda )**0.66 * stratqvp[X_DBZH]**0.28 ) 
+    
+    # Dm
+    Dm_ice_zh = 1.055*stratqvp[X_DBZH]**0.271 # Matrosov et al. (2019)
+    Dm_ice_zh_kdp = 0.67*( stratqvp[X_DBZH]/(stratqvp[X_KDP]*Lambda) )**(1/3) # Bukovcic et al. (2020)
+    Dm_rain_zdr = 0.3015*stratqvp[X_ZDR]**3 - 1.2087*stratqvp[X_ZDR]**2 + 1.9068*stratqvp[X_ZDR] + 0.5090 # (for rain but tuned for Germany X-band, JuYu Chen, Zdr in dB, Dm in mm)
+    Dm_rain_zdr2 = 0.171*stratqvp[X_ZDR]**3 - 0.725*stratqvp[X_ZDR]**2 + 1.48*stratqvp[X_ZDR] + 0.717 # (Hu and Ryzhkov 2022, used in S band data but could work for C band)
+    Dm_rain_zdr3 = xr.where(stratqvp[X_ZDR]<1.25, # Bringi et al 2009 (C-band)
+                            0.0203*stratqvp[X_ZDR]**4 - 0.149*stratqvp[X_ZDR]**3 + 0.221*stratqvp[X_ZDR]**2 + 0.557*stratqvp[X_ZDR] + 0.801,
+                            0.0355*stratqvp[X_ZDR]**3 - 0.302*stratqvp[X_ZDR]**2 + 1.06*stratqvp[X_ZDR] + 0.684
+                            )
+    
+    # log(Nt)
+    Nt_ice_zh_iwc = (3.39 + 2*np.log10(iwc_zh_t) - 0.1*stratqvp[X_DBZH]) # (Hu and Ryzhkov 2022, different than Carlin et al 2021 only in the offset, but works better)
+    Nt_rain_zh_zdr = ( -2.37 + 0.1*stratqvp[X_DBZH] - 2.89*stratqvp[X_ZDR] + 1.28*stratqvp[X_ZDR]**2 - 0.213*stratqvp[X_ZDR]**3 )# Hu and Ryzhkov 2022
+    
+    # Put everything together
+    retrievals[stratname] = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
+                             "lwc_zh_zdr2":lwc_zh_zdr2,
+                             "lwc_kdp": lwc_kdp,
+                             "iwc_zh_t": iwc_zh_t,
+                             "iwc_zdr_zh_kdp": iwc_zdr_zh_kdp,
+                             "Dm_ice_zh": Dm_ice_zh,
+                             "Dm_ice_zh_kdp": Dm_ice_zh_kdp,
+                             "Dm_rain_zdr": Dm_rain_zdr,
+                             "Dm_rain_zdr2": Dm_rain_zdr2,
+                             "Dm_rain_zdr3": Dm_rain_zdr3,
+                             "Nt_ice_zh_iwc": Nt_ice_zh_iwc,
+                             "Nt_rain_zh_zdr": Nt_rain_zh_zdr,
+                             }).compute()
 
 #### General statistics
 
@@ -552,7 +562,10 @@ Ht = qvps_ML["height_ml_new_gia"].mean().compute()
 # If auto_plot is True, then produce and save the plots automatically based on
 # default configurations. If False, then produce the plot as given below and do not save.
 auto_plot = True 
-savepath = "/automount/agradar/jgiles/images/CFTDs/stratiform/"
+savepath = "/automount/agradar/jgiles/images/CFTDs/stratiform_relaxed/"
+
+# Which to plot, qvps_strat_fil or qvps_strat_relaxed_fil
+ds_to_plot = qvps_strat_relaxed_fil.copy()
 
 # adjustment from K to C (disabled now because I know that all qvps have ERA5 data)
 adjtemp = 0
@@ -603,10 +616,11 @@ if country=="dmi":
                                "RHOHV": [0.9, 1.002, 0.002]} ]
         ytlimlist = [-20, -50]
         loc = find_loc(locs, ff[0])
-        savedict = {loc+"_cftd_stratiform.png": [vtp[0], ytlimlist[0]],
-                    loc+"_cftd_stratiform_extended.png": [vtp[0], ytlimlist[1]],
-                    loc+"_cftd_stratiform_uncorr.png": [vtp[1], ytlimlist[0]],
-                    loc+"_cftd_stratiform_uncorr_extended.png": [vtp[1], ytlimlist[1]],}
+        add_relaxed = ["_relaxed" if "relaxed" in savepath else ""][0]
+        savedict = {loc+"_cftd_stratiform"+add_relaxed+".png": [vtp[0], ytlimlist[0]],
+                    loc+"_cftd_stratiform"+add_relaxed+"_extended.png": [vtp[0], ytlimlist[1]],
+                    loc+"_cftd_stratiform"+add_relaxed+"_uncorr.png": [vtp[1], ytlimlist[0]],
+                    loc+"_cftd_stratiform"+add_relaxed+"_uncorr_extended.png": [vtp[1], ytlimlist[1]],}
         
     for savename in savedict.keys():
         if auto_plot:
@@ -635,7 +649,7 @@ if country=="dmi":
                 so = True
                 binsx2 = [0.9, 1.005, 0.005]
                 rd=3
-            utils.hist2d(ax[nn], qvps_strat_fil[vv].round(rd), qvps_strat_fil["TEMP"]+adjtemp, whole_x_range=True, 
+            utils.hist2d(ax[nn], ds_to_plot[vv].round(rd), ds_to_plot["TEMP"]+adjtemp, whole_x_range=True, 
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                          cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
                          fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
@@ -695,7 +709,7 @@ if country=="dwd":
                 binsx2 = [0.9, 1.005, 0.005]
             if "KDP" in vv:
                 adj=1
-            utils.hist2d(ax[nn], qvps_strat_fil[vv]*adj, qvps_strat_fil["TEMP"]+adjtemp, whole_x_range=True, 
+            utils.hist2d(ax[nn], ds_to_plot[vv]*adj, ds_to_plot["TEMP"]+adjtemp, whole_x_range=True, 
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                          cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
                          fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
@@ -720,7 +734,10 @@ if country=="dwd":
 # If auto_plot is True, then produce and save the plots automatically based on
 # default configurations. If False, then produce the plot as given below and do not save.
 auto_plot = True 
-savepath = "/automount/agradar/jgiles/images/CFTDs/stratiform/"
+savepath = "/automount/agradar/jgiles/images/CFTDs/stratiform_relaxed/"
+
+# Which to plot, stratiform or stratiform_relaxed
+ds_to_plot = retrievals["stratiform_relaxed"].copy()
 
 # top temp limit
 ytlim=-20
@@ -742,19 +759,20 @@ savedict = {"custom": None} # placeholder for the for loop below, not important
 if auto_plot:
     ytlimlist = [-20, -50]
     loc = find_loc(locs, ff[0])
-    savedict = {loc+"_cftd_stratiform_microphys.png": [ytlimlist[0], 
+    add_relaxed = ["_relaxed" if "relaxed" in savepath else ""][0]
+    savedict = {loc+"_cftd_stratiform"+add_relaxed+"_microphys.png": [ytlimlist[0], 
                                                        "iwc_zh_t", "lwc_zh_zdr", 
                                                        "Dm_ice_zh", "Dm_rain_zdr3", 
                                                        "Nt_ice_zh_iwc", "Nt_rain_zh_zdr"],
-                loc+"_cftd_stratiform_microphys_extended.png": [ytlimlist[1],
+                loc+"_cftd_stratiform"+add_relaxed+"_microphys_extended.png": [ytlimlist[1],
                                                             "iwc_zh_t", "lwc_zh_zdr", 
                                                             "Dm_ice_zh", "Dm_rain_zdr3", 
                                                             "Nt_ice_zh_iwc", "Nt_rain_zh_zdr"],
-                loc+"_cftd_stratiform_microphys_KDP.png": [ytlimlist[0],
+                loc+"_cftd_stratiform"+add_relaxed+"_microphys_KDP.png": [ytlimlist[0],
                                                            "iwc_zdr_zh_kdp", "lwc_kdp", 
                                                            "Dm_ice_zh_kdp", "Dm_rain_zdr3", 
                                                            "Nt_ice_zh_iwc", "Nt_rain_zh_zdr"],
-                loc+"_cftd_stratiform_microphys_KDP_extended.png": [ytlimlist[1],
+                loc+"_cftd_stratiform"+add_relaxed+"_microphys_KDP_extended.png": [ytlimlist[1],
                                                            "iwc_zdr_zh_kdp", "lwc_kdp", 
                                                            "Dm_ice_zh_kdp", "Dm_rain_zdr3", 
                                                            "Nt_ice_zh_iwc", "Nt_rain_zh_zdr"],
@@ -771,12 +789,12 @@ for savename in savedict.keys():
         Nt_rain = savedict[savename][6]
 
     retreivals_merged = xr.Dataset({
-                                    "IWC/LWC [g/m^{3}]": retreivals[IWC].where(retreivals[IWC].z > retreivals.height_ml_new_gia,
-                                                                      retreivals[LWC].where(retreivals[LWC].z < retreivals.height_ml_bottom_new_gia ) ),
-                                    "Dm [mm]": retreivals[Dm_ice].where(retreivals[Dm_ice].z > retreivals.height_ml_new_gia,
-                                                                      retreivals[Dm_rain].where(retreivals[Dm_rain].z < retreivals.height_ml_bottom_new_gia ) ),
-                                    "log10(Nt) [1/L]": (retreivals[Nt_ice].where(retreivals[Nt_ice].z > retreivals.height_ml_new_gia,
-                                                                      retreivals[Nt_rain].where(retreivals[Nt_rain].z < retreivals.height_ml_bottom_new_gia ) ) ),
+                                    "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].z > ds_to_plot.height_ml_new_gia,
+                                                                      ds_to_plot[LWC].where(ds_to_plot[LWC].z < ds_to_plot.height_ml_bottom_new_gia ) ),
+                                    "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].z > ds_to_plot.height_ml_new_gia,
+                                                                      ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ),
+                                    "log10(Nt) [1/L]": (ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].z > ds_to_plot.height_ml_new_gia,
+                                                                      ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ) ),
         })
         
     fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15,5), width_ratios=(1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
