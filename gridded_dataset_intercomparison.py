@@ -5138,7 +5138,7 @@ for dsname in paths_hourly.keys():
         data_hourlysum["ERA5-hourly"] = data_hourlysum["ERA5-hourly"].isel(latitude=slice(None, None, -1))
         data_hourlysum["ERA5-hourly"]["time"] = data_hourlysum["ERA5-hourly"].get_index("time").shift(-1, "h") # shift the values forward to the start of the interval
     elif dsname == "EURADCLIM":
-        data_hourlysum["EURADCLIM"] = xr.open_mfdataset("/automount/agradar/jgiles/EURADCLIM/concat_files/RAD_OPERA_HOURLY_RAINFALL_*.nc")
+        data_hourlysum["EURADCLIM"] = xr.open_mfdataset("/automount/ags/jgiles/EURADCLIM_v2/concat_files/RAD_OPERA_HOURLY_RAINFALL_*.nc")
         data_hourlysum["EURADCLIM"] = data_hourlysum["EURADCLIM"].set_coords(("lon", "lat"))
         data_hourlysum["EURADCLIM"]["lon"] = data_hourlysum["EURADCLIM"]["lon"][0]
         data_hourlysum["EURADCLIM"]["lat"] = data_hourlysum["EURADCLIM"]["lat"][0]
