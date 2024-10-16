@@ -549,6 +549,11 @@ Ht = qvps_ML["height_ml_new_gia"].mean().compute()
 '''
 #%% CFTDs Plot
 
+# If auto_plot is True, then produce and save the plots automatically based on
+# default configurations. If False, then produce the plot as given below and do not save.
+auto_plot = True 
+savepath = "/automount/agradar/jgiles/images/CFTDs/"
+
 # adjustment from K to C (disabled now because I know that all qvps have ERA5 data)
 adjtemp = 0
 # if (qvps_strat_fil["TEMP"]>100).any(): #if there is any temp value over 100, we assume the units are Kelvin
@@ -570,6 +575,8 @@ colsteps=10
 
 cmaphist="Oranges"
 
+savedict = {"custom": None} # placeholder for the for loop below, not important 
+
 # Plot horizontally
 # DMI
 # Native worst-resolution of the data (for 1-byte moments)
@@ -585,40 +592,65 @@ if country=="dmi":
                     "KDP_ML_corrected":  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
                     "RHOHV_NC": [0.9, 1.002, 0.002]}
     
-    fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
-    
-    for nn, vv in enumerate(vars_to_plot.keys()):
-        so=False
-        binsx2=None
-        rd=10 # arbitrarily large decimal position to round to (so it is actually not rounded)
-        if "DBZH" in vv:
-            so=True
-            binsx2 = [0, 46, 1]
-            rd = 1 # decimal position to round to
-        if "ZDR" in vv:
-            so=True
-            binsx2 = [-0.5, 2.1, 0.1]
-            rd=1
-        if "KDP" in vv:
-            so=True #True
-            binsx2 = [-0.1, 0.52, 0.02]
-            rd=2
-        if "RHOHV" in vv:
-            so = True
-            binsx2 = [0.9, 1.005, 0.005]
-            rd=3
-        utils.hist2d(ax[nn], qvps_strat_fil[vv].round(rd), qvps_strat_fil["TEMP"]+adjtemp, whole_x_range=True, 
-                     binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
-                     cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
-                     fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
-                     cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
-        ax[nn].set_ylim(15,ytlim)
-        ax[nn].set_xlabel(vv, fontsize=10)
+    if auto_plot:
+        vtp = [{"DBZH": [0, 45.5, 0.5], 
+                        "ZDR_OC": [-0.505, 2.05, 0.1],
+                        "KDP_ML_corrected":  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
+                        "RHOHV_NC": [0.9, 1.002, 0.002]},
+               {"DBZH": [0, 45.5, 0.5], 
+                               "ZDR": [-0.505, 2.05, 0.1],
+                               "KDP_CONV":  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
+                               "RHOHV": [0.9, 1.002, 0.002]} ]
+        ytlimlist = [-20, -50]
+        loc = find_loc(locs, ff[0])
+        savedict = {loc+"_cftd_stratiform.png": [vtp[0], ytlimlist[0]],
+                    loc+"_cftd_stratiform_extended.png": [vtp[0], ytlimlist[1]],
+                    loc+"_cftd_stratiform_uncorr.png": [vtp[1], ytlimlist[0]],
+                    loc+"_cftd_stratiform_uncorr_extended.png": [vtp[1], ytlimlist[1]],}
         
-        ax[nn].tick_params(labelsize=15) #change font size of ticks
-        plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+    for savename in savedict.keys():
+        if auto_plot:
+            vars_to_plot = savedict[savename][0]
+            ytlim = savedict[savename][1]
     
-    ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+        fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+        
+        for nn, vv in enumerate(vars_to_plot.keys()):
+            so=False
+            binsx2=None
+            rd=10 # arbitrarily large decimal position to round to (so it is actually not rounded)
+            if "DBZH" in vv:
+                so=True
+                binsx2 = [0, 46, 1]
+                rd = 1 # decimal position to round to
+            if "ZDR" in vv:
+                so=True
+                binsx2 = [-0.5, 2.1, 0.1]
+                rd=1
+            if "KDP" in vv:
+                so=True #True
+                binsx2 = [-0.1, 0.52, 0.02]
+                rd=2
+            if "RHOHV" in vv:
+                so = True
+                binsx2 = [0.9, 1.005, 0.005]
+                rd=3
+            utils.hist2d(ax[nn], qvps_strat_fil[vv].round(rd), qvps_strat_fil["TEMP"]+adjtemp, whole_x_range=True, 
+                         binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                         cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
+                         fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
+                         cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
+            ax[nn].set_ylim(15,ytlim)
+            ax[nn].set_xlabel(vv, fontsize=10)
+            
+            ax[nn].tick_params(labelsize=15) #change font size of ticks
+            plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+        
+        ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+        
+        if auto_plot:
+            fig.savefig(savepath+savename, bbox_inches="tight")
+            print("AUTO PLOT: saved "+savename)
 
 
 
@@ -626,40 +658,69 @@ if country=="dmi":
 # plot CFTDs moments
 if country=="dwd":
     
-    vars_to_plot = {"DBZH": [0, 46, 1], 
+    vars_to_plot = {"DBZH": [0, 46, 1],
                     "ZDR_OC": [-0.5, 2.1, 0.1],
                     "KDP_ML_corrected": [-0.1, 0.52, 0.02],
                     "RHOHV_NC": [0.9, 1.004, 0.004]}
 
-    fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
-    
-    for nn, vv in enumerate(vars_to_plot.keys()):
-        so=False
-        binsx2=None
-        adj=1
-        if "RHOHV" in vv:
-            so = True
-            binsx2 = [0.9, 1.005, 0.005]
-        if "KDP" in vv:
-            adj=1
-        utils.hist2d(ax[nn], qvps_strat_fil[vv]*adj, qvps_strat_fil["TEMP"]+adjtemp, whole_x_range=True, 
-                     binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
-                     cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
-                     fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
-                     cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
-        ax[nn].set_ylim(15,ytlim)
-        ax[nn].set_xlabel(vv, fontsize=10)
+    if auto_plot:
+        vtp = [{"DBZH": [0, 46, 1], 
+                        "ZDR_OC": [-0.5, 2.1, 0.1],
+                        "KDP_ML_corrected":  [-0.1, 0.52, 0.02],
+                        "RHOHV_NC": [0.9, 1.004, 0.004]},
+               {"DBZH": [0, 46, 1],
+                               "ZDR": [-0.5, 2.1, 0.1],
+                               "KDP_CONV":  [-0.1, 0.52, 0.02],
+                               "RHOHV": [0.9, 1.004, 0.004]} ]
+        ytlimlist = [-20, -50]
+        loc = find_loc(locs, ff[0])
+        savedict = {loc+"_cftd_stratiform.png": [vtp[0], ytlimlist[0]],
+                    loc+"_cftd_stratiform_extended.png": [vtp[0], ytlimlist[1]],
+                    loc+"_cftd_stratiform_uncorr.png": [vtp[1], ytlimlist[0]],
+                    loc+"_cftd_stratiform_uncorr_extended.png": [vtp[1], ytlimlist[1]],}
         
-        ax[nn].tick_params(labelsize=15) #change font size of ticks
-        plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
-    
-    
-    
-    ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+    for savename in savedict.keys():
+        if auto_plot:
+            vars_to_plot = savedict[savename][0]
+            ytlim = savedict[savename][1]
+
+        fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+        
+        for nn, vv in enumerate(vars_to_plot.keys()):
+            so=False
+            binsx2=None
+            adj=1
+            if "RHOHV" in vv:
+                so = True
+                binsx2 = [0.9, 1.005, 0.005]
+            if "KDP" in vv:
+                adj=1
+            utils.hist2d(ax[nn], qvps_strat_fil[vv]*adj, qvps_strat_fil["TEMP"]+adjtemp, whole_x_range=True, 
+                         binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                         cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
+                         fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
+                         cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
+            ax[nn].set_ylim(15,ytlim)
+            ax[nn].set_xlabel(vv, fontsize=10)
+            
+            ax[nn].tick_params(labelsize=15) #change font size of ticks
+            plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+        
+        
+        
+        ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+        if auto_plot:
+            fig.savefig(savepath+savename, bbox_inches="tight")
+            print("AUTO PLOT: saved "+savename)
 
 
 #%% CFTDs retreivals Plot
 # We assume that everything above ML is frozen and everything below is liquid
+
+# If auto_plot is True, then produce and save the plots automatically based on
+# default configurations. If False, then produce the plot as given below and do not save.
+auto_plot = True 
+savepath = "/automount/agradar/jgiles/images/CFTDs/"
 
 # top temp limit
 ytlim=-20
@@ -671,49 +732,82 @@ Dm_rain = "Dm_rain_zdr3" # Dm_rain_zdr, Dm_rain_zdr2 or Dm_rain_zdr3
 Nt_ice = "Nt_ice_zh_iwc" # Nt_ice_zh_iwc
 Nt_rain = "Nt_rain_zh_zdr" # Nt_rain_zh_zdr
 
-retreivals_merged = xr.Dataset({
-                                "IWC/LWC [g/m^{3}]": retreivals[IWC].where(retreivals[IWC].z > retreivals.height_ml_new_gia,
-                                                                  retreivals[LWC].where(retreivals[LWC].z < retreivals.height_ml_bottom_new_gia ) ),
-                                "Dm [mm]": retreivals[Dm_ice].where(retreivals[Dm_ice].z > retreivals.height_ml_new_gia,
-                                                                  retreivals[Dm_rain].where(retreivals[Dm_rain].z < retreivals.height_ml_bottom_new_gia ) ),
-                                "log10(Nt) [1/L]": (retreivals[Nt_ice].where(retreivals[Nt_ice].z > retreivals.height_ml_new_gia,
-                                                                  retreivals[Nt_rain].where(retreivals[Nt_rain].z < retreivals.height_ml_bottom_new_gia ) ) ),
-    })
-
-
-# if country=="dwd":
-
 vars_to_plot = {"IWC/LWC [g/m^{3}]": [-0.1, 0.82, 0.02], # [-0.1, 0.82, 0.02], 
                 "Dm [mm]": [0, 3.1, 0.1], # [0, 3.1, 0.1],
                 "log10(Nt) [1/L]": [-2, 2.1, 0.1], # [-2, 2.1, 0.1],
                 }
 
-fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15,5), width_ratios=(1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+savedict = {"custom": None} # placeholder for the for loop below, not important 
 
-for nn, vv in enumerate(vars_to_plot.keys()):
-    so=False
-    binsx2=None
-    adj=1
-    if "RHOHV" in vv:
-        so = True
-        binsx2 = [0.9, 1.005, 0.005]
-    if "KDP" in vv:
-        adj=1
-    utils.hist2d(ax[nn], retreivals_merged[vv]*adj, retreivals_merged["TEMP"]+adjtemp, whole_x_range=True, 
-                 binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
-                 cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
-                 fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
-                 cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
-    ax[nn].set_ylim(15,ytlim)
-    ax[nn].set_xlabel(vv, fontsize=10)
+if auto_plot:
+    ytlimlist = [-20, -50]
+    loc = find_loc(locs, ff[0])
+    savedict = {loc+"_cftd_stratiform_microphys.png": [ytlimlist[0], 
+                                                       "iwc_zh_t", "lwc_zh_zdr", 
+                                                       "Dm_ice_zh", "Dm_rain_zdr3", 
+                                                       "Nt_ice_zh_iwc", "Nt_rain_zh_zdr"],
+                loc+"_cftd_stratiform_microphys_extended.png": [ytlimlist[1],
+                                                            "iwc_zh_t", "lwc_zh_zdr", 
+                                                            "Dm_ice_zh", "Dm_rain_zdr3", 
+                                                            "Nt_ice_zh_iwc", "Nt_rain_zh_zdr"],
+                loc+"_cftd_stratiform_microphys_KDP.png": [ytlimlist[0],
+                                                           "iwc_zdr_zh_kdp", "lwc_kdp", 
+                                                           "Dm_ice_zh_kdp", "Dm_rain_zdr3", 
+                                                           "Nt_ice_zh_iwc", "Nt_rain_zh_zdr"],
+                loc+"_cftd_stratiform_microphys_KDP_extended.png": [ytlimlist[1],
+                                                           "iwc_zdr_zh_kdp", "lwc_kdp", 
+                                                           "Dm_ice_zh_kdp", "Dm_rain_zdr3", 
+                                                           "Nt_ice_zh_iwc", "Nt_rain_zh_zdr"],
+                }
+
+for savename in savedict.keys():
+    if auto_plot:
+        ytlim = savedict[savename][0]
+        IWC = savedict[savename][1]
+        LWC = savedict[savename][2]
+        Dm_ice = savedict[savename][3]
+        Dm_rain = savedict[savename][4]
+        Nt_ice = savedict[savename][5]
+        Nt_rain = savedict[savename][6]
+
+    retreivals_merged = xr.Dataset({
+                                    "IWC/LWC [g/m^{3}]": retreivals[IWC].where(retreivals[IWC].z > retreivals.height_ml_new_gia,
+                                                                      retreivals[LWC].where(retreivals[LWC].z < retreivals.height_ml_bottom_new_gia ) ),
+                                    "Dm [mm]": retreivals[Dm_ice].where(retreivals[Dm_ice].z > retreivals.height_ml_new_gia,
+                                                                      retreivals[Dm_rain].where(retreivals[Dm_rain].z < retreivals.height_ml_bottom_new_gia ) ),
+                                    "log10(Nt) [1/L]": (retreivals[Nt_ice].where(retreivals[Nt_ice].z > retreivals.height_ml_new_gia,
+                                                                      retreivals[Nt_rain].where(retreivals[Nt_rain].z < retreivals.height_ml_bottom_new_gia ) ) ),
+        })
+        
+    fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15,5), width_ratios=(1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
     
-    ax[nn].tick_params(labelsize=15) #change font size of ticks
-    plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
-
-
-
-ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
-
+    for nn, vv in enumerate(vars_to_plot.keys()):
+        so=False
+        binsx2=None
+        adj=1
+        if "RHOHV" in vv:
+            so = True
+            binsx2 = [0.9, 1.005, 0.005]
+        if "KDP" in vv:
+            adj=1
+        utils.hist2d(ax[nn], retreivals_merged[vv]*adj, retreivals_merged["TEMP"]+adjtemp, whole_x_range=True, 
+                     binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                     cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
+                     fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
+                     cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
+        ax[nn].set_ylim(15,ytlim)
+        ax[nn].set_xlabel(vv, fontsize=10)
+        
+        ax[nn].tick_params(labelsize=15) #change font size of ticks
+        plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+    
+    
+    
+    ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+    
+    if auto_plot:
+        fig.savefig(savepath+savename, bbox_inches="tight")
+        print("AUTO PLOT: saved "+savename)
 
 #%% Check particular dates
 
