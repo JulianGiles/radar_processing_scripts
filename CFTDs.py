@@ -386,17 +386,24 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
                             .differentiate("z").median("z") * 1000 # x1000 to transform the gradients to /km
     
     # Cloud top (3 methods)
-    # Get the height value of the last not null value
+    # Get the height value of the last not null value with a minimum of entropy 0.2 (this min entropy is to filter out random noise pixels)
     cloudtop = stratqvp[X_DBZH].where(stratqvp["z"] > (stratqvp["height_ml_new_gia"]) ) \
+                        .where(stratqvp["min_entropy"] > 0.2 ) \
                         .notnull().isel(z=slice(None,None,-1)).idxmax("z").rename("cloudtop")
     # Get the height value of the last value > 5 dBZ
     cloudtop_5dbz = stratqvp[X_DBZH].where(stratqvp["z"] > (stratqvp["height_ml_new_gia"]) ) \
-                        .where(stratqvp[X_DBZH]>5) \
+                        .where(stratqvp["min_entropy"] > 0.2).where(stratqvp[X_DBZH]>5) \
                         .notnull().isel(z=slice(None,None,-1)).idxmax("z").rename("cloudtop 5 dBZ")
     # Get the height value of the last value > 10 dBZ
     cloudtop_10dbz = stratqvp[X_DBZH].where(stratqvp["z"] > (stratqvp["height_ml_new_gia"]) ) \
-                        .where(stratqvp[X_DBZH]>10) \
+                        .where(stratqvp["min_entropy"] > 0.2).where(stratqvp[X_DBZH]>10) \
                         .notnull().isel(z=slice(None,None,-1)).idxmax("z").rename("cloudtop 10 dBZ")
+
+    # Temperature of the cloud top (3 methods)
+    cloudtop_temp = stratqvp["TEMP"].sel({"z": cloudtop}, method="nearest")
+    cloudtop_temp_5dbz = stratqvp["TEMP"].sel({"z": cloudtop_5dbz}, method="nearest")
+    cloudtop_temp_10dbz = stratqvp["TEMP"].sel({"z": cloudtop_10dbz}, method="nearest")
+
 
     #### DGL statistics
     # select values in the DGL 
@@ -427,6 +434,9 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
                                        "cloudtop": cloudtop.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest not-null ZH value)"}),
                                        "cloudtop_5dbz": cloudtop_5dbz.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest ZH value > 5 dBZ)"}),
                                        "cloudtop_10dbz": cloudtop_10dbz.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest ZH value > 10 dBZ)"}),
+                                       "cloudtop_temp": cloudtop_temp.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest not-null ZH value)"}),
+                                       "cloudtop_temp_5dbz": cloudtop_temp_5dbz.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest ZH value > 5 dBZ)"}),
+                                       "cloudtop_temp_10dbz": cloudtop_temp_10dbz.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest ZH value > 10 dBZ)"}),
         }
     
     # Save stats
@@ -523,10 +533,10 @@ print(f"took {total_time/60:.2f} minutes.")
 # If auto_plot is True, then produce and save the plots automatically based on
 # default configurations. If False, then produce the plot as given below and do not save.
 auto_plot = True 
-savepath = "/automount/agradar/jgiles/images/CFTDs/stratiform_relaxed/"
+savepath = "/automount/agradar/jgiles/images/CFTDs/stratiform/"
 
 # Which to plot, qvps_strat_fil or qvps_strat_relaxed_fil
-ds_to_plot = qvps_strat_relaxed_fil.copy()
+ds_to_plot = qvps_strat_fil.copy()
 
 # adjustment from K to C (disabled now because I know that all qvps have ERA5 data)
 adjtemp = 0
@@ -695,10 +705,10 @@ if country=="dwd":
 # If auto_plot is True, then produce and save the plots automatically based on
 # default configurations. If False, then produce the plot as given below and do not save.
 auto_plot = True 
-savepath = "/automount/agradar/jgiles/images/CFTDs/stratiform_relaxed/"
+savepath = "/automount/agradar/jgiles/images/CFTDs/stratiform/"
 
 # Which to plot, stratiform or stratiform_relaxed
-ds_to_plot = retrievals["stratiform_relaxed"].copy()
+ds_to_plot = retrievals["stratiform"].copy()
 
 # top temp limit
 ytlim=-20
