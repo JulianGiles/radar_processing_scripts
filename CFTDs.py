@@ -32,6 +32,7 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import xradar as xd
 import time
+import ridgeplot
 
 try:
     from Scripts.python.radar_processing_scripts import utils
@@ -225,7 +226,7 @@ allcond = cond_ML_bottom_change * cond_ML_bottom_std * cond_ML_top_change * cond
 # Filter only fully stratiform pixels (min entropy >= 0.8 and ML detected)
 qvps_strat = qvps.where( (qvps["min_entropy"]>=0.8).compute() & allcond, drop=True)
 # Relaxed alternative: Filter qvps with at least 50% of stratiform pixels (min entropy >= 0.8 and ML detected)
-qvps_strat_relaxed = qvps.where( ( (qvps["min_entropy"]>=0.8).count("z").compute() > qvps[X_DBZH].count("z").compute()/2 ) & allcond, drop=True)
+qvps_strat_relaxed = qvps.where( ( (qvps["min_entropy"]>=0.8).sum("z").compute() >= qvps[X_DBZH].count("z").compute()/2 ) & allcond, drop=True)
 
 # Filter out non relevant values
 qvps_strat_fil = qvps_strat.where((qvps_strat[X_TH] > -10 )&
@@ -441,9 +442,9 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
     
     MLdepth = ML_thickness
 
-    #### Scatterplots: like Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
+    #### Histograms: like Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
     print("   ... plotting scatterplots")
-    # plot scatterplots (2d hist) like Fig. 10
+    # plot histograms (2d hist) like Fig. 10
     # plot a
     binsx = np.linspace(0.8, 1, 41)
     binsy = np.linspace(-10, 20, 61)
@@ -457,7 +458,7 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
     plt.text(0.81, -8, r"$\mathregular{\Delta Z_H = 4.27 + 6.89(1-\rho _{HV}) + 341(1-\rho _{HV})^2 }$", fontsize="small")
     plt.grid()
     fig = plt.gcf()
-    fig.savefig("/automount/agradar/jgiles/images/stats_scatterplots/"+stratname+"/"+find_loc(locs, ff[0])+"_DeltaZH_MinRHOHVinML.png",
+    fig.savefig("/automount/agradar/jgiles/images/stats_histograms/"+stratname+"/"+find_loc(locs, ff[0])+"_DeltaZH_MinRHOHVinML.png",
                 bbox_inches="tight")
     plt.close(fig)
     
@@ -474,7 +475,7 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
     plt.text(2, -8, r"$\mathregular{\Delta Z_H = 3.18 + 2.19 Z_{DR} }$", fontsize="small")
     plt.grid()
     fig = plt.gcf()
-    fig.savefig("/automount/agradar/jgiles/images/stats_scatterplots/"+stratname+"/"+find_loc(locs, ff[0])+"_DeltaZH_MaxZDRinML.png",
+    fig.savefig("/automount/agradar/jgiles/images/stats_histograms/"+stratname+"/"+find_loc(locs, ff[0])+"_DeltaZH_MaxZDRinML.png",
                 bbox_inches="tight")
     plt.close(fig)
     
@@ -492,7 +493,7 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
     plt.text(0.86, 700, r"$\mathregular{ML \ Depth = -0.64 + 30.8(1-\rho _{HV})}$" "\n" r"$\mathregular{- 315(1-\rho _{HV})^2 + 1115(1-\rho _{HV})^3}$", fontsize="xx-small")
     plt.grid()
     fig = plt.gcf()
-    fig.savefig("/automount/agradar/jgiles/images/stats_scatterplots/"+stratname+"/"+find_loc(locs, ff[0])+"_DepthML_MinRHOHVinML.png",
+    fig.savefig("/automount/agradar/jgiles/images/stats_histograms/"+stratname+"/"+find_loc(locs, ff[0])+"_DepthML_MinRHOHVinML.png",
                 bbox_inches="tight")
     plt.close(fig)
     
@@ -510,53 +511,13 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
     plt.text(0.86, 700, r"$\mathregular{ML \ Depth = 0.21 + 0.091 Z_{DR} }$", fontsize="xx-small")
     plt.grid()
     fig = plt.gcf()
-    fig.savefig("/automount/agradar/jgiles/images/stats_scatterplots/"+stratname+"/"+find_loc(locs, ff[0])+"_DepthML_MaxZDRinML.png",
+    fig.savefig("/automount/agradar/jgiles/images/stats_histograms/"+stratname+"/"+find_loc(locs, ff[0])+"_DepthML_MaxZDRinML.png",
                 bbox_inches="tight")
     plt.close(fig)
 
 total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
 
-#%% Statistics for Raquel # DEPRECATED (incorporated to the previous block)
-'''
-#### Scatterplots:
-MLmaxZH = values_ML_max["DBZH"]
-ZHrain = values_rain["DBZH"] # not exactly the same definition, but close
-deltaZH = MLmaxZH - ZHrain
-MLminRHOHV = values_ML_min["RHOHV_NC"]
-
-MLdepth = ML_thickness
-
-# plot scatterplot (2d hist)
-# plot1
-binsx = np.linspace(0.8, 1, 41)
-binsy = np.linspace(-10, 20, 61)
-deltaZHcurve = 4.27 + 6.89*(1-binsx) + 341*(1-binsx)**2 # curve from Ryzhkov
-
-utils.hist_2d(MLminRHOHV.compute(), deltaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
-plt.plot(binsx, deltaZHcurve, c="black")
-
-# plot2
-binsy = np.linspace(0, 1000, 26)
-MLdepthcurve = -0.64 + 30.8*(1-binsx) - 315*(1-binsx)**2 + 1115*(1-binsx)**3 # curve from Ryzhkov
-
-utils.hist_2d(MLminRHOHV.compute(), MLdepth.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
-plt.plot(binsx, MLdepthcurve*1000, c="black") # multiply curve by 1000 to change from km to m
-
-#### Values:
-maxZHheight = qvps_ML["DBZH"].idxmax("z") # (2)
-HmaxZH = qvps_ML["height_ml_bottom_new_gia"] + 0.8*MLdepth # (2)
-HMLtopZH = qvps_ML["height_ml_bottom_new_gia"] + 1.6*MLdepth # (3)
-
-qvps_aboveML = qvps_strat_fil.where( (qvps_strat_fil["z"] > qvps_strat_fil["height_ml_new_gia"]) & \
-                                    (qvps_strat_fil["z"] < 6000) , drop=True)
-vertgradZHaboveML = qvps_aboveML["DBZH"].differentiate("z").median("z") 
-
-ZHmax = values_ML_max["DBZH"].mean().compute()
-
-Hb = qvps_ML["height_ml_bottom_new_gia"].mean().compute()
-Ht = qvps_ML["height_ml_new_gia"].mean().compute()
-'''
 #%% CFTDs Plot
 
 # If auto_plot is True, then produce and save the plots automatically based on
@@ -871,9 +832,7 @@ with mpl.rc_context({'font.size': 10}):
 # qvps_strat_fil_notime = qvps_strat_fil_notime.reset_index("time")
 # plot_qvp(qvps_strat_fil_notime, "ZDR_OC", tloc="2020-07-15", plot_ml=True, plot_entropy=True, ylim=(qvps.altitude,10000))
 
-#%% Statistics histograms
-import ridgeplot
-
+#%% Statistics histograms and ridgeplots
 # load stats
 if 'stats' not in globals() and 'stats' not in locals():
     stats = {}
@@ -904,6 +863,27 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
         # delete entry if empty
         if not stats[stratname][ll]:
             del stats[stratname][ll]
+
+#%%% 2d histograms
+
+binsx = np.linspace(0.8, 1, 41)
+binsy = np.linspace(-10, 20, 61)
+deltaZHcurve = 4.27 + 6.89*(1-binsx) + 341*(1-binsx)**2 # curve from Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
+
+utils.hist_2d(MLminRHOHV.compute(), deltaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+plt.plot(binsx, deltaZHcurve, c="black", label="Reference curve")
+plt.legend()
+plt.xlabel(r"$\mathregular{Minimum \ \rho _{HV} \ in \ ML}$")
+plt.ylabel(r"$\mathregular{\Delta Z_H \ (MLmaxZ_H - Z_HRain) }$")
+plt.text(0.81, -8, r"$\mathregular{\Delta Z_H = 4.27 + 6.89(1-\rho _{HV}) + 341(1-\rho _{HV})^2 }$", fontsize="small")
+plt.grid()
+fig = plt.gcf()
+fig.savefig("/automount/agradar/jgiles/images/stats_histograms/"+stratname+"/"+find_loc(locs, ff[0])+"_DeltaZH_MinRHOHVinML.png",
+            bbox_inches="tight")
+plt.close(fig)
+
+
+#%%% ridgeplots
 
 ridge_vars = [X_DBZH, X_ZDR, X_RHO, X_KDP]
 
