@@ -400,9 +400,9 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
                         .notnull().isel(z=slice(None,None,-1)).idxmax("z").rename("cloudtop 10 dBZ")
 
     # Temperature of the cloud top (3 methods)
-    cloudtop_temp = stratqvp["TEMP"].sel({"z": cloudtop}, method="nearest")
-    cloudtop_temp_5dbz = stratqvp["TEMP"].sel({"z": cloudtop_5dbz}, method="nearest")
-    cloudtop_temp_10dbz = stratqvp["TEMP"].sel({"z": cloudtop_10dbz}, method="nearest")
+    cloudtop_TEMP = stratqvp["TEMP"].sel({"z": cloudtop}, method="nearest")
+    cloudtop_TEMP_5dbz = stratqvp["TEMP"].sel({"z": cloudtop_5dbz}, method="nearest")
+    cloudtop_TEMP_10dbz = stratqvp["TEMP"].sel({"z": cloudtop_10dbz}, method="nearest")
 
 
     #### DGL statistics
@@ -434,9 +434,9 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
                                        "cloudtop": cloudtop.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest not-null ZH value)"}),
                                        "cloudtop_5dbz": cloudtop_5dbz.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest ZH value > 5 dBZ)"}),
                                        "cloudtop_10dbz": cloudtop_10dbz.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest ZH value > 10 dBZ)"}),
-                                       "cloudtop_temp": cloudtop_temp.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest not-null ZH value)"}),
-                                       "cloudtop_temp_5dbz": cloudtop_temp_5dbz.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest ZH value > 5 dBZ)"}),
-                                       "cloudtop_temp_10dbz": cloudtop_temp_10dbz.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest ZH value > 10 dBZ)"}),
+                                       "cloudtop_TEMP": cloudtop_TEMP.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest not-null ZH value)"}),
+                                       "cloudtop_TEMP_5dbz": cloudtop_TEMP_5dbz.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest ZH value > 5 dBZ)"}),
+                                       "cloudtop_TEMP_10dbz": cloudtop_TEMP_10dbz.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest ZH value > 10 dBZ)"}),
         }
     
     # Save stats
@@ -861,7 +861,8 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
         for xx in ['values_sfc', 'values_snow', 'values_rain', 'values_ML_max', 'values_ML_min', 'values_ML_mean', 
                    'ML_thickness', 'ML_bottom', 'ML_thickness_TEMP', 'ML_bottom_TEMP', 'values_DGL_max', 'values_DGL_min',
                    'values_DGL_mean', 'height_ML_max', 'height_ML_min', 'ML_bottom', 'beta', 'beta_belowML',
-                   'cloudtop', 'cloudtop_5dbz', 'cloudtop_10dbz']:
+                   'cloudtop', 'cloudtop_5dbz', 'cloudtop_10dbz', 
+                   'cloudtop_TEMP', 'cloudtop_TEMP_5dbz', 'cloudtop_TEMP_10dbz']:
             try:
                 stats[stratname][ll][xx] = xr.open_dataset("/automount/realpep/upload/jgiles/radar_stats/"+stratname+"/"+ll+"_"+xx+".nc")
                 if len(stats[stratname][ll][xx].data_vars)==1:
@@ -875,23 +876,579 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
             del stats[stratname][ll]
 
 #%%% 2d histograms
+locs_to_plot = [find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
+savepath = "/automount/agradar/jgiles/images/stats_histograms/"
 
-binsx = np.linspace(0.8, 1, 41)
-binsy = np.linspace(-10, 20, 61)
-deltaZHcurve = 4.27 + 6.89*(1-binsx) + 341*(1-binsx)**2 # curve from Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
+selseaslist = [           
+            ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
+            ("DJF", [12,1,2]),
+            ("MAM", [3,4,5]),
+            ("JJA", [6,7,8]),
+            ("SON", [9,10,11]),
+           ] # ("nameofseas", [months included])
 
-utils.hist_2d(MLminRHOHV.compute(), deltaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
-plt.plot(binsx, deltaZHcurve, c="black", label="Reference curve")
-plt.legend()
-plt.xlabel(r"$\mathregular{Minimum \ \rho _{HV} \ in \ ML}$")
-plt.ylabel(r"$\mathregular{\Delta Z_H \ (MLmaxZ_H - Z_HRain) }$")
-plt.text(0.81, -8, r"$\mathregular{\Delta Z_H = 4.27 + 6.89(1-\rho _{HV}) + 341(1-\rho _{HV})^2 }$", fontsize="small")
-plt.grid()
-fig = plt.gcf()
-fig.savefig("/automount/agradar/jgiles/images/stats_histograms/"+stratname+"/"+find_loc(locs, ff[0])+"_DeltaZH_MinRHOHVinML.png",
-            bbox_inches="tight")
-plt.close(fig)
+print("Plotting histograms ...")
 
+for loc in locs_to_plot:
+    print(" ... "+loc)
+    for selseas in selseaslist:
+        print(" ... ... "+selseas[0])
+
+        for stratname in ["stratiform", "stratiform_relaxed"]:
+            print(" ... ... ... "+stratname)
+
+            # Create savefolder
+            savepath_seas = savepath+selseas[0]+"/"+stratname+"/"+loc+"/"
+            if not os.path.exists(savepath_seas):
+                os.makedirs(savepath_seas)
+
+            #### Get necessary variables
+            MLmaxZDR = stats[stratname][loc]["values_ML_max"]["ZDR_OC"].sel(\
+                                time=stats[stratname][loc]["values_ML_max"]['time'].dt.month.isin(selseas[1]))
+            MLmaxKDP = stats[stratname][loc]["values_ML_max"]["KDP_ML_corrected"].sel(\
+                                time=stats[stratname][loc]["values_ML_max"]['time'].dt.month.isin(selseas[1]))
+            MLmaxZH = stats[stratname][loc]["values_ML_max"]["DBZH"].sel(\
+                                time=stats[stratname][loc]["values_ML_max"]['time'].dt.month.isin(selseas[1]))
+            MLmeanKDP = stats[stratname][loc]["values_ML_mean"]["KDP_ML_corrected"].sel(\
+                                time=stats[stratname][loc]["values_ML_mean"]['time'].dt.month.isin(selseas[1]))
+            ZHrain = stats[stratname][loc]["values_rain"]["DBZH"].sel(\
+                                time=stats[stratname][loc]["values_rain"]['time'].dt.month.isin(selseas[1]))
+            ZHsnow = stats[stratname][loc]["values_snow"]["DBZH"].sel(\
+                                time=stats[stratname][loc]["values_snow"]['time'].dt.month.isin(selseas[1]))
+            ZHsfc = stats[stratname][loc]["values_sfc"]["DBZH"].sel(\
+                                time=stats[stratname][loc]["values_sfc"]['time'].dt.month.isin(selseas[1]))
+            ZDRrain = stats[stratname][loc]["values_rain"]["ZDR_OC"].sel(\
+                                time=stats[stratname][loc]["values_rain"]['time'].dt.month.isin(selseas[1]))
+            ZDRsfc = stats[stratname][loc]["values_sfc"]["ZDR_OC"].sel(\
+                                time=stats[stratname][loc]["values_sfc"]['time'].dt.month.isin(selseas[1]))
+            deltaZH = MLmaxZH - ZHrain
+            MLminRHOHV = stats[stratname][loc]["values_ML_min"]["RHOHV_NC"].sel(\
+                                time=stats[stratname][loc]["values_ML_min"]['time'].dt.month.isin(selseas[1]))
+            
+            MLdepth = stats[stratname][loc]["ML_thickness"].sel(\
+                                time=stats[stratname][loc]["ML_thickness"]['time'].dt.month.isin(selseas[1]))
+            MLbot = stats[stratname][loc]["ML_bottom"].sel(\
+                                time=stats[stratname][loc]["ML_bottom"]['time'].dt.month.isin(selseas[1]))
+            betaZH = stats[stratname][loc]["beta"]["DBZH"].sel(\
+                                time=stats[stratname][loc]["beta"]['time'].dt.month.isin(selseas[1]))
+            cloudtop = stats[stratname][loc]["cloudtop"].sel(\
+                                time=stats[stratname][loc]["cloudtop"]['time'].dt.month.isin(selseas[1]))
+            cloudtop_5dbz = stats[stratname][loc]["cloudtop_5dbz"].sel(\
+                                time=stats[stratname][loc]["cloudtop_5dbz"]['time'].dt.month.isin(selseas[1]))
+
+            #### Histograms: like Griffin et al 2020 https://doi.org/10.1175/JAMC-D-19-0128.1
+            # plot histograms (2d hist) like Fig. 5
+            try:
+                plt.close()
+                binsx = np.linspace(0.0, 4, 81)
+                binsy = np.linspace(0.8, 1, 51)
+                MLminRHOHVcurve = 0.97 - 0.028*binsx
+                
+                utils.hist_2d(MLmaxZDR.compute(), MLminRHOHV.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+                plt.plot(binsx, MLminRHOHVcurve, c="black", label="Reference curve")
+                plt.legend()
+                plt.xlabel(r"$\mathregular{Maximum \ Z_{DR} \ in \ ML \ [dB]}$")
+                plt.ylabel(r"$\mathregular{Minimum \ \rho _{HV} \ in \ ML \ [-]}$")
+                plt.text(0.5, 0.82, r"$\mathregular{MLminRHOHV = 0.97 - 0.028\ MLmaxZDR }$", fontsize="xx-small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_MinRHOHVinML_MaxZDRinML.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( MLmaxZDR.compute().isnull() + MLminRHOHV.compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot MLmaxZDR vs MLminRHOHV due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot MLmaxZDR vs MLminRHOHV for unknown reason !!! ")
+
+            # plot histograms (2d hist) like Fig. 6
+            try:
+                plt.close()
+                binsx = np.linspace(0.0, 4, 81)
+                binsy = np.linspace(-1, 3, 41)
+                # MLminRHOHVcurve = 0.97 - 0.028*binsx
+                
+                utils.hist_2d(MLmaxZDR.compute(), ZDRrain.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+                # plt.plot(binsx, MLminRHOHVcurve, c="black", label="Reference curve")
+                # plt.legend()
+                plt.xlabel(r"$\mathregular{Maximum \ Z_{DR} \ in \ ML \ [dB]}$")
+                plt.ylabel(r"$\mathregular{Z_{DR} \ in \ rain \ [dB]}$")
+                # plt.text(0.5, 0.82, r"$\mathregular{MLminRHOHV = 0.97 - 0.028*MLmaxZDR }$", fontsize="xx-small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_ZDRinRain_MaxZDRinML.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( MLmaxZDR.compute().isnull() + ZDRrain.compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot MLmaxZDR vs ZDRrain due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot MLmaxZDR vs ZDRrain for unknown reason !!! ")
+
+            # plot histograms (2d hist) like Fig. 7
+            try:
+                plt.close()
+                binsx = np.linspace(-20, 50, 141)
+                binsy = np.linspace(-1, 5, 61)
+                # MLminRHOHVcurve = 0.97 - 0.028*binsx
+                
+                utils.hist_2d(MLmaxZH.compute(), MLmaxZDR.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+                # plt.plot(binsx, MLminRHOHVcurve, c="black", label="Reference curve")
+                # plt.legend()
+                plt.xlabel(r"$\mathregular{Maximum \ Z_{H} \ in \ ML \ [dBZ]}$")
+                plt.ylabel(r"$\mathregular{Maximum \ Z_{DR} \ in \ ML \ [dB]}$")
+                # plt.text(0.5, 0.82, r"$\mathregular{MLminRHOHV = 0.97 - 0.028*MLmaxZDR }$", fontsize="xx-small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_MaxZDRinML_MaxZHinML.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( MLmaxZDR.compute().isnull() + MLmaxZH.compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot MLmaxZDR vs MLmaxZH due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot MLmaxZDR vs MLmaxZH for unknown reason !!! ")
+
+            # plot histograms (2d hist) like Fig. 8
+            try:
+                plt.close()
+                binsx = np.linspace(10, 50, 41)
+                binsy = np.linspace(-4, 0, 21)
+                logMLmaxKDPcurve = -3.21 + 0.05*binsx
+                
+                utils.hist_2d(MLmaxZH.compute(), np.log(MLmaxKDP).compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+                plt.plot(binsx, logMLmaxKDPcurve, c="black", label="Reference curve")
+                plt.legend()
+                plt.xlabel(r"$\mathregular{Maximum \ Z_{H} \ in \ ML \ [dBZ]}$")
+                plt.ylabel(r"$\mathregular{log(Maximum \ K_{DP} \ in \ ML) \ [°/km]}$")
+                plt.text(20, -3.8, r"$\mathregular{logMLmaxKDP = -3.21 + 0.05\ MLmaxZH }$", fontsize="xx-small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_logMaxKDPinML_MaxZHinML.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( MLmaxZH.compute().isnull() + np.log(MLmaxKDP).compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot MLmaxZH vs np.log(MLmaxKDP) due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot MLmaxZH vs np.log(MLmaxKDP) for unknown reason !!! ")
+
+            # plot histograms (2d hist) like Fig. 9
+            # plot a
+            try:
+                plt.close()
+                binsx = np.linspace(-20, 50, 71)
+                binsy = np.linspace(-20, 40, 61)
+                ZHraincurve = -2.74 + 1.03*binsx - 0.005*binsx**2
+                
+                utils.hist_2d(MLmaxZH.compute(), ZHrain.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+                plt.plot(binsx, ZHraincurve, c="black", label="Reference curve")
+                plt.legend()
+                plt.xlabel(r"$\mathregular{Maximum \ Z_{H} \ in \ ML \ [dBZ]}$")
+                plt.ylabel(r"$\mathregular{Z_{H} \ in \ rain \ [dBZ]}$")
+                plt.text(-15, -15, r"$\mathregular{ZHrain = -2.74 + 1.03\ MLmaxZH - 0.005\ MLmaxZH^2 }$", fontsize="xx-small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_ZHinRain_MaxZHinML.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( MLmaxZH.compute().isnull() + ZHrain.compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot MLmaxZH vs ZHrain due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot MLmaxZH vs ZHrain for unknown reason !!! ")
+
+            # plot b
+            try:
+                plt.close()
+                binsx = np.linspace(-20, 50, 71)
+                binsy = np.linspace(-20, 40, 61)
+                ZHsnowcurve = -3.86 + 1.08*binsx - 0.0071*binsx**2
+                
+                utils.hist_2d(MLmaxZH.compute(), ZHsnow.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+                plt.plot(binsx, ZHsnowcurve, c="black", label="Reference curve")
+                plt.legend()
+                plt.xlabel(r"$\mathregular{Z_{H} \ in \ snow \ [dBZ]}$")
+                plt.ylabel(r"$\mathregular{Z_{H} \ in \ rain \ [dBZ]}$")
+                plt.text(-15, -15, r"$\mathregular{ZHsnow = -3.86 + 1.08\ MLmaxZH - 0.0071\ MLmaxZH^2 }$", fontsize="xx-small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_ZHinRain_ZHinSnow.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( ZHsnow.compute().isnull() + ZHrain.compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot ZHsnow vs ZHrain due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot ZHsnow vs ZHrain for unknown reason !!! ")
+
+            # plot histograms (2d hist) like Fig. 10
+            # plot a
+            try:
+                plt.close()
+                binsx = np.linspace(0.8, 1, 41)
+                binsy = np.linspace(-10, 20, 61)
+                deltaZHcurve = 4.27 + 6.89*(1-binsx) + 341*(1-binsx)**2 
+                
+                utils.hist_2d(MLminRHOHV.compute(), deltaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+                plt.plot(binsx, deltaZHcurve, c="black", label="Reference curve")
+                plt.legend()
+                plt.xlabel(r"$\mathregular{Minimum \ \rho _{HV} \ in \ ML \ [-]}$")
+                plt.ylabel(r"$\mathregular{\Delta Z_H \ (MLmaxZ_H - Z_HRain) \ [dBZ]´}$")
+                plt.text(0.81, -8, r"$\mathregular{\Delta Z_H = 4.27 + 6.89(1-\rho _{HV}) + 341(1-\rho _{HV})^2 }$", fontsize="small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_DeltaZH_MinRHOHVinML.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( MLminRHOHV.compute().isnull() + deltaZH.compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot deltaZH vs MLminRHOHV due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot deltaZH vs MLminRHOHV for unknown reason !!! ")
+            
+            # plot b
+            try:
+                plt.close()
+                binsx = np.linspace(0, 4, 16*5+1)
+                binsy = np.linspace(-10, 20, 61)
+                deltaZHcurve = 3.18 + 2.19*binsx 
+                
+                utils.hist_2d(MLmaxZDR.compute(), deltaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+                plt.plot(binsx, deltaZHcurve, c="black", label="Reference curve")
+                plt.legend()
+                plt.xlabel(r"$\mathregular{Maximum \ Z_{DR} \ in \ ML \ [dB]}$")
+                plt.ylabel(r"$\mathregular{\Delta Z_H \ (MLmaxZ_H - Z_HRain) \ [dBZ] }$")
+                plt.text(2, -8, r"$\mathregular{\Delta Z_H = 3.18 + 2.19 Z_{DR} }$", fontsize="small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_DeltaZH_MaxZDRinML.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( MLmaxZDR.compute().isnull() + deltaZH.compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot deltaZH vs MLmaxZDR due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot deltaZH vs MLmaxZDR for unknown reason !!! ")
+
+            # plot c
+            try:
+                plt.close()
+                binsx = np.linspace(0.8, 1, 41)
+                binsy = np.linspace(0, 1, 26)
+                MLdepthcurve = -0.64 + 30.8*(1-binsx) - 315*(1-binsx)**2 + 1115*(1-binsx)**3 
+                
+                utils.hist_2d(MLminRHOHV.compute(), MLdepth.compute()/1000, bins1=binsx, bins2=binsy, cmap="Blues")
+                plt.plot(binsx, MLdepthcurve, c="black", label="Reference curve")
+                plt.legend()
+                plt.xlabel(r"$\mathregular{Minimum \ \rho _{HV} \ in \ ML \ [-]}$")
+                plt.ylabel(r"Depth of ML [km]")
+                plt.text(0.82, 0.1, r"$\mathregular{ML \ Depth = -0.64 + 30.8\ (1-\rho _{HV})}$" "\n" r"$\mathregular{- 315\ (1-\rho _{HV})^2 + 1115\ (1-\rho _{HV})^3}$", fontsize="xx-small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_DepthML_MinRHOHVinML.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( MLminRHOHV.compute().isnull() + MLdepth.compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot MLdepth vs MLminRHOHV due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot MLdepth vs MLminRHOHV for unknown reason !!! ")
+
+            # plot d
+            try:
+                plt.close()
+                binsx = np.linspace(0, 4, 16*5+1)
+                binsy = np.linspace(0, 1, 26)
+                MLdepthcurve = 0.21 + 0.091*binsx 
+                
+                utils.hist_2d(MLmaxZDR.compute(), MLdepth.compute()/1000, bins1=binsx, bins2=binsy, cmap="Blues")
+                plt.plot(binsx, MLdepthcurve, c="black", label="Reference curve") 
+                plt.legend()
+                plt.xlabel(r"$\mathregular{Maximum \ Z_{DR} \ in \ ML \ [dB]}$")
+                plt.ylabel(r"Depth of ML [km]")
+                plt.text(2.1, 0.05, r"$\mathregular{ML \ Depth = 0.21 + 0.091 Z_{DR} }$", fontsize="xx-small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_DepthML_MaxZDRinML.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( MLmaxZDR.compute().isnull() + MLdepth.compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot MLdepth vs MLmaxZDR due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot MLdepth vs MLmaxZDR for unknown reason !!! ")
+
+            # plot histograms (2d hist) like Fig. 11
+            try:
+                plt.close()
+                binsx = np.linspace(-10, 50, 31)
+                binsy = np.linspace(-0, 1.2, 21)
+                MLdepthcurve = 0.315 + 0.000854*binsx
+                
+                utils.hist_2d(MLmaxZH.compute(), MLdepth.compute()/1000, bins1=binsx, bins2=binsy, cmap="Blues")
+                plt.plot(binsx, MLdepthcurve, c="black", label="Reference curve")
+                plt.legend()
+                plt.xlabel(r"$\mathregular{Maximum \ Z_{H} \ in \ ML \ [dBZ]}$")
+                plt.ylabel(r"$\mathregular{Depth\ of\ ML\ [km]}$")
+                plt.text(11, 0.9, r"$\mathregular{MLdepth = 0.315 + 0.000854\ MLmaxZH }$", fontsize="xx-small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_DepthML_MaxZHinML.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( MLmaxZH.compute().isnull() + ZHrain.compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot MLmaxZH vs ZHrain due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot MLmaxZH vs ZHrain for unknown reason !!! ")
+
+            #### Histograms: like Troemel et al 2019 https://doi.org/10.1175/JAMC-D-19-0056.1
+            # plot histograms (2d hist) like Fig. 7
+            # plot only bottom left (the rest are the same as plots 8 and 9 from Griffin)
+            try:
+                plt.close()
+                binsx = np.linspace(10, 50, 41)
+                binsy = np.linspace(-4, 0, 21)
+                logMLmeanKDPcurve = -2.4 + 0.05*binsx
+                
+                utils.hist_2d(MLmaxZH.compute(), np.log(MLmeanKDP).compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+                plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
+                plt.legend()
+                plt.xlabel(r"$\mathregular{Maximum \ Z_{H} \ in \ ML \ [dBZ]}$")
+                plt.ylabel(r"$\mathregular{log(Mean \ K_{DP} \ in \ ML) \ [°/km]}$")
+                plt.text(12, -0.5, r"$\mathregular{logMLmeanKDP = -2.4 + 0.05\ MLmaxZH }$", fontsize="xx-small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_logMeanKDPinML_MaxZHinML.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( MLmaxZH.compute().isnull() + np.log(MLmeanKDP).compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot MLmaxZH vs np.log(MLmeanKDP) due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot MLmaxZH vs np.log(MLmeanKDP) for unknown reason !!! ")
+
+            # plot histograms (2d hist) like Fig. 9
+            # plot left one
+            try:
+                plt.close()
+                binsx = np.linspace(-0.5, 2, 51)
+                binsy = np.linspace(-1, 2, 31)
+                # logMLmeanKDPcurve = -2.4 + 0.05*binsx
+                
+                utils.hist_2d(ZDRrain.compute(), ZDRsfc.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+                # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
+                # plt.legend()
+                plt.xlabel(r"$\mathregular{ Z_{DR} \ in \ rain \ [dB] }$")
+                plt.ylabel(r"$\mathregular{ Z_{DR} \ at \ surface \ [dB] }$")
+                # plt.text(12, -0.5, r"$\mathregular{logMLmeanKDP = -2.4 + 0.05\ MLmaxZH }$", fontsize="xx-small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_ZDRatSfc_ZDRinRain.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( ZDRrain.compute().isnull() + ZDRsfc.compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot ZDRrain vs ZDRsfc due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot ZDRrain vs ZDRsfc for unknown reason !!! ")
+
+            # plot right one
+            try:
+                plt.close()
+                binsx = np.linspace(0, 40, 41)
+                binsy = np.linspace(0, 40, 41)
+                # logMLmeanKDPcurve = -2.4 + 0.05*binsx
+                
+                utils.hist_2d(ZHrain.compute(), ZHsfc.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+                # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
+                # plt.legend()
+                plt.xlabel(r"$\mathregular{ Z_{H} \ in \ rain \ [dBZ] }$")
+                plt.ylabel(r"$\mathregular{ Z_{H} \ at \ surface \ [dBZ] }$")
+                # plt.text(12, -0.5, r"$\mathregular{logMLmeanKDP = -2.4 + 0.05\ MLmaxZH }$", fontsize="xx-small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_ZHatSfc_ZHinRain.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( ZHrain.compute().isnull() + ZHsfc.compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot ZHrain vs ZHsfc due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot ZHrain vs ZHsfc for unknown reason !!! ")
+
+            # plot histograms (2d hist) like Fig. 10
+            # plot only top left (the rest are already plotted from previous plots)
+            try:
+                plt.close()
+                binsx = np.linspace(0, 50, 26)
+                binsy = np.linspace(-15, 10, 26)
+                # logMLmeanKDPcurve = -2.4 + 0.05*binsx
+                
+                utils.hist_2d(MLmaxZH.compute(), betaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+                # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
+                # plt.legend()
+                plt.xlabel(r"$\mathregular{ Maximum \ Z_{H} \ in \ ML \ [dBZ] }$")
+                plt.ylabel(r"$\mathregular{ \beta \ [dB/km]}$")
+                # plt.text(12, -0.5, r"$\mathregular{logMLmeanKDP = -2.4 + 0.05\ MLmaxZH }$", fontsize="xx-small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_betaZH_MaxZHinML.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( MLmaxZH.compute().isnull() + betaZH.compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot MLmaxZH vs betaZH due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot MLmaxZH vs betaZH for unknown reason !!! ")
+
+            #### Histograms: custom
+            
+            # Plot beta vs ZHrain
+            try:
+                plt.close()
+                binsx = np.linspace(0, 50, 26)
+                binsy = np.linspace(-15, 10, 26)
+                # logMLmeanKDPcurve = -2.4 + 0.05*binsx
+                
+                utils.hist_2d(ZHrain.compute(), betaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+                # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
+                # plt.legend()
+                plt.xlabel(r"$\mathregular{ Z_{H} \ in \ rain \ [dBZ] }$")
+                plt.ylabel(r"$\mathregular{ \beta \ [dB/km]}$")
+                # plt.text(12, -0.5, r"$\mathregular{logMLmeanKDP = -2.4 + 0.05\ MLmaxZH }$", fontsize="xx-small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_betaZH_ZHinRain.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( ZHrain.compute().isnull() + betaZH.compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot ZHrain vs betaZH due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot ZHrain vs betaZH for unknown reason !!! ")
+
+            # Plot beta vs ZDRrain
+            try:
+                plt.close()
+                binsx = np.linspace(-0.5, 2, 51)
+                binsy = np.linspace(-15, 10, 26)
+                # logMLmeanKDPcurve = -2.4 + 0.05*binsx
+                
+                utils.hist_2d(ZDRrain.compute(), betaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+                # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
+                # plt.legend()
+                plt.xlabel(r"$\mathregular{ Z_{DR} \ in \ rain \ [dB] }$")
+                plt.ylabel(r"$\mathregular{ \beta \ [dB/km]}$")
+                # plt.text(12, -0.5, r"$\mathregular{logMLmeanKDP = -2.4 + 0.05\ MLmaxZH }$", fontsize="xx-small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_betaZH_ZDRinRain.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( ZDRrain.compute().isnull() + betaZH.compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot ZDRrain vs betaZH due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot ZDRrain vs betaZH for unknown reason !!! ")
+
+            # Plot beta vs cloudtop height
+            try:
+                plt.close()
+                binsx = np.linspace(5, 15, 51)
+                binsy = np.linspace(-15, 10, 26)
+                # logMLmeanKDPcurve = -2.4 + 0.05*binsx
+                
+                utils.hist_2d(cloudtop.compute()/1000, betaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+                # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
+                # plt.legend()
+                plt.xlabel(r"$\mathregular{ Cloud \ top \ height \ [km] }$")
+                plt.ylabel(r"$\mathregular{ \beta \ [dB/km]}$")
+                # plt.text(12, -0.5, r"$\mathregular{logMLmeanKDP = -2.4 + 0.05\ MLmaxZH }$", fontsize="xx-small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_betaZH_CloudTopHeight.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( cloudtop.compute().isnull() + betaZH.compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot cloudtop vs betaZH due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot cloudtop vs betaZH for unknown reason !!! ")
+
+
+            # Plot beta vs cloudtop height (5 dBZ)
+            try:
+                plt.close()
+                binsx = np.linspace(5, 15, 51)
+                binsy = np.linspace(-15, 10, 26)
+                # logMLmeanKDPcurve = -2.4 + 0.05*binsx
+                
+                utils.hist_2d(cloudtop_5dbz.compute()/1000, betaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+                # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
+                # plt.legend()
+                plt.xlabel(r"$\mathregular{ Cloud \ top \ height \ (5 dbZ) \ [km] }$")
+                plt.ylabel(r"$\mathregular{ \beta \ [dB/km]}$")
+                # plt.text(12, -0.5, r"$\mathregular{logMLmeanKDP = -2.4 + 0.05\ MLmaxZH }$", fontsize="xx-small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_betaZH_CloudTopHeight5dBZ.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( cloudtop_5dbz.compute().isnull() + betaZH.compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot cloudtop_5dbz vs betaZH due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot cloudtop_5dbz vs betaZH for unknown reason !!! ")
+
+            # Plot beta vs ML depth
+            try:
+                plt.close()
+                binsx = np.linspace(0, 1, 26)
+                binsy = np.linspace(-15, 10, 26)
+                # logMLmeanKDPcurve = -2.4 + 0.05*binsx
+                
+                utils.hist_2d(MLdepth.compute()/1000, betaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+                # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
+                # plt.legend()
+                plt.xlabel(r"$\mathregular{ Depth \ of \ ML \ [km] }$")
+                plt.ylabel(r"$\mathregular{ \beta \ [dB/km]}$")
+                # plt.text(12, -0.5, r"$\mathregular{logMLmeanKDP = -2.4 + 0.05\ MLmaxZH }$", fontsize="xx-small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_betaZH_DepthML.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( MLdepth.compute().isnull() + betaZH.compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot MLdepth vs betaZH due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot MLdepth vs betaZH for unknown reason !!! ")
+
+            # Plot beta vs ML height (top)
+            try:
+                plt.close()
+                binsx = np.linspace(1.5, 4.5, 26)
+                binsy = np.linspace(-15, 10, 26)
+                # logMLmeanKDPcurve = -2.4 + 0.05*binsx
+                
+                utils.hist_2d((MLdepth+MLbot).compute()/1000, betaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+                # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
+                # plt.legend()
+                plt.xlabel(r"$\mathregular{ ML \ top \ height \ [km] }$")
+                plt.ylabel(r"$\mathregular{ \beta \ [dB/km]}$")
+                # plt.text(12, -0.5, r"$\mathregular{logMLmeanKDP = -2.4 + 0.05\ MLmaxZH }$", fontsize="xx-small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_betaZH_MLtopheight.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( (MLdepth+MLbot).compute().isnull() + betaZH.compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot (MLdepth+MLbot) vs betaZH due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot (MLdepth+MLbot) vs betaZH for unknown reason !!! ")
 
 #%%% ridgeplots
 
