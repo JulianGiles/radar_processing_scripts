@@ -33,6 +33,7 @@ import matplotlib as mpl
 import xradar as xd
 import time
 import ridgeplot
+import plotly
 
 try:
     from Scripts.python.radar_processing_scripts import utils
@@ -277,6 +278,8 @@ except NameError:
 for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed", qvps_strat_relaxed_fil)]:
     print("   ... for "+stratname)
     
+    retrievals[stratname] = {}
+    
     # LWC 
     lwc_zh_zdr = 10**(0.058*stratqvp[X_DBZH] - 0.118*stratqvp[X_ZDR] - 2.36) # Reimann et al 2021 (adjusted for Germany)
     lwc_zh_zdr2 = 1.38*10**(-3) *10**(0.1*stratqvp[X_DBZH] - 2.43*stratqvp[X_ZDR] + 1.12*stratqvp[X_ZDR]**2 - 0.176*stratqvp[X_ZDR]**3 ) # Ryzhkov et al 2022, used in S band
@@ -304,19 +307,23 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
     Nt_rain_zh_zdr = ( -2.37 + 0.1*stratqvp[X_DBZH] - 2.89*stratqvp[X_ZDR] + 1.28*stratqvp[X_ZDR]**2 - 0.213*stratqvp[X_ZDR]**3 )# Hu and Ryzhkov 2022
     
     # Put everything together
-    retrievals[stratname] = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
-                             "lwc_zh_zdr2":lwc_zh_zdr2,
-                             "lwc_kdp": lwc_kdp,
-                             "iwc_zh_t": iwc_zh_t,
-                             "iwc_zdr_zh_kdp": iwc_zdr_zh_kdp,
-                             "Dm_ice_zh": Dm_ice_zh,
-                             "Dm_ice_zh_kdp": Dm_ice_zh_kdp,
-                             "Dm_rain_zdr": Dm_rain_zdr,
-                             "Dm_rain_zdr2": Dm_rain_zdr2,
-                             "Dm_rain_zdr3": Dm_rain_zdr3,
-                             "Nt_ice_zh_iwc": Nt_ice_zh_iwc,
-                             "Nt_rain_zh_zdr": Nt_rain_zh_zdr,
-                             }).compute()
+    retrievals[stratname][find_loc(locs, ff[0])] = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
+                                                             "lwc_zh_zdr2":lwc_zh_zdr2,
+                                                             "lwc_kdp": lwc_kdp,
+                                                             "iwc_zh_t": iwc_zh_t,
+                                                             "iwc_zdr_zh_kdp": iwc_zdr_zh_kdp,
+                                                             "Dm_ice_zh": Dm_ice_zh,
+                                                             "Dm_ice_zh_kdp": Dm_ice_zh_kdp,
+                                                             "Dm_rain_zdr": Dm_rain_zdr,
+                                                             "Dm_rain_zdr2": Dm_rain_zdr2,
+                                                             "Dm_rain_zdr3": Dm_rain_zdr3,
+                                                             "Nt_ice_zh_iwc": Nt_ice_zh_iwc,
+                                                             "Nt_rain_zh_zdr": Nt_rain_zh_zdr,
+                                                             }).compute()
+
+    # Save retrievals
+    for ll in retrievals[stratname].keys():
+        retrievals[stratname][ll].to_netcdf("/automount/realpep/upload/jgiles/radar_retrievals/"+stratname+"/"+ll+".nc")
 
 #### General statistics
 
@@ -852,7 +859,7 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
         stats[stratname] = {}
     elif type(stats[stratname]) is not dict:
         stats[stratname] = {}
-
+    print("Loading "+stratname+" stats ...")
     for ll in ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']:
         if ll not in stats[stratname].keys():
             stats[stratname][ll] = {}
@@ -874,6 +881,26 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
         # delete entry if empty
         if not stats[stratname][ll]:
             del stats[stratname][ll]
+
+# load retrievals
+if 'retrievals' not in globals() and 'retrievals' not in locals():
+    retrievals = {}
+
+for stratname in ["stratiform", "stratiform_relaxed"]:
+    if stratname not in retrievals.keys():
+        retrievals[stratname] = {}
+    elif type(retrievals[stratname]) is not dict:
+        retrievals[stratname] = {}
+    print("Loading "+stratname+" retrievals ...")
+    for ll in ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']:
+        try:
+            retrievals[stratname][ll] = xr.open_dataset("/automount/realpep/upload/jgiles/radar_retrievals/"+stratname+"/"+ll+".nc")
+            print(ll+" retrievals loaded")
+        except:
+            pass
+        # delete entry if empty
+        if not retrievals[stratname][ll]:
+            del retrievals[stratname][ll]
 
 #%%% 2d histograms
 locs_to_plot = [find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
@@ -1478,17 +1505,39 @@ bins = {"ML_thickness": np.arange(0,1200,50),
         "cloudtop_5dbz": np.arange(2000,10250,250),
         "cloudtop_10dbz": np.arange(2000,10250,250),
         "beta": beta_vars_ticks,
+        "cloudtop_TEMP": np.arange(-50,-20,1),
+        "cloudtop_TEMP_5dbz": np.arange(-50,-20,1),
+        "cloudtop_TEMP_10dbz": np.arange(-50,-20,1),
         }
 
-# for loc in stats[stratname].keys():
-#     for ss in bins.keys():
-#         stats[stratname][loc][ss].plot.hist(bins=bins[ss], histtype='step',
-#                                                weights=np.ones_like(stats[stratname][loc][ss])*100 / len(stats[stratname][loc][ss]))
 
 
 order = ['umd', 'pro', 'afy', 'ank', 'gzt', 'hty', 'svs']
 order = ['umd', 'pro', 'hty']
 
+
+# Define a function to reorder the elements of the ridgeplot
+def reorder_tuple_elements(data, n):
+    # Extract the last n elements
+    last_n = data[-n:]
+    
+    # Convert the tuple to a list to facilitate reordering
+    data_list = list(data[:-n])
+    
+    # Insert each of the last n elements at the desired positions
+    for i in range(n):
+        target_position = i * 3 + 2
+        data_list.insert(target_position, last_n[i])
+    
+    # Convert back to a tuple and return
+    return tuple(data_list)
+
+# Define a function to change the alpha value of an rgba string
+def change_rgba_alpha(original_color, new_alpha):
+    r, g, b, alpha = original_color.lstrip('rgba(').rstrip(')').split(',')
+    return f'rgba({r}, {g}, {b}, {new_alpha})'
+
+# Plot stats ridgeplots
 for stratname in ["stratiform", "stratiform_relaxed"]:
     print("plotting "+stratname+" stats...")
     order_fil = [ll for ll in order if ll in stats[stratname].keys()]
@@ -1497,13 +1546,13 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
         try: 
             for vv in ridge_vars:
     
-                if vv == "RHOHV_NC":
+                if vv == "RHOHV_NCignore": # DEPRECATED (22.10.24), this was wrongly defined, it does nothing now.
                     order_turk = order_fil.copy()
                     order_turk.remove("pro") # THIS IS WRONG taking out DWD radars and putting them separate (because turkish radars do not have RHOHV_NC)
                     samples = [stats[stratname]["pro"][ss][vv].dropna("time").values] + [stats[stratname][loc][ss]["RHOHV"].dropna("time").values for loc in order_turk if loc in stats[stratname].keys()]
                 else:
                     samples = [stats[stratname][loc][ss][vv].dropna("time").values for loc in order_fil]
-    
+                    
                 fig = ridgeplot.ridgeplot(samples=samples,
                                         colorscale="viridis",
                                         colormode="row-index",
@@ -1521,10 +1570,39 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
                                 title=ss+" "+vv,
                                 xaxis_tickvals=bins[ss][vv],
                 )
+
+                # Add vertical zero line
+                fig.add_vline(x=0, line_width=2, line_color="gray")
+                
+                # Get densities data from the plot
+                densities = [ fig.data[2*i+1] for i in range(len(samples)) ]
+                
+                # calculate means
+                means = [np.mean(sample) for sample in samples]
+                
+                # Add a vertical line at the mean for each distribution
+                for i, mean in enumerate(means):
+                    # define the bottom and top of each distribution                    
+                    y_bot = np.array(densities[i]["y"]).min()
+                    y_top = np.array(densities[i]["y"])[(np.where(np.array(densities[i]["x"]) >= mean))][0]
+                    
+                    fig.add_scatter(
+                        mode="lines",
+                        x=[mean, mean],  # Vertical line at the mean
+                        y=[y_bot , y_top],  # Set y0 and y1 based on the vertical offset
+                        line=dict(color=change_rgba_alpha(densities[i]["fillcolor"], 1), width=2),
+                    )
+
+                # We need to reorder the elements of the fig.data tuple so that 
+                # the mean lines go below each distribution.
+                fig.data = reorder_tuple_elements(fig.data,len(means))
+                
+                # save figure
                 fig.write_html("/automount/agradar/jgiles/images/stats_ridgeplots/"+stratname+"/"+ss+"_"+vv+".html")            
+
         except KeyError: 
             try:
-                samples = [stats[stratname][loc][ss].values for loc in order_fil]
+                samples = [stats[stratname][loc][ss].dropna("time").values for loc in order_fil]
                 fig = ridgeplot.ridgeplot(samples=samples, #bandwidth=50,
                                         colorscale="viridis",
                                         colormode="row-index",
@@ -1542,6 +1620,33 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
                                 title=ss,
                                 xaxis_tickvals=bins[ss],
                 )
+                
+                # Add vertical zero line
+                fig.add_vline(x=0, line_width=2, line_color="gray")
+                
+                # Get densities data from the plot
+                densities = [ fig.data[2*i+1] for i in range(len(samples)) ]
+                
+                # calculate means
+                means = [np.mean(sample) for sample in samples]
+                
+                # Add a vertical line at the mean for each distribution
+                for i, mean in enumerate(means):
+                    # define the bottom and top of each distribution                    
+                    y_bot = np.array(densities[i]["y"]).min()
+                    y_top = np.array(densities[i]["y"])[(np.where(np.array(densities[i]["x"]) >= mean))][0]
+                    
+                    fig.add_scatter(
+                        mode="lines",
+                        x=[mean, mean],  # Vertical line at the mean
+                        y=[y_bot , y_top],  # Set y0 and y1 based on the vertical offset
+                        line=dict(color=change_rgba_alpha(densities[i]["fillcolor"], 1), width=2),
+                    )
+
+                # We need to reorder the elements of the fig.data tuple so that 
+                # the mean lines go below each distribution.
+                fig.data = reorder_tuple_elements(fig.data,len(means))
+                
                 fig.write_html("/automount/agradar/jgiles/images/stats_ridgeplots/"+stratname+"/"+ss+".html")
             except:
                 print("!!! unable to plot "+stratname+" "+ss+" !!!")
