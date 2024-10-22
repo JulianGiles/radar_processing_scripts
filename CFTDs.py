@@ -1478,6 +1478,7 @@ for loc in locs_to_plot:
                     print(" ... ... ... !!! not possible to plot (MLdepth+MLbot) vs betaZH for unknown reason !!! ")
 
 #%%% ridgeplots
+savepath = "/automount/agradar/jgiles/images/stats_ridgeplots/"
 
 ridge_vars = [X_DBZH, X_ZDR, X_RHO, X_KDP]
 
@@ -1520,6 +1521,14 @@ bins = {"ML_thickness": np.arange(0,1200,50),
 order = ['umd', 'pro', 'afy', 'ank', 'gzt', 'hty', 'svs']
 order = ['umd', 'pro', 'hty']
 
+selseaslist = [           
+            ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
+            ("DJF", [12,1,2]),
+            ("MAM", [3,4,5]),
+            ("JJA", [6,7,8]),
+            ("SON", [9,10,11]),
+           ] # ("nameofseas", [months included])
+
 
 # Define a function to reorder the elements of the ridgeplot
 def reorder_tuple_elements(data, n):
@@ -1549,120 +1558,134 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
             stats[stratname][ll]["deltaZH"] = stats[stratname][ll]["values_ML_max"]["DBZH"] - stats[stratname][ll]["values_rain"]["DBZH"]
 
 # Plot stats ridgeplots
-for stratname in ["stratiform", "stratiform_relaxed"]:
-    print("plotting "+stratname+" stats...")
-    order_fil = [ll for ll in order if ll in stats[stratname].keys()]
-    for ss in bins.keys():
-        print("...plotting "+ss)
-        try: 
-            for vv in ridge_vars:
+for selseas in selseaslist:
+    print(" ... ... "+selseas[0])
+    for stratname in ["stratiform", "stratiform_relaxed"]:
+
+        print("plotting "+stratname+" stats...")
+
+        # Create savefolder
+        savepath_seas = savepath+selseas[0]+"/"+stratname+"/"
+        if not os.path.exists(savepath_seas):
+            os.makedirs(savepath_seas)
+
+        order_fil = [ll for ll in order if ll in stats[stratname].keys()]
+
+        for ss in bins.keys():
+            print("...plotting "+ss)
+            try: 
+                for vv in ridge_vars:
+        
+                    if vv == "RHOHV_NCignore": # DEPRECATED (22.10.24), this was wrongly defined, it does nothing now.
+                        order_turk = order_fil.copy()
+                        order_turk.remove("pro") # THIS IS WRONG taking out DWD radars and putting them separate (because turkish radars do not have RHOHV_NC)
+                        samples = [stats[stratname]["pro"][ss][vv].dropna("time").values] + [stats[stratname][loc][ss]["RHOHV"].dropna("time").values for loc in order_turk if loc in stats[stratname].keys()]
+                    else:
+                        samples = [stats[stratname][loc][ss][vv].sel(\
+                                    time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time").values\
+                                   for loc in order_fil]
+                        
+                    fig = ridgeplot.ridgeplot(samples=samples,
+                                            colorscale="viridis",
+                                            colormode="row-index",
+                                            coloralpha=0.65,
+                                            labels=order_fil,
+                                            linewidth=2,
+                                            spacing=5 / 9,
+                                            )
+                    fig.update_layout(
+                                    height=760,
+                                    width=900,
+                                    font_size=16,
+                                    plot_bgcolor="white",
+                                    showlegend=False,
+                                    title=ss+" "+vv,
+                                    xaxis_tickvals=bins[ss][vv],
+                    )
     
-                if vv == "RHOHV_NCignore": # DEPRECATED (22.10.24), this was wrongly defined, it does nothing now.
-                    order_turk = order_fil.copy()
-                    order_turk.remove("pro") # THIS IS WRONG taking out DWD radars and putting them separate (because turkish radars do not have RHOHV_NC)
-                    samples = [stats[stratname]["pro"][ss][vv].dropna("time").values] + [stats[stratname][loc][ss]["RHOHV"].dropna("time").values for loc in order_turk if loc in stats[stratname].keys()]
-                else:
-                    samples = [stats[stratname][loc][ss][vv].dropna("time").values for loc in order_fil]
+                    # Add vertical zero line
+                    fig.add_vline(x=0, line_width=2, line_color="gray")
                     
-                fig = ridgeplot.ridgeplot(samples=samples,
-                                        colorscale="viridis",
-                                        colormode="row-index",
-                                        coloralpha=0.65,
-                                        labels=order_fil,
-                                        linewidth=2,
-                                        spacing=5 / 9,
-                                        )
-                fig.update_layout(
-                                height=760,
-                                width=900,
-                                font_size=16,
-                                plot_bgcolor="white",
-                                showlegend=False,
-                                title=ss+" "+vv,
-                                xaxis_tickvals=bins[ss][vv],
-                )
-
-                # Add vertical zero line
-                fig.add_vline(x=0, line_width=2, line_color="gray")
-                
-                # Get densities data from the plot
-                densities = [ fig.data[2*i+1] for i in range(len(samples)) ]
-                
-                # calculate means
-                means = [np.mean(sample) for sample in samples]
-                
-                # Add a vertical line at the mean for each distribution
-                for i, mean in enumerate(means):
-                    # define the bottom and top of each distribution                    
-                    y_bot = np.array(densities[i]["y"]).min()
-                    y_top = np.array(densities[i]["y"])[(np.where(np.array(densities[i]["x"]) >= mean))][0]
+                    # Get densities data from the plot
+                    densities = [ fig.data[2*i+1] for i in range(len(samples)) ]
                     
-                    fig.add_scatter(
-                        mode="lines",
-                        x=[mean, mean],  # Vertical line at the mean
-                        y=[y_bot , y_top],  # Set y0 and y1 based on the vertical offset
-                        line=dict(color=change_rgba_alpha(densities[i]["fillcolor"], 1), width=2),
+                    # calculate means
+                    means = [np.mean(sample) for sample in samples]
+                    
+                    # Add a vertical line at the mean for each distribution
+                    for i, mean in enumerate(means):
+                        # define the bottom and top of each distribution                    
+                        y_bot = np.array(densities[i]["y"]).min()
+                        y_top = np.array(densities[i]["y"])[(np.where(np.array(densities[i]["x"]) >= mean))][0]
+                        
+                        fig.add_scatter(
+                            mode="lines",
+                            x=[mean, mean],  # Vertical line at the mean
+                            y=[y_bot , y_top],  # Set y0 and y1 based on the vertical offset
+                            line=dict(color=change_rgba_alpha(densities[i]["fillcolor"], 1), width=2),
+                        )
+    
+                    # We need to reorder the elements of the fig.data tuple so that 
+                    # the mean lines go below each distribution.
+                    fig.data = reorder_tuple_elements(fig.data,len(means))
+                    
+                    # save figure
+                    fig.write_html(savepath_seas+"/"+ss+"_"+vv+".html")            
+    
+            except KeyError: 
+                try:
+                    samples = [stats[stratname][loc][ss].sel(\
+                                time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time").values\
+                               for loc in order_fil]
+                    fig = ridgeplot.ridgeplot(samples=samples, #bandwidth=50,
+                                            colorscale="viridis",
+                                            colormode="row-index",
+                                            coloralpha=0.65,
+                                            labels=order_fil,
+                                            linewidth=2,
+                                            spacing=5 / 9,
+                                            )
+                    fig.update_layout(
+                                    height=760,
+                                    width=900,
+                                    font_size=16,
+                                    plot_bgcolor="white",
+                                    showlegend=False,
+                                    title=ss,
+                                    xaxis_tickvals=bins[ss],
                     )
-
-                # We need to reorder the elements of the fig.data tuple so that 
-                # the mean lines go below each distribution.
-                fig.data = reorder_tuple_elements(fig.data,len(means))
-                
-                # save figure
-                fig.write_html("/automount/agradar/jgiles/images/stats_ridgeplots/"+stratname+"/"+ss+"_"+vv+".html")            
-
-        except KeyError: 
-            try:
-                samples = [stats[stratname][loc][ss].dropna("time").values for loc in order_fil]
-                fig = ridgeplot.ridgeplot(samples=samples, #bandwidth=50,
-                                        colorscale="viridis",
-                                        colormode="row-index",
-                                        coloralpha=0.65,
-                                        labels=order_fil,
-                                        linewidth=2,
-                                        spacing=5 / 9,
-                                        )
-                fig.update_layout(
-                                height=760,
-                                width=900,
-                                font_size=16,
-                                plot_bgcolor="white",
-                                showlegend=False,
-                                title=ss,
-                                xaxis_tickvals=bins[ss],
-                )
-                
-                # Add vertical zero line
-                fig.add_vline(x=0, line_width=2, line_color="gray")
-                
-                # Get densities data from the plot
-                densities = [ fig.data[2*i+1] for i in range(len(samples)) ]
-                
-                # calculate means
-                means = [np.mean(sample) for sample in samples]
-                
-                # Add a vertical line at the mean for each distribution
-                for i, mean in enumerate(means):
-                    # define the bottom and top of each distribution                    
-                    y_bot = np.array(densities[i]["y"]).min()
-                    y_top = np.array(densities[i]["y"])[(np.where(np.array(densities[i]["x"]) >= mean))][0]
                     
-                    fig.add_scatter(
-                        mode="lines",
-                        x=[mean, mean],  # Vertical line at the mean
-                        y=[y_bot , y_top],  # Set y0 and y1 based on the vertical offset
-                        line=dict(color=change_rgba_alpha(densities[i]["fillcolor"], 1), width=2),
-                    )
-
-                # We need to reorder the elements of the fig.data tuple so that 
-                # the mean lines go below each distribution.
-                fig.data = reorder_tuple_elements(fig.data,len(means))
-                
-                fig.write_html("/automount/agradar/jgiles/images/stats_ridgeplots/"+stratname+"/"+ss+".html")
+                    # Add vertical zero line
+                    fig.add_vline(x=0, line_width=2, line_color="gray")
+                    
+                    # Get densities data from the plot
+                    densities = [ fig.data[2*i+1] for i in range(len(samples)) ]
+                    
+                    # calculate means
+                    means = [np.mean(sample) for sample in samples]
+                    
+                    # Add a vertical line at the mean for each distribution
+                    for i, mean in enumerate(means):
+                        # define the bottom and top of each distribution                    
+                        y_bot = np.array(densities[i]["y"]).min()
+                        y_top = np.array(densities[i]["y"])[(np.where(np.array(densities[i]["x"]) >= mean))][0]
+                        
+                        fig.add_scatter(
+                            mode="lines",
+                            x=[mean, mean],  # Vertical line at the mean
+                            y=[y_bot , y_top],  # Set y0 and y1 based on the vertical offset
+                            line=dict(color=change_rgba_alpha(densities[i]["fillcolor"], 1), width=2),
+                        )
+    
+                    # We need to reorder the elements of the fig.data tuple so that 
+                    # the mean lines go below each distribution.
+                    fig.data = reorder_tuple_elements(fig.data,len(means))
+                    
+                    fig.write_html(savepath_seas+"/"+ss+".html")
+                except:
+                    print("!!! unable to plot "+stratname+" "+ss+" !!!")
             except:
                 print("!!! unable to plot "+stratname+" "+ss+" !!!")
-        except:
-            print("!!! unable to plot "+stratname+" "+ss+" !!!")
         
     
 #%% Checking PHIDP
