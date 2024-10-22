@@ -1499,7 +1499,11 @@ bins = {"ML_thickness": np.arange(0,1200,50),
         "values_snow": vars_ticks,
         "values_rain": vars_ticks,
         "values_DGL_mean": vars_ticks,
+        "values_DGL_min": vars_ticks,
+        "values_DGL_max": vars_ticks,
         "values_ML_mean": vars_ticks,
+        "values_ML_min": vars_ticks,
+        "values_ML_max": vars_ticks,
         "values_sfc": vars_ticks,
         "cloudtop": np.arange(2000,10250,250),
         "cloudtop_5dbz": np.arange(2000,10250,250),
@@ -1508,6 +1512,7 @@ bins = {"ML_thickness": np.arange(0,1200,50),
         "cloudtop_TEMP": np.arange(-50,-20,1),
         "cloudtop_TEMP_5dbz": np.arange(-50,-20,1),
         "cloudtop_TEMP_10dbz": np.arange(-50,-20,1),
+        "deltaZH": np.arange(-5,21,1),
         }
 
 
@@ -1536,6 +1541,12 @@ def reorder_tuple_elements(data, n):
 def change_rgba_alpha(original_color, new_alpha):
     r, g, b, alpha = original_color.lstrip('rgba(').rstrip(')').split(',')
     return f'rgba({r}, {g}, {b}, {new_alpha})'
+
+# Build deltaZH into stats
+for stratname in ["stratiform", "stratiform_relaxed"]:
+    for ll in order:
+        if ll in stats[stratname].keys():
+            stats[stratname][ll]["deltaZH"] = stats[stratname][ll]["values_ML_max"]["DBZH"] - stats[stratname][ll]["values_rain"]["DBZH"]
 
 # Plot stats ridgeplots
 for stratname in ["stratiform", "stratiform_relaxed"]:
