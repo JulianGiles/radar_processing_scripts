@@ -539,73 +539,72 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
     
     '''
 
-    #### Calculate riming
-    # We do this for both qvps_strat_fil and relaxed qvps_strat_relaxed_fil
-    start_time = time.time()
-    print("Calculating riming ...")
-    
-    with open('/automount/agradar/jgiles/riming_model/gbm_model_23.10.2024.pkl', 'rb') as f:
-        riming_model = pickle.load(f)
-    
-    def calc_depolarization(da, zdr="ZDR_OC", rho="RHOHV_NC"):   
-        return xr.apply_ufunc(wrl.dp.depolarization,
-                              da[zdr], da[rho],                         
-                            dask='parallelized',                        
-        )
-        
-    # We will put the final riming classification in a dict
-    try: # check if exists, if not, create it
-        riming_classif
-    except NameError:
-        riming_classif = {}
-    
-    for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed", qvps_strat_relaxed_fil)]:
-        print("   ... for "+stratname)
-        
-        if "DR" not in stratqvp:
-            DR = calc_depolarization(stratqvp, X_ZDR, X_RHO)
-            assign = dict(DR = DR.assign_attrs(
-                {'long_name': 'Depolarization ratio based on '+X_ZDR+' and '+X_RHO,
-                 'standard_name': 'depolarization_ratio',
-                 'units': 'dB'}
-                ))
-            stratqvp = stratqvp.assign(assign)
-        if "UDR" not in stratqvp:
-            UDR = calc_depolarization(stratqvp, "ZDR", "RHOHV")            
-            assign = dict(UDR = UDR.assign_attrs(
-                {'long_name': 'Depolarization ratio based on ZDR and RHOHV',
-                 'standard_name': 'depolarization_ratio',
-                 'units': 'dB'}
-                ))
-            stratqvp = stratqvp.assign(assign)
-            
-        for XDR, XZDR, XZH in [("DR", X_ZDR, X_DBZH), ("UDR", "ZDR", "DBZH")]:
-            
-            idx = np.isfinite(stratqvp[XDR].values.flatten() + stratqvp[XZDR].values.flatten() + stratqvp[XZH].values.flatten())
-            X = np.concatenate((stratqvp[XDR].values.flatten()[idx].reshape(-1, 1), stratqvp[XZDR].values.flatten()[idx].reshape(-1, 1), stratqvp[XZH].values.flatten()[idx].reshape(-1, 1)), axis=1)
-            
-            pred = riming_model.predict(X)
-            
-            pred_riming = np.zeros_like(stratqvp[XDR]).flatten() + np.nan
-            pred_riming[idx] = pred
-            pred_riming = xr.zeros_like(stratqvp[XDR]) + pred_riming.reshape(stratqvp[XDR].shape)
-            
-            pred_riming.assign_attrs({
-                'long_name': 'Riming prediction based on '+XDR+', '+XZDR+' and '+XZH+' with gradient boosting model',
-                 'standard_name': 'riming_prediction',
-                })
-            
-            varname = "riming_"+XDR
-            
-            assign = {varname: pred_riming.copy()}
-            stratqvp = stratqvp.assign(assign)
+#### Calculate riming
+# We do this for both qvps_strat_fil and relaxed qvps_strat_relaxed_fil
+print("Calculating riming ...")
 
-            # save to file
-            if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname):
-                os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname)
-            
-            pred_riming.to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+ll+"_"+varname+".nc")
-            
+with open('/automount/agradar/jgiles/riming_model/gbm_model_23.10.2024.pkl', 'rb') as f:
+    riming_model = pickle.load(f)
+
+def calc_depolarization(da, zdr="ZDR_OC", rho="RHOHV_NC"):   
+    return xr.apply_ufunc(wrl.dp.depolarization,
+                          da[zdr], da[rho],                         
+                        dask='parallelized',                        
+    )
+    
+# We will put the final riming classification in a dict
+try: # check if exists, if not, create it
+    riming_classif
+except NameError:
+    riming_classif = {}
+
+for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed", qvps_strat_relaxed_fil)]:
+    print("   ... for "+stratname)
+    
+    if "DR" not in stratqvp:
+        DR = calc_depolarization(stratqvp, X_ZDR, X_RHO)
+        assign = dict(DR = DR.assign_attrs(
+            {'long_name': 'Depolarization ratio based on '+X_ZDR+' and '+X_RHO,
+             'standard_name': 'depolarization_ratio',
+             'units': 'dB'}
+            ))
+        stratqvp = stratqvp.assign(assign)
+    if "UDR" not in stratqvp:
+        UDR = calc_depolarization(stratqvp, "ZDR", "RHOHV")            
+        assign = dict(UDR = UDR.assign_attrs(
+            {'long_name': 'Depolarization ratio based on ZDR and RHOHV',
+             'standard_name': 'depolarization_ratio',
+             'units': 'dB'}
+            ))
+        stratqvp = stratqvp.assign(assign)
+        
+    for XDR, XZDR, XZH in [("DR", X_ZDR, X_DBZH), ("UDR", "ZDR", "DBZH")]:
+        
+        idx = np.isfinite(stratqvp[XDR].values.flatten() + stratqvp[XZDR].values.flatten() + stratqvp[XZH].values.flatten())
+        X = np.concatenate((stratqvp[XDR].values.flatten()[idx].reshape(-1, 1), stratqvp[XZDR].values.flatten()[idx].reshape(-1, 1), stratqvp[XZH].values.flatten()[idx].reshape(-1, 1)), axis=1)
+        
+        pred = riming_model.predict(X)
+        
+        pred_riming = np.zeros_like(stratqvp[XDR]).flatten() + np.nan
+        pred_riming[idx] = pred
+        pred_riming = xr.zeros_like(stratqvp[XDR]) + pred_riming.reshape(stratqvp[XDR].shape)
+        
+        pred_riming.assign_attrs({
+            'long_name': 'Riming prediction based on '+XDR+', '+XZDR+' and '+XZH+' with gradient boosting model',
+             'standard_name': 'riming_prediction',
+            })
+        
+        varname = "riming_"+XDR
+        
+        assign = {varname: pred_riming.copy()}
+        stratqvp = stratqvp.assign(assign)
+
+        # save to file
+        if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname):
+            os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname)
+        
+        pred_riming.to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+ll+"_"+varname+".nc")
+        
 total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
 
