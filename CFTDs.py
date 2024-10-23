@@ -326,6 +326,7 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
         retrievals[stratname][ll].to_netcdf("/automount/realpep/upload/jgiles/radar_retrievals/"+stratname+"/"+ll+".nc")
 
 #### General statistics
+print("Calculating statistics ...")
 
 # We do this for both qvps_strat_fil and relaxed qvps_strat_relaxed_fil
 
@@ -538,12 +539,22 @@ print(f"took {total_time/60:.2f} minutes.")
 #%% CFTDs Plot
 
 # If auto_plot is True, then produce and save the plots automatically based on
-# default configurations. If False, then produce the plot as given below and do not save.
+# default configurations (only change savepath and ds_to_plot accordingly). 
+# If False, then produce the plot as given below and do not save.
 auto_plot = True 
 savepath = "/automount/agradar/jgiles/images/CFTDs/stratiform/"
 
 # Which to plot, qvps_strat_fil or qvps_strat_relaxed_fil
 ds_to_plot = qvps_strat_fil.copy()
+
+# Define list of seasons
+selseaslist = [           
+            ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
+            ("DJF", [12,1,2]),
+            ("MAM", [3,4,5]),
+            ("JJA", [6,7,8]),
+            ("SON", [9,10,11]),
+           ] # ("nameofseas", [months included])
 
 # adjustment from K to C (disabled now because I know that all qvps have ERA5 data)
 adjtemp = 0
@@ -551,8 +562,12 @@ adjtemp = 0
 #     print("at least one TEMP value > 100 found, assuming TEMP is in K and transforming to C")
 #     adjtemp = -273.15 # adjustment parameter from K to C
 
-# top temp limit
+# top temp limit (only works if auto_plot=False)
 ytlim=-20
+
+# season to plot (only works if auto_plot=False)
+selseas = selseaslist[0]
+selmonths = selseas[1]
 
 # Temp bins
 tb=1# degress C
@@ -595,15 +610,21 @@ if country=="dmi":
         ytlimlist = [-20, -50]
         loc = find_loc(locs, ff[0])
         add_relaxed = ["_relaxed" if "relaxed" in savepath else ""][0]
-        savedict = {loc+"_cftd_stratiform"+add_relaxed+".png": [vtp[0], ytlimlist[0]],
-                    loc+"_cftd_stratiform"+add_relaxed+"_extended.png": [vtp[0], ytlimlist[1]],
-                    loc+"_cftd_stratiform"+add_relaxed+"_uncorr.png": [vtp[1], ytlimlist[0]],
-                    loc+"_cftd_stratiform"+add_relaxed+"_uncorr_extended.png": [vtp[1], ytlimlist[1]],}
+        savedict = {}
+        for selseas in selseaslist:
+            savedict.update( 
+                        {selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+".png": [vtp[0], ytlimlist[0], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_uncorr.png": [vtp[1], ytlimlist[0], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_uncorr_extended.png": [vtp[1], ytlimlist[1], selseas[1]],
+                        }
+                            )
         
     for savename in savedict.keys():
         if auto_plot:
             vars_to_plot = savedict[savename][0]
             ytlim = savedict[savename][1]
+            selmonths = savedict[savename][2]
     
         fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
         
@@ -627,7 +648,11 @@ if country=="dmi":
                 so = True
                 binsx2 = [0.9, 1.005, 0.005]
                 rd=3
-            utils.hist2d(ax[nn], ds_to_plot[vv].round(rd), ds_to_plot["TEMP"]+adjtemp, whole_x_range=True, 
+            utils.hist2d(ax[nn], ds_to_plot[vv].sel(\
+                                                    time=ds_to_plot['time'].dt.month.isin(selmonths)).round(rd), 
+                         ds_to_plot["TEMP"].sel(\
+                                             time=ds_to_plot['time'].dt.month.isin(selmonths))+adjtemp, 
+                         whole_x_range=True, 
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                          cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
                          fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
@@ -641,6 +666,10 @@ if country=="dmi":
         ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
         
         if auto_plot:
+            # Create savefolder
+            savepath_seas = os.path.dirname(savepath+savename)
+            if not os.path.exists(savepath_seas):
+                os.makedirs(savepath_seas)
             fig.savefig(savepath+savename, bbox_inches="tight")
             print("AUTO PLOT: saved "+savename)
 
@@ -666,15 +695,21 @@ if country=="dwd":
                                "RHOHV": [0.9, 1.004, 0.004]} ]
         ytlimlist = [-20, -50]
         loc = find_loc(locs, ff[0])
-        savedict = {loc+"_cftd_stratiform.png": [vtp[0], ytlimlist[0]],
-                    loc+"_cftd_stratiform_extended.png": [vtp[0], ytlimlist[1]],
-                    loc+"_cftd_stratiform_uncorr.png": [vtp[1], ytlimlist[0]],
-                    loc+"_cftd_stratiform_uncorr_extended.png": [vtp[1], ytlimlist[1]],}
+        savedict = {}
+        for selseas in selseaslist:
+            savedict.update( 
+                        {selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+".png": [vtp[0], ytlimlist[0], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_uncorr.png": [vtp[1], ytlimlist[0], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_uncorr_extended.png": [vtp[1], ytlimlist[1], selseas[1]],
+                        }
+                            )
         
     for savename in savedict.keys():
         if auto_plot:
             vars_to_plot = savedict[savename][0]
             ytlim = savedict[savename][1]
+            selmonths = savedict[savename][2]
 
         fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
         
@@ -687,7 +722,9 @@ if country=="dwd":
                 binsx2 = [0.9, 1.005, 0.005]
             if "KDP" in vv:
                 adj=1
-            utils.hist2d(ax[nn], ds_to_plot[vv]*adj, ds_to_plot["TEMP"]+adjtemp, whole_x_range=True, 
+            utils.hist2d(ax[nn], ds_to_plot[vv].sel(time=ds_to_plot['time'].dt.month.isin(selmonths))*adj, 
+                         ds_to_plot["TEMP"].sel(time=ds_to_plot['time'].dt.month.isin(selmonths))+adjtemp,
+                         whole_x_range=True, 
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                          cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
                          fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
@@ -698,10 +735,12 @@ if country=="dwd":
             ax[nn].tick_params(labelsize=15) #change font size of ticks
             plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
         
-        
-        
         ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
         if auto_plot:
+            # Create savefolder
+            savepath_seas = os.path.dirname(savepath+savename)
+            if not os.path.exists(savepath_seas):
+                os.makedirs(savepath_seas)
             fig.savefig(savepath+savename, bbox_inches="tight")
             print("AUTO PLOT: saved "+savename)
 
@@ -710,16 +749,37 @@ if country=="dwd":
 # We assume that everything above ML is frozen and everything below is liquid
 
 # If auto_plot is True, then produce and save the plots automatically based on
-# default configurations. If False, then produce the plot as given below and do not save.
+# default configurations (only change savepath and ds_to_plot accordingly). 
+# If False, then produce the plot as given below and do not save.
 auto_plot = True 
 savepath = "/automount/agradar/jgiles/images/CFTDs/stratiform/"
 
 # Which to plot, stratiform or stratiform_relaxed
 ds_to_plot = retrievals["stratiform"].copy()
 
-# top temp limit
+# Define list of seasons
+selseaslist = [           
+            ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
+            ("DJF", [12,1,2]),
+            ("MAM", [3,4,5]),
+            ("JJA", [6,7,8]),
+            ("SON", [9,10,11]),
+           ] # ("nameofseas", [months included])
+
+# adjustment from K to C (disabled now because I know that all qvps have ERA5 data)
+adjtemp = 0
+# if (qvps_strat_fil["TEMP"]>100).any(): #if there is any temp value over 100, we assume the units are Kelvin
+#     print("at least one TEMP value > 100 found, assuming TEMP is in K and transforming to C")
+#     adjtemp = -273.15 # adjustment parameter from K to C
+
+# top temp limit (only works if auto_plot=False)
 ytlim=-20
 
+# season to plot (only works if auto_plot=False)
+selseas = selseaslist[0]
+selmonths = selseas[1]
+
+# Select which retrievals to plot (only works if auto_plot=False)
 IWC = "iwc_zh_t" # iwc_zh_t or iwc_zdr_zh_kdp
 LWC = "lwc_zh_zdr" # lwc_zh_zdr (adjusted for Germany) or lwc_zh_zdr2 (S-band) or lwc_kdp
 Dm_ice = "Dm_ice_zh" # Dm_ice_zh or Dm_ice_zh_kdp
@@ -738,23 +798,27 @@ if auto_plot:
     ytlimlist = [-20, -50]
     loc = find_loc(locs, ff[0])
     add_relaxed = ["_relaxed" if "relaxed" in savepath else ""][0]
-    savedict = {loc+"_cftd_stratiform"+add_relaxed+"_microphys.png": [ytlimlist[0], 
-                                                       "iwc_zh_t", "lwc_zh_zdr", 
-                                                       "Dm_ice_zh", "Dm_rain_zdr3", 
-                                                       "Nt_ice_zh_iwc", "Nt_rain_zh_zdr"],
-                loc+"_cftd_stratiform"+add_relaxed+"_microphys_extended.png": [ytlimlist[1],
-                                                            "iwc_zh_t", "lwc_zh_zdr", 
-                                                            "Dm_ice_zh", "Dm_rain_zdr3", 
-                                                            "Nt_ice_zh_iwc", "Nt_rain_zh_zdr"],
-                loc+"_cftd_stratiform"+add_relaxed+"_microphys_KDP.png": [ytlimlist[0],
-                                                           "iwc_zdr_zh_kdp", "lwc_kdp", 
-                                                           "Dm_ice_zh_kdp", "Dm_rain_zdr3", 
-                                                           "Nt_ice_zh_iwc", "Nt_rain_zh_zdr"],
-                loc+"_cftd_stratiform"+add_relaxed+"_microphys_KDP_extended.png": [ytlimlist[1],
-                                                           "iwc_zdr_zh_kdp", "lwc_kdp", 
-                                                           "Dm_ice_zh_kdp", "Dm_rain_zdr3", 
-                                                           "Nt_ice_zh_iwc", "Nt_rain_zh_zdr"],
-                }
+    savedict = {}
+    for selseas in selseaslist:
+        savedict.update( 
+                    {selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys.png": [ytlimlist[0], 
+                                                           "iwc_zh_t", "lwc_zh_zdr", 
+                                                           "Dm_ice_zh", "Dm_rain_zdr3", 
+                                                           "Nt_ice_zh_iwc", "Nt_rain_zh_zdr", selseas[1]],
+                    selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys_extended.png": [ytlimlist[1],
+                                                                "iwc_zh_t", "lwc_zh_zdr", 
+                                                                "Dm_ice_zh", "Dm_rain_zdr3", 
+                                                                "Nt_ice_zh_iwc", "Nt_rain_zh_zdr", selseas[1]],
+                    selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys_KDP.png": [ytlimlist[0],
+                                                               "iwc_zdr_zh_kdp", "lwc_kdp", 
+                                                               "Dm_ice_zh_kdp", "Dm_rain_zdr3", 
+                                                               "Nt_ice_zh_iwc", "Nt_rain_zh_zdr", selseas[1]],
+                    selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys_KDP_extended.png": [ytlimlist[1],
+                                                               "iwc_zdr_zh_kdp", "lwc_kdp", 
+                                                               "Dm_ice_zh_kdp", "Dm_rain_zdr3", 
+                                                               "Nt_ice_zh_iwc", "Nt_rain_zh_zdr", selseas[1]],
+                    }
+                )
 
 for savename in savedict.keys():
     if auto_plot:
@@ -765,6 +829,7 @@ for savename in savedict.keys():
         Dm_rain = savedict[savename][4]
         Nt_ice = savedict[savename][5]
         Nt_rain = savedict[savename][6]
+        selmonths = savedict[savename][7]
 
     retreivals_merged = xr.Dataset({
                                     "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].z > ds_to_plot.height_ml_new_gia,
@@ -786,7 +851,9 @@ for savename in savedict.keys():
             binsx2 = [0.9, 1.005, 0.005]
         if "KDP" in vv:
             adj=1
-        utils.hist2d(ax[nn], retreivals_merged[vv]*adj, retreivals_merged["TEMP"]+adjtemp, whole_x_range=True, 
+        utils.hist2d(ax[nn], retreivals_merged[vv].sel(time=retreivals_merged['time'].dt.month.isin(selmonths))*adj, 
+                     retreivals_merged["TEMP"].sel(time=retreivals_merged['time'].dt.month.isin(selmonths))+adjtemp, 
+                     whole_x_range=True, 
                      binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                      cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
                      fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
@@ -797,11 +864,13 @@ for savename in savedict.keys():
         ax[nn].tick_params(labelsize=15) #change font size of ticks
         plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
     
-    
-    
     ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
     
     if auto_plot:
+        # Create savefolder
+        savepath_seas = os.path.dirname(savepath+savename)
+        if not os.path.exists(savepath_seas):
+            os.makedirs(savepath_seas)
         fig.savefig(savepath+savename, bbox_inches="tight")
         print("AUTO PLOT: saved "+savename)
 
@@ -925,7 +994,7 @@ for loc in locs_to_plot:
             print(" ... ... ... "+stratname)
 
             # Create savefolder
-            savepath_seas = savepath+selseas[0]+"/"+stratname+"/"+loc+"/"
+            savepath_seas = savepath+stratname+"/"+selseas[0]+"/"+loc+"/"
             if not os.path.exists(savepath_seas):
                 os.makedirs(savepath_seas)
 
@@ -1565,7 +1634,7 @@ for selseas in selseaslist:
         print("plotting "+stratname+" stats...")
 
         # Create savefolder
-        savepath_seas = savepath+selseas[0]+"/"+stratname+"/"
+        savepath_seas = savepath+stratname+"/"+selseas[0]+"/"
         if not os.path.exists(savepath_seas):
             os.makedirs(savepath_seas)
 
