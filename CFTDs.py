@@ -34,6 +34,7 @@ import xradar as xd
 import time
 import ridgeplot
 import plotly
+import pickle
 
 try:
     from Scripts.python.radar_processing_scripts import utils
@@ -60,6 +61,7 @@ def find_loc(locs, path):
 
 locs = ["pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs"]
 
+realpep_path = "/automount/realpep/"
 
 #%% Load QVPs for stratiform-case CFTDs
 # This part should be run after having the QVPs computed (compute_qvps.py)
@@ -67,17 +69,17 @@ start_time = time.time()
 print("Loading QVPs...")
 
 #### Get QVP file list
-path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/*allmoms*"
-path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
+path_qvps = realpep_path+"/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/*allmoms*"
+path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
 # Load only events with ML detected (pre-condition for stratiform)
-path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
-# path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/2016/*/*/ANK/*/*/ML_detected.txt"
-# path_qvps = "/automount/realpep/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
-path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps/*/*/*/HTY/*/*/ML_detected.txt"
-# path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_singlefile/ML_detected/ANK/*/12*/*allmoms*"
-# path_qvps = "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*"
-# path_qvps = ["/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*",
-#              "/automount/realpep/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/14*/*allmoms*"]
+path_qvps = realpep_path+"/upload/jgiles/dwd/qvps/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
+# path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/2016/*/*/ANK/*/*/ML_detected.txt"
+# path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
+path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/*/*/*/HTY/*/*/ML_detected.txt"
+# path_qvps = realpep_path+"/upload/jgiles/dmi/qvps_singlefile/ML_detected/ANK/*/12*/*allmoms*"
+# path_qvps = realpep_path+"/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*"
+# path_qvps = [realpep_path+"/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*",
+#              realpep_path+"/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/14*/*allmoms*"]
 
 
 #### Set variable names
@@ -125,8 +127,8 @@ qvps = utils.load_qvps(ff, align_z=alignz, fix_TEMP=False, fillna=False)
 
 # # Load daily data
 # # ## Special selection of convective dates based on DBZH_over_30.txt files
-# special_selection = "/automount/realpep/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/DBZH_over_30*"
-# special_filter = "/automount/realpep/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/ML_detected_*"
+# special_selection = realpep_path+"/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/DBZH_over_30*"
+# special_filter = realpep_path+"/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/ML_detected_*"
 # path_special = glob.glob(special_selection)
 # path_filter = glob.glob(special_filter)
 # path_filter_dirs = [os.path.dirname(ff) for ff in path_filter]
@@ -264,7 +266,7 @@ print("Calculating microphysical retrievals...")
 # to check the wavelength of each radar, in cm for DWD, in 1/100 cm for DMI ()
 # filewl = ""
 # xr.open_dataset(filewl, group="how") # DWD
-# file1 = "/automount/realpep/upload/jgiles/dmi_raw/acq/OLDDATA/uza/RADAR/2015/01/01/ANK/RAW/ANK150101000008.RAW6M00"
+# file1 = realpep_path+"/upload/jgiles/dmi_raw/acq/OLDDATA/uza/RADAR/2015/01/01/ANK/RAW/ANK150101000008.RAW6M00"
 # xd.io.backends.iris.IrisRawFile(file1, loaddata=False).ingest_header["task_configuration"]["task_misc_info"]["wavelength"]
 
 Lambda = 53.1 # radar wavelength in mm (pro: 53.138, ANK: 53.1, AFY: 53.3, GZT: 53.3, HTY: 53.3, SVS:53.3)
@@ -323,7 +325,7 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
 
     # Save retrievals
     for ll in retrievals[stratname].keys():
-        retrievals[stratname][ll].to_netcdf("/automount/realpep/upload/jgiles/radar_retrievals/"+stratname+"/"+ll+".nc")
+        retrievals[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals/"+stratname+"/"+ll+".nc")
 
 #### General statistics
 print("Calculating statistics ...")
@@ -450,8 +452,10 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
     # Save stats
     for ll in stats[stratname].keys():
         for xx in stats[stratname][ll].keys():
-            stats[stratname][ll][xx].to_netcdf("/automount/realpep/upload/jgiles/radar_stats/"+stratname+"/"+ll+"_"+xx+".nc")
+            stats[stratname][ll][xx].to_netcdf(realpep_path+"/upload/jgiles/radar_stats/"+stratname+"/"+ll+"_"+xx+".nc")
 
+    ''' DEPRECATED
+    # THIS IS NOW INCLUDED IN IT'S OWN SECTION DOWN BELOW
     #### Statistics from Raquel
     MLmaxZH = values_ML_max["DBZH"]
     ZHrain = values_rain["DBZH"] 
@@ -532,7 +536,76 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
     fig.savefig("/automount/agradar/jgiles/images/stats_histograms/"+stratname+"/"+find_loc(locs, ff[0])+"_DepthML_MaxZDRinML.png",
                 bbox_inches="tight")
     plt.close(fig)
+    
+    '''
 
+    #### Calculate riming
+    # We do this for both qvps_strat_fil and relaxed qvps_strat_relaxed_fil
+    start_time = time.time()
+    print("Calculating riming ...")
+    
+    with open('/automount/agradar/jgiles/riming_model/gbm_model_23.10.2024.pkl', 'rb') as f:
+        riming_model = pickle.load(f)
+    
+    def calc_depolarization(da, zdr="ZDR_OC", rho="RHOHV_NC"):   
+        return xr.apply_ufunc(wrl.dp.depolarization,
+                              da[zdr], da[rho],                         
+                            dask='parallelized',                        
+        )
+        
+    # We will put the final riming classification in a dict
+    try: # check if exists, if not, create it
+        riming_classif
+    except NameError:
+        riming_classif = {}
+    
+    for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed", qvps_strat_relaxed_fil)]:
+        print("   ... for "+stratname)
+        
+        if "DR" not in stratqvp:
+            DR = calc_depolarization(stratqvp, X_ZDR, X_RHO)
+            assign = dict(DR = DR.assign_attrs(
+                {'long_name': 'Depolarization ratio based on '+X_ZDR+' and '+X_RHO,
+                 'standard_name': 'depolarization_ratio',
+                 'units': 'dB'}
+                ))
+            stratqvp = stratqvp.assign(assign)
+        if "UDR" not in stratqvp:
+            UDR = calc_depolarization(stratqvp, "ZDR", "RHOHV")            
+            assign = dict(UDR = UDR.assign_attrs(
+                {'long_name': 'Depolarization ratio based on ZDR and RHOHV',
+                 'standard_name': 'depolarization_ratio',
+                 'units': 'dB'}
+                ))
+            stratqvp = stratqvp.assign(assign)
+            
+        for XDR, XZDR, XZH in [("DR", X_ZDR, X_DBZH), ("UDR", "ZDR", "DBZH")]:
+            
+            idx = np.isfinite(stratqvp[XDR].values.flatten() + stratqvp[XZDR].values.flatten() + stratqvp[XZH].values.flatten())
+            X = np.concatenate((stratqvp[XDR].values.flatten()[idx].reshape(-1, 1), stratqvp[XZDR].values.flatten()[idx].reshape(-1, 1), stratqvp[XZH].values.flatten()[idx].reshape(-1, 1)), axis=1)
+            
+            pred = riming_model.predict(X)
+            
+            pred_riming = np.zeros_like(stratqvp[XDR]).flatten() + np.nan
+            pred_riming[idx] = pred
+            pred_riming = xr.zeros_like(stratqvp[XDR]) + pred_riming.reshape(stratqvp[XDR].shape)
+            
+            pred_riming.assign_attrs({
+                'long_name': 'Riming prediction based on '+XDR+', '+XZDR+' and '+XZH+' with gradient boosting model',
+                 'standard_name': 'riming_prediction',
+                })
+            
+            varname = "riming_"+XDR
+            
+            assign = {varname: pred_riming.copy()}
+            stratqvp = stratqvp.assign(assign)
+
+            # save to file
+            if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname):
+                os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname)
+            
+            pred_riming.to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+ll+"_"+varname+".nc")
+            
 total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
 
@@ -940,7 +1013,7 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
                    'cloudtop', 'cloudtop_5dbz', 'cloudtop_10dbz', 
                    'cloudtop_TEMP', 'cloudtop_TEMP_5dbz', 'cloudtop_TEMP_10dbz']:
             try:
-                stats[stratname][ll][xx] = xr.open_dataset("/automount/realpep/upload/jgiles/radar_stats/"+stratname+"/"+ll+"_"+xx+".nc")
+                stats[stratname][ll][xx] = xr.open_dataset(realpep_path+"/upload/jgiles/radar_stats/"+stratname+"/"+ll+"_"+xx+".nc")
                 if len(stats[stratname][ll][xx].data_vars)==1:
                     # if only 1 var, convert to data array
                     stats[stratname][ll][xx] = stats[stratname][ll][xx].to_dataarray() 
@@ -963,7 +1036,7 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
     print("Loading "+stratname+" retrievals ...")
     for ll in ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']:
         try:
-            retrievals[stratname][ll] = xr.open_dataset("/automount/realpep/upload/jgiles/radar_retrievals/"+stratname+"/"+ll+".nc")
+            retrievals[stratname][ll] = xr.open_dataset(realpep_path+"/upload/jgiles/radar_retrievals/"+stratname+"/"+ll+".nc")
             print(ll+" retrievals loaded")
         except:
             pass
@@ -1773,8 +1846,8 @@ for xx in rand_dates:
 
 
 #%% Load offsets for exploring
-paths= ["/automount/realpep/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/ANK/*/12*/*below3C_timesteps-*",
-        "/automount/realpep/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/ANK/*/14*/*below3C_timesteps-*"]
+paths= [realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/ANK/*/12*/*below3C_timesteps-*",
+        realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/ANK/*/14*/*below3C_timesteps-*"]
 
 files_auxlist=[]
 for pp in paths:
@@ -1787,7 +1860,7 @@ zdr_off_LR_below3C_timesteps = xr.open_mfdataset(files_off, combine="nested", co
 #%% Test ZDR calibration
 
 # ZDR offset looks nice for a nice stratiform case
-pro_vp_20170725 = dttree.open_datatree("/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/90gradstarng01/00/ras07-90gradstarng01_sweeph5onem_allmoms_00-2017072500041700-pro-10392-hd5")["sweep_0"].to_dataset()
+pro_vp_20170725 = dttree.open_datatree(realpep_path+"/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/90gradstarng01/00/ras07-90gradstarng01_sweeph5onem_allmoms_00-2017072500041700-pro-10392-hd5")["sweep_0"].to_dataset()
 if pro_vp_20170725.time.isnull().any():
     pro_vp_20170725.coords["time"] = pro_vp_20170725["rtime"].min(dim="azimuth", skipna=True).compute()
 loc="pro"
@@ -1799,7 +1872,7 @@ zdr_offset_vp_pro_20170725 = utils.zdr_offset_detection_vps(pro_vp_20170725, min
 zdr_offset_vp_pro_20170725_azmedian = utils.zdr_offset_detection_vps(pro_vp_20170725, min_h=400, timemode="all", mlbottom=3, azmed=True).compute()
 
 # Let's find a not-nice case
-pro_vp_20170126 = dttree.open_datatree(glob.glob("/automount/realpep/upload/jgiles/dwd/2016/2016-01/2016-01-26/pro/90gradstarng01/00/ras07-90gradstarng01*")[0])["sweep_0"].to_dataset()
+pro_vp_20170126 = dttree.open_datatree(glob.glob(realpep_path+"/upload/jgiles/dwd/2016/2016-01/2016-01-26/pro/90gradstarng01/00/ras07-90gradstarng01*")[0])["sweep_0"].to_dataset()
 if pro_vp_20170126.time.isnull().any():
     pro_vp_20170126.coords["time"] = pro_vp_20170126["rtime"].min(dim="azimuth", skipna=True).compute()
 loc="pro"
@@ -1833,7 +1906,7 @@ pro_vp_20170126.RHOHV.where(pro_vp_20170126.TEMP>3).where(pro_vp_20170126["z"]>4
 
 
 # Repeat for ANK
-ank_12_20180306 = xr.open_mfdataset("/automount/realpep/upload/jgiles/dmi/2018/2018-03/2018-03-06/ANK/MON_YAZ_G/14.0/*")
+ank_12_20180306 = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/2018/2018-03/2018-03-06/ANK/MON_YAZ_G/14.0/*")
 loc="ank"
 era5_dir = "/automount/ags/jgiles/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
 ank_12_20180306 = utils.attach_ERA5_TEMP(ank_12_20180306, path=loc.join(era5_dir.split("loc")))
@@ -1855,11 +1928,11 @@ ank_12_20180306.ZDR.where(ank_12_20180306.TEMP>3).where(ank_12_20180306["z"]>ank
 
 
 #%% Test KDP from ZPHI
-ff = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/ras07-vol5minng01_sweeph5onem_allmoms_07-2017072500033500-pro-10392-hd5"
+ff = realpep_path+"/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/ras07-vol5minng01_sweeph5onem_allmoms_07-2017072500033500-pro-10392-hd5"
 pro20170725=dttree.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset()
 
 #%% Load multiple elevations of DWD to check if there is better PHIDP
-ff = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/*/*allmoms*"
+ff = realpep_path+"/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/*/*allmoms*"
 
 files = sorted(glob.glob(ff))
 
@@ -1955,16 +2028,16 @@ import cartopy.crs as ccrs
 import cartopy.io.img_tiles as cimgt
 import cartopy
 
-files = [glob.glob("/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/*allmoms*")[0],
-         glob.glob("/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/tur/vol5minng01/07/*allmoms*")[0],
-         glob.glob("/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/umd/vol5minng01/07/*allmoms*")[0],
+files = [glob.glob(realpep_path+"/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/*allmoms*")[0],
+         glob.glob(realpep_path+"/upload/jgiles/dwd/2017/2017-07/2017-07-25/tur/vol5minng01/07/*allmoms*")[0],
+         glob.glob(realpep_path+"/upload/jgiles/dwd/2017/2017-07/2017-07-25/umd/vol5minng01/07/*allmoms*")[0],
          ]
 
-files = [glob.glob("/automount/realpep/upload/jgiles/dmi/2015/2015-03/2015-03-03/ANK/MON_YAZ_K/12.0/*allmoms*")[0],
-         glob.glob("/automount/realpep/upload/jgiles/dmi/2020/2020-07/2020-07-02/AFY/VOL_B/10.0/*allmoms*")[0],
-         glob.glob("/automount/realpep/upload/jgiles/dmi/2016/2016-04/2016-04-07/GZT/MON_YAZ_C/12.0/*allmoms*")[0],
-         glob.glob("/automount/realpep/upload/jgiles/dmi/2016/2016-04/2016-04-07/HTY/MON_YAZ_C/12.0/*allmoms*")[0],
-         glob.glob("/automount/realpep/upload/jgiles/dmi/2020/2020-01/2020-01-11/SVS/VOL_B/10.0/*allmoms*")[0],
+files = [glob.glob(realpep_path+"/upload/jgiles/dmi/2015/2015-03/2015-03-03/ANK/MON_YAZ_K/12.0/*allmoms*")[0],
+         glob.glob(realpep_path+"/upload/jgiles/dmi/2020/2020-07/2020-07-02/AFY/VOL_B/10.0/*allmoms*")[0],
+         glob.glob(realpep_path+"/upload/jgiles/dmi/2016/2016-04/2016-04-07/GZT/MON_YAZ_C/12.0/*allmoms*")[0],
+         glob.glob(realpep_path+"/upload/jgiles/dmi/2016/2016-04/2016-04-07/HTY/MON_YAZ_C/12.0/*allmoms*")[0],
+         glob.glob(realpep_path+"/upload/jgiles/dmi/2020/2020-01/2020-01-11/SVS/VOL_B/10.0/*allmoms*")[0],
          ]
 
 
@@ -2076,9 +2149,9 @@ wgs84 = osr.SpatialReference()
 wgs84.ImportFromEPSG(4326)
 
 # Load a sample PPI
-# swpx = dttree.open_datatree("/automount/realpep/upload/jgiles/dwd/2016/2016-01/2016-01-01/pro/vol5minng01/07/ras07-vol5minng01_sweeph5onem_allmoms_07-2016010100034100-pro-10392-hd5")["sweep_7"].to_dataset().DBZH[0]
-swpx = dttree.open_datatree("/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/05/ras07-vol5minng01_sweeph5onem_allmoms_05-2017072500030000-pro-10392-hd5")["sweep_5"].to_dataset().DBZH[0]
-# swpx = xr.open_dataset("/automount/realpep/upload/jgiles/dmi/2018/2018-03/2018-03-06/HTY/VOL_B/10.0/VOL_B-allmoms-10.0-2018-03-06-HTY-h5netcdf.nc").DBZH[0]
+# swpx = dttree.open_datatree(realpep_path+"/upload/jgiles/dwd/2016/2016-01/2016-01-01/pro/vol5minng01/07/ras07-vol5minng01_sweeph5onem_allmoms_07-2016010100034100-pro-10392-hd5")["sweep_7"].to_dataset().DBZH[0]
+swpx = dttree.open_datatree(realpep_path+"/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/05/ras07-vol5minng01_sweeph5onem_allmoms_05-2017072500030000-pro-10392-hd5")["sweep_5"].to_dataset().DBZH[0]
+# swpx = xr.open_dataset(realpep_path+"/upload/jgiles/dmi/2018/2018-03/2018-03-06/HTY/VOL_B/10.0/VOL_B-allmoms-10.0-2018-03-06-HTY-h5netcdf.nc").DBZH[0]
 swpx = swpx.pipe(wrl.georef.georeference_dataset,  proj=wgs84)
 
 # Download DEM data
