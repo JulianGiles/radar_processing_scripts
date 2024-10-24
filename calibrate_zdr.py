@@ -65,18 +65,27 @@ zdr_names = ["ZDR"]
 
 clowres0=False # this is for the ML detection algorithm
 min_hgts = utils.min_hgts
-min_hgt = min_hgts["default"] # minimum height above the radar to be considered when calculating ZDR offset
+min_rngs = utils.min_rngs
+min_hgt = min_hgts["default"] # minimum height above the radar to be considered
+min_range = min_rngs["default"] # minimum range from which to consider data (mostly for bad PHIDP filtering)
 if "dwd" in path0 and "90grads" in path0:
     # for the VP we need to set a higher min height because there are several bins of unrealistic values
     min_hgt = min_hgts["90grads"]
 if "dwd" in path0 and "vol5minng01" in path0:
     clowres0=True
+# Set specifics for each turkish radar
 if "ANK" in path0:
-    # for ANK we need higher min_hgt to avoid artifacts
     min_hgt = min_hgts["ANK"]
+    min_range = min_rngs["ANK"]
 if "GZT" in path0:
-    # for GZT we need higher min_hgt to avoid artifacts
     min_hgt = min_hgts["GZT"]
+    min_range = min_rngs["GZT"]
+if "AFY" in path0:
+    min_range = min_rngs["AFY"]
+if "SVS" in path0:
+    min_range = min_rngs["SVS"]
+if "HTY" in path0:
+    min_range = min_rngs["HTY"]
 
 # get the files and check that it is not empty
 if "hd5" in path0 or "h5" in path0:
@@ -260,21 +269,23 @@ for ff in files:
         if X_PHI in data.data_vars:
             # Set parameters according to data
             phase_proc_params = utils.get_phase_proc_params(ff) # get default phase processing parameters
-            window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian = phase_proc_params.values()
+            window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian, rhohv_thresh_gia = phase_proc_params.values()
 
             # phidp may be already preprocessed (turkish case), then only offset-correct (no smoothing) and then vulpiani
-            if "UPHIDP" not in X_PHI:
+            if "PHIDP" not in X_PHI: # This is now always skipped with this definition ("PHIDP" is in both X_PHI); i.e., we apply full processing to turkish data too
                 # calculate phidp offset
                 data = utils.phidp_offset_correction(data, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
-                                     dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range, azmedian=azmedian)
+                                     dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range, 
+                                     rng_min=1000, rng=rng, azmedian=azmedian, tolerance=(0,5)) # shorter rng, rng_min for finer turkish data
             
-                phi_masked = data[X_PHI+"_OC"].where((data[X_RHO] >= 0.9) * (data[X_DBZH] >= 0.) * (data["z"]>min_height) )   
+                phi_masked = data[X_PHI+"_OC"].where((data[X_RHO] >= 0.9) * (data[X_DBZH] >= 0.) * (data["range"]>min_range) )
         
             else:
                 data = utils.phidp_processing(data, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
-                                     dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range, rng=rng, azmedian=azmedian)
+                                     dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
+                                     rng=rng, azmedian=azmedian, tolerance=(0,5))
             
-                phi_masked = data[X_PHI+"_OC_SMOOTH"].where((data[X_RHO] >= 0.9) * (data[X_DBZH] >= 0.) * (data["z"]>min_height) )
+                phi_masked = data[X_PHI+"_OC_SMOOTH"].where((data[X_RHO] >= 0.9) * (data[X_DBZH] >= 0.) * (data["range"]>min_range) )
         
             # Assign phi_masked
             assign = { X_PHI+"_OC_MASKED": phi_masked.assign_attrs(data[X_PHI].attrs) }
@@ -283,10 +294,11 @@ for ff in files:
             try:
                 # Calculate ML
                 moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI+"_OC": (-20, 180)}
-                data_qvp = utils.compute_qvp(data, min_thresh = {X_RHO:0.7, X_DBZH:0, X_ZDR:-1} )
+                data_qvp = utils.compute_qvp(data, min_thresh={X_RHO:0.7, X_DBZH:0, X_ZDR:-1, "SNRH":10, "SNRHC":10, "SQIH":0.5} )
 
                 data_qvp = utils.melting_layer_qvp_X_new(data_qvp, min_h=min_height, fmlh=0.3,
-                                                   dim="z", xwin=xwin0, ywin=ywin0, moments=moments, clowres=clowres0)
+                                                   dim="z", xwin=xwin0, ywin=ywin0, moments=moments, 
+                                                   rhohv_thresh_gia=rhohv_thresh_gia, all_data=True, clowres=clowres0)
                 
                 # attach temperature data again, then filter ML heights above -1 C
                 data_qvp = utils.attach_ERA5_TEMP(data_qvp, path=loc.join(era5_dir.split("loc")))
