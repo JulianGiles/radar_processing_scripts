@@ -546,9 +546,12 @@ print("Calculating riming ...")
 with open('/automount/agradar/jgiles/riming_model/gbm_model_23.10.2024.pkl', 'rb') as f:
     riming_model = pickle.load(f)
 
+with open('/automount/agradar/jgiles/riming_model/gbm_zh_zdr_model_23.10.2024.pkl', 'rb') as f:
+    riming_model_zh_zdr = pickle.load(f)
+
 def calc_depolarization(da, zdr="ZDR_OC", rho="RHOHV_NC"):   
     return xr.apply_ufunc(wrl.dp.depolarization,
-                          da[zdr], da[rho],                         
+                          da[zdr], da[rho].where(da[rho]<1),                         
                         dask='parallelized',                        
     )
     
@@ -578,6 +581,7 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
             ))
         stratqvp = stratqvp.assign(assign)
         
+    # predict riming with the model
     for XDR, XZDR, XZH in [("DR", X_ZDR, X_DBZH), ("UDR", "ZDR", "DBZH")]:
         
         idx = np.isfinite(stratqvp[XDR].values.flatten() + stratqvp[XZDR].values.flatten() + stratqvp[XZH].values.flatten())
@@ -595,6 +599,34 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
             })
         
         varname = "riming_"+XDR
+        
+        assign = {varname: pred_riming.copy()}
+        stratqvp = stratqvp.assign(assign)
+
+        # save to file
+        if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname):
+            os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname)
+        
+        pred_riming.to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+ll+"_"+varname+".nc")
+
+    # predict riming with the model that uses only zh and zdr
+    for XZDR, XZH in [(X_ZDR, X_DBZH), ("ZDR", "DBZH")]:
+        
+        idx = np.isfinite(stratqvp[XZDR].values.flatten() + stratqvp[XZH].values.flatten())
+        X = np.concatenate((stratqvp[XZDR].values.flatten()[idx].reshape(-1, 1), stratqvp[XZH].values.flatten()[idx].reshape(-1, 1)), axis=1)
+        
+        pred = riming_model_zh_zdr.predict(X)
+        
+        pred_riming = np.zeros_like(stratqvp[XZH]).flatten() + np.nan
+        pred_riming[idx] = pred
+        pred_riming = xr.zeros_like(stratqvp[XZH]) + pred_riming.reshape(stratqvp[XZH].shape)
+        
+        pred_riming.assign_attrs({
+            'long_name': 'Riming prediction based on '+XZDR+' and '+XZH+' with gradient boosting model',
+             'standard_name': 'riming_prediction',
+            })
+        
+        varname = "riming_"+XZDR+"_"+XZH
         
         assign = {varname: pred_riming.copy()}
         stratqvp = stratqvp.assign(assign)
@@ -768,6 +800,7 @@ if country=="dwd":
         ytlimlist = [-20, -50]
         loc = find_loc(locs, ff[0])
         savedict = {}
+        add_relaxed = ["_relaxed" if "relaxed" in savepath else ""][0]
         for selseas in selseaslist:
             savedict.update( 
                         {selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+".png": [vtp[0], ytlimlist[0], selseas[1]],
@@ -829,6 +862,8 @@ savepath = "/automount/agradar/jgiles/images/CFTDs/stratiform/"
 # Which to plot, stratiform or stratiform_relaxed
 ds_to_plot = retrievals["stratiform"].copy()
 
+loc = find_loc(locs, ff[0]) # by default, plot only the histograms of the currently loaded QVPs.
+
 # Define list of seasons
 selseaslist = [           
             ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
@@ -868,7 +903,6 @@ savedict = {"custom": None} # placeholder for the for loop below, not important
 
 if auto_plot:
     ytlimlist = [-20, -50]
-    loc = find_loc(locs, ff[0])
     add_relaxed = ["_relaxed" if "relaxed" in savepath else ""][0]
     savedict = {}
     for selseas in selseaslist:
@@ -904,12 +938,12 @@ for savename in savedict.keys():
         selmonths = savedict[savename][7]
 
     retreivals_merged = xr.Dataset({
-                                    "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].z > ds_to_plot.height_ml_new_gia,
-                                                                      ds_to_plot[LWC].where(ds_to_plot[LWC].z < ds_to_plot.height_ml_bottom_new_gia ) ),
-                                    "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].z > ds_to_plot.height_ml_new_gia,
-                                                                      ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ),
-                                    "log10(Nt) [1/L]": (ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].z > ds_to_plot.height_ml_new_gia,
-                                                                      ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ) ),
+                                    "IWC/LWC [g/m^{3}]": ds_to_plot[loc][IWC].where(ds_to_plot[loc][IWC].z > ds_to_plot[loc].height_ml_new_gia,
+                                                                      ds_to_plot[loc][LWC].where(ds_to_plot[loc][LWC].z < ds_to_plot[loc].height_ml_bottom_new_gia ) ),
+                                    "Dm [mm]": ds_to_plot[loc][Dm_ice].where(ds_to_plot[loc][Dm_ice].z > ds_to_plot[loc].height_ml_new_gia,
+                                                                      ds_to_plot[loc][Dm_rain].where(ds_to_plot[loc][Dm_rain].z < ds_to_plot[loc].height_ml_bottom_new_gia ) ),
+                                    "log10(Nt) [1/L]": (ds_to_plot[loc][Nt_ice].where(ds_to_plot[loc][Nt_ice].z > ds_to_plot[loc].height_ml_new_gia,
+                                                                      ds_to_plot[loc][Nt_rain].where(ds_to_plot[loc][Nt_rain].z < ds_to_plot[loc].height_ml_bottom_new_gia ) ) ),
         })
         
     fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15,5), width_ratios=(1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
