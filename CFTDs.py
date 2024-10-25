@@ -61,7 +61,7 @@ def find_loc(locs, path):
 
 locs = ["pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs"]
 
-realpep_path = "/automount/realpep/"
+realpep_path = "/data/polara/"
 
 #%% Load QVPs for stratiform-case CFTDs
 # This part should be run after having the QVPs computed (compute_qvps.py)
@@ -566,6 +566,7 @@ loc = find_loc(locs, ff[0])
 for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed", qvps_strat_relaxed_fil)]:
     print("   ... for "+stratname)
     
+    riming_classif[stratname] = {}
     riming_classif[stratname][loc] = xr.Dataset()
 
     if "DR" not in stratqvp:
@@ -589,14 +590,18 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
     # predict riming with the model
     for XDR, XZDR, XZH in [("DR", X_ZDR, X_DBZH), ("UDR", "ZDR", "DBZH")]:
         
-        idx = np.isfinite(stratqvp[XDR].values.flatten() + stratqvp[XZDR].values.flatten() + stratqvp[XZH].values.flatten())
-        X = np.concatenate((stratqvp[XDR].values.flatten()[idx].reshape(-1, 1), stratqvp[XZDR].values.flatten()[idx].reshape(-1, 1), stratqvp[XZH].values.flatten()[idx].reshape(-1, 1)), axis=1)
+        idx = np.isfinite(riming_classif[stratname][loc][XDR].values.flatten() + \
+                          stratqvp[XZDR].values.flatten() + \
+                              stratqvp[XZH].values.flatten())
+        X = np.concatenate((riming_classif[stratname][loc][XDR].values.flatten()[idx].reshape(-1, 1), \
+                            stratqvp[XZDR].values.flatten()[idx].reshape(-1, 1), \
+                                stratqvp[XZH].values.flatten()[idx].reshape(-1, 1)), axis=1)
         
         pred = riming_model.predict(X)
         
-        pred_riming = np.zeros_like(stratqvp[XDR]).flatten() + np.nan
+        pred_riming = np.zeros_like(riming_classif[stratname][loc][XDR]).flatten() + np.nan
         pred_riming[idx] = pred
-        pred_riming = xr.zeros_like(stratqvp[XDR]) + pred_riming.reshape(stratqvp[XDR].shape)
+        pred_riming = xr.zeros_like(riming_classif[stratname][loc][XDR]) + pred_riming.reshape(riming_classif[stratname][loc][XDR].shape)
 
         varname = "riming_"+XDR
 
@@ -617,8 +622,10 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
     # predict riming with the model that uses only zh and zdr
     for XZDR, XZH in [(X_ZDR, X_DBZH), ("ZDR", "DBZH")]:
         
-        idx = np.isfinite(stratqvp[XZDR].values.flatten() + stratqvp[XZH].values.flatten())
-        X = np.concatenate((stratqvp[XZDR].values.flatten()[idx].reshape(-1, 1), stratqvp[XZH].values.flatten()[idx].reshape(-1, 1)), axis=1)
+        idx = np.isfinite(stratqvp[XZDR].values.flatten() + \
+                          stratqvp[XZH].values.flatten())
+        X = np.concatenate((stratqvp[XZDR].values.flatten()[idx].reshape(-1, 1), \
+                            stratqvp[XZH].values.flatten()[idx].reshape(-1, 1)), axis=1)
         
         pred = riming_model_zh_zdr.predict(X)
         
