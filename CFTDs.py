@@ -560,10 +560,14 @@ try: # check if exists, if not, create it
     riming_classif
 except NameError:
     riming_classif = {}
+    
+loc = find_loc(locs, ff[0])
 
 for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed", qvps_strat_relaxed_fil)]:
     print("   ... for "+stratname)
     
+    riming_classif[stratname][loc] = xr.Dataset()
+
     if "DR" not in stratqvp:
         DR = calc_depolarization(stratqvp, X_ZDR, X_RHO)
         assign = dict(DR = DR.assign_attrs(
@@ -571,7 +575,8 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
              'standard_name': 'depolarization_ratio',
              'units': 'dB'}
             ))
-        stratqvp = stratqvp.assign(assign)
+        riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
+    
     if "UDR" not in stratqvp:
         UDR = calc_depolarization(stratqvp, "ZDR", "RHOHV")            
         assign = dict(UDR = UDR.assign_attrs(
@@ -579,7 +584,7 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
              'standard_name': 'depolarization_ratio',
              'units': 'dB'}
             ))
-        stratqvp = stratqvp.assign(assign)
+        riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
         
     # predict riming with the model
     for XDR, XZDR, XZH in [("DR", X_ZDR, X_DBZH), ("UDR", "ZDR", "DBZH")]:
@@ -592,16 +597,16 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
         pred_riming = np.zeros_like(stratqvp[XDR]).flatten() + np.nan
         pred_riming[idx] = pred
         pred_riming = xr.zeros_like(stratqvp[XDR]) + pred_riming.reshape(stratqvp[XDR].shape)
-        
-        pred_riming.assign_attrs({
+
+        varname = "riming_"+XDR
+
+        pred_riming = pred_riming.assign_attrs({
             'long_name': 'Riming prediction based on '+XDR+', '+XZDR+' and '+XZH+' with gradient boosting model',
              'standard_name': 'riming_prediction',
-            })
-        
-        varname = "riming_"+XDR
-        
+            }).rename(varname)
+                
         assign = {varname: pred_riming.copy()}
-        stratqvp = stratqvp.assign(assign)
+        riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
 
         # save to file
         if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname):
@@ -621,22 +626,26 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
         pred_riming[idx] = pred
         pred_riming = xr.zeros_like(stratqvp[XZH]) + pred_riming.reshape(stratqvp[XZH].shape)
         
-        pred_riming.assign_attrs({
+        varname = "riming_"+XZDR+"_"+XZH
+
+        pred_riming = pred_riming.assign_attrs({
             'long_name': 'Riming prediction based on '+XZDR+' and '+XZH+' with gradient boosting model',
              'standard_name': 'riming_prediction',
-            })
-        
-        varname = "riming_"+XZDR+"_"+XZH
-        
+            }).rename(varname)
+                
         assign = {varname: pred_riming.copy()}
-        stratqvp = stratqvp.assign(assign)
+        riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
 
         # save to file
         if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname):
             os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname)
         
         pred_riming.to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+ll+"_"+varname+".nc")
-        
+
+# Assign 
+qvps_strat_fil = qvps_strat_fil.assign( riming_classif['stratiform'][loc] )
+qvps_strat_relaxed_fil = qvps_strat_fil.assign( riming_classif['stratiform_relaxed'][loc] )
+
 total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
 
@@ -1023,6 +1032,165 @@ with mpl.rc_context({'font.size': 10}):
 # qvps_strat_fil_notime = qvps_strat_fil.copy()
 # qvps_strat_fil_notime = qvps_strat_fil_notime.reset_index("time")
 # plot_qvp(qvps_strat_fil_notime, "ZDR_OC", tloc="2020-07-15", plot_ml=True, plot_entropy=True, ylim=(qvps.altitude,10000))
+
+#%% Riming statistics
+#%%% reload riming estimates
+locs_to_load = [find_loc(locs, ff[0])] # by default, load only the histograms of the currently loaded QVPs.
+
+try: # check if exists, if not, create it
+    riming_classif
+except NameError:
+    riming_classif = {}
+
+for stratname in ["stratiform", "stratiform_relaxed"]:
+    if stratname not in riming_classif.keys():
+        riming_classif[stratname] = {}
+    elif type(riming_classif[stratname]) is not dict:
+        riming_classif[stratname] = {}
+    print("Loading "+stratname+" riming classification ...")
+    for ll in locs_to_load: # ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']:
+        if ll not in riming_classif[stratname].keys():
+            riming_classif[stratname][ll] = xr.Dataset()
+        elif type(riming_classif[stratname][ll]) is not xr.Dataset:
+            riming_classif[stratname][ll] = xr.Dataset()
+        for xx in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_ZDR_OC_DBZH',
+                   ]:
+            try:
+                riming_classif[stratname][ll] = riming_classif[stratname][ll].assign( xr.open_dataset(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+ll+"_"+xx+".nc") )
+                print(ll+" "+xx+" riming_classif loaded")
+            except:
+                pass
+        # delete entry if empty
+        if not riming_classif[stratname][ll]:
+            del riming_classif[stratname][ll]
+
+#%%% Plot riming histograms
+locs_to_plot = [find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
+savepath = "/automount/agradar/jgiles/images/stats_histograms/"
+
+selseaslist = [           
+            ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
+            ("DJF", [12,1,2]),
+            ("MAM", [3,4,5]),
+            ("JJA", [6,7,8]),
+            ("SON", [9,10,11]),
+           ] # ("nameofseas", [months included])
+
+print("Plotting riming histograms ...")
+
+for loc in locs_to_plot:
+    print(" ... "+loc)
+    for selseas in selseaslist:
+        print(" ... ... "+selseas[0])
+
+        for stratname in ["stratiform", "stratiform_relaxed"]:
+            print(" ... ... ... "+stratname)
+
+            # Create savefolder
+            savepath_seas = savepath+stratname+"/"+selseas[0]+"/"+loc+"/"
+            if not os.path.exists(savepath_seas):
+                os.makedirs(savepath_seas)
+
+            to_plot = riming_classif[stratname][loc].where(\
+                                                               riming_classif[stratname][loc].z >= riming_classif[stratname][loc].height_ml_new_gia
+                                                            )
+
+            to_plot_sel = to_plot.sel(\
+                                time=to_plot['time'].dt.month.isin(selseas[1]))
+
+            for vv in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_ZDR_OC_DBZH',
+                       ]:
+
+                # Create temperature bins (1-degree intervals)
+                temp_bins = np.arange(-20, 1)
+                
+                # Create an empty list to store the values
+                percentages = []
+                count = []
+                
+                # Loop through each temperature bin
+                for i in range(len(temp_bins) - 1):
+                    # Mask for the current temperature bin
+                    temp_mask = (to_plot_sel.TEMP >= temp_bins[i]) & (to_plot_sel.TEMP < temp_bins[i+1])
+                    
+                    # Get the data corresponding to the current temperature bin
+                    data_in_bin = to_plot_sel[vv].where(temp_mask, drop=True)
+                    
+                    # Calculate the percentage of 1s (ignoring NaNs)
+                    total_values = np.isfinite(data_in_bin).sum()  # Total number of finite values (non-nan)
+                    ones_count = (data_in_bin == 1).sum()          # Count of values equal to 1
+                    percentage = (ones_count / total_values) * 100 if total_values > 0 else np.nan
+                    
+                    # Append the percentage to the list
+                    percentages.append(percentage.values)
+                    
+                    # Append the total_values to the list
+                    count.append(total_values.values)
+                
+                # Plot the percentage against temperature
+                fig = plt.figure(figsize=(8, 6))
+                # plt.plot(percentages, temp_bins[:-1], marker='o', linestyle='-')
+                plt.step(percentages, temp_bins[:-1], where="post")
+                plt.xlabel('Percentage of rimed events [%]')
+                plt.ylabel('Temperature [°C]')
+                plt.title('Percentage of '+vv+" "+stratname+" "+selseas[0]+" "+loc)
+                plt.xlim(0, 40)
+                plt.gca().yaxis.set_inverted(True)
+                plt.grid(True)
+                ax2 = plt.twiny()
+                ax2.plot(count, temp_bins[:-1]-0.5, color="red")
+                plt.xlabel("Number of events", color="red")
+                # plt.show
+                                                                      
+                fig.savefig(savepath_seas+"/"+loc+"_"+vv+"_vsTEMP.png",
+                                bbox_inches="tight")
+                plt.close(fig)
+
+
+                # Repeat for height above ML in the y-axis
+                # Create temperature bins (1-degree intervals)
+                z_bins = np.arange(0, 6215, 215)
+                
+                # Create an empty list to store the values
+                percentages = []
+                count = []
+                
+                # Loop through each temperature bin
+                for i in range(len(z_bins) - 1):
+                    # Mask for the current z bin
+                    z_mask = ( (to_plot_sel.z - to_plot_sel.height_ml_new_gia) >= z_bins[i]) & ( (to_plot_sel.z - to_plot_sel.height_ml_new_gia) < z_bins[i+1])
+                    
+                    # Get the data corresponding to the current z bin
+                    data_in_bin = to_plot_sel[vv].where(z_mask, drop=True)
+                    
+                    # Calculate the percentage of 1s (ignoring NaNs)
+                    total_values = np.isfinite(data_in_bin).sum().values  # Total number of finite values (non-nan)
+                    ones_count = (data_in_bin == 1).sum().values          # Count of values equal to 1
+                    percentage = (ones_count / total_values) * 100 if total_values > 0 else np.nan
+                    
+                    # Append the percentage to the list
+                    percentages.append(percentage)
+                    
+                    # Append the total_values to the list
+                    count.append(total_values)
+
+                # Plot the percentage against height above ML
+                fig = plt.figure(figsize=(8, 6))
+                # plt.plot(percentages, temp_bins[:-1], marker='o', linestyle='-')
+                plt.step(percentages, z_bins[:-1], where="pre")
+                plt.xlabel('Percentage of rimed events [%]')
+                plt.ylabel('Height above ML [m]')
+                plt.title('Percentage of '+vv+" "+stratname+" "+selseas[0]+" "+loc)
+                plt.xlim(0, 40)
+                plt.grid(True)
+                ax2 = plt.twiny()
+                ax2.plot(count, z_bins[:-1]+107.5, color="red")
+                plt.xlabel("Number of events", color="red")
+                # plt.show
+                                                                      
+                fig.savefig(savepath_seas+"/"+loc+"_"+vv+"_vsHeight.png",
+                                bbox_inches="tight")
+                plt.close(fig)
 
 #%% Statistics histograms and ridgeplots
 # load stats
@@ -1693,8 +1861,8 @@ bins = {"ML_thickness": np.arange(0,1200,50),
 
 
 
-order = ['umd', 'pro', 'afy', 'ank', 'gzt', 'hty', 'svs']
-order = ['umd', 'pro', 'hty']
+order = ['tur', 'umd', 'pro', 'afy', 'ank', 'gzt', 'hty', 'svs']
+# order = ['umd', 'pro', 'hty']
 
 selseaslist = [           
             ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
