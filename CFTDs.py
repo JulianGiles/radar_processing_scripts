@@ -1220,7 +1220,7 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
     elif type(stats[stratname]) is not dict:
         stats[stratname] = {}
     print("Loading "+stratname+" stats ...")
-    for ll in ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']:
+    for ll in locs:
         if ll not in stats[stratname].keys():
             stats[stratname][ll] = {}
         elif type(stats[stratname][ll]) is not dict:
@@ -1874,6 +1874,7 @@ bins = {"ML_thickness": np.arange(0,1200,50),
         "cloudtop_TEMP_5dbz": np.arange(-50,-20,1),
         "cloudtop_TEMP_10dbz": np.arange(-50,-20,1),
         "deltaZH": np.arange(-5,21,1),
+        "delta_z_ZHmaxML_RHOHVminML": np.arange(0,440, 40),
         }
 
 
@@ -1915,7 +1916,13 @@ def change_rgba_alpha(original_color, new_alpha):
 for stratname in ["stratiform", "stratiform_relaxed"]:
     for ll in order:
         if ll in stats[stratname].keys():
-            stats[stratname][ll]["deltaZH"] = stats[stratname][ll]["values_ML_max"]["DBZH"] - stats[stratname][ll]["values_rain"]["DBZH"]
+            stats[stratname][ll]["deltaZH"] = stats[stratname][ll]["values_ML_max"][X_DBZH] - stats[stratname][ll]["values_rain"][X_DBZH]
+
+# Build delta_z_ZHmaxML_RHOHVminML into stats
+for stratname in ["stratiform", "stratiform_relaxed"]:
+    for ll in order:
+        if ll in stats[stratname].keys():
+            stats[stratname][ll]["delta_z_ZHmaxML_RHOHVminML"] = stats[stratname][ll]["height_ML_max"][X_DBZH] - stats[stratname][ll]["height_ML_min"][X_RHO]
 
 # Plot stats ridgeplots
 for selseas in selseaslist:
