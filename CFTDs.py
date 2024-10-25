@@ -1088,20 +1088,21 @@ start_time = time.time()
 
 for loc in locs_to_plot:
     print(" ... "+loc)
-    for selseas in selseaslist:
-        print(" ... ... "+selseas[0])
 
-        for stratname in ["stratiform", "stratiform_relaxed"]:
-            print(" ... ... ... "+stratname)
+    for stratname in ["stratiform", "stratiform_relaxed"]:
+        print(" ... ... "+stratname)
 
+        to_plot = riming_classif[stratname][loc].where(\
+                                                           riming_classif[stratname][loc].z >= riming_classif[stratname][loc].height_ml_new_gia,
+                                                        drop=True)
+
+        for selseas in selseaslist:
+            print(" ... ... ... "+selseas[0])
+    
             # Create savefolder
             savepath_seas = savepath+stratname+"/"+selseas[0]+"/"+loc+"/"
             if not os.path.exists(savepath_seas):
                 os.makedirs(savepath_seas)
-
-            to_plot = riming_classif[stratname][loc].where(\
-                                                               riming_classif[stratname][loc].z >= riming_classif[stratname][loc].height_ml_new_gia,
-                                                            drop=True)
 
             to_plot_sel = to_plot.sel(\
                                 time=to_plot['time'].dt.month.isin(selseas[1]))
