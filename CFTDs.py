@@ -1084,6 +1084,7 @@ selseaslist = [
            ] # ("nameofseas", [months included])
 
 print("Plotting riming histograms ...")
+start_time = time.time()
 
 for loc in locs_to_plot:
     print(" ... "+loc)
@@ -1099,8 +1100,8 @@ for loc in locs_to_plot:
                 os.makedirs(savepath_seas)
 
             to_plot = riming_classif[stratname][loc].where(\
-                                                               riming_classif[stratname][loc].z >= riming_classif[stratname][loc].height_ml_new_gia
-                                                            )
+                                                               riming_classif[stratname][loc].z >= riming_classif[stratname][loc].height_ml_new_gia,
+                                                            drop=True)
 
             to_plot_sel = to_plot.sel(\
                                 time=to_plot['time'].dt.month.isin(selseas[1]))
@@ -1108,96 +1109,104 @@ for loc in locs_to_plot:
             for vv in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_ZDR_OC_DBZH',
                        ]:
 
-                # Create temperature bins (1-degree intervals)
-                temp_bins = np.arange(-20, 1)
-                
-                # Create an empty list to store the values
-                percentages = []
-                count = []
-                
-                # Loop through each temperature bin
-                for i in range(len(temp_bins) - 1):
-                    # Mask for the current temperature bin
-                    temp_mask = (to_plot_sel.TEMP >= temp_bins[i]) & (to_plot_sel.TEMP < temp_bins[i+1])
-                    
-                    # Get the data corresponding to the current temperature bin
-                    data_in_bin = to_plot_sel[vv].where(temp_mask, drop=True)
-                    
-                    # Calculate the percentage of 1s (ignoring NaNs)
-                    total_values = np.isfinite(data_in_bin).sum()  # Total number of finite values (non-nan)
-                    ones_count = (data_in_bin == 1).sum()          # Count of values equal to 1
-                    percentage = (ones_count / total_values) * 100 if total_values > 0 else np.nan
-                    
-                    # Append the percentage to the list
-                    percentages.append(percentage.values)
-                    
-                    # Append the total_values to the list
-                    count.append(total_values.values)
-                
-                # Plot the percentage against temperature
-                fig = plt.figure(figsize=(8, 6))
-                # plt.plot(percentages, temp_bins[:-1], marker='o', linestyle='-')
-                plt.step(percentages, temp_bins[:-1], where="post")
-                plt.xlabel('Percentage of rimed events [%]')
-                plt.ylabel('Temperature [°C]')
-                plt.title('Percentage of '+vv+" "+stratname+" "+selseas[0]+" "+loc)
-                plt.xlim(0, 40)
-                plt.gca().yaxis.set_inverted(True)
-                plt.grid(True)
-                ax2 = plt.twiny()
-                ax2.plot(count, temp_bins[:-1]-0.5, color="red")
-                plt.xlabel("Number of events", color="red")
-                # plt.show
-                                                                      
-                fig.savefig(savepath_seas+"/"+loc+"_"+vv+"_vsTEMP.png",
-                                bbox_inches="tight")
-                plt.close(fig)
+                try:
 
-
-                # Repeat for height above ML in the y-axis
-                # Create temperature bins (1-degree intervals)
-                z_bins = np.arange(0, 6215, 215)
+                    # Create temperature bins (1-degree intervals)
+                    temp_bins = np.arange(-20, 1)
+                    
+                    # Create an empty list to store the values
+                    percentages = []
+                    count = []
+                    
+                    # Loop through each temperature bin
+                    for i in range(len(temp_bins) - 1):
+                        # Mask for the current temperature bin
+                        temp_mask = (to_plot_sel.TEMP >= temp_bins[i]) & (to_plot_sel.TEMP < temp_bins[i+1])
+                        
+                        # Get the data corresponding to the current temperature bin
+                        data_in_bin = to_plot_sel[vv].where(temp_mask.compute(), drop=True)
+                        
+                        # Calculate the percentage of 1s (ignoring NaNs)
+                        total_values = np.isfinite(data_in_bin).sum()  # Total number of finite values (non-nan)
+                        ones_count = (data_in_bin == 1).sum()          # Count of values equal to 1
+                        percentage = (ones_count / total_values) * 100 if total_values > 0 else np.nan
+                        
+                        # Append the percentage to the list
+                        percentages.append(percentage.values)
+                        
+                        # Append the total_values to the list
+                        count.append(total_values.values)
+                    
+                    # Plot the percentage against temperature
+                    fig = plt.figure(figsize=(8, 6))
+                    # plt.plot(percentages, temp_bins[:-1], marker='o', linestyle='-')
+                    plt.step(percentages, temp_bins[:-1], where="post")
+                    plt.xlabel('Percentage of rimed events [%]')
+                    plt.ylabel('Temperature [°C]')
+                    plt.title('Percentage of '+vv+" "+stratname+" "+selseas[0]+" "+loc)
+                    plt.xlim(0, 40)
+                    plt.gca().yaxis.set_inverted(True)
+                    plt.grid(True)
+                    ax2 = plt.twiny()
+                    ax2.plot(count, temp_bins[:-1]-0.5, color="red")
+                    plt.xlabel("Number of events", color="red")
+                    # plt.show
+                                                                          
+                    fig.savefig(savepath_seas+"/"+loc+"_"+vv+"_vsTEMP.png",
+                                    bbox_inches="tight")
+                    plt.close(fig)
+    
+    
+                    # Repeat for height above ML in the y-axis
+                    # Create temperature bins (1-degree intervals)
+                    z_bins = np.arange(0, 6215, 215)
+                    
+                    # Create an empty list to store the values
+                    percentages = []
+                    count = []
+                    
+                    # Loop through each temperature bin
+                    for i in range(len(z_bins) - 1):
+                        # Mask for the current z bin
+                        z_mask = ( (to_plot_sel.z - to_plot_sel.height_ml_new_gia) >= z_bins[i]) & ( (to_plot_sel.z - to_plot_sel.height_ml_new_gia) < z_bins[i+1])
+                        
+                        # Get the data corresponding to the current z bin
+                        data_in_bin = to_plot_sel[vv].where(z_mask.compute(), drop=True)
+                        
+                        # Calculate the percentage of 1s (ignoring NaNs)
+                        total_values = np.isfinite(data_in_bin).sum().values  # Total number of finite values (non-nan)
+                        ones_count = (data_in_bin == 1).sum().values          # Count of values equal to 1
+                        percentage = (ones_count / total_values) * 100 if total_values > 0 else np.nan
+                        
+                        # Append the percentage to the list
+                        percentages.append(percentage)
+                        
+                        # Append the total_values to the list
+                        count.append(total_values)
+    
+                    # Plot the percentage against height above ML
+                    fig = plt.figure(figsize=(8, 6))
+                    # plt.plot(percentages, temp_bins[:-1], marker='o', linestyle='-')
+                    plt.step(percentages, z_bins[:-1], where="pre")
+                    plt.xlabel('Percentage of rimed events [%]')
+                    plt.ylabel('Height above ML [m]')
+                    plt.title('Percentage of '+vv+" "+stratname+" "+selseas[0]+" "+loc)
+                    plt.xlim(0, 40)
+                    plt.grid(True)
+                    ax2 = plt.twiny()
+                    ax2.plot(count, z_bins[:-1]+107.5, color="red")
+                    plt.xlabel("Number of events", color="red")
+                    # plt.show
+                                                                          
+                    fig.savefig(savepath_seas+"/"+loc+"_"+vv+"_vsHeight.png",
+                                    bbox_inches="tight")
+                    plt.close(fig)
                 
-                # Create an empty list to store the values
-                percentages = []
-                count = []
-                
-                # Loop through each temperature bin
-                for i in range(len(z_bins) - 1):
-                    # Mask for the current z bin
-                    z_mask = ( (to_plot_sel.z - to_plot_sel.height_ml_new_gia) >= z_bins[i]) & ( (to_plot_sel.z - to_plot_sel.height_ml_new_gia) < z_bins[i+1])
-                    
-                    # Get the data corresponding to the current z bin
-                    data_in_bin = to_plot_sel[vv].where(z_mask, drop=True)
-                    
-                    # Calculate the percentage of 1s (ignoring NaNs)
-                    total_values = np.isfinite(data_in_bin).sum().values  # Total number of finite values (non-nan)
-                    ones_count = (data_in_bin == 1).sum().values          # Count of values equal to 1
-                    percentage = (ones_count / total_values) * 100 if total_values > 0 else np.nan
-                    
-                    # Append the percentage to the list
-                    percentages.append(percentage)
-                    
-                    # Append the total_values to the list
-                    count.append(total_values)
+                except:
+                    print("!!! Unable to plot "+vv+" !!!")
 
-                # Plot the percentage against height above ML
-                fig = plt.figure(figsize=(8, 6))
-                # plt.plot(percentages, temp_bins[:-1], marker='o', linestyle='-')
-                plt.step(percentages, z_bins[:-1], where="pre")
-                plt.xlabel('Percentage of rimed events [%]')
-                plt.ylabel('Height above ML [m]')
-                plt.title('Percentage of '+vv+" "+stratname+" "+selseas[0]+" "+loc)
-                plt.xlim(0, 40)
-                plt.grid(True)
-                ax2 = plt.twiny()
-                ax2.plot(count, z_bins[:-1]+107.5, color="red")
-                plt.xlabel("Number of events", color="red")
-                # plt.show
-                                                                      
-                fig.savefig(savepath_seas+"/"+loc+"_"+vv+"_vsHeight.png",
-                                bbox_inches="tight")
-                plt.close(fig)
+total_time = time.time() - start_time
+print(f"took {total_time/60:.2f} minutes.")
 
 #%% Statistics histograms and ridgeplots
 # load stats
