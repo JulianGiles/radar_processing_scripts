@@ -377,23 +377,23 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
     # beta = gradient_final[X_TH] #### TH OR DBZH??
     
     # Gradient above the ML
-    # First we select only above the ML. Then we interpolate possibly missing values. 
-    # Then we select above z_snow_over_ML and below z_snow_over_ML + z_grad_above_ML
-    # Then we compute the gradient.
-    beta = stratqvp.where(stratqvp["z"] > (stratqvp["height_ml_new_gia"]) ) \
-                    .interpolate_na("z") \
-                        .where(stratqvp["z"] > (stratqvp["height_ml_new_gia"] + z_snow_over_ML) ) \
-                            .where(stratqvp["z"] < (stratqvp["height_ml_new_gia"] + z_snow_over_ML + z_grad_above_ML) )\
-                                .differentiate("z").median("z") * 1000 # x1000 to transform the gradients to /km
+    # We select above z_snow_over_ML and below z_snow_over_ML + z_grad_above_ML
+    # Then we compute the gradient as the linear fit of the valid values
+
+    beta = stratqvp.where(stratqvp["z"] > (stratqvp["height_ml_new_gia"] + z_snow_over_ML) ) \
+                        .where(stratqvp["z"] < (stratqvp["height_ml_new_gia"] + z_snow_over_ML + z_grad_above_ML) )\
+                            .polyfit("z", 1, skipna=True).isel(degree=0) * 1000 # x1000 to transform the gradients to /km
+                            
+    beta = beta.rename({var: var.replace("_polyfit_coefficients", "") for var in beta.data_vars})
 
     # Gradient below the ML
-    # First we select only above the ML. Then we interpolate possibly missing values. 
-    # Then we select above z_snow_over_ML and below z_snow_over_ML + z_grad_above_ML
-    # Then we compute the gradient.
-    beta_belowML = stratqvp.where(stratqvp["z"] < (stratqvp["height_ml_bottom_new_gia"]) ) \
-                    .interpolate_na("z") \
-                        .where(stratqvp["z"] < (stratqvp["height_ml_bottom_new_gia"] - z_rain_below_ML ) )\
-                            .differentiate("z").median("z") * 1000 # x1000 to transform the gradients to /km
+    # We select below z_rain_below_ML
+    # Then we compute the gradient as the linear fit of the valid values
+
+    beta_belowML = stratqvp.where(stratqvp["z"] < (stratqvp["height_ml_bottom_new_gia"] - z_rain_below_ML ) )\
+                            .polyfit("z", 1, skipna=True).isel(degree=0) * 1000 # x1000 to transform the gradients to /km
+                            
+    beta_belowML = beta_belowML.rename({var: var.replace("_polyfit_coefficients", "") for var in beta_belowML.data_vars})
     
     # Cloud top (3 methods)
     # Get the height value of the last not null value with a minimum of entropy 0.2 (this min entropy is to filter out random noise pixels)
@@ -1851,8 +1851,6 @@ for loc in locs_to_plot:
 #%%% ridgeplots
 savepath = "/automount/agradar/jgiles/images/stats_ridgeplots/"
 
-ridge_vars = [X_DBZH, X_ZDR, X_RHO, X_KDP]
-
 vars_ticks = {X_DBZH: np.arange(0, 46, 1), 
                 X_ZDR: np.arange(-0.5, 2.1, 0.1),
                 X_KDP: np.arange(-0.1, 0.52, 0.02),
@@ -1863,8 +1861,9 @@ beta_vars_ticks = {X_DBZH: np.linspace(-15, 10, int((10--15)/1)+1 ),
                 X_ZDR: np.linspace(-0.5, 1, int((1--0.5)/0.1)+1 ),
                 X_KDP: np.linspace(-0.2, 0.2, int((0.2--0.2)/0.01)+1 ),
                 X_RHO: np.linspace(-0.05, 0.05, int((0.05--0.05)/0.001)+1 ),
-                }
+                } # the "_polyfit_coefficients" in the var names will be added below
 
+ridge_vars = set(list(vars_ticks.keys())+list(beta_vars_ticks.keys()))
 
 bins = {"ML_thickness": np.arange(0,1200,50),
         "ML_thickness_TEMP": np.arange(0, 5.25, 0.25),
@@ -1953,7 +1952,7 @@ for selseas in selseaslist:
             print("...plotting "+ss)
             try: 
                 for vv in ridge_vars:
-        
+                                        
                     if vv == "RHOHV_NCignore": # DEPRECATED (22.10.24), this was wrongly defined, it does nothing now.
                         order_turk = order_fil.copy()
                         order_turk.remove("pro") # THIS IS WRONG taking out DWD radars and putting them separate (because turkish radars do not have RHOHV_NC)
