@@ -465,90 +465,6 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed
         for xx in stats[stratname][ll].keys():
             stats[stratname][ll][xx].to_netcdf(realpep_path+"/upload/jgiles/radar_stats/"+stratname+"/"+ll+"_"+xx+".nc")
 
-    ''' DEPRECATED
-    # THIS IS NOW INCLUDED IN IT'S OWN SECTION DOWN BELOW
-    #### Statistics from Raquel
-    MLmaxZH = values_ML_max["DBZH"]
-    ZHrain = values_rain["DBZH"] 
-    deltaZH = MLmaxZH - ZHrain
-    MLminRHOHV = values_ML_min["RHOHV_NC"]
-    
-    MLdepth = ML_thickness
-
-    #### Histograms: like Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
-    print("   ... plotting scatterplots")
-    # plot histograms (2d hist) like Fig. 10
-    # plot a
-    binsx = np.linspace(0.8, 1, 41)
-    binsy = np.linspace(-10, 20, 61)
-    deltaZHcurve = 4.27 + 6.89*(1-binsx) + 341*(1-binsx)**2 # curve from Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
-    
-    utils.hist_2d(MLminRHOHV.compute(), deltaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
-    plt.plot(binsx, deltaZHcurve, c="black", label="Reference curve")
-    plt.legend()
-    plt.xlabel(r"$\mathregular{Minimum \ \rho _{HV} \ in \ ML}$")
-    plt.ylabel(r"$\mathregular{\Delta Z_H \ (MLmaxZ_H - Z_HRain) }$")
-    plt.text(0.81, -8, r"$\mathregular{\Delta Z_H = 4.27 + 6.89(1-\rho _{HV}) + 341(1-\rho _{HV})^2 }$", fontsize="small")
-    plt.grid()
-    fig = plt.gcf()
-    fig.savefig("/automount/agradar/jgiles/images/stats_histograms/"+stratname+"/"+find_loc(locs, ff[0])+"_DeltaZH_MinRHOHVinML.png",
-                bbox_inches="tight")
-    plt.close(fig)
-    
-    # plot b
-    binsx = np.linspace(0, 4, 16*5+1)
-    binsy = np.linspace(-10, 20, 61)
-    deltaZHcurve = 3.18 + 2.19*binsx # curve from Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
-    
-    utils.hist_2d(values_ML_max["ZDR_OC"].compute(), deltaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
-    plt.plot(binsx, deltaZHcurve, c="black", label="Reference curve")
-    plt.legend()
-    plt.xlabel(r"$\mathregular{Maximum \ Z_{DR} \ in \ ML}$")
-    plt.ylabel(r"$\mathregular{\Delta Z_H \ (MLmaxZ_H - Z_HRain) }$")
-    plt.text(2, -8, r"$\mathregular{\Delta Z_H = 3.18 + 2.19 Z_{DR} }$", fontsize="small")
-    plt.grid()
-    fig = plt.gcf()
-    fig.savefig("/automount/agradar/jgiles/images/stats_histograms/"+stratname+"/"+find_loc(locs, ff[0])+"_DeltaZH_MaxZDRinML.png",
-                bbox_inches="tight")
-    plt.close(fig)
-    
-    # plot c
-    binsx = np.linspace(0.8, 1, 41)
-    binsy = np.linspace(0, 1000, 26)
-    MLdepthcurve = -0.64 + 30.8*(1-binsx) - 315*(1-binsx)**2 + 1115*(1-binsx)**3 # curve from Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
-    
-    utils.hist_2d(MLminRHOHV.compute(), MLdepth.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
-    plt.plot(binsx, MLdepthcurve*1000, c="black", label="Reference curve") # multiply curve by 1000 to change from km to m
-    plt.legend()
-    plt.xlabel(r"$\mathregular{Minimum \ \rho _{HV} \ in \ ML}$")
-    plt.ylabel(r"Depth of ML (m)")
-    # plt.text(0.8, 800, r"$\mathregular{ML \ Depth = -0.64 + 30.8(1-\rho _{HV}) - 315(1-\rho _{HV})^2 + 1115(1-\rho _{HV})^3 }$", fontsize="xx-small")
-    plt.text(0.86, 700, r"$\mathregular{ML \ Depth = -0.64 + 30.8(1-\rho _{HV})}$" "\n" r"$\mathregular{- 315(1-\rho _{HV})^2 + 1115(1-\rho _{HV})^3}$", fontsize="xx-small")
-    plt.grid()
-    fig = plt.gcf()
-    fig.savefig("/automount/agradar/jgiles/images/stats_histograms/"+stratname+"/"+find_loc(locs, ff[0])+"_DepthML_MinRHOHVinML.png",
-                bbox_inches="tight")
-    plt.close(fig)
-    
-    # plot d
-    binsx = np.linspace(0, 4, 16*5+1)
-    binsy = np.linspace(0, 1000, 26)
-    MLdepthcurve = 0.21 + 0.091*binsx # curve from Ryzhkov and Krauze 2022 https://doi.org/10.1175/JTECH-D-21-0130.1
-    
-    utils.hist_2d(values_ML_max["ZDR_OC"].compute(), MLdepth.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
-    plt.plot(binsx, MLdepthcurve*1000, c="black", label="Reference curve") # multiply curve by 1000 to change from km to m
-    plt.legend()
-    plt.xlabel(r"$\mathregular{Maximum \ Z_{DR} \ in \ ML}$")
-    plt.ylabel(r"Depth of ML (m)")
-    # plt.text(0.8, 800, r"$\mathregular{ML \ Depth = -0.64 + 30.8(1-\rho _{HV}) - 315(1-\rho _{HV})^2 + 1115(1-\rho _{HV})^3 }$", fontsize="xx-small")
-    plt.text(0.86, 700, r"$\mathregular{ML \ Depth = 0.21 + 0.091 Z_{DR} }$", fontsize="xx-small")
-    plt.grid()
-    fig = plt.gcf()
-    fig.savefig("/automount/agradar/jgiles/images/stats_histograms/"+stratname+"/"+find_loc(locs, ff[0])+"_DepthML_MaxZDRinML.png",
-                bbox_inches="tight")
-    plt.close(fig)
-    
-    '''
 
 #### Calculate riming
 # We do this for both qvps_strat_fil and relaxed qvps_strat_relaxed_fil
@@ -1953,20 +1869,17 @@ for selseas in selseaslist:
             try: 
                 for vv in ridge_vars:
                                         
-                    if vv == "RHOHV_NCignore": # DEPRECATED (22.10.24), this was wrongly defined, it does nothing now.
-                        order_turk = order_fil.copy()
-                        order_turk.remove("pro") # THIS IS WRONG taking out DWD radars and putting them separate (because turkish radars do not have RHOHV_NC)
-                        samples = [stats[stratname]["pro"][ss][vv].dropna("time").values] + [stats[stratname][loc][ss]["RHOHV"].dropna("time").values for loc in order_turk if loc in stats[stratname].keys()]
-                    else:
-                        samples = [stats[stratname][loc][ss][vv].sel(\
-                                    time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time").values\
-                                   for loc in order_fil]
+                    # Get the samples for each radar and filter out the radars that have zero samples.
+                    samples = {loc: stats[stratname][loc][ss][vv].sel(\
+                                time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time").values\
+                               for loc in order_fil}
+                    samples = {loc: samples[loc] for loc in samples.keys() if len(samples[loc])>0} # filter out radars with no samples
                         
-                    fig = ridgeplot.ridgeplot(samples=samples,
+                    fig = ridgeplot.ridgeplot(samples=samples.values(),
                                             colorscale="viridis",
                                             colormode="row-index",
                                             coloralpha=0.65,
-                                            labels=order_fil,
+                                            labels=samples.keys(),
                                             linewidth=2,
                                             spacing=5 / 9,
                                             )
@@ -1987,7 +1900,7 @@ for selseas in selseaslist:
                     densities = [ fig.data[2*i+1] for i in range(len(samples)) ]
                     
                     # calculate means
-                    means = [np.mean(sample) for sample in samples]
+                    means = [np.mean(sample) for sample in samples.values()]
                     
                     # Add a vertical line at the mean for each distribution
                     for i, mean in enumerate(means):
@@ -2011,14 +1924,16 @@ for selseas in selseaslist:
     
             except KeyError: 
                 try:
-                    samples = [stats[stratname][loc][ss].sel(\
+                    samples = {loc: stats[stratname][loc][ss].sel(\
                                 time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time").values\
-                               for loc in order_fil]
-                    fig = ridgeplot.ridgeplot(samples=samples, #bandwidth=50,
+                               for loc in order_fil}
+                    samples = {loc: samples[loc] for loc in samples.keys() if len(samples[loc])>0} # filter out radars with no samples
+
+                    fig = ridgeplot.ridgeplot(samples=samples.values(), #bandwidth=50,
                                             colorscale="viridis",
                                             colormode="row-index",
                                             coloralpha=0.65,
-                                            labels=order_fil,
+                                            labels=samples.keys(),
                                             linewidth=2,
                                             spacing=5 / 9,
                                             )
@@ -2039,7 +1954,7 @@ for selseas in selseaslist:
                     densities = [ fig.data[2*i+1] for i in range(len(samples)) ]
                     
                     # calculate means
-                    means = [np.mean(sample) for sample in samples]
+                    means = [np.mean(sample) for sample in samples.values()]
                     
                     # Add a vertical line at the mean for each distribution
                     for i, mean in enumerate(means):
