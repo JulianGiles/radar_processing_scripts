@@ -930,14 +930,12 @@ visdict14 = radarmet.visdict14
 
 def plot_qvp(data, momname="DBZH", tloc=slice("2015-01-01", "2020-12-31"), plot_ml=True, plot_entropy=False, **kwargs):
     mom=momname
-    if "_" in momname:
-        mom= momname.split("_")[0]
     # norm = radarmet.get_discrete_norm(visdict14[mom]["ticks"])
     # cmap = mpl.cm.get_cmap("HomeyerRainbow")
     # cmap = get_discrete_cmap(visdict14["DBZH"]["ticks"], 'HomeyerRainbow')
     ticks = radarmet.visdict14[mom]["ticks"]
-    # cmap = visdict14[mom]["cmap"]
-    cmap = "miub2"
+    cmap = visdict14[mom]["cmap"]
+    # cmap = "miub2"
     norm = utils.get_discrete_norm(ticks, cmap, extend="both")
 
     data[momname].loc[{"time":tloc}].dropna("z", how="all").plot(x="time", cmap=cmap, norm=norm, extend="both", **kwargs)
@@ -957,10 +955,10 @@ def plot_qvp(data, momname="DBZH", tloc=slice("2015-01-01", "2020-12-31"), plot_
             print("Plotting entropy failed")
     plt.title(mom)
 
-qvps_fix = qvps.copy().where(allcond)
+qvps_fix = qvps_strat_relaxed_fil # qvps.copy().where(allcond)
 # qvps_fix["KDP_ML_corrected"] = qvps_fix["KDP_ML_corrected"].where(qvps_fix.height_ml_new_gia.notnull(),  qvps_fix["KDP_CONV"])
 with mpl.rc_context({'font.size': 10}):
-    plot_qvp(qvps_fix, "ZDR_OC", tloc="2020-07-15", plot_ml=True, plot_entropy=True, ylim=(qvps.altitude,10000))
+    plot_qvp(qvps_fix, "riming_DR", tloc="2017-07-25", plot_ml=True, plot_entropy=True, ylim=(qvps.altitude,10000))
 
 
 # qvps_strat_fil_notime = qvps_strat_fil.copy()
@@ -1019,7 +1017,7 @@ for loc in locs_to_plot:
     for stratname in ["stratiform", "stratiform_relaxed"]:
         print(" ... ... "+stratname)
 
-        to_plot = riming_classif[stratname][loc].where(\
+        to_plot = riming_classif[stratname][loc].chunk({"time":"auto"}).where(\
                                                            riming_classif[stratname][loc].z >= riming_classif[stratname][loc].height_ml_new_gia,
                                                         drop=True)
 
@@ -1072,7 +1070,7 @@ for loc in locs_to_plot:
                     plt.xlabel('Percentage of rimed events [%]')
                     plt.ylabel('Temperature [°C]')
                     plt.title('Percentage of '+vv+" "+stratname+" "+selseas[0]+" "+loc)
-                    plt.xlim(0, 40)
+                    plt.xlim(0, 70)
                     plt.gca().yaxis.set_inverted(True)
                     plt.grid(True)
                     ax2 = plt.twiny()
@@ -1086,7 +1084,7 @@ for loc in locs_to_plot:
     
     
                     # Repeat for height above ML in the y-axis
-                    # Create temperature bins (1-degree intervals)
+                    # Create z bins
                     z_bins = np.arange(0, 6215, 215)
                     
                     # Create an empty list to store the values
@@ -1119,7 +1117,7 @@ for loc in locs_to_plot:
                     plt.xlabel('Percentage of rimed events [%]')
                     plt.ylabel('Height above ML [m]')
                     plt.title('Percentage of '+vv+" "+stratname+" "+selseas[0]+" "+loc)
-                    plt.xlim(0, 40)
+                    plt.xlim(0, 70)
                     plt.grid(True)
                     ax2 = plt.twiny()
                     ax2.plot(count, z_bins[:-1]+107.5, color="red")
