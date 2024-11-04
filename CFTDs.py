@@ -1445,20 +1445,31 @@ for loc in locs_to_plot:
                 binsx = np.linspace(0.8, 1, 41)
                 binsy = np.linspace(-10, 20, 61)
                 deltaZHcurve = 4.27 + 6.89*(1-binsx) + 341*(1-binsx)**2 
+                deltaZHcurve2 = -5.25 + 261.26*(1-binsx) - 974.38*(1-binsx)**2 
+                deltaZHcurve3 = -0.12 + 113.86*(1-binsx)
                 
-                # fit our own linear regression
+                # fit our own regressions
                 idx = np.isfinite(MLminRHOHV.values) & np.isfinite(deltaZH.values)
-                fit = np.polyfit((1-MLminRHOHV.values[idx]), deltaZH.values[idx], 2)
-                deltaZHcurve_fit = fit[2] + fit[1]*(1-binsx) + fit[0]*(1-binsx)**2
+                fit = np.polyfit((1-MLminRHOHV.values[idx]), deltaZH.values[idx], 1)
+                deltaZHcurve_fit = fit[1] + fit[0]*(1-binsx)
+
+                fit2 = np.polyfit((1-MLminRHOHV.values[idx]), deltaZH.values[idx], 2)
+                deltaZHcurve_fit2 = fit2[2] + fit2[1]*(1-binsx) + fit2[0]*(1-binsx)**2
 
                 utils.hist_2d(MLminRHOHV.compute(), deltaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
                 plt.plot(binsx, deltaZHcurve, c="black", label="Reference curve")
+                plt.plot(binsx, deltaZHcurve2, c="gray", label="Reference curve")
+                plt.plot(binsx, deltaZHcurve3, c="gray", label="Reference curve")
                 plt.plot(binsx, deltaZHcurve_fit, c="red", label="Fitted curve")
-                plt.legend()
+                plt.plot(binsx, deltaZHcurve_fit2, c="red", label="Fitted curve")
+                plt.legend(fontsize="x-small")
                 plt.xlabel(r"$\mathregular{Minimum \ \rho _{HV} \ in \ ML \ [-]}$")
                 plt.ylabel(r"$\mathregular{\Delta Z_H \ (MLmaxZ_H - Z_HRain) \ [dBZ]´}$")
-                plt.text(0.81, -6, r"$\mathregular{\Delta Z_H = 4.27 + 6.89(1-\rho _{HV}) + 341(1-\rho _{HV})^2 }$", fontsize="small")
-                plt.text(0.81, -9, rf"$\mathregular{{\Delta Z_H = {fit[2]:+.2f} {fit[1]:+.2f}\ (1-\rho _{{HV}}) {fit[0]:+.0f}\ (1-\rho _{{HV}})^2 }}$", fontsize="small", color="red")
+                plt.text(0.81, -1, r"$\mathregular{\Delta Z_H = 4.27 + 6.89(1-\rho _{HV}) + 341(1-\rho _{HV})^2 }$", fontsize="small")
+                plt.text(0.81, -3, r"$\mathregular{\Delta Z_H = -5.25 + 261.26(1-\rho _{HV}) - 974.38(1-\rho _{HV})^2 }$", fontsize="small", color="gray")
+                plt.text(0.81, -5, r"$\mathregular{\Delta Z_H = -0.12 + 113.86(1-\rho _{HV}) }$", fontsize="small", color="gray")
+                plt.text(0.81, -7, rf"$\mathregular{{\Delta Z_H = {fit[1]:+.2f} {fit[0]:+.2f}\ (1-\rho _{{HV}}) }}$", fontsize="small", color="red")
+                plt.text(0.81, -9, rf"$\mathregular{{\Delta Z_H = {fit2[2]:+.2f} {fit2[1]:+.2f}\ (1-\rho _{{HV}}) {fit2[0]:+.0f}\ (1-\rho _{{HV}})^2 }}$", fontsize="small", color="red")
                 plt.grid()
                 fig = plt.gcf()
                 fig.savefig(savepath_seas+"/"+loc+"_DeltaZH_MinRHOHVinML.png",
@@ -1569,6 +1580,8 @@ for loc in locs_to_plot:
                 binsx = np.linspace(-10, 50, 31)
                 binsy = np.linspace(-0, 1.2, 21)
                 MLdepthcurve = 0.315 + 0.000854*binsx
+                MLdepthcurve2 = -0.041 + 0.009133*binsx
+                MLdepthcurve3 = 0.176 + 0.006098*binsx
                 
                 # fit our own regression
                 idx = np.isfinite(MLmaxZH.values) & np.isfinite(MLdepth.values)
@@ -1577,11 +1590,15 @@ for loc in locs_to_plot:
 
                 utils.hist_2d(MLmaxZH.compute(), MLdepth.compute()/1000, bins1=binsx, bins2=binsy, cmap="Blues")
                 plt.plot(binsx, MLdepthcurve, c="black", label="Reference curve")
+                plt.plot(binsx, MLdepthcurve2, c="gray", label="Reference curve")
+                plt.plot(binsx, MLdepthcurve3, c="lightgray", label="Reference curve")
                 plt.plot(binsx, MLdepthcurve_fit, c="red", label="Fitted curve")
                 plt.legend()
                 plt.xlabel(r"$\mathregular{Maximum \ Z_{H} \ in \ ML \ [dBZ]}$")
                 plt.ylabel(r"$\mathregular{Depth\ of\ ML\ [km]}$")
-                plt.text(11, 0.15, r"$\mathregular{MLdepth = 0.315 + 0.000854\ MLmaxZH }$", fontsize="xx-small")
+                plt.text(11, 0.20, r"$\mathregular{MLdepth = 0.315 + 0.000854\ MLmaxZH }$", fontsize="xx-small")
+                plt.text(11, 0.15, r"$\mathregular{MLdepth = -0.041 + 0.009133\ MLmaxZH }$", fontsize="xx-small", color="gray")
+                plt.text(11, 0.10, r"$\mathregular{MLdepth = 0.176 + 0.006098\ MLmaxZH }$", fontsize="xx-small", color="lightgray")
                 plt.text(11, 0.05, rf"$\mathregular{{MLdepth = {fit[1]:+.3f} {fit[0]:+.6f}\ MLmaxZH }}$", fontsize="xx-small", color="red")
                 plt.grid()
                 fig = plt.gcf()
@@ -1673,12 +1690,19 @@ for loc in locs_to_plot:
                 binsy = np.linspace(0, 40, 41)
                 # logMLmeanKDPcurve = -2.4 + 0.05*binsx
                 
+                # fit our own regression
+                idx = np.isfinite(ZHrain.values) & np.isfinite(ZHsfc.values)
+                fit = np.polyfit(ZHrain.values[idx], ZHsfc.values[idx], 1)
+                ZHatSfccurve_fit = fit[1] + fit[0]*binsx
+
                 utils.hist_2d(ZHrain.compute(), ZHsfc.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
                 # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
-                # plt.legend()
+                plt.plot(binsx, ZHatSfccurve_fit, c="red", label="Fitted curve")
+                plt.legend()
                 plt.xlabel(r"$\mathregular{ Z_{H} \ in \ rain \ [dBZ] }$")
                 plt.ylabel(r"$\mathregular{ Z_{H} \ at \ surface \ [dBZ] }$")
                 # plt.text(12, -0.5, r"$\mathregular{logMLmeanKDP = -2.4 + 0.05\ MLmaxZH }$", fontsize="xx-small")
+                plt.text(25, 5, rf"$\mathregular{{ZHatSfc = {fit[1]:+.2f} {fit[0]:+.2f}\ ZHrain }}$", fontsize="xx-small")
                 plt.grid()
                 fig = plt.gcf()
                 fig.savefig(savepath_seas+"/"+loc+"_ZHatSfc_ZHinRain.png",
@@ -1698,12 +1722,19 @@ for loc in locs_to_plot:
                 binsy = np.linspace(-15, 10, 26)
                 # logMLmeanKDPcurve = -2.4 + 0.05*binsx
                 
+                # fit our own regression
+                idx = np.isfinite(MLmaxZH.values) & np.isfinite(betaZH.values)
+                fit = np.polyfit(MLmaxZH.values[idx], betaZH.values[idx], 1)
+                betaZHcurve_fit = fit[1] + fit[0]*binsx
+
                 utils.hist_2d(MLmaxZH.compute(), betaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
                 # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
-                # plt.legend()
+                plt.plot(binsx, betaZHcurve_fit, c="red", label="Fitted curve")
+                plt.legend()
                 plt.xlabel(r"$\mathregular{ Maximum \ Z_{H} \ in \ ML \ [dBZ] }$")
                 plt.ylabel(r"$\mathregular{ \beta \ [dB/km]}$")
                 # plt.text(12, -0.5, r"$\mathregular{logMLmeanKDP = -2.4 + 0.05\ MLmaxZH }$", fontsize="xx-small")
+                plt.text(10, -12, rf"$\mathregular{{betaZH = {fit[1]:+.2f} {fit[0]:+.2f}\ MLmaxZH }}$", fontsize="xx-small")
                 plt.grid()
                 fig = plt.gcf()
                 fig.savefig(savepath_seas+"/"+loc+"_betaZH_MaxZHinML.png",
