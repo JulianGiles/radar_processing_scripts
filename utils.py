@@ -339,7 +339,7 @@ def align(ds):
     ds["time"] = np.unique(ds["time"]) # in case there are duplicate times
     return ds.set_coords(["sweep_mode", "sweep_number", "prt_mode", "follow_mode", "sweep_fixed_angle"])
 
-def check_time_dimension_alignment(datasets):
+def check_time_dimension_alignment(datasets, tolerance="S"):
     """
     From a list of xarray DataArray or Datasets, check that it is possible to align their time 
     dimensions to a unique one (e.g. to the one with the earliest time values).
@@ -347,6 +347,7 @@ def check_time_dimension_alignment(datasets):
     Parameter
     ---------
     datasets : list of xarray.DataArray or xarray.Dataset
+    tolerance : keyword argument for time rounding. "S" for seconds, "T" for minutes.
     """
     if not datasets:
         return False, "No datasets provided."
@@ -357,8 +358,8 @@ def check_time_dimension_alignment(datasets):
         return False, "Datasets have different lengths of the time dimension."
 
     # Check that each time array is shifted by the same delta time (or a multiple of it)
-    time_deltas = [ds['time'].diff(dim='time').median().item() for ds in datasets]
-    time_inis = [ds['time'][0].item() for ds in datasets]
+    time_deltas = [ds['time'].dt.round(tolerance).diff(dim='time').median().item() for ds in datasets]
+    time_inis = [ds['time'][0].dt.round(tolerance).item() for ds in datasets]
     # print(time_deltas)
     # print(time_inis)
     base_delta = time_deltas[0]
@@ -714,7 +715,7 @@ def load_dmi_raw(filepath): # THIS IS NOT IMPLEMENTED YET # !!!
     
     return fix_flipped_phidp(unfold_phidp(fix_time_in_coords(dmidata)))
 
-def load_volume(filelists, func=load_dwd_preprocessed, align_time=True):
+def load_volume(filelists, func=load_dwd_preprocessed, align_time=True, tolerance="S"):
     """
     Full radar volume based on the data files provided.
 
@@ -732,6 +733,7 @@ def load_volume(filelists, func=load_dwd_preprocessed, align_time=True):
             the time dimension according to the values of the first file. Note that 
             if time alignment is not done (or not possible) the resulting dataset
             may be too large to fit in memory.
+    tolerance : keyword argument for time rounding. "S" for seconds, "T" for minutes.
     """
     sweeps = []
     for filelist in filelists:
@@ -760,11 +762,10 @@ def load_volume(filelists, func=load_dwd_preprocessed, align_time=True):
         sweeps[-1] = sweeps[-1].expand_dims("sweep_fixed_angle") # promote sweep_fixed_angle to dim
 
     if align_time:
-        if check_time_dimension_alignment(sweeps)[0]:
+        if check_time_dimension_alignment(sweeps, tolerance)[0]:
             try:
                 for dsn in range(len(sweeps)):
-                    if dsn == 0: continue
-                    sweeps[dsn]["time"] = sweeps[0]["time"] # align all datasets to the time dim of the first one
+                    sweeps[dsn]["time"] = sweeps[0]["time"].dt.round(tolerance) # align all datasets to the time dim of the first one
                 vol = xr.concat(sweeps, dim="sweep_fixed_angle")    # try to unify time
             except:
                 warnings.warn("Not possible to align time dimension. May result in increased memory usage.")
