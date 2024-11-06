@@ -75,7 +75,7 @@ path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol
 path_qvps = realpep_path+"/upload/jgiles/dwd/qvps/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
 # path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/2016/*/*/ANK/*/*/ML_detected.txt"
 # path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
-path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/*/*/*/HTY/*/*/ML_detected.txt"
+path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/*/*/*/SVS/*/*/ML_detected.txt"
 # path_qvps = realpep_path+"/upload/jgiles/dmi/qvps_singlefile/ML_detected/ANK/*/12*/*allmoms*"
 # path_qvps = realpep_path+"/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*"
 # path_qvps = [realpep_path+"/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*",
@@ -277,7 +277,7 @@ try: # check if exists, if not, create it
 except NameError:
     retrievals = {}
 
-for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed", qvps_strat_relaxed_fil)]:
+for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
     print("   ... for "+stratname)
     
     retrievals[stratname] = {}
@@ -342,7 +342,7 @@ try: # check if exists, if not, create it
 except NameError:
     stats = {}
 
-for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed", qvps_strat_relaxed_fil)]:
+for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
     print("   ... for "+stratname)
     
     stats[stratname] = {}
@@ -490,7 +490,7 @@ except NameError:
     
 loc = find_loc(locs, ff[0])
 
-for stratname, stratqvp in [("stratiform", qvps_strat_fil), ("stratiform_relaxed", qvps_strat_relaxed_fil)]:
+for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
     print("   ... for "+stratname)
     
     riming_classif[stratname] = {}
@@ -636,7 +636,7 @@ savedict = {"custom": None} # placeholder for the for loop below, not important
 # DBZH: 0.5 dB
 # ZDR: 0.0625 dB
 # KDP: complicated. From 0.013 at KDP approaching zero to 7.42 at extreme KDP. KDP min absolute value is 0.25 and max abs is 150 (both positive and negative)
-# RHOHV: scales with a square root (finer towars RHOHV=1), so from 0.00278 at RHOHV=0.7 to 0.002 resolution at RHOHV=1
+# RHOHV: scales with a square root (finer towards RHOHV=1), so from 0.00278 at RHOHV=0.7 to 0.002 resolution at RHOHV=1
 # PHIDP: 0.708661 deg
 if country=="dmi":
 
@@ -950,14 +950,14 @@ def plot_qvp(data, momname="DBZH", tloc=slice("2015-01-01", "2020-12-31"), plot_
             print("No ML in data")
     if plot_entropy:
         try:
-            data["min_entropy"].loc[{"time":tloc}].dropna("z", how="all").interpolate_na(dim="z").plot.contourf(x="time", levels=[0.8,1], hatches=["","X"], colors="none", add_colorbar=False)
+            data["min_entropy"].loc[{"time":tloc}].dropna("z", how="all").interpolate_na(dim="z").plot.contourf(x="time", levels=[0.8, 1], hatches=["", "X", ""], colors=[(1,1,1,0)], add_colorbar=False, extend="both")
         except:
             print("Plotting entropy failed")
     try:
         # add riming with hatches
-        add_riming.where(add_riming>0.9).where(add_riming.z>add_riming.height_ml_new_gia).loc[{"time":tloc}].dropna("z", how="all").plot.contourf(x="time", levels=[0.8,1], hatches=["","**"], colors="none", add_colorbar=False)        
+        add_riming.where(add_riming>0.9).where(add_riming.z>add_riming.height_ml_new_gia).loc[{"time":tloc}].dropna("z", how="all").plot.contourf(x="time", levels=[0.8,1.1], hatches=["","**", ""], colors=[(1,1,1,0)], add_colorbar=False, extend="both")        
         # add riming with color shade
-        add_riming.where(add_riming>0.9).where(add_riming.z>add_riming.height_ml_new_gia).loc[{"time":tloc}].dropna("z", how="all").plot.contourf(x="time", levels=[0.8,1], colors="gray", add_colorbar=False, alpha=0.9)        
+        add_riming.where(add_riming>0.9).where(add_riming.z>add_riming.height_ml_new_gia).loc[{"time":tloc}].dropna("z", how="all").plot.contourf(x="time", levels=[0.8,1.1], colors="gray", add_colorbar=False, alpha=0.9)        
     except:
         None
     plt.title(mom)
@@ -965,9 +965,11 @@ def plot_qvp(data, momname="DBZH", tloc=slice("2015-01-01", "2020-12-31"), plot_
 qvps_fix = qvps.copy()
 # qvps_fix["KDP_ML_corrected"] = qvps_fix["KDP_ML_corrected"].where(qvps_fix.height_ml_new_gia.notnull(),  qvps_fix["KDP_CONV"])
 with mpl.rc_context({'font.size': 10}):
-    plot_qvp(qvps_fix, "ZDR_OC", tloc="2017-07-25", plot_ml=True, plot_entropy=True, 
-             add_riming = qvps_strat_relaxed_fil.riming_DR, 
-             ylim = (qvps.altitude,10000))
+    plot_qvp(qvps_fix, "ZDR", tloc="2020-04-24", plot_ml=True, plot_entropy=True, 
+              # add_riming = qvps_strat_relaxed_fil.riming_DR, 
+             ylim = (qvps.altitude,10000), 
+              xlim=[datetime.date(2020, 4, 24), datetime.date(2020, 4, 25)],
+             )
 
 
 # qvps_strat_fil_notime = qvps_strat_fil.copy()
@@ -1917,21 +1919,57 @@ bins = {"ML_thickness": np.arange(0,1200,50),
         "values_DGL_mean": vars_ticks,
         "values_DGL_min": vars_ticks,
         "values_DGL_max": vars_ticks,
+        "values_NZ_mean": vars_ticks,
+        "values_NZ_min": vars_ticks,
+        "values_NZ_max": vars_ticks,
         "values_ML_mean": vars_ticks,
         "values_ML_min": vars_ticks,
         "values_ML_max": vars_ticks,
         "values_sfc": vars_ticks,
-        "cloudtop": np.arange(2000,10250,250),
-        "cloudtop_5dbz": np.arange(2000,10250,250),
-        "cloudtop_10dbz": np.arange(2000,10250,250),
+        "cloudtop": np.arange(2000,12250,250),
+        "cloudtop_5dbz": np.arange(2000,12250,250),
+        "cloudtop_10dbz": np.arange(2000,12250,250),
         "beta": beta_vars_ticks,
-        "cloudtop_TEMP": np.arange(-50,-20,1),
-        "cloudtop_TEMP_5dbz": np.arange(-50,-20,1),
-        "cloudtop_TEMP_10dbz": np.arange(-50,-20,1),
+        "cloudtop_TEMP": np.arange(-50,-1,1),
+        "cloudtop_TEMP_5dbz": np.arange(-50,-1,1),
+        "cloudtop_TEMP_10dbz": np.arange(-50,-1,1),
         "deltaZH": np.arange(-5,21,1),
         "delta_z_ZHmaxML_RHOHVminML": np.arange(0,440, 40),
         }
 
+# set a dictionary of bandwidths, this is important for the cases where the low resolution of the 
+# data generates a histogram with only a few intervals with data. "normal_reference" is the default
+default_bandwidth_dict = {vv:"normal_reference" for vv in vars_ticks.keys()}
+default_bandwidth = "normal_reference"
+
+bandwidths = {"ML_thickness": 50,
+        "ML_thickness_TEMP": default_bandwidth,
+        "values_snow": default_bandwidth_dict,
+        "values_rain": default_bandwidth_dict,
+        "values_DGL_mean": default_bandwidth_dict,
+        "values_DGL_min": default_bandwidth_dict,
+        "values_DGL_max": default_bandwidth_dict,
+        "values_NZ_mean": default_bandwidth_dict,
+        "values_NZ_min": default_bandwidth_dict,
+        "values_NZ_max": default_bandwidth_dict,
+        "values_ML_mean": default_bandwidth_dict,
+        "values_ML_min": default_bandwidth_dict,
+        "values_ML_max": default_bandwidth_dict,
+        "values_sfc": default_bandwidth_dict,
+        "cloudtop": default_bandwidth,
+        "cloudtop_5dbz": default_bandwidth,
+        "cloudtop_10dbz": default_bandwidth,
+        "beta": default_bandwidth_dict,
+        "cloudtop_TEMP": default_bandwidth,
+        "cloudtop_TEMP_5dbz": default_bandwidth,
+        "cloudtop_TEMP_10dbz": default_bandwidth,
+        "deltaZH": default_bandwidth,
+        "delta_z_ZHmaxML_RHOHVminML": default_bandwidth,
+        }
+# Particular changes
+bandwidths['values_sfc']['KDP_ML_corrected'] = 0.01
+bandwidths['values_sfc']['RHOHV_NC'] = 0.01
+bandwidths['values_snow']['RHOHV_NC'] = 0.01
 
 
 order = ['tur', 'umd', 'pro', 'afy', 'ank', 'gzt', 'hty', 'svs']
@@ -2002,8 +2040,15 @@ for selseas in selseaslist:
                     samples = {loc: stats[stratname][loc][ss][vv].sel(\
                                 time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time").values\
                                for loc in order_fil}
-                    samples = {loc: samples[loc] for loc in samples.keys() if len(samples[loc])>0} # filter out radars with no samples
-                        
+                    
+                    if ss in ["beta"] and vv in ["RHOHV_NC", "RHOHV"]: # filter out unrealistic zero beta values
+                        samples = {loc: samples[loc][abs(samples[loc])>0.0001] for loc in samples.keys()}
+
+                    if ss in ["values_DGL_min", "values_ML_min", "values_rain", "values_sfc"] and vv in ["KDP_ML_corrected"]: # filter out unrealistic zero values
+                        samples = {loc: samples[loc][abs(samples[loc])>0.001] for loc in samples.keys()}
+
+                    samples = {loc: samples[loc] for loc in samples.keys() if len(samples[loc])>10} # filter out radars with less than 10 samples
+                    
                     fig = ridgeplot.ridgeplot(samples=samples.values(),
                                             colorscale="viridis",
                                             colormode="row-index",
@@ -2011,6 +2056,8 @@ for selseas in selseaslist:
                                             labels=samples.keys(),
                                             linewidth=2,
                                             spacing=5 / 9,
+                                            # kde_points=bins[ss],
+                                            bandwidth=bandwidths[ss][vv],
                                             )
                     fig.update_layout(
                                     height=760,
@@ -2056,15 +2103,17 @@ for selseas in selseaslist:
                     samples = {loc: stats[stratname][loc][ss].sel(\
                                 time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time").values\
                                for loc in order_fil}
-                    samples = {loc: samples[loc] for loc in samples.keys() if len(samples[loc])>0} # filter out radars with no samples
+                    samples = {loc: samples[loc] for loc in samples.keys() if len(samples[loc])>10} # filter out radars with no samples
 
-                    fig = ridgeplot.ridgeplot(samples=samples.values(), #bandwidth=50,
+                    fig = ridgeplot.ridgeplot(samples=samples.values(),
                                             colorscale="viridis",
                                             colormode="row-index",
                                             coloralpha=0.65,
                                             labels=samples.keys(),
                                             linewidth=2,
                                             spacing=5 / 9,
+                                            # kde_points=bins[ss],
+                                            bandwidth=bandwidths[ss],
                                             )
                     fig.update_layout(
                                     height=760,
