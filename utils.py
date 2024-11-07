@@ -4767,7 +4767,7 @@ def get_regionmask(regionname):
         except KeyError:
             raise KeyError("Desired region "+regionname+" is not available.")
 
-def load_emvorado_to_radar_volume(path_or_data):
+def load_emvorado_to_radar_volume(path_or_data, rename=False):
     """
     Load and reorganize EMVORADO output into a xarray.Dataset in the same flavor as DWD data. 
     Optimized for EMVORADO output with one file per timestep containing all elevations and variables.
@@ -4781,6 +4781,7 @@ def load_emvorado_to_radar_volume(path_or_data):
         explicit list of files to open. Paths can be given as strings or 
         as pathlib Paths. Feeds into xarray.open_mfdataset. Alternatively, 
         already-loaded data in the form of an xarray.Dataset can be passed.
+    rename : bool. If True, then rename the variables to DWD-like naming. 
         
     Returns
     -------
@@ -4795,33 +4796,55 @@ def load_emvorado_to_radar_volume(path_or_data):
     data = data_emvorado_xr.rename_dims({"n_range": "range", "n_azimuth": "azimuth"})
 
     # we make the coordinate arrays
-    range_coord = np.array([ np.arange(rs, rr*rb+rs, rr) for rr, rs, rb in 
-                           zip(data.range_resolution, data.range_start, data.n_range_bins) ])[0]
-    azimuth_coord = np.array([ np.arange(azs, azr*azb+azs, azr) for azr, azs, azb in 
-                           zip(data.azimuthal_resolution, data.azimuth_start, data.azimuth.shape*np.ones_like(data.records)) ])[0]
+    if "time" in data.dims:
+        range_coord = np.array([ np.arange(rs, rr*rb+rs, rr) for rr, rs, rb in 
+                               zip(data.range_resolution[0], data.range_start[0], data.n_range_bins[0]) ])[0]
+        azimuth_coord = np.array([ np.arange(azs, azr*azb+azs, azr) for azr, azs, azb in 
+                               zip(data.azimuthal_resolution[0], data.azimuth_start[0], data.azimuth.shape*np.ones_like(data.records)) ])[0]
     
-    # create time coordinate
-    time_coord = xr.DataArray( [
-                dt.datetime(int(yy), int(mm), int(dd),
-                                  int(hh), int(mn), int(ss))
-                for yy,mm,dd,hh,mn,ss in
-                
-                                zip( data.year,
-                                data.month,
-                                data.day,
-                                data.hour,
-                                data.minute,
-                                data.second 
-                                )
-                ], dims=["time"] )[0]
+        # create time coordinate
+        time_coord = xr.DataArray( [
+                    dt.datetime(int(yy), int(mm), int(dd),
+                                      int(hh), int(mn), int(ss))
+                    for yy,mm,dd,hh,mn,ss in
+                    
+                                    zip( data.year.isel(records=0),
+                                    data.month.isel(records=0),
+                                    data.day.isel(records=0),
+                                    data.hour.isel(records=0),
+                                    data.minute.isel(records=0),
+                                    data.second.isel(records=0),
+                                    )
+                    ], dims=["time"] )
+
+    else:
+        range_coord = np.array([ np.arange(rs, rr*rb+rs, rr) for rr, rs, rb in 
+                               zip(data.range_resolution, data.range_start, data.n_range_bins) ])[0]
+        azimuth_coord = np.array([ np.arange(azs, azr*azb+azs, azr) for azr, azs, azb in 
+                               zip(data.azimuthal_resolution, data.azimuth_start, data.azimuth.shape*np.ones_like(data.records)) ])[0]
+    
+        # create time coordinate
+        time_coord = xr.DataArray( [
+                    dt.datetime(int(yy), int(mm), int(dd),
+                                      int(hh), int(mn), int(ss))
+                    for yy,mm,dd,hh,mn,ss in
+                    
+                                    zip( data.year,
+                                    data.month,
+                                    data.day,
+                                    data.hour,
+                                    data.minute,
+                                    data.second 
+                                    )
+                    ], dims=["time"] )[0]
 
     # add coordinates for range, azimuth, time, latitude, longitude, altitude, elevation, sweep_mode
 
     data.coords["range"] = ( ( "range"), range_coord)
     data.coords["azimuth"] = ( ( "azimuth"), azimuth_coord)
     data.coords["time"] = time_coord
-    data.coords["latitude"] = float( data["station_latitude"][0] )
-    data.coords["longitude"] = float( data["station_longitude"][0] )
+    data.coords["latitude"] = float( data["station_latitude"].values.flatten()[0] )
+    data.coords["longitude"] = float( data["station_longitude"].values.flatten()[0] )
     data.coords["altitude"] = float([ss for ss in data.attrs["Data_description"].split(" ") if "radar_alt_msl_mod" in ss][0].split("=")[1])
     data.coords["elevation"] = data["ray_elevation"]
     data.coords["sweep_mode"] = 'azimuth_surveillance'
@@ -4845,7 +4868,7 @@ def load_emvorado_to_radar_volume(path_or_data):
         data.attrs["fixed_angle"] = float(data.attrs["ppi_elevation"])
     except:
         # if multiple timesteps
-        data.attrs["fixed_angle"] = float(data.attrs["ppi_elevation"][0])
+        data.attrs["fixed_angle"] = float(data.attrs["ppi_elevation"].values.flatten()[0])
     
     # drop variables that were moved to attrs
     data = data.drop_vars(vars_to_attrs)
@@ -4861,8 +4884,11 @@ def load_emvorado_to_radar_volume(path_or_data):
             data[vv].attrs["units"] = data[vv].attrs["Unit"]
         except:
             print("no long_name attribute in "+vv)
-        
-    return data
+            
+    if rename:
+        return data.rename(rename_vars_emvorado_dwd)
+    else:
+        return data
 
 # Dictionary to rename EMVORADO vars to DWD-like vars
 rename_vars_emvorado_dwd = {
