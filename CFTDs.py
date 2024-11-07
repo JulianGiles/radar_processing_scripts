@@ -578,7 +578,7 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
 
 # Assign 
 qvps_strat_fil = qvps_strat_fil.assign( riming_classif['stratiform'][loc] )
-qvps_strat_relaxed_fil = qvps_strat_fil.assign( riming_classif['stratiform_relaxed'][loc] )
+qvps_strat_relaxed_fil = qvps_strat_relaxed_fil.assign( riming_classif['stratiform_relaxed'][loc] )
 
 total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
@@ -965,10 +965,10 @@ def plot_qvp(data, momname="DBZH", tloc=slice("2015-01-01", "2020-12-31"), plot_
 qvps_fix = qvps.copy()
 # qvps_fix["KDP_ML_corrected"] = qvps_fix["KDP_ML_corrected"].where(qvps_fix.height_ml_new_gia.notnull(),  qvps_fix["KDP_CONV"])
 with mpl.rc_context({'font.size': 10}):
-    plot_qvp(qvps_fix, "ZDR", tloc="2020-04-24", plot_ml=True, plot_entropy=True, 
+    plot_qvp(qvps_fix, "ZDR", tloc="2020-08-02", plot_ml=True, plot_entropy=True, 
               # add_riming = qvps_strat_relaxed_fil.riming_DR, 
              ylim = (qvps.altitude,10000), 
-              xlim=[datetime.date(2020, 4, 24), datetime.date(2020, 4, 25)],
+              xlim=[datetime.date(2020, 8, 2), datetime.date(2020, 8, 3)],
              )
 
 
