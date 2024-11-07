@@ -954,10 +954,12 @@ def plot_qvp(data, momname="DBZH", tloc=slice("2015-01-01", "2020-12-31"), plot_
         except:
             print("Plotting entropy failed")
     try:
+        # select the times in the riming ds
+        add_riming_tloc = add_riming.loc[{"time":tloc}]
         # add riming with hatches
-        add_riming.where(add_riming>0.9).where(add_riming.z>add_riming.height_ml_new_gia).loc[{"time":tloc}].dropna("z", how="all").plot.contourf(x="time", levels=[0.8,1.1], hatches=["","**", ""], colors=[(1,1,1,0)], add_colorbar=False, extend="both")        
+        add_riming_tloc.where(add_riming_tloc>0.9).where(add_riming_tloc.z>add_riming_tloc.height_ml_new_gia).dropna("z", how="all").plot.contourf(x="time", levels=[0.8,1.1], hatches=["","**", ""], colors=[(1,1,1,0)], add_colorbar=False, extend="both")        
         # add riming with color shade
-        add_riming.where(add_riming>0.9).where(add_riming.z>add_riming.height_ml_new_gia).loc[{"time":tloc}].dropna("z", how="all").plot.contourf(x="time", levels=[0.8,1.1], colors="gray", add_colorbar=False, alpha=0.9)        
+        add_riming_tloc.where(add_riming_tloc>0.9).where(add_riming_tloc.z>add_riming_tloc.height_ml_new_gia).dropna("z", how="all").plot.contourf(x="time", levels=[0.8,1.1], colors="gray", add_colorbar=False, alpha=0.9)        
     except:
         None
     plt.title(mom)
