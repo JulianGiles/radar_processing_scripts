@@ -422,7 +422,7 @@ def unfold_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, phidp_lim
                                 ds[X_PHI] = xr.where(ds[X_PHI]<=0, ds[X_PHI]+180, ds[X_PHI]-180, keep_attrs=True).compute()
                                 ds[X_PHI].attrs = attrs
                                 print(X_PHI+" was unfolded")
-                                success = True
+                        success = True
                         break
             
     if not success:
@@ -482,7 +482,7 @@ def fix_flipped_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, rang
                             print(X_PHI+" was flipped")
                             if flip_kdp:
                                 flip_kdp_trigger = True
-                            success = True
+                        success = True
                         break
                                 
     if "KDP" in ds.data_vars and flip_kdp_trigger:

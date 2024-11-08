@@ -48,7 +48,7 @@ except ModuleNotFoundError:
 
 
 import warnings
-warnings.filterwarnings('ignore')
+# warnings.filterwarnings('ignore')
 
 # we define a funtion to look for loc inside a path string
 def find_loc(locs, path):
