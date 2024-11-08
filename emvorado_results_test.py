@@ -7,7 +7,10 @@ Created on Wed Dec 14 11:22:35 2022
 """
 
 import os
-os.chdir('/home/jgiles/radarmeteorology/notebooks/')
+try:
+    os.chdir('/home/jgiles/')
+except FileNotFoundError:
+    None
 os.environ["WRADLIB_DATA"] = '/home/jgiles/wradlib-data-main'
 
 import wradlib as wrl
@@ -26,123 +29,19 @@ import pandas as pd
 
 import xarray as xr
 
-import wradlib as wrl
-sys.path.insert(0, '../')
-from radarmet import *
-from read_cband_dwd import *
+try:
+    from Scripts.python.radar_processing_scripts import utils
+    from Scripts.python.radar_processing_scripts import radarmet
+    from Scripts.python.radar_processing_scripts.classify_precip_typ import classify_precip_typ
+except ModuleNotFoundError:
+    import utils
+    import radarmet
+    from classify_precip_typ import classify_precip_typ
 
-### Better colormaps
-from colormap_generator import *
-
-### classifier for stratiform or convective precip
-from classify_precip_typ import *
-
-def emvorado_to_radar_volume(path):
-    """
-    Generate a wradlib.io.RadarVolume from EMVORADO output files. 
-    WARNING: The resulting volume has its elevations ordered from lower to higher and
-            not according to the scan strategy
-    
-    Parameters
-    ----------
-    path : paths (str or nested sequence of paths) 
-        – Either a string glob in the form "path/to/my/files/*.nc" or an 
-        explicit list of files to open. Paths can be given as strings or 
-        as pathlib Paths. Feeds into xarray.open_mfdataset
-        
-    Returns
-    -------
-    data_vol : :class:`wradlib.io.RadarVolume`
-        Wradlib's RadarVolume
-
-    """
-    data_emvorado_xr = xr.open_mfdataset(path, concat_dim="time", combine="nested")
-    data = data_emvorado_xr.rename_dims({"n_range": "range", "n_azimuth": "azimuth"})
-
-    # we make the coordinate arrays
-    range_coord = np.array([ np.arange(rs, rr*rb+rs, rr) for rr, rs, rb in 
-                           zip(data.range_resolution[0], data.range_start[0], data.n_range_bins[0]) ])
-    azimuth_coord = np.array([ np.arange(azs, azr*azb+azs, azr) for azr, azs, azb in 
-                           zip(data.azimuthal_resolution[0], data.azimuth_start[0], data.azimuth.shape[0]*np.ones_like(data.records)) ])
-    
-    # create containers 
-    data_vol = wrl.io.RadarVolume()
-    data_records = dict()
-    
-    # process each elevation angle
-    for rcds in data.records:
-        # select elevation record
-        data_records[int(rcds)] = data.sel(records = int(rcds) )
-
-        # create time coordinate
-        time_coord = xr.DataArray( [
-                    datetime.datetime(int(yy), int(mm), int(dd),
-                                      int(hh), int(mn), int(ss))
-                    for yy,mm,dd,hh,mn,ss in
-                    
-                                    zip( data_records[int(rcds)].year,
-                                    data_records[int(rcds)].month,
-                                    data_records[int(rcds)].day,
-                                    data_records[int(rcds)].hour,
-                                    data_records[int(rcds)].minute,
-                                    data_records[int(rcds)].second 
-                                    )
-                    ], dims=["time"] )
-
-        # add coordinates for range, azimuth, time, latitude, longitude, altitude, elevation, sweep_mode
-    
-        data_records[int(rcds)].coords["range"] = ( ( "range"), range_coord[rcds])
-        data_records[int(rcds)].coords["azimuth"] = ( ( "azimuth"), azimuth_coord[rcds])
-        data_records[int(rcds)].coords["time"] = time_coord
-        data_records[int(rcds)].coords["latitude"] = float( data_records[int(rcds)]["station_latitude"][0] )
-        data_records[int(rcds)].coords["longitude"] = float( data_records[int(rcds)]["station_longitude"][0] )
-        data_records[int(rcds)].coords["altitude"] = data_records[int(rcds)].attrs["alt_msl_true"]
-        data_records[int(rcds)].coords["elevation"] = data_records[int(rcds)]["ray_elevation"]
-        data_records[int(rcds)].coords["sweep_mode"] = 'azimuth_surveillance'
-        
-        # move some variables to attributes
-        vars_to_attrs = ["station_name", "country_ID", "station_ID_national",
-                         "station_longitude", "station_height",
-                         "station_latitude", "range_resolution", "azimuthal_resolution",
-                         "range_start", "azimuth_start", "extended_nyquist",
-                         "high_nyquist", "dualPRF_ratio", "range_gate_length",
-                         "n_ranges_averaged", "n_pulses_averaged", "DATE", "TIME",
-                         "year", "month", "day", "hour", "minute", "second",
-                         "ppi_azimuth", "ppi_elevation", "n_range_bins"
-                         ]
-        for vta in vars_to_attrs:
-            data_records[int(rcds)].attrs[vta] = data_records[int(rcds)][vta]
-            
-        # add attribute "fixed_angle"
-        try:
-            # if one timestep
-            data_records[int(rcds)].attrs["fixed_angle"] = float(data_records[int(rcds)].attrs["ppi_elevation"])
-        except:
-            # if multiple timesteps
-            data_records[int(rcds)].attrs["fixed_angle"] = float(data_records[int(rcds)].attrs["ppi_elevation"][0])
-        
-        # drop variables that were moved to attrs
-        data_records[int(rcds)] = data_records[int(rcds)].drop_vars(vars_to_attrs)
-
-        # for each remaining variable add "long_name" and "units" attribute
-        for vv in data_records[int(rcds)].data_vars.keys():
-            try:
-                data_records[int(rcds)][vv].attrs["long_name"] = data_records[int(rcds)][vv].attrs["Description"]
-            except:
-                print("no long_name attribute in "+vv)
-
-            try:
-                data_records[int(rcds)][vv].attrs["units"] = data_records[int(rcds)][vv].attrs["Unit"]
-            except:
-                print("no long_name attribute in "+vv)
-
-        # add the elevation angle to the data volume
-        data_vol.append(data_records[int(rcds)])
-
-        
-    return data_vol
+from osgeo import osr
 
 
+#%% Initial definitions
 # Create a feature for States/Admin 1 regions at 1:50m from Natural Earth
 states_provinces = cfeature.NaturalEarthFeature(
     category='cultural',
@@ -165,10 +64,10 @@ def plot_timestep_map(ds, ts, varlist=["zrsim"], md=None):
     fig = plt.figure( figsize=(10,8),dpi=300)
 
     if md == None: 
-        md = [visdict14["ZH"].copy(),
-              visdict14["ZH"].copy(),
-              visdict14["ZDR"].copy(),
-              visdict14["RHOHV"].copy()]
+        md = [radarmet.visdict14["ZH"].copy(),
+              radarmet.visdict14["ZH"].copy(),
+              radarmet.visdict14["ZDR"].copy(),
+              radarmet.visdict14["RHOHV"].copy()]
         #better colormaps
         md[0]['cmap'] = mpl.cm.get_cmap('HomeyerRainbow')
         # md[1]['cmap'] = mpl.cm.get_cmap('HomeyerRainbow')
@@ -185,8 +84,8 @@ def plot_timestep_map(ds, ts, varlist=["zrsim"], md=None):
     for nr,data in enumerate(datalist):
         #ax = fig.add_subplot(axnr+nr+1, sharex=True, sharey=True)
 
-        norm = get_discrete_norm(md[nr]["ticks"])
-        cmap = get_discrete_cmap(md[nr]['ticks'], md[nr]['cmap'])
+        norm = radarmet.get_discrete_norm(md[nr]["ticks"])
+        cmap = radarmet.get_discrete_cmap(md[nr]['ticks'], md[nr]['cmap'])
 
         cbar_kwargs = dict(extend="both",
                           extendrect=False,
@@ -243,142 +142,34 @@ var_names_map_sim = {"VRADH": "vrsim",
 
 #%% Load data
 
-# Scan path for RAW Data
-path_dwd = "/automount/ags/jgiles/radar_pro_test_20170725/201707*_pro/201707*_*/*vol*"
-path_emvorado_obs = "/home/jgiles/emvorado-offline-results/output/20171028_*/radarout/cdfin_allobs_id-010392_*_volscan"
-path_emvorado_sim = "/home/jgiles/emvorado-offline-results/output/20171028_*/radarout/cdfin_allsim_id-010392_*_volscan"
+# Define paths
+path_dwd = "/data/polara/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/*/*-hd5"
+# path_emvorado_obs = "/home/jgiles/emvorado-offline-results/output/20171028_*/radarout/cdfin_allobs_id-010392_*_volscan"
+path_emvorado_sim = "/data/polara/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_20170725_8radars_worked_17-07-2024/radout/cdfin_allsim_id-010392_20170725*_20170725*_volscan"
 
-# open original measurement vol (old method)
-# vol_dwd = wrl.io.open_odim(path_dwd, loader="h5py", chunks={}) # this method is deprecated, should be replaced with wrl.io.open_odim_mfdataset(file_list, chunks={})
-# swp_dwd = vol_dwd[5].data.pipe(wrl.georef.georeference_dataset)
-    
-def open_dwd_radar_vol(path):
-    # open vol (new method)
-    # path can be a path with wildcards or a list of file paths created with create_dwd_filelist()
-    
-    if type(path) is not list:
-        # If a variable is not present in all datasets this method will fail (e.g. uzdr is not present in all dwd data)
-        flist = sorted(glob.glob(path))
-        flist1 = np.array(flist).reshape((-1, 10)) # because there are 10 elevations
-        flist2 = flist1.T
-    
-    else:
-        flist = path
-        # separate files by elevation
-        nelevs = len(set([item.split("/")[-2] for item in flist]))
-        flist1 = np.array(flist).reshape((nelevs, -1))
-        
-        # separate files by variable
-        nvars = len(set([item.split("_")[-2] for item in flist1[-1]]))
-        ntimes = int(flist1.shape[0]/nvars)
-        
-        #aux = np.array_split(flist1, nvars, axis=-1)
-        
-        flist2 = np.concatenate([flist1[nt::ntimes, :] for nt in range(ntimes)], axis=-1)
-    
-    
-    vol_dwd = wrl.io.RadarVolume()
-    data = list()
-    
-    
-    for fl in flist2:
-
-        if len(np.unique(np.array([item.split("_")[-1] for item in fl]))) > 1: # if there is more than 1 timestep
-
-            data.append({})
-            
-            for vv in set([fln.split("_")[-2] for fln in fl]):
-                data[-1][vv] = wrl.io.open_odim_mfdataset([fln for fln in fl if vv in fln]) #, concat_dim="time", combine="nested")
-
-            vol_dwd.append(xr.merge(data[-1].values(), combine_attrs="override"))
-            vol_dwd.sort(key=lambda x: x.time.min().values)
-    
-        else: # for a single timestep
-            ds = wrl.io.open_odim_mfdataset(fl, concat_dim=None, combine="by_coords")
-            # ds = wrl.io.open_odim_mfdataset(fl, concat_dim="time", combine="nested")
-            vol_dwd.append(ds)      
-
-    return vol_dwd
-
-        
-# open dwd data
-# option 1: open files with wildcards in path
-# vol_dwd = open_dwd_radar_vol(path_dwd)
-
-# option 2: create an ordered list of files to load
-# Scan path for RAW Data
-realpep_path = '/automount/realpep/upload/RealPEP-SPP/DWD-CBand/'
-moments = ["TH", "DBZH", "ZDR", "RHOHV", "PHIDP", "KDP", "DBZV", "DBTV", "VRADH", "VRADV", "WRADH", "WRADV"]
-moments = ["DBZH", "ZDR", "RHOHV", "UPHIDP", "KDP", "TH"]
-mode = "vol5minng01" #"vol5minng01" 'pcpng01' (DWD’s horizon-following precipitation scan) 
-loc = "pro"
-# Info on the DWD scanning strategy https://www.dwd.de/EN/ourservices/radar_products/radar_products.html
-# Scans 00-05 are the volume scans (5.5°, 4.5°, 3.5°, 2.5°, 1.5° and 0.5°), the rest are 8.0°, 12.0°, 17.0° and 25.0°
-SCAN = ['00', '01', '02', '03', '04', '05', '06', '07', '08', '09']
-scan = "*" # SCAN[4]
-
-# Start and End time
-start_time = datetime.datetime(2017,7,25,0,0)
-end_time = start_time + dt.timedelta(hours=24, minutes=0)
-
-# Radardata filelist
-file_list = create_dwd_filelist(path=realpep_path, 
-                    starttime=start_time, 
-                    endtime=end_time, 
-                    moments=moments, 
-                    mode=mode,
-                    loc=loc,
-                    scan=scan)
-
-file_list = list(file_list)
-
-vol_dwd = open_dwd_radar_vol(file_list)
-
-
-# ##### TEST: saving with new DataTree structure (wradlib 1.19!!!)
-# import datatree as dttree
-# dtree = dttree.DataTree(name="root")
-# for i, sw in enumerate(vol_dwd2):
-#     dim0 = list(set(sw.dims) & {"azimuth", "elevation"})[0]
-#     if "fixed_angle" in sw:
-#         sw = sw.rename({"fixed_angle": "sweep_fixed_angle"})
-#     dttree.DataTree(sw, name=f"sweep_{i}", parent=dtree)
-
-# dtree.to_netcdf("test.nc")
-
-# vol_dwd3 = dttree.open_datatree("test.nc")
-
-# vol_dwd3["sweep_0"].ds # get as dataset
-# swp = vol_dwd3["sweep_0"].to_dataset() # get a sweep
-
-# ##### END TEST
-
-
-# open emvorado files
-vol_emvorado_obs = emvorado_to_radar_volume(path_emvorado_obs)
-vol_emvorado_sim = emvorado_to_radar_volume(path_emvorado_sim)
-
-# extract one elevation and georreference
-swp_dwd = vol_dwd[4].pipe(wrl.georef.georeference_dataset)
-swp_emvorado_obs = vol_emvorado_obs[1].pipe(wrl.georef.georeference_dataset)
-swp_emvorado_sim = vol_emvorado_sim[1].pipe(wrl.georef.georeference_dataset)
-
-
-
+# Load files
+vol_dwd = utils.load_volume(sorted(glob.glob(path_dwd)), func=utils.load_dwd_preprocessed, verbose=True)
+# vol_emvorado_obs = utils.load_emvorado_to_radar_volume(path_emvorado_obs, rename=True)
+vol_emvorado_sim = utils.load_emvorado_to_radar_volume(path_emvorado_sim, rename=True)
 
 
 #%% PLOT raw data
-datatype = "sim" # sim, obs or ori (original)
+# extract one elevation and georreference
+swp_dwd = vol_dwd.isel(sweep_fixed_angle=0).pipe(wrl.georef.georeference)
+# swp_emvorado_obs = vol_emvorado_obs[1].pipe(wrl.georef.georeference)
+swp_emvorado_sim = vol_emvorado_sim.isel(records=0).pipe(wrl.georef.georeference)
+
+datatype = "ori" # sim, obs or ori (original)
 
 for timestep in np.arange(8):
     
     if datatype == "sim":
         swp = swp_emvorado_sim.isel(time=timestep)
-        mom = swp['zrsim'].copy() # moment to plot
+        mom = swp['DBZH'].copy() # moment to plot
         
     elif datatype == "obs":
         swp = swp_emvorado_obs.isel(time=timestep)
-        mom = swp['zrobs'].copy() # moment to plot
+        mom = swp['DBZH'].copy() # moment to plot
         
     elif datatype == "ori":
         swp = swp_dwd.isel(time=timestep)
@@ -389,10 +180,10 @@ for timestep in np.arange(8):
         
     fig = plt.figure(figsize=(8,8))
     ax = fig.add_axes([0.05,0.05,0.95,0.85])
-    ticks_zh = visdict14["DBZH"]["ticks"].copy()
+    ticks_zh = radarmet.visdict14["DBZH"]["ticks"].copy()
     
-    norm = get_discrete_norm(ticks_zh)
-    cmap = get_discrete_cmap(ticks_zh, 'HomeyerRainbow')
+    norm = radarmet.get_discrete_norm(ticks_zh)
+    cmap = radarmet.get_discrete_cmap(ticks_zh, 'HomeyerRainbow')
     cbar_extend = 'both'
     
     xlabel = 'X-Range [m]'
@@ -433,7 +224,8 @@ for timestep in np.arange(8):
 # use 12 deg elevation
 
 # create height coord
-swp = vol_emvorado_sim[-3].sel({"time":"2017-10-20"}).pipe(wrl.georef.georeference_dataset)
+swp = vol_emvorado_sim.isel(records=7).pipe(wrl.georef.georeference)
+swp = vol_dwd.isel(sweep_fixed_angle=7).pipe(wrl.georef.georeference)
 swp = swp.assign_coords(height=swp.z.mean('azimuth'))
 
 # Apply offsets if necessary
@@ -452,23 +244,18 @@ except:
 
 
 #### Plot contour and contourf
-contourf_var = 'DBZH'
-contour_var = 'ZDR'
+contourf_var = 'RHOHV'
+contour_var = ''
 
 
 fig = plt.figure(figsize=(10, 6))
 ax = fig.add_subplot(111)
 
-contourf_levels = visdict14[contourf_var]['ticks'].copy() # np.arange(0, 60, 5)
-contour_levels = visdict14[contour_var]['contours'].copy() # np.arange(0, 40, 5)
-cmap = visdict14[contourf_var]['cmap'].copy() # 'turbo'
-
-cbar_kwargs = dict(extend="both",
-                   extendrect=False,
-                   extendfrac="auto",
-                   pad=0.05,
-                   fraction=0.1,
-                  )
+ticks = radarmet.visdict14[contourf_var]["ticks"]
+cmap0 = mpl.colormaps.get_cmap("RdBu_r")
+cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
+norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
+if contourf_var!="VRADH": cmap = "miub2"
 
 try:
     contourf =  swp_median[contourf_var]
@@ -479,11 +266,10 @@ except:
         contourf =  swp_median[var_names_map_obs[contourf_var]]
 
     
-contourf.plot.contourf(x="time", y="height", ax=ax, 
-                              cmap=cmap, 
-                              levels=contourf_levels,
+contourf.plot(x="time", y="height", ax=ax, 
+                              cmap=cmap, norm=norm,
                               add_colorbar=True,
-                              cbar_kwargs=cbar_kwargs)
+                              )
 
 try:
     contour =  swp_median[contour_var]
@@ -491,12 +277,19 @@ except:
     try: 
         contour =  swp_median[var_names_map_sim[contour_var]]
     except:
-        contour =  swp_median[var_names_map_obs[contour_var]]
+        try:
+            contour =  swp_median[var_names_map_obs[contour_var]]
+        except:
+            None
 
-contour.plot.contour(x="time", y="height", ax=ax, 
-                             colors="k", 
-                             levels=contour_levels,
-                             add_colorbar=False)
+try:
+    contour_levels = radarmet.visdict14[contour_var]['contours'].copy() # np.arange(0, 40, 5)
+    contour.plot.contour(x="time", y="height", ax=ax, 
+                                 colors="k", 
+                                 levels=contour_levels,
+                                 add_colorbar=False)
+except:
+    None
 ax.set_ylim(0, 8000)
 
 # change title
@@ -505,7 +298,7 @@ ax.set_title(f"{contourf.time[0].values.astype('<M8[s]')} - {contourf.name}  - {
 #%% Classify stratiform/convective precip
 
 # for observed data
-momobs = vol_emvorado_obs[0]["zrobs"].sel({"time":"2017-10-20"}).pipe(wrl.georef.georeference_dataset)
+momobs = vol_emvorado_obs[0]["zrobs"].sel({"time":"2017-10-20"}).pipe(wrl.georef.georeference)
 pclass_obs = list()
 for i in range(len(momobs["time"])):
     print(str(i+1)+"/"+str(len(momobs["time"])))
@@ -519,7 +312,7 @@ pcobs.attrs["Description"] = "Observed: stratiform (blue), convective (red)"
 pcobs.attrs["long_name"] = pcobs.attrs["Description"]
 
 # for simulated data
-momsim = vol_emvorado_sim[0]["zrsim"].sel({"time":"2017-10-20"}).pipe(wrl.georef.georeference_dataset)
+momsim = vol_emvorado_sim[0]["zrsim"].sel({"time":"2017-10-20"}).pipe(wrl.georef.georeference)
 pclass_sim = list()
 for i in range(len(momsim["time"])):
     print(str(i+1)+"/"+str(len(momobs["time"])))
@@ -605,7 +398,7 @@ vv = "zrsim"
 timestep = -2
 
 # Georeference the data
-ds = ds.pipe(georeference_dataset, proj=map_proj) 
+ds = ds.pipe(wrl.georef.georeference, proj=map_proj) 
 
 # define elevation and azimuth angles, ranges, radar site coordinates,
 elevs  = [ds.fixed_angle for ds in vol_emvorado_sim]
@@ -821,11 +614,11 @@ plt.title(seltime)
 
 # make a movie
 dataplot = comp_tsmp.DBZCMP_SIM.sel({"time":slice("2017-10-02", "2017-10-02 21:00")})
-cmap = get_discrete_cmap(visdict14["DBZH"]["ticks"], 'HomeyerRainbow')
+cmap = radarmet.get_discrete_cmap(radarmet.visdict14["DBZH"]["ticks"], 'HomeyerRainbow')
 def plot_data(i):
     dataplot2 = dataplot[i, nelev]
     plt.subplot(111, projection=ccrs.PlateCarree())
-    plot = dataplot2.where(dataplot2>-999).plot(x="longitude", y="latitude", levels=visdict14["DBZH"]["ticks"], cmap=cmap, extend="both")
+    plot = dataplot2.where(dataplot2>-999).plot(x="longitude", y="latitude", levels=radarmet.visdict14["DBZH"]["ticks"], cmap=cmap, extend="both")
     
     plt.gca().set_extent([4.5, 16, 46, 56])
     plot.axes.coastlines()
