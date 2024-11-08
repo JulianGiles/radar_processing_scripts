@@ -715,7 +715,7 @@ def load_dmi_raw(filepath): # THIS IS NOT IMPLEMENTED YET # !!!
     
     return fix_flipped_phidp(unfold_phidp(fix_time_in_coords(dmidata)))
 
-def load_volume(filelists, func=load_dwd_preprocessed, align_time=True, tolerance="S"):
+def load_volume(filelists, func=load_dwd_preprocessed, align_time=True, tolerance="S", verbose=False):
     """
     Full radar volume based on the data files provided.
 
@@ -734,9 +734,13 @@ def load_volume(filelists, func=load_dwd_preprocessed, align_time=True, toleranc
             if time alignment is not done (or not possible) the resulting dataset
             may be too large to fit in memory.
     tolerance : keyword argument for time rounding. "S" for seconds, "T" for minutes.
+    verbose : If True, print additional details of the ongoing processing steps.
     """
     sweeps = []
-    for filelist in filelists:
+    if type(filelists) is str:
+        filelists = [filelists]
+        
+    for fn,filelist in enumerate(filelists):
         # collect files
         if type(filelist) is list:
             if any(["359." in ff for ff in filelist]):
@@ -748,6 +752,8 @@ def load_volume(filelists, func=load_dwd_preprocessed, align_time=True, toleranc
                 print("Ignoring 359. elevation")
                 continue
             files = sorted(glob.glob(filelist))
+            
+        if verbose: print("Loading "+str(fn+1)+" of "+str(len(filelists))+": "+str(len(files))+" files found ...")
             
         # load files for this elevation
         sweeps.append(func(files))
@@ -762,6 +768,7 @@ def load_volume(filelists, func=load_dwd_preprocessed, align_time=True, toleranc
         sweeps[-1] = sweeps[-1].expand_dims("sweep_fixed_angle") # promote sweep_fixed_angle to dim
 
     if align_time:
+        if verbose:  print("Aligning time and concatenating datasets ...")
         if check_time_dimension_alignment(sweeps, tolerance)[0]:
             try:
                 for dsn in range(len(sweeps)):
@@ -771,6 +778,7 @@ def load_volume(filelists, func=load_dwd_preprocessed, align_time=True, toleranc
                 warnings.warn("Not possible to align time dimension. May result in increased memory usage.")
                 vol = xr.concat(sweeps, dim="sweep_fixed_angle")
     else:
+        if verbose:  print("Concatenating datasets ...")
         vol = xr.concat(sweeps, dim="sweep_fixed_angle")
 
     # Pass meta variables to coords to avoid some issues
@@ -4846,7 +4854,7 @@ def load_emvorado_to_radar_volume(path_or_data, rename=False):
     data.coords["latitude"] = float( data["station_latitude"].values.flatten()[0] )
     data.coords["longitude"] = float( data["station_longitude"].values.flatten()[0] )
     data.coords["altitude"] = float([ss for ss in data.attrs["Data_description"].split(" ") if "radar_alt_msl_mod" in ss][0].split("=")[1])
-    data.coords["elevation"] = data["ray_elevation"]
+    data.coords["elevation"] = data["ray_elevation"].mean("azimuth")
     data.coords["sweep_mode"] = 'azimuth_surveillance'
     
     # move some variables to attributes
