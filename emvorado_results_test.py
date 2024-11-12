@@ -146,6 +146,7 @@ var_names_map_sim = {"VRADH": "vrsim",
 path_dwd = "/data/polara/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/*/*-hd5"
 # path_emvorado_obs = "/home/jgiles/emvorado-offline-results/output/20171028_*/radarout/cdfin_allobs_id-010392_*_volscan"
 path_emvorado_sim = "/data/polara/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_20170725_8radars_worked_17-07-2024/radout/cdfin_allsim_id-010392_20170725*_20170725*_volscan"
+# path_emvorado_sim = "/automount/ags/jgiles/emvorado-offline-results/output/20170712_*/radarout/cdfin_allsim_id-010392_*_volscan"
 
 # Load files
 vol_dwd = utils.load_volume(sorted(glob.glob(path_dwd)), func=utils.load_dwd_preprocessed, verbose=True)
@@ -161,7 +162,7 @@ swp_emvorado_sim = vol_emvorado_sim.isel(records=0).pipe(wrl.georef.georeference
 
 datatype = "ori" # sim, obs or ori (original)
 
-for timestep in np.arange(8):
+for timestep in np.arange(24,36):
     
     if datatype == "sim":
         swp = swp_emvorado_sim.isel(time=timestep)
@@ -216,7 +217,7 @@ for timestep in np.arange(8):
     if mom.sweep_mode != "rhi":
         ax.set_aspect(1)
         
-    fig.savefig("/automount/user/jgiles/emvorado_test_case/"+datatype+"_dbzh_"+str(mom.time.values).split(":")[0]+".png")
+    # fig.savefig("/automount/user/jgiles/emvorado_test_case/"+datatype+"_dbzh_"+str(mom.time.values).split(":")[0]+".png")
 
 
 #%% QVP
@@ -244,7 +245,7 @@ except:
 
 
 #### Plot contour and contourf
-contourf_var = 'RHOHV'
+contourf_var = 'DBZH'
 contour_var = ''
 
 
@@ -293,7 +294,13 @@ except:
 ax.set_ylim(0, 8000)
 
 # change title
-ax.set_title(f"{contourf.time[0].values.astype('<M8[s]')} - {contourf.name}  - {swp.fixed_angle}")
+try:
+    ax.set_title(f"{contourf.time[0].values.astype('<M8[s]')} - {contourf.name}  - {str(round(float(swp.elevation[0]),1))}")
+except:
+    try:
+        ax.set_title(f"{contourf.time[0].values.astype('<M8[s]')} - {contourf.name}  - {str(round(float(swp.elevation),1))}")
+    except:
+        None
 
 #%% Classify stratiform/convective precip
 
