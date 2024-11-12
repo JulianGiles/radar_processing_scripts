@@ -48,7 +48,7 @@ except ModuleNotFoundError:
 
 
 import warnings
-# warnings.filterwarnings('ignore')
+warnings.filterwarnings('ignore')
 
 # we define a funtion to look for loc inside a path string
 def find_loc(locs, path):
@@ -582,6 +582,17 @@ qvps_strat_relaxed_fil = qvps_strat_relaxed_fil.assign( riming_classif['stratifo
 
 total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
+
+#### Save filtered QVPs to files
+print("Saving filtered QVPs to files ...")
+for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
+    print("   ... "+stratname)
+    # save to file
+    if not os.path.exists(realpep_path+"/upload/jgiles/stratiform_qvps/"+stratname):
+        os.makedirs(realpep_path+"/upload/jgiles/stratiform_qvps/"+stratname)
+    
+    stratqvp.to_netcdf(realpep_path+"/upload/jgiles/stratiform_qvps/"+stratname+"/"+ll+".nc")
+
 
 #%% CFTDs Plot
 
