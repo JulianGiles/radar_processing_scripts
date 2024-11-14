@@ -61,7 +61,7 @@ os.environ['WRADLIB_DATA'] = '/home/jgiles/wradlib-data-main'
 os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = "eyJ0eXAiOiJKV1QiLCJvcmlnaW4iOiJFYXJ0aGRhdGEgTG9naW4iLCJzaWciOiJlZGxqd3RwdWJrZXlfb3BzIiwiYWxnIjoiUlMyNTYifQ.eyJ0eXBlIjoiVXNlciIsInVpZCI6ImpnaWxlcyIsImV4cCI6MTcwMzMzMjE5NywiaWF0IjoxNjk4MTQ4MTk3LCJpc3MiOiJFYXJ0aGRhdGEgTG9naW4ifQ.6DB5JJ9vdC7Vvwvaa7_mb_HbpVAh05Gz26dzdateN10C5lAd2X4a1_zClx7KkTpyoeVZSzkGSgtcd5Azc_btG0am4r2aJDGv4Zp4Vg55G4mcZMp-aTR7D520InQLMvqFacVO5wwmvfNWzMT4TyLGcXwPuX58s1oaFR5gRL9T30pXN9nEs-1aJg4LUl553PfdOvvom3q-JKXFtSTE2nLyEQOzWW36COl1aHwq6Wh4ykn4aq6ppTVAIeHdgkjtnQtxbhd9trm16fSbX9HIgG7n-drnz_v-WMeFuycMHa-zLDKnd3U3oZW6XAUq2akw2ddu6ChwoTZ4Ix2di7fudioo9Q"
 
 import warnings
-# warnings.filterwarnings('ignore')
+warnings.filterwarnings('ignore')
 
 # To be able to plot again in the Spyder panel, run this: %matplotlib inline
 
@@ -952,7 +952,7 @@ plt.title(mom+elevtitle+". "+str(datasel.time.values).split(".")[0])
 
 #%% Load QVPs
 # Load only events with ML detected (pre-condition for stratiform)
-ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2016/*/*/tur/vol5minng01/07/ML_detected.txt"
+ff_ML = "/data/polara/upload/jgiles/dwd/qvps/2015/*/*/pro/vol5minng01/07/ML_detected.txt"
 # ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2018/*/*/HTY/*/*/ML_detected.txt"
 ff_ML_glob = glob.glob(ff_ML)
 
@@ -1027,7 +1027,7 @@ var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR',
 
 
 vars_to_plot = ['DBZH', 'KDP_ML_corrected', 'KDP', 'ZDR_OC', 'RHOHV_NC', 
-                'PHIDP_OC', 'ZDR', 'RHOHV' ]
+                'UPHIDP_OC', 'ZDR', 'RHOHV' ]
 
 # add missing units for PHIDP variables in turkish data (this was fixed on 28/12/23 but previous calculations have missing units)
 for vv in ds_qvps.data_vars:
@@ -1067,7 +1067,7 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
     for var in available_vars:
         ticks = visdict14[var]["ticks"]
         cmap = visdict14[var]["cmap"] # I need the cmap with extreme colors too here
-        cmap_list = [mpl.colors.rgb2hex(cc, keep_alpha=True) for cc in cmap.colors]
+        # cmap_list = [mpl.colors.rgb2hex(cc, keep_alpha=True) for cc in cmap.colors]
         cmap_extend = utils.get_discrete_cmap(ticks, cmap)
         ticklist = [-100]+list(ticks)+[100]
         norm = utils.get_discrete_norm(ticks, cmap_extend)
