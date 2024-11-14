@@ -608,7 +608,7 @@ def load_dwd_preprocessed(filepath):
     dwddata = []
     for ff in files:
         
-        dwd0 = dttree.open_datatree(ff)
+        dwd0 = dttree.open_datatree(ff, chunks={})
         
         # check how many sweeps there are
         if len(dwd0.descendants) != 1:
@@ -684,7 +684,7 @@ def load_dmi_preprocessed(filepath):
     
     # open files
     if len(files) == 1:
-        dmidata = xr.open_dataset(files[0])
+        dmidata = xr.open_mfdataset(files[0])
     if len(files) >= 1:
         dmidata = xr.open_mfdataset(files)
     
@@ -709,7 +709,7 @@ def load_dmi_raw(filepath): # THIS IS NOT IMPLEMENTED YET # !!!
     
     # open files
     if len(files) == 1:
-        dmidata = xr.open_dataset(files[0])
+        dmidata = xr.open_mfdataset(files[0])
     if len(files) >= 1:
         dmidata = xr.open_mfdataset(files)
     
@@ -3301,7 +3301,8 @@ def zhzdr_lr_consistency_old(ZH, ZDR, RHO, TMP, rhohv_th=0.99, tmp_th=5, plot_co
     return zdroffset
 
 def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99, min_h=500, band="C",
-                         mlbottom=None, temp=None, timemode="step", plot_correction=False, plot_timestep=0):
+                         mlbottom=None, temp=None, timemode="step", plot_correction=False, plot_timestep=0,
+                         binszh=np.arange(0,40,1), binszdr=np.arange(-1,3,.1)):
     """
     Improved function for
     ZH-ZDR Consistency in light rain, for ZDR calibration
@@ -3344,6 +3345,8 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
     plot_timestep : int
         In case timemode="step" and plot_correction=True, plot_timestep defines the time index to 
         be plotted. By default the first timestep (index=0) is plotted.
+    binszh, binszdr : ZH and ZDR bins to pass to the 2d histogram plotting function. Only used if 
+        plot_correction=True.
 
     Returns
     ----------
@@ -3518,9 +3521,9 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
             plt.figure(figsize=(8,3))
             plt.subplot(1,2,1)
             if "time" in ds and timemode=="step":
-                hist_2d(ds_fil[dbzh].where(mask)[plot_timestep].values, ds_fil[zdr].where(mask)[plot_timestep].values, bins1=np.arange(0,40,1), bins2=np.arange(-1,3,.1))
+                hist_2d(ds_fil[dbzh].where(mask)[plot_timestep].values, ds_fil[zdr].where(mask)[plot_timestep].values, bins1=binszh, bins2=binszdr)
             else:
-                hist_2d(ds_fil[dbzh].where(mask).values, ds_fil[zdr].where(mask).values, bins1=np.arange(0,40,1), bins2=np.arange(-1,3,.1))
+                hist_2d(ds_fil[dbzh].where(mask).values, ds_fil[zdr].where(mask).values, bins1=binszh, bins2=binszdr)
             plt.plot([20,22,24,26,28,30],[.23, .27, .33, .40, .48, .56], color='black')
             plt.title('Non-calibrated $Z_{DR}$')
             plt.xlabel(r'$Z_H$', fontsize=15)
@@ -3529,9 +3532,9 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
             
             plt.subplot(1,2,2)
             if "time" in ds and timemode=="step":
-                hist_2d(ds_fil[dbzh].where(mask)[plot_timestep].values, ds_fil[zdr].where(mask)[plot_timestep].values-zdroffset[plot_timestep].values, bins1=np.arange(0,40,1), bins2=np.arange(-1,3,.1))
+                hist_2d(ds_fil[dbzh].where(mask)[plot_timestep].values, ds_fil[zdr].where(mask)[plot_timestep].values-zdroffset[plot_timestep].values, bins1=binszh, bins2=binszdr)
             else:
-                hist_2d(ds_fil[dbzh].where(mask).values, ds_fil[zdr].where(mask).values-zdroffset.values, bins1=np.arange(0,40,1), bins2=np.arange(-1,3,.1))
+                hist_2d(ds_fil[dbzh].where(mask).values, ds_fil[zdr].where(mask).values-zdroffset.values, bins1=binszh, bins2=binszdr)
             plt.plot([20,22,24,26,28,30],[.23, .27, .33, .40, .48, .56], color='black')
             plt.title('Calibrated $Z_{DR}$')
             plt.xlabel(r'$Z_H$', fontsize=15)
