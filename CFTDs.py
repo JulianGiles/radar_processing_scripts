@@ -991,7 +991,7 @@ with mpl.rc_context({'font.size': 10}):
 
 #%% Riming statistics
 #%%% reload riming estimates
-locs_to_load = [find_loc(locs, ff[0])] # by default, load only the histograms of the currently loaded QVPs.
+locs_to_load = locs #[find_loc(locs, ff[0])] # by default, load only the histograms of the currently loaded QVPs.
 
 try: # check if exists, if not, create it
     riming_classif
@@ -1021,7 +1021,7 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
             del riming_classif[stratname][ll]
 
 #%%% Plot riming histograms
-locs_to_plot = [find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
+locs_to_plot = locs #[find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
 savepath = "/automount/agradar/jgiles/images/stats_histograms/"
 
 selseaslist = [           
@@ -1176,14 +1176,18 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
             stats[stratname][ll] = {}
         for xx in ['values_sfc', 'values_snow', 'values_rain', 'values_ML_max', 'values_ML_min', 'values_ML_mean', 
                    'ML_thickness', 'ML_bottom', 'ML_thickness_TEMP', 'ML_bottom_TEMP', 'values_DGL_max', 'values_DGL_min',
-                   'values_DGL_mean', 'height_ML_max', 'height_ML_min', 'ML_bottom', 'beta', 'beta_belowML',
-                   'cloudtop', 'cloudtop_5dbz', 'cloudtop_10dbz', 
+                   'values_DGL_mean', 'values_NZ_max', 'values_NZ_min', 'values_NZ_mean', 'height_ML_max', 'height_ML_min', 
+                   'ML_bottom', 'beta', 'beta_belowML', 'cloudtop', 'cloudtop_5dbz', 'cloudtop_10dbz', 
                    'cloudtop_TEMP', 'cloudtop_TEMP_5dbz', 'cloudtop_TEMP_10dbz']:
             try:
                 stats[stratname][ll][xx] = xr.open_dataset(realpep_path+"/upload/jgiles/radar_stats/"+stratname+"/"+ll+"_"+xx+".nc")
                 if len(stats[stratname][ll][xx].data_vars)==1:
                     # if only 1 var, convert to data array
                     stats[stratname][ll][xx] = stats[stratname][ll][xx].to_dataarray() 
+                if "variable" in stats[stratname][ll][xx].coords:
+                    if len(stats[stratname][ll][xx]["variable"]) == 1:
+                        # if there is a generic coord called "variable", remove it
+                        stats[stratname][ll][xx] = stats[stratname][ll][xx].isel(variable=0)
                 print(ll+" "+xx+" stats loaded")
             except:
                 pass
@@ -1212,7 +1216,7 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
             del retrievals[stratname][ll]
 
 #%%% 2d histograms
-locs_to_plot = [find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
+locs_to_plot = locs # [find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
 savepath = "/automount/agradar/jgiles/images/stats_histograms/"
 
 selseaslist = [           
@@ -1299,7 +1303,7 @@ for loc in locs_to_plot:
                             bbox_inches="tight")
                 plt.close(fig)
             except:
-                if ( MLmaxZDR.compute().isnull() + MLminRHOHV.compute().isnull() ).all():
+                if ( MLmaxZDR.compute().isnull() + MLminRHOHV.compute().isnull() ).all() or idx.sum()<2:
                     print(" ... ... ... !!! not possible to plot MLmaxZDR vs MLminRHOHV due to insufficient data points !!! ")
                 else:
                     print(" ... ... ... !!! not possible to plot MLmaxZDR vs MLminRHOHV for unknown reason !!! ")
@@ -1385,7 +1389,7 @@ for loc in locs_to_plot:
                             bbox_inches="tight")
                 plt.close(fig)
             except:
-                if ( MLmaxZH.compute().isnull() + np.log(MLmaxKDP).compute().isnull() ).all():
+                if ( MLmaxZH.compute().isnull() + np.log(MLmaxKDP).compute().isnull() ).all() or idx.sum()<2:
                     print(" ... ... ... !!! not possible to plot MLmaxZH vs np.log(MLmaxKDP) due to insufficient data points !!! ")
                 else:
                     print(" ... ... ... !!! not possible to plot MLmaxZH vs np.log(MLmaxKDP) for unknown reason !!! ")
@@ -1417,7 +1421,7 @@ for loc in locs_to_plot:
                             bbox_inches="tight")
                 plt.close(fig)
             except:
-                if ( MLmaxZH.compute().isnull() + ZHrain.compute().isnull() ).all():
+                if ( MLmaxZH.compute().isnull() + ZHrain.compute().isnull() ).all() or idx.sum()<2:
                     print(" ... ... ... !!! not possible to plot MLmaxZH vs ZHrain due to insufficient data points !!! ")
                 else:
                     print(" ... ... ... !!! not possible to plot MLmaxZH vs ZHrain for unknown reason !!! ")
@@ -1448,7 +1452,7 @@ for loc in locs_to_plot:
                             bbox_inches="tight")
                 plt.close(fig)
             except:
-                if ( ZHsnow.compute().isnull() + ZHrain.compute().isnull() ).all():
+                if ( ZHsnow.compute().isnull() + ZHrain.compute().isnull() ).all() or idx.sum()<2:
                     print(" ... ... ... !!! not possible to plot ZHsnow vs ZHrain due to insufficient data points !!! ")
                 else:
                     print(" ... ... ... !!! not possible to plot ZHsnow vs ZHrain for unknown reason !!! ")
@@ -1491,7 +1495,7 @@ for loc in locs_to_plot:
                             bbox_inches="tight")
                 plt.close(fig)
             except:
-                if ( MLminRHOHV.compute().isnull() + deltaZH.compute().isnull() ).all():
+                if ( MLminRHOHV.compute().isnull() + deltaZH.compute().isnull() ).all() or idx.sum()<2:
                     print(" ... ... ... !!! not possible to plot deltaZH vs MLminRHOHV due to insufficient data points !!! ")
                 else:
                     print(" ... ... ... !!! not possible to plot deltaZH vs MLminRHOHV for unknown reason !!! ")
@@ -1522,7 +1526,7 @@ for loc in locs_to_plot:
                             bbox_inches="tight")
                 plt.close(fig)
             except:
-                if ( MLmaxZDR.compute().isnull() + deltaZH.compute().isnull() ).all():
+                if ( MLmaxZDR.compute().isnull() + deltaZH.compute().isnull() ).all() or idx.sum()<2:
                     print(" ... ... ... !!! not possible to plot deltaZH vs MLmaxZDR due to insufficient data points !!! ")
                 else:
                     print(" ... ... ... !!! not possible to plot deltaZH vs MLmaxZDR for unknown reason !!! ")
@@ -1553,7 +1557,7 @@ for loc in locs_to_plot:
                             bbox_inches="tight")
                 plt.close(fig)
             except:
-                if ( MLminRHOHV.compute().isnull() + MLdepth.compute().isnull() ).all():
+                if ( MLminRHOHV.compute().isnull() + MLdepth.compute().isnull() ).all() or idx.sum()<2:
                     print(" ... ... ... !!! not possible to plot MLdepth vs MLminRHOHV due to insufficient data points !!! ")
                 else:
                     print(" ... ... ... !!! not possible to plot MLdepth vs MLminRHOHV for unknown reason !!! ")
@@ -1584,7 +1588,7 @@ for loc in locs_to_plot:
                             bbox_inches="tight")
                 plt.close(fig)
             except:
-                if ( MLmaxZDR.compute().isnull() + MLdepth.compute().isnull() ).all():
+                if ( MLmaxZDR.compute().isnull() + MLdepth.compute().isnull() ).all() or idx.sum()<2:
                     print(" ... ... ... !!! not possible to plot MLdepth vs MLmaxZDR due to insufficient data points !!! ")
                 else:
                     print(" ... ... ... !!! not possible to plot MLdepth vs MLmaxZDR for unknown reason !!! ")
@@ -1621,7 +1625,7 @@ for loc in locs_to_plot:
                             bbox_inches="tight")
                 plt.close(fig)
             except:
-                if ( MLmaxZH.compute().isnull() + ZHrain.compute().isnull() ).all():
+                if ( MLmaxZH.compute().isnull() + ZHrain.compute().isnull() ).all() or idx.sum()<2:
                     print(" ... ... ... !!! not possible to plot MLmaxZH vs ZHrain due to insufficient data points !!! ")
                 else:
                     print(" ... ... ... !!! not possible to plot MLmaxZH vs ZHrain for unknown reason !!! ")
@@ -1661,7 +1665,7 @@ for loc in locs_to_plot:
                             bbox_inches="tight")
                 plt.close(fig)
             except:
-                if ( MLmaxZH.compute().isnull() + np.log(MLmeanKDP).compute().isnull() ).all():
+                if ( MLmaxZH.compute().isnull() + np.log(MLmeanKDP).compute().isnull() ).all() or idx.sum()<2:
                     print(" ... ... ... !!! not possible to plot MLmaxZH vs np.log(MLmeanKDP) due to insufficient data points !!! ")
                 else:
                     print(" ... ... ... !!! not possible to plot MLmaxZH vs np.log(MLmeanKDP) for unknown reason !!! ")
@@ -1693,7 +1697,7 @@ for loc in locs_to_plot:
                             bbox_inches="tight")
                 plt.close(fig)
             except:
-                if ( ZDRrain.compute().isnull() + ZDRsfc.compute().isnull() ).all():
+                if ( ZDRrain.compute().isnull() + ZDRsfc.compute().isnull() ).all() or idx.sum()<2:
                     print(" ... ... ... !!! not possible to plot ZDRrain vs ZDRsfc due to insufficient data points !!! ")
                 else:
                     print(" ... ... ... !!! not possible to plot ZDRrain vs ZDRsfc for unknown reason !!! ")
@@ -1724,7 +1728,7 @@ for loc in locs_to_plot:
                             bbox_inches="tight")
                 plt.close(fig)
             except:
-                if ( ZHrain.compute().isnull() + ZHsfc.compute().isnull() ).all():
+                if ( ZHrain.compute().isnull() + ZHsfc.compute().isnull() ).all() or idx.sum()<2:
                     print(" ... ... ... !!! not possible to plot ZHrain vs ZHsfc due to insufficient data points !!! ")
                 else:
                     print(" ... ... ... !!! not possible to plot ZHrain vs ZHsfc for unknown reason !!! ")
@@ -1756,7 +1760,7 @@ for loc in locs_to_plot:
                             bbox_inches="tight")
                 plt.close(fig)
             except:
-                if ( MLmaxZH.compute().isnull() + betaZH.compute().isnull() ).all():
+                if ( MLmaxZH.compute().isnull() + betaZH.compute().isnull() ).all() or idx.sum()<2:
                     print(" ... ... ... !!! not possible to plot MLmaxZH vs betaZH due to insufficient data points !!! ")
                 else:
                     print(" ... ... ... !!! not possible to plot MLmaxZH vs betaZH for unknown reason !!! ")
@@ -1927,6 +1931,8 @@ ridge_vars = set(list(vars_ticks.keys())+list(beta_vars_ticks.keys()))
 
 bins = {"ML_thickness": np.arange(0,1200,50),
         "ML_thickness_TEMP": np.arange(0, 5.25, 0.25),
+        "ML_bottom": np.arange(0,4100,100),
+        "ML_bottom_TEMP": np.arange(0, 5.25, 0.25),
         "values_snow": vars_ticks,
         "values_rain": vars_ticks,
         "values_DGL_mean": vars_ticks,
@@ -1943,6 +1949,7 @@ bins = {"ML_thickness": np.arange(0,1200,50),
         "cloudtop_5dbz": np.arange(2000,12250,250),
         "cloudtop_10dbz": np.arange(2000,12250,250),
         "beta": beta_vars_ticks,
+        "beta_belowML": beta_vars_ticks,
         "cloudtop_TEMP": np.arange(-50,-1,1),
         "cloudtop_TEMP_5dbz": np.arange(-50,-1,1),
         "cloudtop_TEMP_10dbz": np.arange(-50,-1,1),
@@ -1957,6 +1964,8 @@ default_bandwidth = "normal_reference"
 
 bandwidths = {"ML_thickness": 50,
         "ML_thickness_TEMP": default_bandwidth,
+        "ML_bottom": default_bandwidth,
+        "ML_bottom_TEMP": default_bandwidth,
         "values_snow": default_bandwidth_dict,
         "values_rain": default_bandwidth_dict,
         "values_DGL_mean": default_bandwidth_dict,
@@ -1973,6 +1982,7 @@ bandwidths = {"ML_thickness": 50,
         "cloudtop_5dbz": default_bandwidth,
         "cloudtop_10dbz": default_bandwidth,
         "beta": default_bandwidth_dict,
+        "beta_belowML": default_bandwidth_dict,
         "cloudtop_TEMP": default_bandwidth,
         "cloudtop_TEMP_5dbz": default_bandwidth,
         "cloudtop_TEMP_10dbz": default_bandwidth,
