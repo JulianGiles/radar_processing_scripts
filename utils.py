@@ -4913,4 +4913,5 @@ rename_vars_emvorado_dwd = {
     "phidpsim":"PHIDP",
     "zrsim":"DBZH",
     "vrsim":"VRADH",
+    "records": "sweep_fixed_angle"
     }
