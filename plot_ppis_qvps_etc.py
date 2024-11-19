@@ -1111,7 +1111,7 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
 
         # Add shading for min_entropy when it's greater than 0.8
         if show_min_entropy:
-            min_entropy_values = selected_data.min_entropy.dropna("z", how="all").interpolate_na(dim="z").compute()
+            min_entropy_values = selected_data.min_entropy.where(selected_data.min_entropy>-np.inf).dropna("z", how="all").interpolate_na(dim="z").compute()
             
             min_entropy_shading = min_entropy_values.hvplot.quadmesh(
                 x='time', y='z', 
