@@ -26,6 +26,7 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import datetime
 import pandas as pd
+import cartopy
 
 import xarray as xr
 
@@ -143,9 +144,9 @@ var_names_map_sim = {"VRADH": "vrsim",
 #%% Load data
 
 # Define paths
-path_dwd = "/data/polara/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/*/*-hd5"
+path_dwd = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/*/*-hd5"
 # path_emvorado_obs = "/home/jgiles/emvorado-offline-results/output/20171028_*/radarout/cdfin_allobs_id-010392_*_volscan"
-path_emvorado_sim = "/data/polara/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_20170725_8radars_worked_17-07-2024/radout/cdfin_allsim_id-010392_20170725*_20170725*_volscan"
+path_emvorado_sim = "/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_20170725_8radars_worked_17-07-2024/radout/cdfin_allsim_id-010392_20170725*_20170725*_volscan"
 # path_emvorado_sim = "/automount/ags/jgiles/emvorado-offline-results/output/20170712_*/radarout/cdfin_allsim_id-010392_*_volscan"
 
 # Load files
@@ -154,7 +155,94 @@ vol_dwd = utils.load_volume(sorted(glob.glob(path_dwd)), func=utils.load_dwd_pre
 vol_emvorado_sim = utils.load_emvorado_to_radar_volume(path_emvorado_sim, rename=True)
 
 
-#%% PLOT raw data
+#%% Plot PPI
+tsel = "2017-07-25T02:00"
+elevn = 0 # elevation index
+
+datatype = "sim" # sim, obs or ori (original)
+mom = "DBZH"
+xylims = 180000 # xlim and ylim (from -xylims to xylims)
+
+cities = {
+  'Berlin': {'lat': 52.520008, 'lon': 13.404954},
+  # Add more cities as needed
+}
+
+if datatype == "sim":
+    ds = vol_emvorado_sim.copy()
+    
+elif datatype == "obs":
+    ds = vol_emvorado_obs.copy()
+    
+elif datatype == "ori":
+    ds = vol_dwd.copy()
+    
+else:
+    raise Exception("select correct data source")
+
+if "sweep_fixed_angle" in ds.dims:
+    isvolume = True
+
+if isvolume: # if more than one elevation, we need to select the one we want
+    if tsel == "":
+        datasel = ds.isel({"sweep_fixed_angle":elevn})
+    else:
+        datasel = ds.isel({"sweep_fixed_angle":elevn}).sel({"time": tsel}, method="nearest")
+else:
+    if tsel == "":
+        datasel = ds
+    else:
+        datasel = ds.sel({"time": tsel}, method="nearest")
+    
+datasel = datasel.pipe(wrl.georef.georeference)
+
+# New Colormap
+colors = ["#2B2540", "#4F4580", "#5a77b1",
+          "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
+
+
+ticks = radarmet.visdict14[mom]["ticks"]
+cmap0 = mpl.colormaps.get_cmap("RdBu_r")
+cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
+norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
+if mom!="VRADH": cmap = "miub2"
+
+plot_over_map = True
+plot_ML = False
+
+crs=ccrs.Mercator(central_longitude=float(datasel["longitude"]))
+
+if not plot_over_map:
+    # plot simple PPI
+    datasel[mom].wrl.vis.plot( cmap=cmap, norm=norm, xlim=(-xylims,xylims), ylim=(-xylims,xylims))
+    # datasel[mom].wrl.vis.plot( cmap="Blues", vmin=0, vmax=6, xlim=(-xylims,xylims), ylim=(-xylims,xylims))
+elif plot_over_map:
+    # plot PPI with map coordinates
+    fig = plt.figure(figsize=(5, 5))
+    datasel[mom].wrl.vis.plot(fig=fig, cmap=cmap, norm=norm, crs=ccrs.Mercator(central_longitude=float(datasel["longitude"])))
+    ax = plt.gca()
+    ax.add_feature(cartopy.feature.COASTLINE, linestyle='-', linewidth=1, alpha=0.4)
+    ax.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4)
+    ax.gridlines(draw_labels={"bottom": "x", "left": "y"})
+
+if plot_ML:
+    cax = plt.gca()
+    datasel["z"].wrl.vis.plot(ax=cax,
+                          levels=[datasel["height_ml_bottom_new_gia"], datasel["height_ml_new_gia"]], 
+                          cmap="black",
+                          func="contour")
+    # datasel["z"].wrl.vis.plot(fig=fig, cmap=cmap, norm=norm, crs=ccrs.Mercator(central_longitude=float(datasel["longitude"])))
+
+ # add cities
+for city, coord in cities.items():
+    ax.plot(coord['lon'], coord['lat'], 'ro', markersize=5, transform=ccrs.PlateCarree(), color="black")  # Plot the city as a red dot
+    ax.text(coord['lon'] + 0.02, coord['lat'], city, transform=ccrs.PlateCarree(), fontsize=12, color='black')  # Add city name
+
+if isvolume: elevtitle = " "+str(np.round(ds.isel({"sweep_fixed_angle":elevn}).sweep_fixed_angle.values, 2))+"°"
+else: elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
+plt.title(mom+elevtitle+". "+str(datasel.time.values).split(".")[0])
+
+#%% PLOT raw data (OLD)
 # extract one elevation and georreference
 swp_dwd = vol_dwd.isel(sweep_fixed_angle=0).pipe(wrl.georef.georeference)
 # swp_emvorado_obs = vol_emvorado_obs[1].pipe(wrl.georef.georeference)
@@ -224,83 +312,88 @@ for timestep in np.arange(24,36):
 # Azimuthally averaged profiles of a conical volume measured at elevations between 10 and 20 degrees
 # use 12 deg elevation
 
-# create height coord
-swp = vol_emvorado_sim.isel(records=7).pipe(wrl.georef.georeference)
-swp = vol_dwd.isel(sweep_fixed_angle=7).pipe(wrl.georef.georeference)
-swp = swp.assign_coords(height=swp.z.mean('azimuth'))
+max_height = 12000 # max height for the qvp plots
+tsel = ""
+elevn = 7 # elevation index
+plot_ML = False
 
-# Apply offsets if necessary
-# add corrections here
+datatype = "ori" # sim, obs or ori (original)
+mom = "DBZH"
+xylims = 180000 # xlim and ylim (from -xylims to xylims)
 
-# Calculate median
-swp_median = swp.median('azimuth', skipna=True)
-try:
-    swp_median = swp_median.where(swp_median.DBZH > 0)
-except:
-    try:
-        swp_median = swp_median.where(swp_median.zrsim > 0)
-    except:
-        swp_median = swp_median.where(swp_median.zrobs > 0)
+if datatype == "sim":
+    ds = vol_emvorado_sim.copy()
+    
+elif datatype == "obs":
+    ds = vol_emvorado_obs.copy()
+    
+elif datatype == "ori":
+    ds = vol_dwd.copy()
+    
+else:
+    raise Exception("select correct data source")
 
+if "sweep_fixed_angle" in ds.dims:
+    isvolume = True
 
+if isvolume: # if more than one elevation, we need to select the one we want
+    if tsel == "":
+        datasel = ds.isel({"sweep_fixed_angle":elevn})
+    else:
+        datasel = ds.isel({"sweep_fixed_angle":elevn}).sel({"time": tsel}, method="nearest")
+else:
+    if tsel == "":
+        datasel = ds
+    else:
+        datasel = ds.sel({"time": tsel}, method="nearest")
+    
+datasel = datasel.pipe(wrl.georef.georeference)
+if "time" in datasel.z.dims:
+    datasel = datasel.assign_coords(z=datasel.z.mean('azimuth'))
 
-#### Plot contour and contourf
-contourf_var = 'DBZH'
-contour_var = ''
-
-
-fig = plt.figure(figsize=(10, 6))
-ax = fig.add_subplot(111)
-
-ticks = radarmet.visdict14[contourf_var]["ticks"]
-cmap0 = mpl.colormaps.get_cmap("RdBu_r")
-cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
-norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
-if contourf_var!="VRADH": cmap = "miub2"
-
-try:
-    contourf =  swp_median[contourf_var]
-except:
-    try: 
-        contourf =  swp_median[var_names_map_sim[contourf_var]]
-    except:
-        contourf =  swp_median[var_names_map_obs[contourf_var]]
+qvps = utils.compute_qvp(datasel)
 
     
-contourf.plot(x="time", y="height", ax=ax, 
-                              cmap=cmap, norm=norm,
-                              add_colorbar=True,
-                              )
+# New Colormap
+colors = ["#2B2540", "#4F4580", "#5a77b1",
+          "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
-try:
-    contour =  swp_median[contour_var]
-except:
-    try: 
-        contour =  swp_median[var_names_map_sim[contour_var]]
-    except:
-        try:
-            contour =  swp_median[var_names_map_obs[contour_var]]
-        except:
-            None
 
-try:
-    contour_levels = radarmet.visdict14[contour_var]['contours'].copy() # np.arange(0, 40, 5)
-    contour.plot.contour(x="time", y="height", ax=ax, 
-                                 colors="k", 
-                                 levels=contour_levels,
-                                 add_colorbar=False)
-except:
-    None
-ax.set_ylim(0, 8000)
+ticks = radarmet.visdict14[mom]["ticks"]
+cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
+cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
+# norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
+cmap = "miub2"
+norm = utils.get_discrete_norm(ticks, cmap, extend="both")
+qvps[mom].wrl.plot(x="time", cmap=cmap, norm=norm, figsize=(7,3), ylim=(0, max_height))
+plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only the hour in the x-axis
+if plot_ML:
+    qvps["height_ml_new_gia"].plot(c="black")
+    qvps["height_ml_bottom_new_gia"].plot(c="black")
+plt.gca().set_ylabel("height over sea level")
 
-# change title
-try:
-    ax.set_title(f"{contourf.time[0].values.astype('<M8[s]')} - {contourf.name}  - {str(round(float(swp.elevation[0]),1))}")
-except:
-    try:
-        ax.set_title(f"{contourf.time[0].values.astype('<M8[s]')} - {contourf.name}  - {str(round(float(swp.elevation),1))}")
-    except:
-        None
+# # Plot reflectivity as lines to check wet radome effect
+# ax2 = plt.gca().twinx()
+# ds.DBZH.mean("azimuth")[:,4:7].mean("range").plot(ax=ax2, c="dodgerblue")
+# ax2.yaxis.label.set_color("dodgerblue")
+# ax2.spines['left'].set_position(('outward', 60))
+# ax2.tick_params(axis='y', labelcolor="dodgerblue")  # Add padding to the ticks
+# ax2.yaxis.labelpad = -400  # Add padding to the y-axis label
+# ax2.set_title("")
+
+# # Plot zdrcal values
+# ax3 = plt.gca().twinx()
+# zdrcal.loc[{"time":slice(str(qvps.time[0].values), str(qvps.time[-1].values))}].fNewZdrOffsetEstimate_dB.plot(ax=ax3, c="magenta")
+# ax3.yaxis.label.set_color("magenta")
+# ax3.spines['right'].set_position(('outward', 90))
+# ax3.tick_params(axis='y', labelcolor="magenta")  # Add padding to the ticks
+# # ax3.yaxis.labelpad = 10  # Add padding to the y-axis label
+# ax3.set_title("")
+
+elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
+plt.title(mom+elevtitle+". "+str(qvps.time.values[0]).split(".")[0])
+plt.show()
+plt.close()
 
 #%% Classify stratiform/convective precip
 
