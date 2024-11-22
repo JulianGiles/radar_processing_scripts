@@ -1075,8 +1075,8 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
         subtitle = var
         if var == "ZDR_OC":
             # for the plot of ZDR_OC, put the value of the offset in the subtitle if it is daily
-            if (selected_data["ZDR"]-selected_data["ZDR_OC"]).compute().median("z").std() < 0.1:
-                # if the std of ZDR - ZDR_OC is < 0.1 we assume it is a daily offset
+            if np.unique((selected_data["ZDR"]-selected_data["ZDR_OC"]).compute().median("z")).std() < 0.1:
+                # if the std of the unique values of ZDR - ZDR_OC is < 0.1 we assume it is a daily offset
                 subtitle = var+" (Offset: "+str(np.round((selected_data["ZDR"]-selected_data["ZDR_OC"]).compute().median().values,3))+")"                
             else:
                 subtitle = var+" (Offset: variable per timestep)"
