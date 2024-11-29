@@ -1071,7 +1071,8 @@ def Entropy_timesteps_over_azimuth_different_vars_schneller(ds, n_az=360, zhlin=
     '''
     From Tobias Scharbach
     
-    Function to calculate the information Entropy, to estimate the homogenity from a sector PPi or the whole 360° PPi
+    Function to calculate the Efficiency (Normalized Entropy) according to information theory, 
+    to estimate the homogenity from a sector PPi or the whole 360° PPi
     for each timestep. Values over 0.8 are considered stratiform.
     
     The dataset should have zhlin and zdrlin which are the linear form of ZH and ZDR, i.e. only positive values
@@ -1137,7 +1138,197 @@ def Entropy_timesteps_over_azimuth_different_vars_schneller(ds, n_az=360, zhlin=
     entropy_all_xr = xr.merge([entropy_zhlin, entropy_zdrlin, entropy_RHOHV, entropy_KDP ])    
     
     return entropy_all_xr
+
+def calculate_pseudo_entropy(ds, dim='azimuth', var_names=["zhlin", "zdrlin", "RHOHV_NC", "KDP_ML_corrected"], n_lowest=30):
+
+    '''    
+    Function to calculate the Efficiency (Normalized Entropy) according to information theory. 
+    This implementation differs from the original formulation in that the probabilities of 
+    each value are replaced by the values normalized by the sum of all values.
+    Useful to estimate the homogenity from a sector PPi or the whole 360° PPi
+    for each timestep. Values over 0.8 are considered stratiform. 
+    
+    The dataset should have zhlin and zdrlin which are the linear form of ZH and ZDR, i.e. only positive values
+    (not in DB, use wradlib.trafo.idecibel to transform from DBZ to linear)
+
+    Parameter
+    ---------
+    ds : xarray.DataArray
+        array with PPI data.
+
+    dim : str
+        dimension over which to perform the operation
+
+    var_names : list
+        list of variable names over which to perform the operation
         
+    n_lowest : int
+        minimum amount of non-nan values for returning non-nan entropy
+
+    Return
+    ------
+    entropy_all_xr : xarray.Dataset
+        Dataset with (pseudo-)entropy values for the input variables
+
+    ######### Example how to calculate the min over the entropy calculated over the polarimetric variables
+    Entropy = calculate_pseudo_entropy(ds)
+    
+    strati = xr.concat((Entropy.entropy_zhlin, Entropy.entropy_zdrlin, Entropy.entropy_RHOHV, Entropy.entropy_KDP),"entropy")        
+    
+    min_trst_strati = strati.min("entropy")
+    ds["min_entropy"] = min_trst_strati
+    
+    '''
+    def calc_pseudo_entropy(da):
+        # This function calculates the pseudo entropy for the input data along dim
+        da_normed = da / da.sum(dim, skipna=True)
+        pseudo_entropy = -((da_normed * np.log10(da_normed)).sum(dim)) \
+                         / np.log10(da_normed[dim].size)
+        pseudo_entropy = pseudo_entropy.where(~(da==0.).all(dim), other=1.).where(da.count(dim=dim) >= n_lowest)
+        return pseudo_entropy
+
+    pseudo_entropy_list = []
+    for vv in var_names:
+        pseudo_entropy_list.append( calc_pseudo_entropy(ds[vv]).rename("entropy_"+vv) )
+
+    return xr.merge(pseudo_entropy_list)
+
+def calculate_binned_normalized_entropy(ds, dim='azimuth', var_names=["zhlin", "zdrlin", "RHOHV_NC", "KDP_ML_corrected"], 
+                                        n_lowest=30, bins=50, remove_empty_bins=False):
+
+    '''    
+    Function to calculate the Efficiency (Normalized Entropy) according to information theory 
+    based on a binning of the input data. Useful to estimate the homogenity from a sector PPi 
+    or the whole 360° PPi for each timestep. Values over 0.8 could be considered stratiform.
+    
+    The dataset should have zhlin and zdrlin which are the linear form of ZH and ZDR, i.e. only positive values
+    (not in DB, use wradlib.trafo.idecibel to transform from DBZ to linear)
+
+    Parameter
+    ---------
+    ds : xarray.DataArray
+        array with PPI data.
+
+    dim : str
+        dimension over which to perform the operation
+
+    var_names : list
+        list of variable names over which to perform the operation
+        
+    n_lowest : int
+        minimum amount of non-nan values for returning non-nan entropy
+        
+    bins : int, str
+        number of bins to use for binning the data or the method used to automatically calculate 
+        the optimal bin width as defined by numpy.histogram_bin_edges. The probabilities of each bin
+        are estimated and the normalized entropy is calculated based on those probabilities
+
+    Return
+    ------
+    entropy_all_xr : xarray.Dataset
+        Dataset with entropy values for the input variables
+
+    ######### Example how to calculate the min over the entropy calculated over the polarimetric variables
+    Entropy = calculate_normalized_entropy(ds)
+    
+    strati = xr.concat((Entropy.entropy_zhlin, Entropy.entropy_zdrlin, Entropy.entropy_RHOHV, Entropy.entropy_KDP),"entropy")        
+    
+    min_trst_strati = strati.min("entropy")
+    ds["min_entropy"] = min_trst_strati
+    
+    '''
+
+    def calc_entropy_slices(da_slice, n_valid_values=n_lowest, bins=bins):
+        if np.isfinite(da_slice).sum() < n_valid_values:
+            # return xr.DataArray(np.array(np.nan), name="entropy_"+da_slice.name)
+            return np.array(np.nan)
+        elif np.all(da_slice == 0.):
+            # return xr.DataArray(np.array(1.), name="entropy_"+da_slice.name)
+            return np.array(1.)
+        else:
+            # This function calculates the normalized entropy for the whole input data (meant to be used in 1D slices)
+            
+            # calculate the bins manually because xhistogram does not automatically compute bins for dask arrays
+            # bins_array = np.histogram_bin_edges(da_slice, bins=bins, range=(float(da_slice.min()), float(da_slice.max())))
+    
+            # calculate the histogram and the probabilities
+            hist = np.histogram(da_slice, bins=bins, range=(float(np.nanmin(da_slice)), float(np.nanmax(da_slice))))
+            probs = hist[0]/hist[0].sum()
+    
+            # Calculate normalized entropy
+            if remove_empty_bins:
+                norm_entropy = - (probs*np.log10(probs+1e-15)).sum()/np.log10(np.where(probs>0, 1, 0).sum())
+            else:
+                norm_entropy = - (probs*np.log10(probs+1e-15)).sum()/np.log10(len(probs))
+    
+            # return norm_entropy.rename("entropy_"+da_slice.name)
+            return norm_entropy
+
+    norm_entropy_list = []
+    for vv in var_names:
+        norm_entropy_list.append( xr.apply_ufunc(calc_entropy_slices,
+                                                 ds[vv],
+                                                 input_core_dims=[[dim]],
+                                                 vectorize=True,
+                                                 dask="parallelized",
+                                                 output_dtypes=[float],
+                                                 on_missing_core_dim="copy",
+                                                 dask_gufunc_kwargs={"allow_rechunk":True}
+                                                 ).rename("entropy_"+vv) )
+
+    return xr.merge(norm_entropy_list)
+
+def calculate_std(ds, dim='azimuth', var_names=["zhlin", "zdrlin", "RHOHV_NC", "KDP_ML_corrected"], n_lowest=30, normlims=None):
+
+    '''    
+    Function to calculate the standard deviation in a given dimension after 
+    normalizing the variables. Can be used to estimate the homogenity from a 
+    sector PPi or the whole 360° PPi for each timestep. 
+    
+    Parameter
+    ---------
+    ds : xarray.DataArray
+        array with PPI data.
+
+    dim : str
+        dimension over which to perform the operation
+
+    var_names : list
+        list of variable names over which to perform the operation
+        
+    n_lowest : int
+        minimum amount of non-nan values for returning non-nan results
+
+    normlims : list, array, tuple
+        Iterable with the minimum and maximum values to use for normalization. If None,
+        the minimum and maximum of ds are used.
+        
+    Return
+    ------
+    std : xarray.Dataset
+        Dataset with std values for the input variables along the given dimension
+    
+    '''
+    try:
+        def calc_std_slices(da_slice):
+            return np.nanstd((da_slice-normlims[0])/(normlims[1]-normlims[0]))
+    except TypeError:
+        def calc_std_slices(da_slice):
+            return np.nanstd((da_slice-np.nanmin(da_slice))/(np.nanmax(da_slice)-np.nanmin(da_slice)))
+
+    norm_std_list = []
+    for vv in var_names:
+        norm_std_list.append( xr.apply_ufunc(calc_std_slices,
+                                                 ds[vv],
+                                                 input_core_dims=[[dim]],
+                                                 vectorize=True,
+                                                 dask="parallelized",
+                                                 output_dtypes=[float],
+                                                 on_missing_core_dim="copy",
+                                                 dask_gufunc_kwargs={"allow_rechunk":True}
+                                                 ).rename("std_"+vv) )
+
+    return xr.merge(norm_std_list)
 
 
 #### Melting Layer after Wolfensberger et al 2016 but refined for PHIDP correction using Silke's style from Trömel 2019 and Giangrande refinement
