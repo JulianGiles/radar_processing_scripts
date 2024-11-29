@@ -82,14 +82,14 @@ how_mix_zdr_offset = "count" # how to choose between the different offsets
 # "neg_overcorr" will choose the offset that generates less negative ZDR values.
 
 min_height_key = "default" # default = 200
-min_range_key = "SVS" # default = 1000
+min_range_key = "GZT" # default = 1000
 
 ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/pro/vol5minng01/07/*allmoms*"
 ff = "/automount/realpep/upload/jgiles/dmi/*/*/2019-07-17/ANK/*F/8.0/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-08-09/AFY/*/10.0/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-11-20/HTY/*/10.0/*allmoms*"
-ff = "/automount/realpep/upload/jgiles/dmi/*/*/2016-09-22/GZT/*/10.0/*allmoms*.nc"
-ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-04-30/SVS/*/10.0/*allmoms*.nc"
+ff = "/automount/realpep/upload/jgiles/dmi/*/*/2017-05-20/GZT/*/10.0/*allmoms*.nc"
+# ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-04-30/SVS/*/10.0/*allmoms*.nc"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-10-21/SVS/*/7.0/*allmoms*.nc"
 # ff = '/automount/realpep/upload/jgiles/dmi/2016/2016-08/2016-08-05/AFY/VOL_B/7.0/VOL_B-allmoms-7.0-20162016-082016-08-05-AFY-h5netcdf.nc'
 # ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-06-02/pro/90gradstarng01/00/*allmoms*"
@@ -452,7 +452,7 @@ if not isvolume:
         ds = ds.assign({"DBZH_lin": wrl.trafo.idecibel(ds[X_DBZH]), "ZDR_lin": wrl.trafo.idecibel(ds[X_ZDR]) })
         
         # calculate entropy
-        Entropy = utils.Entropy_timesteps_over_azimuth_different_vars_schneller(ds, zhlin="DBZH_lin", zdrlin="ZDR_lin", rhohvnc=X_RHO, kdp="KDP_ML_corrected")
+        Entropy = utils.Entropy_timesteps_over_azimuth_different_vars_schneller(ds.where(ds[X_DBZH]>0), zhlin="DBZH_lin", zdrlin="ZDR_lin", rhohvnc=X_RHO, kdp="KDP_ML_corrected")
         
         # concate entropy for all variables and get the minimum value 
         strati = xr.concat((Entropy.entropy_zdrlin, Entropy.entropy_Z, Entropy.entropy_RHOHV, Entropy.entropy_KDP),"entropy")        
@@ -690,6 +690,7 @@ cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(tic
 cmap = "miub2"
 norm = utils.get_discrete_norm(ticks, cmap, extend="both")
 datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm, figsize=(7,3))
+datasel["min_entropy"].dropna("z", how="all").interpolate_na(dim="z").plot.contourf(x="time", levels=[0.8, 1], hatches=["", "XXX", ""], colors=[(1,1,1,0)], add_colorbar=False, extend="both")
 plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only the hour in the x-axis
 datasel["height_ml_new_gia"].plot(c="black")
 datasel["height_ml_bottom_new_gia"].plot(c="black")
@@ -718,6 +719,71 @@ else: elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
 plt.title(mom+elevtitle+". "+str(datasel.time.values[0]).split(".")[0])
 plt.show()
 plt.close()
+
+#%% TEST: Try different methods for stratiform classification
+# lets try only ZH first
+var_list = ["DBZH_lin", "DBZH"]
+
+# Tobi's entropy (pseudo entropy)
+entropy_zh_tobi = utils.calculate_pseudo_entropy(ds, var_names=var_list)
+
+entropy_zh_tobi_over0 = utils.calculate_pseudo_entropy(ds.where(ds.DBZH>0), var_names=var_list)
+
+# Binned normalized entropy (default 50 bins based on available data)
+entropy_zh_50binned_norm = utils.calculate_binned_normalized_entropy(ds, var_names=var_list)
+
+entropy_zh_50binned_norm_over0 = utils.calculate_binned_normalized_entropy(ds.where(ds.DBZH>0), var_names=var_list)
+
+# Binned normalized entropy (default 50 bins based on available data) and empty bins deleted
+entropy_zh_50binned_norm_clean = utils.calculate_binned_normalized_entropy(ds, var_names=var_list, remove_empty_bins=True)
+
+entropy_zh_50binned_norm_clean_over0 = utils.calculate_binned_normalized_entropy(ds.where(ds.DBZH>0), var_names=var_list, remove_empty_bins=True)
+
+# Binned normalized entropy with "auto" bins 
+entropy_zh_autobinned_norm = utils.calculate_binned_normalized_entropy(ds, var_names=var_list, bins="auto")
+
+entropy_zh_autobinned_norm_over0 = utils.calculate_binned_normalized_entropy(ds.where(ds.DBZH>0), var_names=var_list, bins="auto")
+
+# Binned normalized entropy with "auto" bins and empty bins deleted
+entropy_zh_autobinned_norm_clean = utils.calculate_binned_normalized_entropy(ds, var_names=var_list, bins="auto", remove_empty_bins=True)
+
+entropy_zh_autobinned_norm_clean_over0 = utils.calculate_binned_normalized_entropy(ds.where(ds.DBZH>0), var_names=var_list, bins="auto", remove_empty_bins=True)
+
+# Binned normalized entropy with custom bins (between 0 and 70 dbzh)
+custom_bins = np.arange(0,81,1)
+entropy_zh_custombinned_norm = utils.calculate_binned_normalized_entropy(ds, var_names=var_list, bins=custom_bins)
+
+entropy_zh_custombinned_norm_over0 = utils.calculate_binned_normalized_entropy(ds.where(ds.DBZH>0), var_names=var_list, bins=custom_bins)
+
+# Binned normalized entropy with custom bins (between 0 and 70 dbzh) and empty bins deleted
+custom_bins = np.arange(0,81,1)
+entropy_zh_custombinned_norm_clean = utils.calculate_binned_normalized_entropy(ds, var_names=var_list, bins=custom_bins, remove_empty_bins=True)
+
+entropy_zh_custombinned_norm_clean_over0 = utils.calculate_binned_normalized_entropy(ds.where(ds.DBZH>0), var_names=var_list, bins=custom_bins, remove_empty_bins=True)
+
+# Normalized STD
+std_zh = utils.calculate_std(ds, var_names=var_list)
+
+std_zh_over0 = utils.calculate_std(ds.where(ds.DBZH>0), var_names=var_list)
+
+std_zh_over0_below80 = utils.calculate_std(ds.where(ds.DBZH>0).where(ds.DBZH<80), var_names=var_list)
+
+
+# Plots
+def plot_qvp_strattest(stratres, vmin=0, vmax=1, ylim=(0,60000), title="", contourlevs=[0.8]):
+    stratres.plot(x="time", vmin=vmin, vmax=vmax, ylim=ylim)
+    stratres.plot.contour(levels=contourlevs, x="time", colors=["gray"])
+    plt.title(title)
+    return None
+
+def plot_ppi_strattest(ppi, stratres, vmin=0, vmax=50, xlim=(-50000,50000), ylim=(-50000,50000), title=""):
+    ppi.wrl.vis.plot(vmin=vmin, vmax=vmax, ylim=ylim, xlim=xlim)
+    (ppi*0+stratres).plot(x="x", y="y", cmap="Grays", alpha=0.1, add_colorbar=False)
+    plt.title(title)
+    # stratres.broadcast_like(ppi).wrl.vis.plot(vmin=vmin, vmax=vmax, ylim=ylim, xlim=xlim, color="lightgray")
+    return None
+    
+# plot_ppi_strattest(ds.DBZH.sel(time="2017-05-20T16", method="nearest"), entropy_zh_tobi.entropy_DBZH.sel(time="2017-05-20T16", method="nearest")>0.8)
 
 #%% TEST: fix wet radome atten (following Fig 7 of https://doi.org/10.1002/qj.3366)
 def zhcorr(ds, dbzh="DBZH", irange=2):
@@ -1075,7 +1141,7 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
         subtitle = var
         if var == "ZDR_OC":
             # for the plot of ZDR_OC, put the value of the offset in the subtitle if it is daily
-            if np.unique((selected_data["ZDR"]-selected_data["ZDR_OC"]).compute().median("z")).std() < 0.1:
+            if np.unique((selected_data["ZDR"]-selected_data["ZDR_OC"]).compute().median("z")).std() < 0.01:
                 # if the std of the unique values of ZDR - ZDR_OC is < 0.1 we assume it is a daily offset
                 subtitle = var+" (Offset: "+str(np.round((selected_data["ZDR"]-selected_data["ZDR_OC"]).compute().median().values,3))+")"                
             else:
@@ -1111,7 +1177,7 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
 
         # Add shading for min_entropy when it's greater than 0.8
         if show_min_entropy:
-            min_entropy_values = selected_data.min_entropy.where(selected_data.min_entropy>-np.inf).dropna("z", how="all").interpolate_na(dim="z").compute()
+            min_entropy_values = selected_data.min_entropy.where(selected_data.min_entropy>=0).dropna("z", how="all").compute()
             
             min_entropy_shading = min_entropy_values.hvplot.quadmesh(
                 x='time', y='z', 
