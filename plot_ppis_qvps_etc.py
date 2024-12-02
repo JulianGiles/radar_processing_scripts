@@ -749,17 +749,20 @@ entropy_zh_autobinned_norm_clean = utils.calculate_binned_normalized_entropy(ds,
 
 entropy_zh_autobinned_norm_clean_over0 = utils.calculate_binned_normalized_entropy(ds.where(ds.DBZH>0), var_names=var_list, bins="auto", remove_empty_bins=True)
 
-# Binned normalized entropy with custom bins (between 0 and 70 dbzh)
+# Binned normalized entropy with custom bins (between 0 and 80 dbzh)
 custom_bins = np.arange(0,81,1)
 entropy_zh_custombinned_norm = utils.calculate_binned_normalized_entropy(ds, var_names=var_list, bins=custom_bins)
 
 entropy_zh_custombinned_norm_over0 = utils.calculate_binned_normalized_entropy(ds.where(ds.DBZH>0), var_names=var_list, bins=custom_bins)
 
-# Binned normalized entropy with custom bins (between 0 and 70 dbzh) and empty bins deleted
+# Binned normalized entropy with custom bins (between 0 and 80 dbzh) and empty bins deleted
 custom_bins = np.arange(0,81,1)
 entropy_zh_custombinned_norm_clean = utils.calculate_binned_normalized_entropy(ds, var_names=var_list, bins=custom_bins, remove_empty_bins=True)
 
 entropy_zh_custombinned_norm_clean_over0 = utils.calculate_binned_normalized_entropy(ds.where(ds.DBZH>0), var_names=var_list, bins=custom_bins, remove_empty_bins=True)
+
+custom_bins = np.arange(0,100000,100)
+entropy_zh_custombinned_lin_norm_clean_over0 = utils.calculate_binned_normalized_entropy(ds.where(ds.DBZH>0), var_names=var_list, bins=custom_bins, remove_empty_bins=True)
 
 # Normalized STD
 std_zh = utils.calculate_std(ds, var_names=var_list)
@@ -768,6 +771,7 @@ std_zh_over0 = utils.calculate_std(ds.where(ds.DBZH>0), var_names=var_list)
 
 std_zh_over0_below80 = utils.calculate_std(ds.where(ds.DBZH>0).where(ds.DBZH<80), var_names=var_list)
 
+std_zh_over0_below80_propernorm = utils.calculate_std(ds.where(ds.DBZH>0).where(ds.DBZH<80), var_names=var_list, normlims=(0,80))
 
 # Plots
 def plot_qvp_strattest(stratres, vmin=0, vmax=1, ylim=(0,60000), title="", contourlevs=[0.8]):
