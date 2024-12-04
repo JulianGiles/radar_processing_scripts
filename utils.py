@@ -208,6 +208,18 @@ def find_loc(locs, path):
                 return element
     return None
 
+locs_code = {"10392": "pro", "10832": "tur", "10356": "umd", 
+             "17187": "afy", "17138": "ank", "17259": "gzt", 
+             "17373": "hty", "17163": "svs"} # possible locs
+
+def find_loc_code(locs_code, path):
+    components = path.split(os.path.sep)
+    for element in locs_code.keys():
+        for component in components:
+            if element.lower() in component.lower():
+                return locs_code[element]
+    return None
+
 # define a function to split a string at a certain pattern and replace it 
 def edit_str(ff, replace, name):
     """
@@ -990,7 +1002,10 @@ def compute_qvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1} , output_count=
     # assign coord z
     ds_qvp = ds_qvp.assign_coords({"z": ds["z"].median("azimuth", keep_attrs=True)})
     
-    ds_qvp = ds_qvp.swap_dims({"range":"z"}) # swap range dimension for height
+    try:
+        ds_qvp = ds_qvp.swap_dims({"range":"z"}) # swap range dimension for height
+    except ValueError:
+        warnings.warn("compute_qvp: Unable to swap range and z dimensions")
     
     if output_count:
         ds_qvp_count = ds.where(combined_mask).count("azimuth", keep_attrs=True)
@@ -998,8 +1013,10 @@ def compute_qvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1} , output_count=
         # assign coord z
         ds_qvp_count = ds_qvp_count.assign_coords({"z": ds["z"].median("azimuth", keep_attrs=True)})
         
-        ds_qvp_count = ds_qvp_count.swap_dims({"range":"z"}) # swap range dimension for height
-
+        try:
+            ds_qvp_count = ds_qvp_count.swap_dims({"range":"z"}) # swap range dimension for height
+        except ValueError:
+            None
         return ds_qvp, ds_qvp_count
     
     else:
