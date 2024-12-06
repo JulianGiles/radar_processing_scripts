@@ -27,8 +27,19 @@ import cartopy.feature as cfeature
 import datetime
 import pandas as pd
 import cartopy
+import time
 
 import xarray as xr
+
+import hvplot
+import hvplot.xarray
+import holoviews as hv
+# hv.extension("bokeh", "matplotlib") # better to put this each time this kind of plot is needed
+
+import panel as pn
+from bokeh.resources import INLINE
+from osgeo import osr
+from functools import partial
 
 try:
     from Scripts.python.radar_processing_scripts import utils
@@ -38,8 +49,6 @@ except ModuleNotFoundError:
     import utils
     import radarmet
     from classify_precip_typ import classify_precip_typ
-
-from osgeo import osr
 
 
 #%% Initial definitions
@@ -56,73 +65,6 @@ countries = cfeature.NaturalEarthFeature(
     scale='10m',
     facecolor='none')
 
-
-def plot_timestep_map(ds, ts, varlist=["zrsim"], md=None):
-    swp = ds.isel(time=ts)
-    
-    # create figure (10 inch by 8 inch)
-
-    fig = plt.figure( figsize=(10,8),dpi=300)
-
-    if md == None: 
-        md = [radarmet.visdict14["ZH"].copy(),
-              radarmet.visdict14["ZH"].copy(),
-              radarmet.visdict14["ZDR"].copy(),
-              radarmet.visdict14["RHOHV"].copy()]
-        #better colormaps
-        md[0]['cmap'] = mpl.cm.get_cmap('HomeyerRainbow')
-        # md[1]['cmap'] = mpl.cm.get_cmap('HomeyerRainbow')
-        # md[2]['cmap'] = mpl.cm.get_cmap('HomeyerRainbow')
-        # md[3]['cmap'] = mpl.cm.get_cmap('HomeyerRainbow')
-    
-    axnr = 110
-    if len(varlist)==2:
-        axnr = 120
-    if len(varlist)==4:
-        axnr = 220
-        
-    datalist = [swp[vv] for vv in varlist] # [swp.zrsim, swp.zrsim, swp.zdrsim, swp.rhvsim]
-    for nr,data in enumerate(datalist):
-        #ax = fig.add_subplot(axnr+nr+1, sharex=True, sharey=True)
-
-        norm = radarmet.get_discrete_norm(md[nr]["ticks"])
-        cmap = radarmet.get_discrete_cmap(md[nr]['ticks'], md[nr]['cmap'])
-
-        cbar_kwargs = dict(extend="both",
-                          extendrect=False,
-                          pad=0.05,
-                          fraction=0.1,
-                          label = data.units
-                         )
-
-
-        data.wradlib.plot(proj=ccrs.Mercator(central_longitude = swp.longitude.values),
-                          fig=fig, ax=axnr+nr+1, cbar_kwargs=cbar_kwargs,
-                          add_colorbar=True, norm=norm, cmap=cmap, extend='both')
-        
-        ax = plt.gca()
-        
-        dl = False
-        if nr%int(str(axnr)[0]) == 0 and nr/int(str(axnr)[1]) == int(str(axnr)[0])-1: dl = ['left', 'bottom']
-        elif nr%int(str(axnr)[0]) == 0: dl = ['left']
-        elif nr > ( int(str(axnr)[0])*int(str(axnr)[1]) - int(str(axnr)[1]) ): dl = ['bottom'] 
-        ax.gridlines(draw_labels=dl)
-        ax.add_feature(states_provinces, edgecolor='black', ls=":")
-        ax.add_feature(countries, edgecolor='black', )
-
-        ax.set_title(data.name+' - '+data.attrs["long_name"], y=1)
-
-        # plt.text(1.0, 1.05, 'azimuth', transform=ax.parasites[0].transAxes, va='bottom', ha='right')
-
-        # not working as intended for some reason
-        # plt.gca().set_xlabel("X-Range [m]")
-        # plt.gca().set_ylabel("Y-Range [m]")
-
-    fig.suptitle("sweep at {} deg elevation at {}".format(np.round(swp.elevation[0].values, decimals=1), 
-                                                              swp.time.values.astype('<M8[s]')), fontsize=18)
-    
-    
-    
 
 # Create dictionary for mapping variable names from original observations to EMVORADO names
 var_names_map_obs = {"VRADH": "vrobs",
@@ -144,9 +86,9 @@ var_names_map_sim = {"VRADH": "vrsim",
 #%% Load data
 
 # Define paths
-path_dwd = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/*/*-hd5"
+path_dwd = "/automount/realpep/upload/jgiles/dwd/2020/2020-02/2020-02-01/pro/vol5minng01/*/*-hd5"
 # path_emvorado_obs = "/home/jgiles/emvorado-offline-results/output/20171028_*/radarout/cdfin_allobs_id-010392_*_volscan"
-path_emvorado_sim = "/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_20170725_8radars_worked_17-07-2024/radout/cdfin_allsim_id-010392_20170725*_20170725*_volscan"
+path_emvorado_sim = "/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_2020013122/radout/cdfin_allsim_id-010392_*_volscan"
 # path_emvorado_sim = "/automount/ags/jgiles/emvorado-offline-results/output/20170712_*/radarout/cdfin_allsim_id-010392_*_volscan"
 
 # Load files
@@ -154,10 +96,9 @@ vol_dwd = utils.load_volume(sorted(glob.glob(path_dwd)), func=utils.load_dwd_pre
 # vol_emvorado_obs = utils.load_emvorado_to_radar_volume(path_emvorado_obs, rename=True)
 vol_emvorado_sim = utils.load_emvorado_to_radar_volume(path_emvorado_sim, rename=True)
 
-
 #%% Plot PPI
-tsel = "2017-07-25T02:00"
-elevn = 0 # elevation index
+tsel = "2020-02-01T13:00"
+elevn = 5 # elevation index
 
 datatype = "sim" # sim, obs or ori (original)
 mom = "DBZH"
@@ -238,75 +179,17 @@ for city, coord in cities.items():
     ax.plot(coord['lon'], coord['lat'], 'ro', markersize=5, transform=ccrs.PlateCarree(), color="black")  # Plot the city as a red dot
     ax.text(coord['lon'] + 0.02, coord['lat'], city, transform=ccrs.PlateCarree(), fontsize=12, color='black')  # Add city name
 
-if isvolume: elevtitle = " "+str(np.round(ds.isel({"sweep_fixed_angle":elevn}).sweep_fixed_angle.values, 2))+"°"
-else: elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
+if isvolume: 
+    try:
+        elevtitle = " "+str(np.round(ds.isel({"sweep_fixed_angle":elevn}).sweep_fixed_angle.values, 2))+"°"
+    except AttributeError:
+        elevtitle = " "+str(np.round(ds.isel({"sweep_fixed_angle":elevn}).elevation.mean().values, 2))+"°"
+else: 
+    try:
+        elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
+    except AttributeError:
+        elevtitle = " "+str(np.round(ds.isel({"sweep_fixed_angle":elevn}).elevation.mean().values, 2))+"°"
 plt.title(mom+elevtitle+". "+str(datasel.time.values).split(".")[0])
-
-#%% PLOT raw data (OLD)
-# extract one elevation and georreference
-swp_dwd = vol_dwd.isel(sweep_fixed_angle=0).pipe(wrl.georef.georeference)
-# swp_emvorado_obs = vol_emvorado_obs[1].pipe(wrl.georef.georeference)
-swp_emvorado_sim = vol_emvorado_sim.isel(records=0).pipe(wrl.georef.georeference)
-
-datatype = "ori" # sim, obs or ori (original)
-
-for timestep in np.arange(24,36):
-    
-    if datatype == "sim":
-        swp = swp_emvorado_sim.isel(time=timestep)
-        mom = swp['DBZH'].copy() # moment to plot
-        
-    elif datatype == "obs":
-        swp = swp_emvorado_obs.isel(time=timestep)
-        mom = swp['DBZH'].copy() # moment to plot
-        
-    elif datatype == "ori":
-        swp = swp_dwd.isel(time=timestep)
-        mom = swp['DBZH'].copy() # moment to plot
-        
-    else:
-        raise Exception("select correct data source")
-        
-    fig = plt.figure(figsize=(8,8))
-    ax = fig.add_axes([0.05,0.05,0.95,0.85])
-    ticks_zh = radarmet.visdict14["DBZH"]["ticks"].copy()
-    
-    norm = radarmet.get_discrete_norm(ticks_zh)
-    cmap = radarmet.get_discrete_cmap(ticks_zh, 'HomeyerRainbow')
-    cbar_extend = 'both'
-    
-    xlabel = 'X-Range [m]'
-    ylabel = 'Y-Range [m]'
-    
-    if mom.sweep_mode == "rhi":
-        xstr = "gr"
-        ystr = "z"
-    else:
-        xstr = "x"
-        ystr = "y"
-    
-    # create plot
-    im = mom.plot(x=xstr, y=ystr, ax=ax,
-                          norm=norm,
-                          cmap=cmap,
-                          add_colorbar=True,
-                          add_labels=True,
-                          extend=cbar_extend,
-                          )
-    im.colorbar.ax.tick_params(labelsize=16)
-    plt.setp(im.colorbar.ax.yaxis.label, fontsize=16)
-    # set_tick_params(labelsize=16)
-    ax.xaxis.set_tick_params(labelsize=16)
-    ax.yaxis.set_tick_params(labelsize=16)
-    ax.set_title("{}".format(mom.attrs['long_name']), fontsize=16)
-    ax.set_xlabel(xlabel, fontsize=16)
-    ax.set_ylabel(ylabel, fontsize=16)
-    ax.set_title(str(mom.time.values))
-    if mom.sweep_mode != "rhi":
-        ax.set_aspect(1)
-        
-    # fig.savefig("/automount/user/jgiles/emvorado_test_case/"+datatype+"_dbzh_"+str(mom.time.values).split(":")[0]+".png")
-
 
 #%% QVP
 # Azimuthally averaged profiles of a conical volume measured at elevations between 10 and 20 degrees
@@ -314,7 +197,7 @@ for timestep in np.arange(24,36):
 
 max_height = 12000 # max height for the qvp plots
 tsel = ""
-elevn = 7 # elevation index
+elevn = 1 # elevation index
 plot_ML = False
 
 datatype = "ori" # sim, obs or ori (original)
@@ -349,9 +232,9 @@ else:
     
 datasel = datasel.pipe(wrl.georef.georeference)
 if "time" in datasel.z.dims:
-    datasel = datasel.assign_coords(z=datasel.z.mean('azimuth'))
+    datasel = datasel.assign_coords(z=datasel.z.mean('time'))
 
-qvps = utils.compute_qvp(datasel)
+qvps = utils.compute_qvp(datasel, min_thresh={"RHOHV":0.7, "DBZH":0, "ZDR":-1, "SNRH":10, "SNRHC":10, "SQIH":0.5})
 
     
 # New Colormap
@@ -390,11 +273,460 @@ plt.gca().set_ylabel("height over sea level")
 # # ax3.yaxis.labelpad = 10  # Add padding to the y-axis label
 # ax3.set_title("")
 
-elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
+elevtitle = " "+str(np.round(ds.isel({"sweep_fixed_angle":elevn}).elevation.mean().values, 2))+"°"
 plt.title(mom+elevtitle+". "+str(qvps.time.values[0]).split(".")[0])
 plt.show()
 plt.close()
 
+#%% ML detection
+window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian, rhohv_thresh_gia = utils.get_phase_proc_params(path_dwd).values()
+min_height=0
+clowres0=True
+
+max_height = 12000 # max height for the qvp plots
+tsel = ""
+elevn = 7 # elevation index
+plot_ML = False
+
+datatype = "sim" # sim, obs or ori (original)
+mom = "ZDR"
+xylims = 180000 # xlim and ylim (from -xylims to xylims)
+
+if datatype == "sim":
+    ds = vol_emvorado_sim.copy()
+    
+elif datatype == "obs":
+    ds = vol_emvorado_obs.copy()
+    
+elif datatype == "ori":
+    ds = vol_dwd.copy()
+    
+else:
+    raise Exception("select correct data source")
+
+if "sweep_fixed_angle" in ds.dims:
+    isvolume = True
+
+if isvolume: # if more than one elevation, we need to select the one we want
+    if tsel == "":
+        datasel = ds.isel({"sweep_fixed_angle":elevn})
+    else:
+        datasel = ds.isel({"sweep_fixed_angle":elevn}).sel({"time": tsel}, method="nearest")
+else:
+    if tsel == "":
+        datasel = ds
+    else:
+        datasel = ds.sel({"time": tsel}, method="nearest")
+    
+datasel = datasel.pipe(wrl.georef.georeference)
+if "time" in datasel.z.dims:
+    datasel = datasel.assign_coords(z=datasel.z.mean('time'))
+
+qvps = utils.compute_qvp(datasel, min_thresh={"RHOHV":0.7, "DBZH":0, "ZDR":-1, "SNRH":10, "SNRHC":10, "SQIH":0.5})
+
+
+# Define thresholds
+moments={"DBZH": (10., 60.), "RHOHV": (0.65, 1.), "PHIDP": (-20, 180)}
+
+# Calculate ML
+qvps = utils.melting_layer_qvp_X_new(qvps, moments=moments, dim="z", fmlh=0.3, 
+         xwin=xwin0, ywin=ywin0, min_h=min_height, rhohv_thresh_gia=rhohv_thresh_gia, all_data=True, clowres=clowres0)
+qvps.coords["elevation"] = qvps.coords["elevation"].mean()
+
+#### Attach ERA5 temperature profile
+loc = utils.find_loc(utils.locs, path_dwd)
+qvps = utils.attach_ERA5_TEMP(qvps, path=loc.join(utils.era5_dir.split("loc")))
+# ds = utils.attach_ERA5_TEMP(ds, path=loc.join(utils.era5_dir.split("loc")))
+
+
+#PLOT
+plot_ML=True
+plot_TEMP=None #[0, 4]
+ticks = radarmet.visdict14[mom]["ticks"]
+cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
+cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
+# norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
+cmap = "miub2"
+norm = utils.get_discrete_norm(ticks, cmap, extend="both")
+qvps[mom].wrl.plot(x="time", cmap=cmap, norm=norm, figsize=(7,3), ylim=(0, max_height))
+plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only the hour in the x-axis
+if plot_ML:
+    qvps["height_ml_new_gia"].plot(c="black")
+    qvps["height_ml_bottom_new_gia"].plot(c="black")
+if type(plot_TEMP) is list:
+    qvps["TEMP"].plot.contour(levels=plot_TEMP, x="time")
+plt.gca().set_ylabel("height over sea level")
+elevtitle = " "+str(np.round(ds.isel({"sweep_fixed_angle":elevn}).elevation.mean().values, 2))+"°"
+plt.title(mom+elevtitle+". "+str(qvps.time.values[0]).split(".")[0])
+plt.show()
+plt.close()
+
+#%% Load QVPs
+# Load only events with ML detected (pre-condition for stratiform)
+ff_ML = "/automount/realpep/upload/jgiles/ICON_EMVORADO_radardata/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/qvps/*/*/*/hty/vol/ML_detected.txt"
+ff_ML_glob = glob.glob(ff_ML)
+
+ff = [glob.glob(os.path.dirname(fp)+"/*allsim*")[0] for fp in ff_ML_glob ]
+
+ds_qvps = xr.open_mfdataset(ff)
+
+# Conditions to clean ML height values
+max_change = 400 # set a maximum value of ML height change from one timestep to another (in m)
+max_std = 200 # set a maximum value of ML std from one timestep to another (in m)
+time_window = 5 # set timestep window for the std computation (centered)
+min_period = 3 # set minimum number of valid ML values in the window (centered)
+
+cond_ML_bottom_change = abs(ds_qvps["height_ml_bottom_new_gia"].diff("time").compute())<max_change
+cond_ML_bottom_std = ds_qvps["height_ml_bottom_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
+# cond_ML_bottom_minlen = qvps["height_ml_bottom_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
+
+cond_ML_top_change = abs(ds_qvps["height_ml_new_gia"].diff("time").compute())<max_change
+cond_ML_top_std = ds_qvps["height_ml_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
+# cond_ML_top_minlen = qvps["height_ml_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
+
+allcond = cond_ML_bottom_change * cond_ML_bottom_std * cond_ML_top_change * cond_ML_top_std
+
+# reduce to daily condition
+allcond_daily = allcond.resample(time="D").any().dropna("time")
+allcond_daily = allcond_daily.where(allcond_daily, drop=True)
+
+# Filter only events with clean ML (requeriment for stratiform) on a daily basis
+# (not efficient and not elegant but I could not find other solution)
+ds_qvps = ds_qvps.isel(time=[date.values in  allcond_daily.time.dt.date for date in ds_qvps.time.dt.date])
+
+
+#%% Plot QPVs interactive, with matplotlib backend (working) fix in holoviews/plotting/mpl/raster.py (COPIED FROM plot_ppis_qvps_etc.py)
+# this works with a manual fix in the holoviews files.
+# In Holoviews 1.17.1, add the following to line 192 in holoviews/plotting/mpl/raster.py:
+# if 'norm' in plot_kwargs: # vmin/vmax should now be exclusively in norm
+#          	plot_kwargs.pop('vmin', None)
+#          	plot_kwargs.pop('vmax', None)
+
+hv.extension("matplotlib")
+
+max_height = 12000 # max height for the qvp plots (necessary because of random high points and because of dropna in the z dim)
+
+var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR', 
+               # 'TH','UPHIDP',  # not so relevant
+#               'UVRADH', 'UZDR',  'UWRADH', 'VRADH', 'SQIH', # not implemented yet in visdict14
+               # 'WRADH', 'SNRHC', 'URHOHV', 'SNRH',
+                'KDP', 'RHOHV_NC', 'UPHIDP_OC']
+
+
+vars_to_plot = ['DBZH', 'KDP', 'ZDR', 'RHOHV', 'PHIDP']
+
+visdict14 = radarmet.visdict14
+
+# define a function for plotting a custom discrete colorbar
+def cbar_hook(hv_plot, _, cmap_extend, ticklist, norm, label):
+    COLORS = cmap_extend
+    BOUNDS = ticklist
+    # norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+    ax = hv_plot.handles["axis"]
+    fig = hv_plot.handles["fig"]
+    fig.subplots_adjust(right=0.9)
+    cbar_ax = fig.add_axes([0.93, 0.35, 0.02, 0.35])
+    fig.colorbar(
+        mpl.cm.ScalarMappable(cmap=cmap_extend, norm=norm),
+        cax=cbar_ax,
+        extend='both',
+        ticks=ticklist[1:-1],
+        # spacing='proportional',
+        orientation='vertical',
+        label=label,
+    )   
+
+
+# Define the function to update plots
+def update_plots(selected_day, show_ML_lines, show_min_entropy):
+    selected_data = ds_qvps.sel(time=selected_day, z=slice(0, max_height)).dropna("z", how="all")
+    available_vars = vars_to_plot
+
+    plots = []
+
+    for var in available_vars:
+        ticks = visdict14[var]["ticks"]
+        cmap = visdict14[var]["cmap"] # I need the cmap with extreme colors too here
+        # cmap_list = [mpl.colors.rgb2hex(cc, keep_alpha=True) for cc in cmap.colors]
+        cmap_extend = utils.get_discrete_cmap(ticks, cmap)
+        ticklist = [-100]+list(ticks)+[100]
+        norm = utils.get_discrete_norm(ticks, cmap_extend)
+
+        subtitle = var
+        if var == "ZDR_OC":
+            # for the plot of ZDR_OC, put the value of the offset in the subtitle if it is daily
+            if np.unique((selected_data["ZDR"]-selected_data["ZDR_OC"]).compute().median("z")).std() < 0.01:
+                # if the std of the unique values of ZDR - ZDR_OC is < 0.1 we assume it is a daily offset
+                subtitle = var+" (Offset: "+str(np.round((selected_data["ZDR"]-selected_data["ZDR_OC"]).compute().median().values,3))+")"                
+            else:
+                subtitle = var+" (Offset: variable per timestep)"
+        if var == "DBZH": # add elevation angle to DBZH panel
+            subtitle = var+" (Elevation: "+str(np.round(selected_data['elevation'].mean().compute().values, 2))+"°)"
+
+        quadmesh = selected_data[var].hvplot.quadmesh(
+            x='time', y='z', title=subtitle,
+            xlabel='Time', ylabel='Height (m)', colorbar=False,
+            width=500, height=250, norm=norm, ylim=(None, max_height),
+        ).opts(
+                cmap=cmap_extend,
+                color_levels=ticks.tolist(),
+                clim=(ticks[0], ticks[-1]),
+                xformatter = mpl.dates.DateFormatter('%H:%M'), # put only the hour in the x-axis
+                hooks=[partial(cbar_hook, cmap_extend=cmap_extend, ticklist=ticklist, norm=norm, label=selected_data[var].units)],
+#!!! TO DO: format tick labels so that only the hour is shown: https://discourse.holoviz.org/t/how-to-the-format-of-datetime-x-axis-ticks-in-matplotlib-backend/6344
+            )
+
+        # Add line plots for height_ml_new_gia and height_ml_bottom_new_gia
+        if show_ML_lines:
+            # this parts works better and simpler with holoviews directly instead of hvplot
+            line1 = hv.Curve(
+                (selected_data.time, selected_data["height_ml_new_gia"]),
+                # line_color='black', line_width=2, line_dash='dashed', legend=False # bokeh naming?
+            ).opts(color='black', linewidth=2, show_legend=False)
+            line2 = hv.Curve(
+                (selected_data.time, selected_data["height_ml_bottom_new_gia"]),
+            ).opts(color='black', linewidth=2, show_legend=False)
+
+            quadmesh = (quadmesh * line1 * line2)
+
+        # Add shading for min_entropy when it's greater than 0.8
+        if show_min_entropy:
+            min_entropy_values = selected_data.min_entropy.where(selected_data.min_entropy>=0).dropna("z", how="all").compute()
+            
+            min_entropy_shading = min_entropy_values.hvplot.quadmesh(
+                x='time', y='z', 
+                xlabel='Time', ylabel='Height (m)', colorbar=False,
+                width=500, height=250,
+            ).opts(
+                    cmap=['#ffffff00', "#B5B1B1", '#ffffff00'],
+                    color_levels=[0, 0.9,1, 1.1],
+                    clim=(0, 1.1),
+                    alpha=0.8
+                )
+            quadmesh = (quadmesh * min_entropy_shading)
+
+            
+        plots.append(quadmesh)
+
+    nplots = len(plots)
+    gridplot = pn.Column(pn.Row(*plots[:round(nplots/3)]),
+                         pn.Row(*plots[round(nplots/3):round(nplots/3)*2]),
+                         pn.Row(*plots[round(nplots/3)*2:]),
+                         )
+    return gridplot
+    # return pn.Row(*plots)
+        
+
+# Convert the date range to a list of datetime objects
+date_range = pd.to_datetime(ds_qvps.time.data)
+start_date = date_range.min().date()
+end_date = date_range.max().date()
+
+date_range_str = list(np.unique([str(date0.date()) for date0 in date_range]))
+
+# Create widgets for variable selection and toggles
+selected_day_slider = pn.widgets.DiscreteSlider(name='Select Date', options=date_range_str,
+                                                value=date_range_str[0], width=600)
+
+show_ML_lines_toggle = pn.widgets.Toggle(name='Show ML Lines', value=True)
+
+show_min_entropy_toggle = pn.widgets.Toggle(name='Show Entropy over 0.9', value=True) 
+
+@pn.depends(selected_day_slider.param.value, show_ML_lines_toggle, show_min_entropy_toggle)
+# Define the function to update plots based on widget values
+def update_plots_callback(event):
+    selected_day = str(selected_day_slider.value)
+    show_ML_lines = show_ML_lines_toggle.value
+    show_min_entropy = show_min_entropy_toggle.value 
+    plot = update_plots(selected_day, show_ML_lines, show_min_entropy)
+    plot_panel[0] = plot
+
+selected_day_slider.param.watch(update_plots_callback, 'value')
+show_ML_lines_toggle.param.watch(update_plots_callback, 'value')
+show_min_entropy_toggle.param.watch(update_plots_callback, 'value') 
+
+# Create the initial plot
+initial_day = str(start_date)
+initial_ML_lines = True
+initial_min_entropy = True 
+
+plot_panel = pn.Row(update_plots(initial_day, initial_ML_lines, initial_min_entropy))
+
+# Create the Panel layout
+layout = pn.Column(
+    selected_day_slider,
+    pn.Row(show_ML_lines_toggle, show_min_entropy_toggle),
+    plot_panel
+)
+
+
+layout.save("/user/jgiles/interactive_matplotlib.html", resources=INLINE, embed=True, 
+            max_states=1000, max_opts=1000)
+
+#%% Filters (conditions for stratiform)
+start_time = time.time()
+print("Filtering stratiform conditions...")
+#### Set variable names
+X_DBZH = "DBZH"
+X_TH = "DBZH"
+X_RHO = "RHOHV" # if RHOHV_NC is set here, it is then checked agains the original RHOHV in the next cell
+X_ZDR = "ZDR"
+X_KDP = "KDP"
+
+# Filter only stratiform events (min entropy >= 0.8) and ML detected
+# with ProgressBar():
+#     qvps_strat = qvps.where( (qvps["min_entropy"]>=0.8) & (qvps.height_ml_bottom_new_gia.notnull()), drop=True).compute()
+
+# Conditions to clean ML height values
+max_change = 400 # set a maximum value of ML height change from one timestep to another (in m)
+max_std = 200 # set a maximum value of ML std from one timestep to another (in m)
+time_window = 5 # set timestep window for the std computation (centered)
+min_period = 3 # set minimum number of valid ML values in the window (centered)
+
+cond_ML_bottom_change = abs(qvps["height_ml_bottom_new_gia"].diff("time").compute())<max_change
+cond_ML_bottom_std = qvps["height_ml_bottom_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
+# cond_ML_bottom_minlen = qvps["height_ml_bottom_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
+
+cond_ML_top_change = abs(qvps["height_ml_new_gia"].diff("time").compute())<max_change
+cond_ML_top_std = qvps["height_ml_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
+# cond_ML_top_minlen = qvps["height_ml_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
+
+allcond = cond_ML_bottom_change * cond_ML_bottom_std * cond_ML_top_change * cond_ML_top_std
+
+# Filter only fully stratiform pixels (min entropy >= 0.8 and ML detected)
+qvps_strat = qvps.where( (qvps["min_entropy"]>=0.9).compute() & allcond, drop=True)
+# Relaxed alternative: Filter qvps with at least 50% of stratiform pixels (min entropy >= 0.8 and ML detected)
+qvps_strat_relaxed = qvps.where( ( (qvps["min_entropy"]>=0.9).sum("z").compute() >= qvps[X_DBZH].count("z").compute()/2 ) & allcond, drop=True)
+
+# Filter out non relevant values
+qvps_strat_fil = qvps_strat.where((qvps_strat[X_TH] > -10 )&
+                                  (qvps_strat[X_KDP] > -0.1)&
+                                  (qvps_strat[X_KDP] < 3)&
+                                  (qvps_strat[X_RHO] > 0.7)&
+                                  (qvps_strat[X_ZDR] > -1) &
+                                  (qvps_strat[X_ZDR] < 3))
+
+qvps_strat_relaxed_fil = qvps_strat_relaxed.where((qvps_strat_relaxed[X_TH] > -10 )&
+                                  (qvps_strat_relaxed[X_KDP] > -0.1)&
+                                  (qvps_strat_relaxed[X_KDP] < 3)&
+                                  (qvps_strat_relaxed[X_RHO] > 0.7)&
+                                  (qvps_strat_relaxed[X_ZDR] > -1) &
+                                  (qvps_strat_relaxed[X_ZDR] < 3))
+
+total_time = time.time() - start_time
+print(f"took {total_time/60:.2f} minutes.")
+
+#%% CFTDs Plot
+
+# If auto_plot is True, then produce and save the plots automatically based on
+# default configurations (only change savepath and ds_to_plot accordingly). 
+# If False, then produce the plot as given below and do not save.
+auto_plot = True 
+savepath = "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform/"
+
+# Which to plot, qvps_strat_fil or qvps_strat_relaxed_fil
+ds_to_plot = qvps_strat_fil.copy()
+
+# Define list of seasons
+selseaslist = [           
+            ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
+            # ("DJF", [12,1,2]),
+            # ("MAM", [3,4,5]),
+            # ("JJA", [6,7,8]),
+            # ("SON", [9,10,11]),
+           ] # ("nameofseas", [months included])
+
+# adjustment from K to C (disabled now because I know that all qvps have ERA5 data)
+adjtemp = 0
+# if (qvps_strat_fil["TEMP"]>100).any(): #if there is any temp value over 100, we assume the units are Kelvin
+#     print("at least one TEMP value > 100 found, assuming TEMP is in K and transforming to C")
+#     adjtemp = -273.15 # adjustment parameter from K to C
+
+# top temp limit (only works if auto_plot=False)
+ytlim=-20
+
+# season to plot (only works if auto_plot=False)
+selseas = selseaslist[0]
+selmonths = selseas[1]
+
+# Temp bins
+tb=1# degress C
+
+# Min counts per Temp layer
+mincounts=0
+
+#Colorbar limits and step
+cblim=[0,10]
+colsteps=10
+
+cmaphist="Oranges"
+
+savedict = {"custom": None} # placeholder for the for loop below, not important 
+
+# Plot horizontally    
+vars_to_plot = {"DBZH": [0, 46, 1],
+                "ZDR": [-0.5, 2.1, 0.1],
+                "KDP": [-0.1, 0.52, 0.02],
+                "RHOHV": [0.9, 1.004, 0.004]}
+
+if auto_plot:
+    vtp = [
+           {"DBZH": [0, 46, 1],
+                           "ZDR": [-0.5, 2.1, 0.1],
+                           "KDP":  [-0.1, 0.52, 0.02],
+                           "RHOHV": [0.9, 1.004, 0.004]} ]
+    ytlimlist = [-20, -50]
+    loc = utils.find_loc(utils.locs, ff[0])
+    savedict = {}
+    add_relaxed = ["_relaxed" if "relaxed" in savepath else ""][0]
+    for selseas in selseaslist:
+        savedict.update( 
+                    {selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+".png": [vtp[0], ytlimlist[0], selseas[1]],
+                    selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
+                    }
+                        )
+    
+for savename in savedict.keys():
+    if auto_plot:
+        vars_to_plot = savedict[savename][0]
+        ytlim = savedict[savename][1]
+        selmonths = savedict[savename][2]
+
+    fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+    
+    for nn, vv in enumerate(vars_to_plot.keys()):
+        so=False
+        binsx2=None
+        adj=1
+        if "RHOHV" in vv:
+            so = True
+            binsx2 = [0.9, 1.005, 0.005]
+        if "KDP" in vv:
+            adj=1
+        utils.hist2d(ax[nn], ds_to_plot[vv].sel(time=ds_to_plot['time'].dt.month.isin(selmonths))*adj, 
+                     ds_to_plot["TEMP"].sel(time=ds_to_plot['time'].dt.month.isin(selmonths))+adjtemp,
+                     whole_x_range=True, 
+                     binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                     cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
+                     fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
+                     cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
+        ax[nn].set_ylim(15,ytlim)
+        ax[nn].set_xlabel(vv, fontsize=10)
+        
+        ax[nn].tick_params(labelsize=15) #change font size of ticks
+        plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+    
+    ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+    if auto_plot:
+        # Create savefolder
+        savepath_seas = os.path.dirname(savepath+savename)
+        if not os.path.exists(savepath_seas):
+            os.makedirs(savepath_seas)
+        fig.savefig(savepath+savename, bbox_inches="tight")
+        print("AUTO PLOT: saved "+savename)
+
+
+#%% OLD CODE FROM HERE
 #%% Classify stratiform/convective precip
 
 # for observed data
