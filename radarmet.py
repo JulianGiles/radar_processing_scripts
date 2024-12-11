@@ -159,7 +159,7 @@ def plot_reference_colorbar(ticks, cmap, ax, **kwargs):
 
 cmap_binary = mpl.colors.ListedColormap(["dimgray", "gainsboro"])
 try: # try to register in case it is not there
-    mpl.cm.register_cmap("binary2", cmap=cmap_binary)
+    mpl.colormaps.register(name="binary2", cmap=cmap_binary)
 except ValueError:
     pass
 
@@ -180,7 +180,7 @@ colors_prabhakar = np.array([[0.00, 1.00, 1.00],
 
 cmap_prabhakar = mpl.colors.ListedColormap(colors_prabhakar)
 try: # try to register in case it is not there
-    mpl.cm.register_cmap("miub2", cmap=cmap_prabhakar)
+    mpl.colormaps.register(name="miub2", cmap=cmap_prabhakar)
 except ValueError:
     pass
 

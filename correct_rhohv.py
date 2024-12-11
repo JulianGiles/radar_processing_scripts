@@ -69,7 +69,7 @@ if len(files)==0:
 def make_savedir(ff, name):
     """
     ff: filepath of the original file
-    name: name for the particular folder inside 
+    name: name for the particular folder inside
     """
     if "dwd" in ff:
         country="dwd"
@@ -89,7 +89,7 @@ def make_savedir(ff, name):
 #%% Load data
 
 for ff in files:
-    
+
     # check if the QVP file already exists before starting
     savepath = make_savedir(ff, "")
     if os.path.exists(("rhohv_nc").join(savepath.split("allmoms"))) and not overwrite:
@@ -97,24 +97,23 @@ for ff in files:
 
     print("processing "+ff)
     if "dwd" in ff:
-        # data=dttree.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset()
         data = utils.load_dwd_preprocessed(ff) # this already loads the first elev available in the files and fixes time coord
     elif "dmi" in ff:
         # data=xr.open_dataset(ff)
         data = utils.load_dmi_preprocessed(ff) # this loads DMI file and flips phidp and fixes time coord
     else:
         raise NotImplementedError("Only DWD or DMI data supported at the moment")
-        
+
     # fix time dim and time in coords
     # data = utils.fix_time_in_coords(data)
-    
+
 
 #%% Calculate RHOHV correction
     # get DBZH name
     for X_DBZH in dbzh_names:
         if X_DBZH in data.data_vars:
             break
-    
+
     # get RHOHV name
     for X_RHO in rhohv_names:
         if X_RHO in data.data_vars:
@@ -129,7 +128,7 @@ for ff in files:
         sys.exit("RHOHV not found in data.")
 
     rho_nc = utils.calculate_noise_level(data[X_DBZH], data[X_RHO], noise=(-45, -15, 1))
-    
+
     # lets do a linear fit for every noise level
     fits=[]
     for nn,rhon in enumerate(rho_nc[0]):
@@ -140,7 +139,7 @@ for ff in files:
         except:
             # if it does not work, just attach nan
             fits.append(np.nan)
-    
+
     # checking which fit has the slope closest to zero
     try:
         bci = np.nanargmin(np.abs(np.array(fits)))
@@ -155,19 +154,19 @@ for ff in files:
 
     # # get the "best" noise correction level (acoording to the min std)
     # ncl = rho_nc[-1]
-    
+
     # # get index of the best correction
     # bci = np.array(rho_nc[-2]).argmin()
-    
+
     # merge into a single array
     rho_nc_out = xr.merge(rho_nc[0][bci])
-    
+
     # add noise correction level as attribute
     rho_nc_out.attrs["noise correction level"]=ncl
-    
+
     # Just in case, calculate again for a NCL slightly lower (2%), in case the automatically-selected one is too strong
     rho_nc2 = utils.noise_correction2(data[X_DBZH], data[X_RHO], ncl*1.02)
-    
+
     # make a new array as before
     rho_nc_out2 = xr.merge(rho_nc2)
     rho_nc_out2.attrs["noise correction level"]=ncl*1.02
@@ -180,7 +179,7 @@ for ff in files:
     else:
         print("Country code not found in path")
         sys.exit("Country code not found in path.")
-    
+
     # copy encoding from DWD to reduce file size
     rho_nc_out["RHOHV_NC"].encoding = data[X_RHO].encoding
     rho_nc_out2["RHOHV_NC"].encoding = data[X_RHO].encoding
@@ -195,10 +194,10 @@ for ff in files:
     # save the arrays
     filename = ("rhohv_nc").join(savepath.split("allmoms"))
     rho_nc_out.to_netcdf(filename)
-    
+
     filename = ("rhohv_nc_2percent").join(savepath.split("allmoms"))
     rho_nc_out2.to_netcdf(filename)
-    
+
 #%% print how much time did it take
 total_time = time.time() - start_time
 print(f"Script took {total_time/60:.2f} minutes to run.")

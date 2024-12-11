@@ -16,7 +16,6 @@ import os
 import datetime as dt
 import glob
 from multiprocessing import Pool
-import datatree as dttree
 import xradar as xd
 import sys
 import scipy
@@ -46,29 +45,29 @@ def get_names(ds, phidp_names=phidp_names, dbzh_names=dbzh_names, rhohv_names=rh
     for X_DBZH in dbzh_names:
         if X_DBZH in ds.data_vars:
             break
-    
+
     # get RHOHV name
     for X_RHO in rhohv_names:
         if X_RHO in ds.data_vars:
             break
-    
+
     # get ZDR name
     for X_ZDR in zdr_names:
         if X_ZDR in ds.data_vars:
             break
-    
+
     # get TH name
     for X_TH in th_names:
         if X_TH in ds.data_vars:
             break
-        
+
     return X_DBZH, X_PHI, X_RHO, X_ZDR, X_TH
 
 
 
 # Set minimum height above the radar to be considered (mostly for filtering when calculating offsets, ML and entropy)
 min_hgts = {
-    'default': 200, 
+    'default': 200,
     '90grads': 600, # for the VP we need to set a higher min height because there are several bins of unrealistic values
     'ANK': 200, # for ANK we need higher min_hgt to avoid artifacts
     'GZT': 200 # for GZT we need higher min_hgt to avoid artifacts
@@ -76,7 +75,7 @@ min_hgts = {
 
 # Set minimum range to be considered (mostly for filtering bad PHIDP close to the radar)
 min_rngs = {
-    'default': 1000, 
+    'default': 1000,
     'HTY': 0, # for HTY the data looks pretty good close to the radar
     'ANK': 7000, # for ANK we need higher min_range to avoid PHIDP artifacts
     'AFY': 8500, # for AFY we need higher min_range to avoid artifacts
@@ -85,7 +84,7 @@ min_rngs = {
 }
 
 # Set the possible ZDR calibrations locations to include (in order of priority)
-# The idea is to use a script that will try to correct according to the first offset; if not available or nan it will 
+# The idea is to use a script that will try to correct according to the first offset; if not available or nan it will
 # continue with the next one, and so on. Only the used offset will be outputted in the final file.
 # All items in zdrofffile will be tested in each zdroffdir to load the data.
 zdroffdir = ["/calibration/zdr/VP/", "/calibration/zdr/LR_consistency/", "/calibration/zdr/QVP/", "/calibration/zdr/falseQVP/"] # subfolder(s) where to find the zdr offset data
@@ -161,7 +160,7 @@ def get_phase_proc_params(path):
         pass
     else:
         raise ValueError("path must be str or list")
-        
+
     if "dwd" in path:
         if "vol5minng01" in path:
             if "/tur/" in path:
@@ -174,7 +173,7 @@ def get_phase_proc_params(path):
             return phase_proc_params["dwd"]["90gradstarng01"]
         if "pcpng01" in path:
             return phase_proc_params["dwd"]["pcpng01"]
-        
+
     elif "dmi" in path:
         return phase_proc_params["dmi"]
     else:
@@ -208,8 +207,8 @@ def find_loc(locs, path):
                 return element
     return None
 
-locs_code = {"10392": "pro", "10832": "tur", "10356": "umd", 
-             "17187": "afy", "17138": "ank", "17259": "gzt", 
+locs_code = {"10392": "pro", "10832": "tur", "10356": "umd",
+             "17187": "afy", "17138": "ank", "17259": "gzt",
              "17373": "hty", "17163": "svs"} # possible locs
 
 def find_loc_code(locs_code, path):
@@ -220,7 +219,7 @@ def find_loc_code(locs_code, path):
                 return locs_code[element]
     return None
 
-# define a function to split a string at a certain pattern and replace it 
+# define a function to split a string at a certain pattern and replace it
 def edit_str(ff, replace, name):
     """
     ff: string of file path or whatever
@@ -239,68 +238,68 @@ def fix_time_in_coords(ds):
 
     Parameter
     ---------
-    ds : xarray.DataArray or xarray.Dataset    
+    ds : xarray.DataArray or xarray.Dataset
     """
-    
+
     # It may happen that some time value is missing or that time values are repeated, attempt to fix that using info in rtime
     if ds["time"].isnull().any() or (ds["time"].diff("time").compute().astype(int) <= 0).any() :
-        ds.coords["time"] = ds.rtime.min(dim="azimuth", skipna=True).compute()    
-        
+        ds.coords["time"] = ds.rtime.min(dim="azimuth", skipna=True).compute()
+
     # if some coord has dimension time, reduce using median
     for coord in ["latitude", "longitude", "altitude", "elevation"]:
         if "time" in ds[coord].dims:
             ds.coords[coord] = ds.coords[coord].median("time")
-            
+
     # in case there are still duplicate timesteps, attemp to reduce the time dim
     ds = reduce_duplicate_timesteps(ds)
-    
+
     return ds
 
 def reduce_duplicate_timesteps(ds):
     """
-    Reduce duplicate time values by combining the data variables available at each timestep. In 
-    case there are duplicate data vars (same name in the duplicate time value) then remove the duplicates, 
-    otherwise keep all variables by renaming them with _n, with n = 2,... starting from the second 
+    Reduce duplicate time values by combining the data variables available at each timestep. In
+    case there are duplicate data vars (same name in the duplicate time value) then remove the duplicates,
+    otherwise keep all variables by renaming them with _n, with n = 2,... starting from the second
     one with the same name.
-    
+
     Originally made for handling turkish radar datasets.
 
     Parameter
     ---------
-    ds : xarray.Dataset    
+    ds : xarray.Dataset
     """
     # Check if there are duplicate time values
     if (ds.time.diff("time").astype(int)==0).any():
-    
+
         # Create a new dummy dataset to concatenate the reduced data
         ds_reduced = ds.isel(time=[0]).copy()
-        
+
         for tt in sorted(set(ds.time.values)):
             # Make a list for the selected variables
             reduced_vars = []
-    
+
             # Select data for the current timestep
             ds_time = ds.sel(time=tt)
-            
+
             # If time is not a dimension anymore
             if "time" not in ds_time.dims:
-                # then just add the current ds 
+                # then just add the current ds
                 ds_reduced = xr.concat([ds_reduced, ds_time], dim="time")
 
             else:
-                # for each variable, 
+                # for each variable,
                 for vv in ds_time.data_vars:
                     # start by removing NA
                     ds_time_nona = ds_time[vv].dropna("time", how="all")
-                    
+
                     if len(ds_time_nona["time"]) == 1:
                         # if the array got reduced to only 1 timestep, then attach it to reduced_vars
                         reduced_vars.append(ds_time_nona.copy())
-                        
+
                     elif len(ds_time_nona["time"]) == 0:
                         # if the array got reduced to 0 timestep, then skip
                         continue
-                    
+
                     else:
                         # if there are still more than 1 timestep, divide them into separate variables
                         for itt in range(len(ds_time.time)):
@@ -314,24 +313,24 @@ def reduce_duplicate_timesteps(ds):
                                     ivv+=ivv # we need to sum 1 because we are going backwards
                                     if ds_time_nona.isel(time=[itt]).equals(reduced_vars[-ivv]):
                                         # if it is equal to any of the already selected arrays, ignore it
-                                        break 
+                                        break
                                     else:
                                         # if it is not equal to previous arrays, append it as a variant of that variable
                                         reduced_vars.append(ds_time_nona.isel(time=[itt]).rename(vv+"_"+str(count)).copy())
                                         count+=1
-                                
+
                 # Merge all variables into a single dataset
                 reduced_vars_ds = xr.merge(reduced_vars)
-                
+
                 # Add the current timestep data to the new dataset
                 ds_reduced = xr.concat([ds_reduced, reduced_vars_ds], dim="time")
-                
+
         # delete the dummy data from the first timestep
         # Here I could also use .drop_isel but there is a bug and it does not work https://github.com/pydata/xarray/issues/6605
         ds_reduced = ds_reduced.drop_duplicates("time", keep="last")
-        
+
         return ds_reduced
-    
+
     else: # in case there are no duplicate timesteps, just return ds
         return ds
 
@@ -342,7 +341,7 @@ def align(ds):
 
     Parameter
     ---------
-    ds : xarray.DataArray or xarray.Dataset    
+    ds : xarray.DataArray or xarray.Dataset
     """
     ds["time"] = ds["time"].load().min() # reduce time in the azimuth
     ds["elevation"] = ds["elevation"].load().median() # remove elevation in time
@@ -353,7 +352,7 @@ def align(ds):
 
 def check_time_dimension_alignment(datasets, tolerance="S"):
     """
-    From a list of xarray DataArray or Datasets, check that it is possible to align their time 
+    From a list of xarray DataArray or Datasets, check that it is possible to align their time
     dimensions to a unique one (e.g. to the one with the earliest time values).
 
     Parameter
@@ -393,17 +392,17 @@ def unfold_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, phidp_lim
 
     Parameter
     ---------
-    ds : xarray.DataArray or xarray.Dataset    
+    ds : xarray.DataArray or xarray.Dataset
     phidp_names : list of PHIDP variable names to look for in the dataset
     rhohv_names : list of RHOHV variable names to look for in the dataset
     phidp_lims : tuple delimiting the PHIDP range to use as the center of the distribution,
                 if the majority of PHIDP values are outside this range, then unfold.
     """
     success = False # define a variable to check if some PHIDP variable was found
-    
+
     phidp_min = phidp_lims[0]
     phidp_max = phidp_lims[1]
-    
+
     for phi in phidp_names:
         if phi in ds.data_vars:
             X_PHI = phi
@@ -412,22 +411,22 @@ def unfold_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, phidp_lim
                 for X_RHO in rhohv_names: # only take pixels with rhohv>0.7 to avoid noise
                     if X_RHO in ds.data_vars:
                         ds_phi = ds[X_PHI].where(ds[X_RHO]>0.7).isel({"range":slice(4,None)}) # we also take out the first bins
-                        
+
                         # compute the count of values inside and outside the phidp_lims
                         values_center = ((ds_phi>phidp_min)*(ds_phi<phidp_max)).sum().compute()
                         values_sides = ((ds_phi>phidp_max)+(ds_phi<phidp_min)).sum().compute()
-                        
+
                         # compute also the mode (most frequent value) of the whole distribution
                         ds_phi_hist = histogram(ds_phi, bins=np.arange(-180, 184, 4), block_size=None) # block_size=None to avoid a bug
                         ds_phi_mode = ds_phi_hist[ds_phi_hist.argmax().compute()][X_PHI+"_bin"].values
-                        
-                        # if the mode is < phidp_min and the count of valid phidp values 
+
+                        # if the mode is < phidp_min and the count of valid phidp values
                         # between 0-90 degrees is greater than the count between 90-180
                         # we assume the distribution of values is not folded but just shifted to the negatives
                         values_0_90 = ((ds_phi>0)*(ds_phi<90)).sum().compute()
                         values_90_180 = ((ds_phi>90)*(ds_phi<180)).sum().compute()
                         not_folded_cond = (ds_phi_mode < phidp_min) * (values_0_90 > values_90_180)
-                        
+
                         if values_sides > values_center:
                             if not not_folded_cond:
                                 attrs = ds[X_PHI].attrs.copy()
@@ -436,25 +435,25 @@ def unfold_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, phidp_lim
                                 print(X_PHI+" was unfolded")
                         success = True
                         break
-            
+
     if not success:
         warnings.warn("unfold_phidp: PHIDP and/or RHOHV variable not found. Nothing was done")
-        
+
     return ds
 
-def fix_flipped_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, range_name="range", 
+def fix_flipped_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, range_name="range",
                       fix_range=3000., rng=10000., flip_kdp=True, tolerance = 0.05):
     """
     Flip PHIDP in case it is inverted. The function smooths PHIDP and calculates the
-    differences between gates, for each ray. Then, the differences in the whole of ds 
+    differences between gates, for each ray. Then, the differences in the whole of ds
     are summed. If the resulting value is negative, i.e. PHIDP mostly goes down,
-    then PHIDP is flipped (multiplied by -1). Only pixels with RHOHV>0.7 and 
+    then PHIDP is flipped (multiplied by -1). Only pixels with RHOHV>0.7 and
     starting from fix_range are taken into consideration. Also flips KDP if
     flip_kdp is True.
 
     Parameter
     ---------
-    ds : xarray.DataArray or xarray.Dataset    
+    ds : xarray.DataArray or xarray.Dataset
     phidp_names : list of PHIDP variable names to look for in the dataset
     rhohv_names : list of RHOHV variable names to look for in the dataset
     range_name : str name of the range coordinate
@@ -465,7 +464,7 @@ def fix_flipped_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, rang
     flip_kdp : bool
         If True, test also "KDP" for flipping if there is a majority of negative values.
         Only flips if PHIDP was flipped.
-    tolerance : float tolerance value to not apply the kdp flip. The count of negative 
+    tolerance : float tolerance value to not apply the kdp flip. The count of negative
                 kdp values must be higher than the count of positives *(1+tolerance) .
     """
     success = False # define a bool to check if some PHIDP variable was found
@@ -475,7 +474,7 @@ def fix_flipped_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, rang
     nprec = int(rng / range_step)
     if not nprec % 2:
         nprec += 1
-    
+
     for phi in phidp_names:
         if phi in ds.data_vars:
             X_PHI = phi
@@ -486,7 +485,7 @@ def fix_flipped_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, rang
                         ds_phi = ds[X_PHI].where(ds[X_RHO]>0.7).where(ds[range_name]>=fix_range)
                         ds_phi_std = ds_phi.rolling({range_name:nprec}, center=True).std() # filter out pixels with std > 5
                         smooth_diff = ds_phi.where(ds_phi_std<5).rolling({range_name:nprec}, center=True).median().diff(range_name).sum()
-                        
+
                         if smooth_diff < 0:
                             attrs = ds[X_PHI].attrs.copy()
                             ds[X_PHI] = ds[X_PHI]*-1
@@ -496,7 +495,7 @@ def fix_flipped_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, rang
                                 flip_kdp_trigger = True
                         success = True
                         break
-                                
+
     if "KDP" in ds.data_vars and flip_kdp_trigger:
         ds_kdp = ds["KDP"].where(ds[X_RHO]>0.7).where(ds[range_name]>=fix_range)
         kdp_pos = (ds_kdp>0).sum().compute()
@@ -508,7 +507,7 @@ def fix_flipped_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, rang
             print("KDP"+" was flipped")
     if not success:
         warnings.warn("fix_flipped_phidp: PHIDP and/or RHOHV variable not found. Nothing was done")
-        
+
     return ds
 
 def xr_rolling(da, window, window2=None, method="mean", min_periods=2, rangepad="fill", **kwargs):
@@ -530,9 +529,9 @@ def xr_rolling(da, window, window2=None, method="mean", min_periods=2, rangepad=
     min_periods : int
         minimum number of valid bins
     rangepad : string
-        Padding method for the edges of the range dimension. "fill" will fill the 
+        Padding method for the edges of the range dimension. "fill" will fill the
         nan values resulting from not enough bins by stretching the closest value.
-        "reflect" will extend the original array by reflecting around the edges 
+        "reflect" will extend the original array by reflecting around the edges
         so there is enough bins for the calculation
     **kwargs : dict
         kwargs to feed to rolling function
@@ -564,10 +563,10 @@ def xr_rolling(da, window, window2=None, method="mean", min_periods=2, rangepad=
 
     da_new = getattr(rolling, method)(**kwargs)
     da_new = da_new.isel(**isel)
-    
+
     if rangepad == "fill":
         da_new = da_new.bfill("range").ffill("range")
-    
+
     return da_new
 
 def gauss_kernel(width, sigma):
@@ -592,16 +591,16 @@ def smooth_data(data, kernel):
 
 def n_longest_consecutive(ds, dim='time'):
     """
-    Calculates the number of values in the longest consecutive sequence of 
+    Calculates the number of values in the longest consecutive sequence of
     valid values along the specified dimension.
     """
     ds = ds.notnull().cumsum(dim=dim) - ds.notnull().cumsum(dim=dim).where(ds.isnull()).ffill(dim=dim).fillna(0)
     return ds.max(dim=dim)
-     
+
 #### Loading functions
 def load_dwd_preprocessed(filepath):
     """
-    Load preprocessed DWD data stored in data trees. Can only concatenate several files 
+    Load preprocessed DWD data stored in data trees. Can only concatenate several files
     in the time dimension.
 
     Parameter
@@ -609,31 +608,31 @@ def load_dwd_preprocessed(filepath):
     filepath : str, list
             Location of the file or path with wildcards to find files using glob or list of paths
     """
-    
+
     # collect files
     if type(filepath) is list:
         files = sorted(filepath)
     else:
         files = sorted(glob.glob(filepath))
-    
+
     # open files
     dwddata = []
     for ff in files:
-        
-        dwd0 = dttree.open_datatree(ff, chunks={})
-        
+
+        dwd0 = xr.open_datatree(ff, chunks={})
+
         # check how many sweeps there are
         if len(dwd0.descendants) != 1:
             raise TypeError("More than one dataset inside the datatree. Currently not supported")
-        
+
         # get dataset and fix time coordinate
         dwddata.append(fix_flipped_phidp(unfold_phidp(fix_time_in_coords(dwd0.descendants[0].to_dataset()))))
-            
+
     if len(dwddata) == 1:
         return dwddata[0]
     else:
         return xr.concat(dwddata, dim="time")
-    
+
 def load_dwd_raw(filepath):
     """
     Load DWD raw data.
@@ -643,39 +642,39 @@ def load_dwd_raw(filepath):
     filepath : str, list
             Location of the file or path with wildcards to find files using glob or list of paths
     """
-    
+
     # collect files
     if type(filepath) is list:
         files = sorted(filepath)
     else:
         files = sorted(glob.glob(filepath))
-    
-    # extract list of moments 
+
+    # extract list of moments
     moments = set(fp.split("_")[-2] for fp in files)
-    
+
     # discard "allmoms" from the set if it exists
     moments.discard("allmoms")
-        
-    
+
+
     try:
         # for every moment, open all files in folder (all timesteps) per moment into a dataset
         vardict = {} # a dict for putting a dataset per moment
         for mom in moments:
-                        
+
             # open the odim files (single moment and elevation, several timesteps)
             llmom = sorted([ff for ff in files if "_"+mom+"_" in ff])
-            
-            vardict[mom] = xr.open_mfdataset(llmom, engine="odim", combine="nested", concat_dim="time", preprocess=align) 
-            
+
+            vardict[mom] = xr.open_mfdataset(llmom, engine="odim", combine="nested", concat_dim="time", preprocess=align)
+
             vardict[mom] = fix_flipped_phidp(unfold_phidp(fix_time_in_coords(vardict[mom])))
-            
+
     except OSError:
         pathparts = [ xx if len(xx)==8 and "20" in xx else None for xx in llmom[0].split("/") ]
         pathparts.sort(key=lambda e: (e is None, e))
         date = pathparts[0]
         print(date+" "+mom+": Error opening files. Some file is corrupt or truncated.")
         sys.exit("Script terminated early. "+date+" "+mom+": Error opening files. Some file is corrupt or truncated.")
-    
+
     # merge all moments
     return xr.merge(vardict.values())
 
@@ -693,13 +692,13 @@ def load_dmi_preprocessed(filepath):
         files = sorted(filepath)
     else:
         files = sorted(glob.glob(filepath))
-    
+
     # open files
     if len(files) == 1:
         dmidata = xr.open_mfdataset(files[0])
     if len(files) >= 1:
         dmidata = xr.open_mfdataset(files)
-    
+
     return fix_flipped_phidp(unfold_phidp(fix_time_in_coords(dmidata)))
 
 
@@ -718,13 +717,13 @@ def load_dmi_raw(filepath): # THIS IS NOT IMPLEMENTED YET # !!!
         files = sorted(filepath)
     else:
         files = sorted(glob.glob(filepath))
-    
+
     # open files
     if len(files) == 1:
         dmidata = xr.open_mfdataset(files[0])
     if len(files) >= 1:
         dmidata = xr.open_mfdataset(files)
-    
+
     return fix_flipped_phidp(unfold_phidp(fix_time_in_coords(dmidata)))
 
 def load_volume(filelists, func=load_dwd_preprocessed, align_time=True, tolerance="S", verbose=False):
@@ -737,12 +736,12 @@ def load_volume(filelists, func=load_dwd_preprocessed, align_time=True, toleranc
             Each item of filelists must be another list containing all files paths for a single elevation, or
             a str of a file path (either uniquely defined or with wildcards).
     func : func
-            Function to load each elevation. Either load_dwd_preprocessed, load_dwd_raw, 
+            Function to load each elevation. Either load_dwd_preprocessed, load_dwd_raw,
             load_dmi_preprocessed, load_dmi_raw or a user defined function that is called for
             each item in filelists.
     align_time : bool
-            If True and if the time dimension has equal length in all files, align 
-            the time dimension according to the values of the first file. Note that 
+            If True and if the time dimension has equal length in all files, align
+            the time dimension according to the values of the first file. Note that
             if time alignment is not done (or not possible) the resulting dataset
             may be too large to fit in memory.
     tolerance : keyword argument for time rounding. "S" for seconds, "T" for minutes.
@@ -751,7 +750,7 @@ def load_volume(filelists, func=load_dwd_preprocessed, align_time=True, toleranc
     sweeps = []
     if type(filelists) is str:
         filelists = [filelists]
-        
+
     for fn,filelist in enumerate(filelists):
         # collect files
         if type(filelist) is list:
@@ -760,20 +759,20 @@ def load_volume(filelists, func=load_dwd_preprocessed, align_time=True, toleranc
                 continue
             files = sorted(filelist)
         else:
-            if "359." in filelist: 
+            if "359." in filelist:
                 print("Ignoring 359. elevation")
                 continue
             files = sorted(glob.glob(filelist))
-            
+
         if verbose: print("Loading "+str(fn+1)+" of "+str(len(filelists))+": "+str(len(files))+" files found ...")
-            
+
         # load files for this elevation
         sweeps.append(func(files))
-        
+
         # tidy up coords and dims
         sweeps[-1].coords["azimuth"] = sweeps[-1].coords["azimuth"].round(1) # round the azimuths to avoid slight differences
         try:
-            sweeps[-1] = sweeps[-1].set_coords("sweep_fixed_angle") 
+            sweeps[-1] = sweeps[-1].set_coords("sweep_fixed_angle")
             sweeps[-1].coords["sweep_fixed_angle"] = sweeps[-1].coords["sweep_fixed_angle"].mean() # reduce sweep_fixed_angle
         except:
             pass
@@ -795,15 +794,15 @@ def load_volume(filelists, func=load_dwd_preprocessed, align_time=True, toleranc
 
     # Pass meta variables to coords to avoid some issues
     vol = vol.set_coords(("sweep_mode", "sweep_number", "prt_mode", "follow_mode"))
-    
+
     # Reduce coordinates so the georeferencing works
     vol["elevation"] = vol["elevation"].mean("azimuth")
     vol["rtime"] = vol["rtime"].min("azimuth")
     vol["sweep_mode"] = vol["sweep_mode"].min()
-    
+
     return vol.sortby("sweep_fixed_angle")
 
-def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False, 
+def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
               fillna_vars={"ZDR_OC": "ZDR", "RHOHV_NC": "RHOHV", "UPHIDP_OC": "UPHIDP", "PHIDP_OC": "PHIDP"}):
     """
     Load DWD or DMI QVP data.
@@ -817,18 +816,18 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
     -----------------
     align_z : bool
         If True and loading multiple files, align the z coord to the values of the first
-        file. This is meant to avoid broadcasting due to random fluctuations (noise) 
+        file. This is meant to avoid broadcasting due to random fluctuations (noise)
         in the z coordinate. If loading QVPs from multiple elevation angles, align_z should
         be False to avoid erroneous alignment.
     fix_TEMP : bool
-        If True and loading multiple files, add empty (nan) TEMP coordinate in case it 
+        If True and loading multiple files, add empty (nan) TEMP coordinate in case it
         is not present in the file.
     fillna : bool
-        If True, attempt to fill empty corrected variables with their non-corrected counterparts. 
-        E.g.: Fill empty ZDR_OC with the values from ZDR, empty RHOHV_NC with RHOHV, etc. 
+        If True, attempt to fill empty corrected variables with their non-corrected counterparts.
+        E.g.: Fill empty ZDR_OC with the values from ZDR, empty RHOHV_NC with RHOHV, etc.
         Default is False
     fillna_vars : dict
-        Dictionary of variables to attempt to fill in case they are empty. The keys indicate the 
+        Dictionary of variables to attempt to fill in case they are empty. The keys indicate the
         variable to attempt to fill and the value indicate the filler variable.
 
     Return
@@ -852,7 +851,7 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
         # the z coord from the first dataset into the rest with preprocessing
         # There could also be some time values missing, ignore those
         # Some files do not have TEMP data, fill with nan
-        first_file = xr.open_mfdataset(files[0]) 
+        first_file = xr.open_mfdataset(files[0])
         first_file_z = first_file.z.copy()
         def fix_coords(ds, align_z=True, fix_TEMP=True):
             if align_z:
@@ -860,27 +859,27 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
             ds = ds.where(ds["time"].notnull(), drop=True)
             if "TEMP" not in ds.coords and fix_TEMP:
                 ds.coords["TEMP"] = xr.full_like( ds["DBZH"], np.nan ).compute()
-                
+
             return ds
-            
+
         try:
             qvps = xr.open_mfdataset(files, preprocess=partial(fix_coords, align_z=align_z, fix_TEMP=fix_TEMP))
-        except: 
+        except:
             if align_z:
                 print("Aligning z coord may have failed, attempting to load without alignment...")
             try:
                 qvps = xr.open_mfdataset(files, combine="nested", concat_dim="time")
             except:
                 qvps = xr.open_mfdataset(files)
-    
+
     if fillna:
         assign = dict()
         for vv in fillna_vars.keys():
             if vv in qvps:
                 assign[vv] = qvps[vv].fillna(qvps[fillna_vars[vv]])
-                
+
         qvps = qvps.assign(assign)
-    
+
     return qvps
 
 #### Loading ZDR offsets and RHOHV noise corrected
@@ -924,7 +923,7 @@ def load_ZDR_offset(ds, X_ZDR, zdr_off_path, zdr_off_name="ZDR_offset", zdr_oc_n
         else:
             ds = ds.assign({zdr_oc_name: ds[X_ZDR]-zdr_offset[zdr_off_name].values})
         ds[zdr_oc_name].attrs = ds[X_ZDR].attrs
-        
+
         if attach_all_vars:
             ds.assign(zdr_offset)
         return ds
@@ -950,7 +949,7 @@ def load_corrected_RHOHV(ds, rho_nc_path, rho_nc_name="RHOHV_NC"):
     """
 
     rho_nc = xr.open_mfdataset(rho_nc_path)
-    
+
     # create RHOHV_NC variable
     ds = ds.assign(rho_nc)
     ds[rho_nc_name].attrs["noise correction level"] = rho_nc.attrs["noise correction level"]
@@ -960,13 +959,13 @@ def load_corrected_RHOHV(ds, rho_nc_path, rho_nc_name="RHOHV_NC"):
 #### QVPs
 def compute_qvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1} , output_count=False):
     """
-    Computes QVP by doing the azimuthal median from the values of an 
+    Computes QVP by doing the azimuthal median from the values of an
     xarray Dataset, thresholded by min_thresh.
 
     Parameter
     ---------
-    ds : xarray.Dataset 
-            Dataset 
+    ds : xarray.Dataset
+            Dataset
     min_thresh : dict
             dictionary where the keys are variable names and the values are
             the minimum values of each variable, for thresholding.
@@ -983,7 +982,7 @@ def compute_qvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1} , output_count=
     # Georeference if not
     if "z" not in ds:
         ds = ds.pipe(wrl.georef.georeference)
-    
+
     # Create a combined filter mask for all conditions in the dictionary
     combined_mask = None
     for var_name, threshold in min_thresh.items():
@@ -995,56 +994,56 @@ def compute_qvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1} , output_count=
             if combined_mask is None:
                 combined_mask = condition.compute()
             else:
-                combined_mask &= condition.compute()    
-                
+                combined_mask &= condition.compute()
+
     ds_qvp = ds.where(combined_mask).median("azimuth", keep_attrs=True)
 
     # assign coord z
     ds_qvp = ds_qvp.assign_coords({"z": ds["z"].median("azimuth", keep_attrs=True)})
-    
+
     try:
         ds_qvp = ds_qvp.swap_dims({"range":"z"}) # swap range dimension for height
     except ValueError:
         warnings.warn("compute_qvp: Unable to swap range and z dimensions")
-    
+
     if output_count:
         ds_qvp_count = ds.where(combined_mask).count("azimuth", keep_attrs=True)
-    
+
         # assign coord z
         ds_qvp_count = ds_qvp_count.assign_coords({"z": ds["z"].median("azimuth", keep_attrs=True)})
-        
+
         try:
             ds_qvp_count = ds_qvp_count.swap_dims({"range":"z"}) # swap range dimension for height
         except ValueError:
             None
         return ds_qvp, ds_qvp_count
-    
+
     else:
         return ds_qvp
 
 def compute_rdqvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1}, max_range=50000. ):
     """
-    Computes range-defined QVP by doing the azimuthal median from the values of an 
+    Computes range-defined QVP by doing the azimuthal median from the values of an
     xarray Dataset with several elevations (radar volume), thresholded by min_thresh.
     This simple version only considers data inside the defined range and does not
     use any weighting outside the range, it just ignores it.
 
     Parameter
     ---------
-    ds : xarray.Dataset 
+    ds : xarray.Dataset
             Dataset with several elevations (radar volume)
     min_thresh : dict
             dictionary where the keys are variable names and the values are
             the minimum values of each variable, for thresholding.
     max_range : float
-            Maximum ground range within wich to consider values. This is the 
+            Maximum ground range within wich to consider values. This is the
             ground distance to the radar and not the range along the ray.
 
     Return
     ------
     ds_qvp : xarray.Dataset
         Dataset with the thresholded data reduced to a QVP with dim z (and time if available)
-        
+
     Reference
     ------
     Tobin, D. M., and M. R. Kumjian, 2017: Polarimetric Radar and Surface-Based Precipitation-Type Observations of Ice Pellet to Freezing Rain Transitions. Wea. Forecasting, 32, 2065–2082
@@ -1057,29 +1056,29 @@ def compute_rdqvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1}, max_range=50
     ds_close = ds.where(ds["gr"]<max_range)
     min_z = ds_close["z"].min().values
     max_z = ds_close["z"].max().values
-    
+
     # call compute_qvp for each elevation
     for sfa in ds_close["sweep_fixed_angle"]:
         qvp, count = compute_qvp(ds_close.sel(sweep_fixed_angle=sfa), min_thresh=min_thresh, output_count=True)
         qvps.append(qvp.copy(deep=True))
         qvps_count.append(count.fillna(0).copy(deep=True))
-        
+
     # interpolate to higher res z
-    new_z = np.linspace(min_z, max_z, round((max_z-min_z)/2) ) 
-    
+    new_z = np.linspace(min_z, max_z, round((max_z-min_z)/2) )
+
     for qvp in qvps:
         qvps_highres.append( qvp.interp(z=new_z) )
 
     for count in qvps_count:
         qvps_highres_count.append( count.interp(z=new_z) )
-    
+
     # merge qvps into one dataset
     qvps_highres = xr.concat(qvps_highres, dim="sweep_fixed_angle").chunk(dict(sweep_fixed_angle=-1))
     qvps_highres_count = xr.concat(qvps_highres_count, dim="sweep_fixed_angle").chunk(dict(sweep_fixed_angle=-1))
-    
+
     # weighted median of all elevs
     ds_qvp = qvps_highres.weighted(qvps_highres_count["DBZH"].fillna(0)).quantile(q=0.5, dim="sweep_fixed_angle")
-    
+
     return ds_qvp
 
 #### Entropy calculation
@@ -1087,11 +1086,11 @@ def Entropy_timesteps_over_azimuth_different_vars_schneller(ds, n_az=360, zhlin=
 
     '''
     From Tobias Scharbach
-    
-    Function to calculate the Efficiency (Normalized Entropy) according to information theory, 
+
+    Function to calculate the Efficiency (Normalized Entropy) according to information theory,
     to estimate the homogenity from a sector PPi or the whole 360° PPi
     for each timestep. Values over 0.8 are considered stratiform.
-    
+
     The dataset should have zhlin and zdrlin which are the linear form of ZH and ZDR, i.e. only positive values
     (not in DB, use wradlib.trafo.idecibel to transform from DBZ to linear)
 
@@ -1125,46 +1124,46 @@ def Entropy_timesteps_over_azimuth_different_vars_schneller(ds, n_az=360, zhlin=
 
     ######### Example how to calculate the min over the entropy calculated over the polarimetric variables
     Entropy = Entropy_timesteps_over_azimuth_different_vars_schneller(ds)
-    
-    strati = xr.concat((Entropy.entropy_zdrlin, Entropy.entropy_Z, Entropy.entropy_RHOHV, Entropy.entropy_KDP),"entropy")        
-    
+
+    strati = xr.concat((Entropy.entropy_zdrlin, Entropy.entropy_Z, Entropy.entropy_RHOHV, Entropy.entropy_KDP),"entropy")
+
     min_trst_strati = strati.min("entropy")
     ds["min_entropy"] = min_trst_strati
-    
+
     '''
     Variable_List_new_zhlin = (ds[zhlin]/(ds[zhlin].sum(("azimuth"),skipna=True)))
     entropy_zhlin = - ((Variable_List_new_zhlin * np.log10(Variable_List_new_zhlin)).sum("azimuth"))/np.log10(n_az)
     entropy_zhlin = entropy_zhlin.rename("entropy_Z")
-    
+
     Variable_List_new_zdrlin = (ds[zdrlin]/(ds[zdrlin].sum(("azimuth"),skipna=True)))
     entropy_zdrlin = - ((Variable_List_new_zdrlin * np.log10(Variable_List_new_zdrlin)).sum("azimuth"))/np.log10(n_az)
     entropy_zdrlin = entropy_zdrlin.rename("entropy_zdrlin")
-    
-    
+
+
     Variable_List_new_RHOHV = (ds[rhohvnc]/(ds[rhohvnc].sum(("azimuth"),skipna=True)))
     entropy_RHOHV = - ((Variable_List_new_RHOHV * np.log10(Variable_List_new_RHOHV)).sum("azimuth"))/np.log10(n_az)
     entropy_RHOHV = entropy_RHOHV.rename("entropy_RHOHV")
-    
-    
+
+
     Variable_List_new_KDP = (ds[kdp]/(ds[kdp].sum(("azimuth"),skipna=True)))
     entropy_KDP = - ((Variable_List_new_KDP * np.log10(Variable_List_new_KDP)).sum("azimuth"))/np.log10(n_az)
     entropy_KDP = entropy_KDP.rename("entropy_KDP")
-    
 
-    
-    entropy_all_xr = xr.merge([entropy_zhlin, entropy_zdrlin, entropy_RHOHV, entropy_KDP ])    
-    
+
+
+    entropy_all_xr = xr.merge([entropy_zhlin, entropy_zdrlin, entropy_RHOHV, entropy_KDP ])
+
     return entropy_all_xr
 
 def calculate_pseudo_entropy(ds, dim='azimuth', var_names=["zhlin", "zdrlin", "RHOHV_NC", "KDP_ML_corrected"], n_lowest=30):
 
-    '''    
-    Function to calculate the Efficiency (Normalized Entropy) according to information theory. 
-    This implementation differs from the original formulation in that the probabilities of 
+    '''
+    Function to calculate the Efficiency (Normalized Entropy) according to information theory.
+    This implementation differs from the original formulation in that the probabilities of
     each value are replaced by the values normalized by the sum of all values.
     Useful to estimate the homogenity from a sector PPi or the whole 360° PPi
-    for each timestep. Values over 0.8 are considered stratiform. 
-    
+    for each timestep. Values over 0.8 are considered stratiform.
+
     The dataset should have zhlin and zdrlin which are the linear form of ZH and ZDR, i.e. only positive values
     (not in DB, use wradlib.trafo.idecibel to transform from DBZ to linear)
 
@@ -1178,7 +1177,7 @@ def calculate_pseudo_entropy(ds, dim='azimuth', var_names=["zhlin", "zdrlin", "R
 
     var_names : list
         list of variable names over which to perform the operation
-        
+
     n_lowest : int
         minimum amount of non-nan values for returning non-nan entropy
 
@@ -1189,12 +1188,12 @@ def calculate_pseudo_entropy(ds, dim='azimuth', var_names=["zhlin", "zdrlin", "R
 
     ######### Example how to calculate the min over the entropy calculated over the polarimetric variables
     Entropy = calculate_pseudo_entropy(ds)
-    
-    strati = xr.concat((Entropy.entropy_zhlin, Entropy.entropy_zdrlin, Entropy.entropy_RHOHV, Entropy.entropy_KDP),"entropy")        
-    
+
+    strati = xr.concat((Entropy.entropy_zhlin, Entropy.entropy_zdrlin, Entropy.entropy_RHOHV, Entropy.entropy_KDP),"entropy")
+
     min_trst_strati = strati.min("entropy")
     ds["min_entropy"] = min_trst_strati
-    
+
     '''
     def calc_pseudo_entropy(da):
         # This function calculates the pseudo entropy for the input data along dim
@@ -1210,14 +1209,14 @@ def calculate_pseudo_entropy(ds, dim='azimuth', var_names=["zhlin", "zdrlin", "R
 
     return xr.merge(pseudo_entropy_list)
 
-def calculate_binned_normalized_entropy(ds, dim='azimuth', var_names=["zhlin", "zdrlin", "RHOHV_NC", "KDP_ML_corrected"], 
+def calculate_binned_normalized_entropy(ds, dim='azimuth', var_names=["zhlin", "zdrlin", "RHOHV_NC", "KDP_ML_corrected"],
                                         n_lowest=30, bins=50, remove_empty_bins=False):
 
-    '''    
-    Function to calculate the Efficiency (Normalized Entropy) according to information theory 
-    based on a binning of the input data. Useful to estimate the homogenity from a sector PPi 
+    '''
+    Function to calculate the Efficiency (Normalized Entropy) according to information theory
+    based on a binning of the input data. Useful to estimate the homogenity from a sector PPi
     or the whole 360° PPi for each timestep. Values over 0.8 could be considered stratiform.
-    
+
     The dataset should have zhlin and zdrlin which are the linear form of ZH and ZDR, i.e. only positive values
     (not in DB, use wradlib.trafo.idecibel to transform from DBZ to linear)
 
@@ -1231,12 +1230,12 @@ def calculate_binned_normalized_entropy(ds, dim='azimuth', var_names=["zhlin", "
 
     var_names : list
         list of variable names over which to perform the operation
-        
+
     n_lowest : int
         minimum amount of non-nan values for returning non-nan entropy
-        
+
     bins : int, str
-        number of bins to use for binning the data or the method used to automatically calculate 
+        number of bins to use for binning the data or the method used to automatically calculate
         the optimal bin width as defined by numpy.histogram_bin_edges. The probabilities of each bin
         are estimated and the normalized entropy is calculated based on those probabilities
 
@@ -1247,12 +1246,12 @@ def calculate_binned_normalized_entropy(ds, dim='azimuth', var_names=["zhlin", "
 
     ######### Example how to calculate the min over the entropy calculated over the polarimetric variables
     Entropy = calculate_normalized_entropy(ds)
-    
-    strati = xr.concat((Entropy.entropy_zhlin, Entropy.entropy_zdrlin, Entropy.entropy_RHOHV, Entropy.entropy_KDP),"entropy")        
-    
+
+    strati = xr.concat((Entropy.entropy_zhlin, Entropy.entropy_zdrlin, Entropy.entropy_RHOHV, Entropy.entropy_KDP),"entropy")
+
     min_trst_strati = strati.min("entropy")
     ds["min_entropy"] = min_trst_strati
-    
+
     '''
 
     def calc_entropy_slices(da_slice, n_valid_values=n_lowest, bins=bins):
@@ -1264,20 +1263,20 @@ def calculate_binned_normalized_entropy(ds, dim='azimuth', var_names=["zhlin", "
             return np.array(1.)
         else:
             # This function calculates the normalized entropy for the whole input data (meant to be used in 1D slices)
-            
+
             # calculate the bins manually because xhistogram does not automatically compute bins for dask arrays
             # bins_array = np.histogram_bin_edges(da_slice, bins=bins, range=(float(da_slice.min()), float(da_slice.max())))
-    
+
             # calculate the histogram and the probabilities
             hist = np.histogram(da_slice, bins=bins, range=(float(np.nanmin(da_slice)), float(np.nanmax(da_slice))))
             probs = hist[0]/hist[0].sum()
-    
+
             # Calculate normalized entropy
             if remove_empty_bins:
                 norm_entropy = - (probs*np.log10(probs+1e-15)).sum()/np.log10(np.where(probs>0, 1, 0).sum())
             else:
                 norm_entropy = - (probs*np.log10(probs+1e-15)).sum()/np.log10(len(probs))
-    
+
             # return norm_entropy.rename("entropy_"+da_slice.name)
             return norm_entropy
 
@@ -1297,11 +1296,11 @@ def calculate_binned_normalized_entropy(ds, dim='azimuth', var_names=["zhlin", "
 
 def calculate_std(ds, dim='azimuth', var_names=["zhlin", "zdrlin", "RHOHV_NC", "KDP_ML_corrected"], n_lowest=30, normlims=None):
 
-    '''    
-    Function to calculate the standard deviation in a given dimension after 
-    normalizing the variables. Can be used to estimate the homogenity from a 
-    sector PPi or the whole 360° PPi for each timestep. 
-    
+    '''
+    Function to calculate the standard deviation in a given dimension after
+    normalizing the variables. Can be used to estimate the homogenity from a
+    sector PPi or the whole 360° PPi for each timestep.
+
     Parameter
     ---------
     ds : xarray.DataArray
@@ -1312,19 +1311,19 @@ def calculate_std(ds, dim='azimuth', var_names=["zhlin", "zdrlin", "RHOHV_NC", "
 
     var_names : list
         list of variable names over which to perform the operation
-        
+
     n_lowest : int
         minimum amount of non-nan values for returning non-nan results
 
     normlims : list, array, tuple
         Iterable with the minimum and maximum values to use for normalization. If None,
         the minimum and maximum of ds are used.
-        
+
     Return
     ------
     std : xarray.Dataset
         Dataset with std values for the input variables along the given dimension
-    
+
     '''
     try:
         def calc_std_slices(da_slice):
@@ -1349,7 +1348,7 @@ def calculate_std(ds, dim='azimuth', var_names=["zhlin", "zdrlin", "RHOHV_NC", "
 
 
 #### Melting Layer after Wolfensberger et al 2016 but refined for PHIDP correction using Silke's style from Trömel 2019 and Giangrande refinement
-    
+
 def normalise(da, dim):
     damin = da.min(dim=dim, skipna=True, keep_attrs=True)
     damax = da.max(dim=dim, skipna=True, keep_attrs=True)
@@ -1410,8 +1409,8 @@ def ml_height_bottom_new(ds, moment='comb_dy', dim='height', skipna=True, drop=T
 
     hgt = ds[moment].idxmax(dim=dim, skipna=skipna, fill_value=np.nan).load()
 
-        
-    ds = ds.assign(dict( 
+
+    ds = ds.assign(dict(
                         mlh_bottom=hgt))
     return ds
 
@@ -1420,25 +1419,25 @@ def ml_height_top_new(ds, moment='comb_dy', dim='height',skipna=True, drop=True)
 
     hgt = ds[moment].idxmin(dim=dim, skipna=skipna, fill_value=np.nan).load()
 
-    ds = ds.assign(dict( 
+    ds = ds.assign(dict(
                     mlh_top=hgt))
     return ds
 
 
 
 
-def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), PHIDP=(-90.,-70.)), dim='height', 
-                            thres=0.02, xwin=5, ywin=5, fmlh=0.3, min_h=600, rhohv_thresh_gia=(0.97, 1), 
+def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), PHIDP=(-90.,-70.)), dim='height',
+                            thres=0.02, xwin=5, ywin=5, fmlh=0.3, min_h=600, rhohv_thresh_gia=(0.97, 1),
                             grad_thresh=0.0001, all_data=False, clowres=False):
     '''
-    Function to detect the melting layer based on wolfensberger et al 2016 (https://doi.org/10.1002/qj.2672) 
+    Function to detect the melting layer based on wolfensberger et al 2016 (https://doi.org/10.1002/qj.2672)
     refined by T. Scharbach. Giangrande refinement is also calculated and included in separate variables.
 
     Parameter
     ---------
     ds : xarray.DataArray
         array with QVP data.
-        
+
     Keyword Arguments
     -----------------
     moments : dict
@@ -1462,8 +1461,8 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
 
     min_h : int, float
         Minimum height of usable data within the polarimetric profiles, in m. This is relative to
-        sea level and not relative to the altitude of the radar (in accordance to the "z" coordinate 
-        from wradlib.georef.georeference). The default is 600. 
+        sea level and not relative to the altitude of the radar (in accordance to the "z" coordinate
+        from wradlib.georef.georeference). The default is 600.
 
     rhohv_thresh_gia : tuple or list
         Thresholds for filtering RHOHV in Giangrande refinement. Only data between the provided
@@ -1475,7 +1474,7 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
         set the value of grad_thresh to an unreasonably high value (e.g. grad_thresh=1).
 
     all_data : bool
-        If True, include all normalized moments in the output dataset. If False, only output 
+        If True, include all normalized moments in the output dataset. If False, only output
         melting layer height values. Default is False.
 
     clowres : bool
@@ -1485,7 +1484,7 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
     ------
     ds : xarray.DataArray
         DataArray with input data plus variables for ML top and bottom and also normalized and derived variables.
-    '''    
+    '''
     zh = [k for k in moments if ("zh" in k.lower()) or ("th" in k.lower())][0]
     rho = [k for k in moments if "rho" in k.lower()][0]
     phi = [k for k in moments if "phi" in k.lower()][0]
@@ -1504,10 +1503,10 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
     # step 3 (and 8)
     ds0 = ml_gradient(ds0, dim=dim, ywin=ywin)
 
-    # step 4 
+    # step 4
     ds1 = ml_noise_reduction(ds0, dim=dim, thres=thres)
     #display(ds1)
-    
+
     # step 5
     ds2 = ml_height_bottom_new(ds1, dim=dim, drop=False)
     ds2 = ml_height_top_new(ds2, dim=dim, drop=False)
@@ -1520,11 +1519,11 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
             break
         except ValueError:
             xwin-=2
-            
+
     if xwin == 1:
         med_mlh_bot = np.nan
         med_mlh_top = np.nan
-            
+
     # step 7 (step 5 again)
     above = (1 + fmlh) * med_mlh_top
     below = (1 - fmlh) * med_mlh_bot
@@ -1555,39 +1554,39 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
     # cut below first local maxima (via differentiation and difference of signs)
     ds6 = ds6.chunk(-1)
     p4a = np.sign(ds6[phi+"_norm_dy"].differentiate(dim)).diff(dim).sortby(dim, ascending=False).idxmin(dim, skipna=True)
-    
+
     if clowres is not True:
         ds7 = ds6.where(ds6[dim] > p4a)
-    
+
     #idx = ds7[phi+"_norm"].argmin(dim=dim, skipna=True)
     #idx[np.isnan(idx)] = 0
     if clowres:
         hgt = ds6[phi+"_norm"].idxmin(dim=dim, skipna=True, fill_value=np.nan)
         # Julian Giles modification: instead of taking the mean, calculate the bottom height again
         # hgt = ml_height_bottom_new(ds6, moment=phi+"_norm", dim=dim, drop=False)["mlh_bottom"]
-    else: 
+    else:
         hgt = ds7[phi+"_norm"].idxmin(dim=dim, skipna=True, fill_value=np.nan)
     #hgt = ds7.isel({dim: idx.load()}, drop=False)[dim]
     #for i in range(0,len(idx)):
     #    if idx[i].values == 0:
-    #        hgt[idx].values = np.nan    
+    #        hgt[idx].values = np.nan
     if clowres:
-        ds7 = ds6.assign(dict( 
+        ds7 = ds6.assign(dict(
                               mlh_bottom=hgt))
     else:
-        ds7 = ds7.assign(dict( 
+        ds7 = ds7.assign(dict(
                               mlh_bottom=hgt))
     # ds7.mlh_bottom ds7.ml_bottom, derived similar to Wolfensberger et. al. but for bottom
-    # uses PHIDP_norm 
+    # uses PHIDP_norm
 
     # assign variables and coords
-    ds = ds.assign_coords(dict(height_ml=ds5.mlh_top, 
-                        
-                        height_ml_bottom=ds7.mlh_bottom, 
-                        
+    ds = ds.assign_coords(dict(height_ml=ds5.mlh_top,
+
+                        height_ml_bottom=ds7.mlh_bottom,
+
                        ),
                   )
-    
+
     if all_data is True:
         ds = ds.assign({"comb": ds0.comb,
                         rho+"_norm": ds0[rho+"_norm"],
@@ -1598,7 +1597,7 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
                         zh+"_norm_dy": ds0[zh+"_norm_dy"],
                         phi+"_norm_dy": ds0[phi+"_norm_dy"],
                        })
-        
+
     ds = ds.assign_coords({dim+'_idx': ([dim], np.arange(len(ds[dim])))})
 
     ## Giangrande refinment (included in this function on 16.10.23)
@@ -1606,32 +1605,32 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
     cut_above = ds.where(ds[dim]<ds.height_ml)
     cut_above = cut_above.where(ds[dim]>ds.height_ml_bottom)
     #test_above = cut_above.where((cut_above.rho >=0.7)&(cut_above.rho <0.98))
-    
+
     # get the heights with min RHOHV
-    min_height_ML = cut_above[rho].idxmin(dim=dim) 
-    
+    min_height_ML = cut_above[rho].idxmin(dim=dim)
+
     # cut the data below and above the previous value
     new_cut_below_min_ML = ds.where(ds[dim] > min_height_ML)
     new_cut_above_min_ML = ds.where(ds[dim] < min_height_ML)
-    
+
     # Filter out values outside some RHOHV range
     new_cut_below_min_ML_filter = new_cut_below_min_ML[rho].where((new_cut_below_min_ML[rho]>=rhohv_thresh_gia[0])&(new_cut_below_min_ML[rho]<=rhohv_thresh_gia[1]))
-    new_cut_above_min_ML_filter = new_cut_above_min_ML[rho].where((new_cut_above_min_ML[rho]>=rhohv_thresh_gia[0])&(new_cut_above_min_ML[rho]<=rhohv_thresh_gia[1]))            
+    new_cut_above_min_ML_filter = new_cut_above_min_ML[rho].where((new_cut_above_min_ML[rho]>=rhohv_thresh_gia[0])&(new_cut_above_min_ML[rho]<=rhohv_thresh_gia[1]))
 
     # J. Giles refinement
     # Add condition that the absolute gradient of the RHOHV profile must be below certain threshold (like 0.0001)
     ds_grad = abs(ds[rho].differentiate(dim)) < grad_thresh
 
     # ML TOP Giangrande+Giles refinement
-    
+
     notnull = new_cut_below_min_ML_filter.notnull() # this replaces nan for False and the rest for True
     first_valid_height_after_ml = notnull.where(notnull).where(ds_grad).idxmax(dim=dim) # get the first True value, i.e. first valid value
-    
+
     # ML BOTTOM Giangrande+Giles refinement
     # For this one, we need to flip the coordinate so that it is actually selecting the last valid index
     notnull = new_cut_above_min_ML_filter.notnull() # this replaces nan for False and the rest for True
     last_valid_height = notnull.where(notnull).isel({dim:slice(None, None, -1)}).where(ds_grad).idxmax(dim=dim) # get the first True value, i.e. first valid value (flipped)
-    
+
     # assign new values
     ds = ds.assign_coords(height_ml_new_gia = ("time",first_valid_height_after_ml.data))
     ds = ds.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data))
@@ -1660,16 +1659,16 @@ phi_fix = phi_fix.where(phi_fix.range >= start_range + fix_range).fillna(off_fix
 window = 11
 window2 = None
 phi_median = phi_fix.pipe(xr_rolling, window, window2=window2, method='median', skipna=True, min_periods=3)
-phi_masked = phi_median.where((ds[X_RHOHV+"_NC"] >= 0.95) & (ds[X_ZH+"_OC"] >= 0.)) 
+phi_masked = phi_median.where((ds[X_RHOHV+"_NC"] >= 0.95) & (ds[X_ZH+"_OC"] >= 0.))
 
 dr = phi_masked.range.diff('range').median('range').values / 1000.
 
-winlen = 31 # windowlen 
+winlen = 31 # windowlen
 min_periods = 3 # min number of vaid bins
 kdp = kdp_from_phidp(phi_masked, winlen, min_periods=3)
 kdp1 = kdp.interpolate_na(dim='range')
 
-winlen = 31 
+winlen = 31
 phidp = phidp_from_kdp(kdp1, winlen)
 
 assign = {X_PHIDP+"_OC_SMOOTH": phi_median.assign_attrs(ds[X_PHIDP].attrs),
@@ -1690,8 +1689,8 @@ limit = None
 xwin = 5
 ywin = 5
 fmlh = 0.3
- 
-ml_qvp = melting_layer_qvp_X_new(ds_qvp_ra, moments=moments, 
+
+ml_qvp = melting_layer_qvp_X_new(ds_qvp_ra, moments=moments,
          dim=dim, thres=thres, xwin=xwin, ywin=ywin, fmlh=fmlh, all_data=True)
 
 ds_qvp_ra = ds_qvp_ra.assign_coords({'height_ml': ml_qvp.mlh_top})
@@ -1731,14 +1730,14 @@ new_cut_below_min_ML = ds_qvp_ra.where(ds_qvp_ra.height > min_height_ML)
 new_cut_above_min_ML = ds_qvp_ra.where(ds_qvp_ra.height < min_height_ML)
 
 new_cut_below_min_ML_filter = new_cut_below_min_ML.rho.where((new_cut_below_min_ML.rho>=0.97)&(new_cut_below_min_ML.rho<=1))
-new_cut_above_min_ML_filter = new_cut_above_min_ML.rho.where((new_cut_above_min_ML.rho>=0.97)&(new_cut_above_min_ML.rho<=1))            
+new_cut_above_min_ML_filter = new_cut_above_min_ML.rho.where((new_cut_above_min_ML.rho>=0.97)&(new_cut_above_min_ML.rho<=1))
 
 
 import pandas as pd
 ######### ML TOP Giagrande refinement
 panda_below_min = new_cut_below_min_ML_filter.to_pandas()
 first_valid_height_after_ml = pd.DataFrame(panda_below_min).apply(pd.Series.first_valid_index)
-first_valid_height_after_ml = first_valid_height_after_ml.to_xarray()            
+first_valid_height_after_ml = first_valid_height_after_ml.to_xarray()
 ######### ML BOTTOM Giagrande refinement
 panda_above_min = new_cut_above_min_ML_filter.to_pandas()
 
@@ -1757,7 +1756,7 @@ ds = ds.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data
 
 #################################### CFADs
 
-def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, cb_mode=True, 
+def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, cb_mode=True,
            mq="median", qq=0.2, cmap='turbo', smooth_out=False, binsx_out=[],
            colsteps=10, mini=0, fsize=13, fcolor='black', mincounts=500, cblim=[0,26], N=False,
            cborientation="horizontal", shading='gouraud', **kwargs):
@@ -1776,12 +1775,12 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
     whole_x_range: use the whole range of values in the x coordinate? if False, only values inside the limits of binsx will be considered
                 in the calculations and the counting of valid values; which can lead to different results depending how the bin ranges are defined.
     smooth_out : If True, calculates the hist2d according to binsx and then interpolates the result to binsx_out.
-                This is useful if the input data has low resolution and close to that of the desired bins, which 
+                This is useful if the input data has low resolution and close to that of the desired bins, which
                 produces a histogram with alternating bands of low or high values, depending on binsx. If using this
-                option, binsx should respresent the bins that best fit the data, producing an hist2d without 
-                visual glitches; and binsx_out should be the desired output bins (but not too different from binsx). 
-                If the visual artifacts continue, a better approach may be to round the data and select binsx 
-                so that bands of zero values are generated, which will then be filled by the interpolation. 
+                option, binsx should respresent the bins that best fit the data, producing an hist2d without
+                visual glitches; and binsx_out should be the desired output bins (but not too different from binsx).
+                If the visual artifacts continue, a better approach may be to round the data and select binsx
+                so that bands of zero values are generated, which will then be filled by the interpolation.
     binsx_out : Desired output bins for the x dimension if smooth_out is True.
     cb_mode : plot colorbar?
     mq = Middle line to plot. Can be "median" or "mean"
@@ -1791,13 +1790,13 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
     cborientation: orientation of the colorbar, "horizontal" or "vertical"
     shading: shading argeument for matplotlib pcolormesh. Should be 'nearest' (no interpolation) or 'gouraud' (interpolated).
     kwargs: additional arguments for matplotlib pcolormesh
-    
+
     # Output
     # ------
     Plot of 2-dimensional distribution
     """
-    
-    
+
+
     import matplotlib
     from matplotlib import pyplot as plt
     from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -1832,7 +1831,7 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
     # Define bins arange
     bins_px = np.arange(binsx[0], binsx[1], binsx[2])
     bins_py = np.arange(binsy[0], binsy[1], binsy[2])
-    
+
     # Hist 2d
     if whole_x_range:
         # to consider the whole range of values in x, we extend the bins array by adding bins to -inf and inf
@@ -1844,11 +1843,11 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
     else:
         H, xe, ye = np.histogram2d(PX_flat, PY_flat, bins = (bins_px, bins_py))
         H_ext = H.copy() # this is for the counting part of the overall sum
-        
+
     # Calc mean x and y (for plotting with center-based index)
     mx =0.5*(xe[0:-1]+xe[1:len(xe)])
     my =0.5*(ye[0:-1]+ye[1:len(ye)])
-    
+
     if smooth_out:
         bins_px2 = np.arange(binsx_out[0], binsx_out[1], binsx_out[2])
         mx2 =0.5*(bins_px2[0:-1]+bins_px2[1:])
@@ -1864,7 +1863,7 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
             H_ext = np.concatenate([np.expand_dims(H_ext[0,:], 0),H, np.expand_dims(H_ext[-1,:], 0)])
         else:
             H_ext = H.copy()
-    
+
     # Calculate Percentil
     var_mean = []
 
@@ -1889,21 +1888,21 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
         var_qq2.append(np.nanquantile(PX_sub, 1-qq))
         #var_count.append(len(PX_flat[(PY_flat>i)&(PY_flat<=i+binsy[2])])) # this is counting all values per Y bin, including nans
         var_count.append(np.isfinite(PX_sub).sum()) # improved, counting only valid values (not nan, not inf)
-    
+
     var_med = np.array(var_med)
     var_mean = np.array(var_mean)
-    
+
     var_qq1 = np.array(var_qq1)
     var_qq2 = np.array(var_qq2)
     var_count = np.array(var_count)
-    
+
     var_med[var_count<mincounts]=np.nan
     var_mean[var_count<mincounts]=np.nan
 
     var_qq1[var_count<mincounts]=np.nan
     var_qq2[var_count<mincounts]=np.nan
-    
-    
+
+
     # overall sum for relative distribution
     if mode=='rel_all':
         allsum = np.nansum(H_ext)
@@ -1913,19 +1912,19 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
         allsum = np.nansum(H_ext, axis=0)
         allsum[var_count<mincounts]=np.nan
         relHa = (H/allsum).T # transpose so the y axis is temperature
-        
+
     elif mode=='abs':
         relHa = H.T
     else:
         print('Wrong mode parameter used! Please use mode="rel_all", mode="abs" or mode="rel_y"!')
-    
+
     RES = 100*relHa
-    
+
     RES[RES<mini]=np.nan
 
-    
+
     img = ax.pcolormesh(mx, my ,RES , cmap=cmap, vmin=cblim[0], vmax=cblim[1], shading=shading, **kwargs) #, shading="gouraud"
-    
+
     if mq == "median":
         ax.plot(var_med, my, color='black', lw=2)
         # ax.plot(var_med, my, color='black', lw=2, ls=(0, (5, 5)))
@@ -1937,7 +1936,7 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
     # ax.plot(var_qq1, my, color='black', linestyle=(0, (1, 5)), lw=2)
     ax.plot(var_qq2, my, color='black', ls="-.", lw=2)
     # ax.plot(var_qq2, my, color='black', linestyle=(0, (1, 5)), lw=2)
-    
+
     # se the x limits in case the lines go off the pcolormesh
     ax.set_xlim(xe[0], xe[-1])
 
@@ -1945,7 +1944,7 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
 
     ax.xaxis.label.set_color(fcolor)
     ax.tick_params(axis='both', colors=fcolor)
-    
+
     if N==True:
         ax2 = ax.twiny()
         ax2.plot(var_count, my, color='cornflowerblue', linestyle='-', lw=2)
@@ -1953,7 +1952,7 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
         ax2.xaxis.label.set_color('cornflowerblue')
         ax2.yaxis.label.set_color('cornflowerblue')
         ax2.tick_params(axis='both', colors='cornflowerblue')
-        
+
         xticks = ax2.xaxis.get_major_ticks()
         xticks[0].label1.set_visible(False)
         xticks[-1].label1.set_visible(False)
@@ -1977,7 +1976,7 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
         plt.setp(cbar_yticks, color=fcolor)
 
 
-        
+
     return img
 
 
@@ -2048,7 +2047,7 @@ IWC_ZDR_KDP_Z_DGL = []
 # .where(ds.height_ml>height_ml_bottom, drop=True)
 for i in range(len(qvp_nc_files)):
     #print(qvp_nc_files[i])
-    
+
     #try:
     ds = xr.open_dataset(qvp_nc_files[i], chunks='auto')
     ds = ds.swap_dims({"index_new":"time"})
@@ -2056,14 +2055,14 @@ for i in range(len(qvp_nc_files)):
     ds_thrs = ds.where(ml_height_thres == True, drop=True)
     ml_bottom_thres = ~np.isnan(ds_thrs.height_ml_bottom_new_gia)
     ds_thrs = ds_thrs.where(ml_bottom_thres == True, drop=True)
-    ds_thrs = ds_thrs.where(ds_thrs.height_ml_new_gia > ds_thrs.height_ml_bottom_new_gia) 
+    ds_thrs = ds_thrs.where(ds_thrs.height_ml_new_gia > ds_thrs.height_ml_bottom_new_gia)
     ds = ds_thrs
     ds["Nt_ZDR_KDP_Z_log"] = np.log10(ds.Nt_ZDR_KDP_Z/1000)
     ds["Nt_ZDR_KDP_Z"] = ds.Nt_ZDR_KDP_Z/1000
-    
+
     ds_stat_ML = ds.where(ds.min_entropy>=0.8, drop=True)
     ds_stat_ML = ds_stat_ML.where((ds_stat_ML.height<ds_stat_ML.height_ml_new_gia) & (ds_stat_ML.height>ds_stat_ML.height_ml_bottom_new_gia))
-    ds_stat_ML = ds_stat_ML.where((ds_stat_ML.min_entropy>=0.8)&(ds_stat_ML.DBTH_OC > 0 )&(ds_stat_ML.KDP_ML_corrected > 0.01)&(ds_stat_ML.RHOHV_NC > 0.7)&(ds_stat_ML.UZDR_OC > -1),  drop=True)    
+    ds_stat_ML = ds_stat_ML.where((ds_stat_ML.min_entropy>=0.8)&(ds_stat_ML.DBTH_OC > 0 )&(ds_stat_ML.KDP_ML_corrected > 0.01)&(ds_stat_ML.RHOHV_NC > 0.7)&(ds_stat_ML.UZDR_OC > -1),  drop=True)
 
     ### ML statistics
     if ds_stat_ML.time.shape[0]!=0:
@@ -2073,48 +2072,48 @@ for i in range(len(qvp_nc_files)):
         KDP_ML_mean.append(ds_stat_ML.KDP_ML_corrected.mean(dim="height").values.flatten())
         mlth_ML = ds_stat_ML.height_ml_new_gia - ds_stat_ML.height_ml_bottom_new_gia
         MLTH_ML.append(mlth_ML.values.flatten())
-        
+
         ### Silke Style
         Gradient_silke = ds.where(ds.min_entropy>=0.8)
-        Gradient_silke = Gradient_silke.where((Gradient_silke.min_entropy>=0.8)&(Gradient_silke.DBTH_OC > 0 )&(Gradient_silke.KDP_ML_corrected > 0.01)&(Gradient_silke.RHOHV_NC > 0.7)&(Gradient_silke.UZDR_OC > -1))    
+        Gradient_silke = Gradient_silke.where((Gradient_silke.min_entropy>=0.8)&(Gradient_silke.DBTH_OC > 0 )&(Gradient_silke.KDP_ML_corrected > 0.01)&(Gradient_silke.RHOHV_NC > 0.7)&(Gradient_silke.UZDR_OC > -1))
 
         DBTH_OC_gradient_Silke_ML = Gradient_silke.DBTH_OC.sel(height = Gradient_silke.height_ml_new, method="nearest")
         DBTH_OC_gradient_Silke_ML_plus_2_km = Gradient_silke.DBTH_OC.sel(height = DBTH_OC_gradient_Silke_ML.height+2000, method="nearest")
         DBTH_OC_gradient_Final = (DBTH_OC_gradient_Silke_ML_plus_2_km - DBTH_OC_gradient_Silke_ML)/2
         BETA.append(DBTH_OC_gradient_Final)
-    
+
     ### DGL statistics
-    ds_stat_DGL = ds.where((ds.temp_coord>=-20)&(ds.temp_coord<=-10), drop=True)    
+    ds_stat_DGL = ds.where((ds.temp_coord>=-20)&(ds.temp_coord<=-10), drop=True)
     ds_stat_DGL = ds_stat_DGL.where(ds_stat_DGL.min_entropy>=0.8, drop=True)
-    ds_stat_DGL = ds_stat_DGL.where((ds_stat_DGL.min_entropy>=0.8)&(ds_stat_DGL.DBTH_OC > 0 )&(ds_stat_DGL.KDP_ML_corrected > 0.01)&(ds_stat_DGL.RHOHV_NC > 0.7)&(ds_stat_DGL.UZDR_OC > -1),  drop=True)    
+    ds_stat_DGL = ds_stat_DGL.where((ds_stat_DGL.min_entropy>=0.8)&(ds_stat_DGL.DBTH_OC > 0 )&(ds_stat_DGL.KDP_ML_corrected > 0.01)&(ds_stat_DGL.RHOHV_NC > 0.7)&(ds_stat_DGL.UZDR_OC > -1),  drop=True)
 
     if ds_stat_DGL.time.shape[0]!=0:
         ZH_DGL.append(ds_stat_DGL.DBTH_OC.values.flatten())
         ZDR_DGL.append(ds_stat_DGL.UZDR_OC.values.flatten())
         KDP_DGL_max.append(ds_stat_DGL.KDP_ML_corrected.max(dim="height").values.flatten())
-        
+
         KDP_DGL_max_test.append(np.asarray(ds_stat_DGL.KDP_ML_corrected.max(dim="height").stack(dim=["time"]).data))
 
         RHO_DGL_min.append(ds_stat_DGL.RHOHV_NC.min(dim="height").values.flatten())
         ZH_DGL_max.append(ds_stat_DGL.DBTH_OC.max(dim="height").values.flatten())
-        ZDR_DGL_max.append(ds_stat_DGL.UZDR_OC.max(dim="height").values.flatten())        
+        ZDR_DGL_max.append(ds_stat_DGL.UZDR_OC.max(dim="height").values.flatten())
         ZDR_DGL_09.append(ds_stat_DGL.UZDR_OC.quantile(0.9, dim="height").values.flatten())
         ZH_DGL_09.append(ds_stat_DGL.DBTH_OC.quantile(0.9, dim="height").values.flatten())
 
         RHO_DGL.append(ds_stat_DGL.RHOHV_NC.values.flatten())
-        
+
         KDP_DGL.append(ds_stat_DGL.KDP_ML_corrected.values.flatten())
         KDP_DGL_09.append(ds_stat_DGL.KDP_ML_corrected.quantile(0.9, dim="height").values.flatten())
 
-        
+
  #ds_stat_ML_list_KDP_ML_corrected.append(np.asarray(ds.KDP_ML_corrected.max(dim="height").stack(dim=["height","time"]).data))
-       
-        
-        
+
+
+
     ### other statistics
-    
+
     ds_other1 = ds.where(ds.min_entropy>=0.8)
-    ds_other1 = ds_other1.where((ds_other1.min_entropy>=0.8)&(ds_other1.DBTH_OC > 0 )&(ds_other1.KDP_ML_corrected > 0.01)&(ds_other1.RHOHV_NC > 0.7)&(ds_other1.UZDR_OC > -1))    
+    ds_other1 = ds_other1.where((ds_other1.min_entropy>=0.8)&(ds_other1.DBTH_OC > 0 )&(ds_other1.KDP_ML_corrected > 0.01)&(ds_other1.RHOHV_NC > 0.7)&(ds_other1.UZDR_OC > -1))
     ZH_sfc.append(ds_other1.DBTH_OC.swap_dims({"height":"range"}).isel(range = 7).values.flatten())
     ZDR_sfc.append(ds_other1.UZDR_OC.swap_dims({"height":"range"}).isel(range = 7).values.flatten())
 #     ZH_snow = ds_other.DBTH_OC.sel(height = ds_other.height_ml_new, method="nearest")
@@ -2122,55 +2121,55 @@ for i in range(len(qvp_nc_files)):
 #     ZH_rain = ds_other.DBTH_OC.sel(height = ds_other.height_ml_bottom_new_gia, method="nearest")
 #     ZDR_rain = ds_other.UZDR_OC.sel(height = ds_other.height_ml_bottom_new_gia, method="nearest")
 #     ds_other = ds.where(ds.min_entropy>=0.8, drop=True)
-#     ds_other = ds_other.where((ds_other.min_entropy>=0.8)&(ds_other.DBTH_OC > 0 )&(ds_other.KDP_ML_corrected > 0.001)&(ds_other.RHOHV_NC > 0.7)&(ds_other.UZDR_OC > -1),  drop=True)    
+#     ds_other = ds_other.where((ds_other.min_entropy>=0.8)&(ds_other.DBTH_OC > 0 )&(ds_other.KDP_ML_corrected > 0.001)&(ds_other.RHOHV_NC > 0.7)&(ds_other.UZDR_OC > -1),  drop=True)
 
     ZH_snow.append(ds_other1.DBTH_OC.sel(height = ds_other1.height_ml_new, method="nearest").values.flatten())
     ZDR_snow.append(ds_other1.UZDR_OC.sel(height = ds_other1.height_ml_new, method="nearest").values.flatten())
     ZH_rain.append(ds_other1.DBTH_OC.sel(height = ds_other1.height_ml_bottom_new_gia, method="nearest").values.flatten())
     ZDR_rain.append(ds_other1.UZDR_OC.sel(height = ds_other1.height_ml_bottom_new_gia, method="nearest").values.flatten())
-    
-    
-    
-    
-    
+
+
+
+
+
     ### IWC, Nt, Dm statistics    hier ist weiteres Filtern eher nicht gut i would say
     ds_microphysical = ds.where(ds.min_entropy>=0.8, drop=True)
     ds_microphysical = ds_microphysical.where((ds_microphysical.temp_coord>=-20)&(ds_microphysical.temp_coord<=-10), drop=True)
-    
+
     Dm_ZDR_KDP_Z_DGL_09.append(ds_microphysical.Dm_ZDR_KDP_Z.quantile(0.9, dim="height").values.flatten())
     Nt_ZDR_KDP_Z_DGL_09.append(ds_microphysical.Nt_ZDR_KDP_Z.quantile(0.9, dim="height").values.flatten())
     IWC_ZDR_KDP_Z_DGL_09.append(ds_microphysical.IWC_ZDR_KDP_Z.quantile(0.9, dim="height").values.flatten())
-    
+
     Dm_ZDR_KDP_Z_DGL.append(ds_microphysical.Dm_ZDR_KDP_Z.values.flatten())
     Nt_ZDR_KDP_Z_DGL.append(ds_microphysical.Nt_ZDR_KDP_Z.values.flatten())
-    IWC_ZDR_KDP_Z_DGL.append(ds_microphysical.IWC_ZDR_KDP_Z.values.flatten())    
-    
+    IWC_ZDR_KDP_Z_DGL.append(ds_microphysical.IWC_ZDR_KDP_Z.values.flatten())
+
     Dm_ZDR_KDP_Z_max.append(ds_microphysical.Dm_ZDR_KDP_Z.max(dim="height").values.flatten())
     Nt_ZDR_KDP_Z_max_log.append(ds_microphysical.Nt_ZDR_KDP_Z_log.max(dim="height").values.flatten())
     Nt_ZDR_KDP_Z_max.append(ds_microphysical.Nt_ZDR_KDP_Z.max(dim="height").values.flatten())
 
-    IWC_ZDR_KDP_Z_max.append(ds_microphysical.IWC_ZDR_KDP_Z.max(dim="height").values.flatten())    
-    
-    
+    IWC_ZDR_KDP_Z_max.append(ds_microphysical.IWC_ZDR_KDP_Z.max(dim="height").values.flatten())
+
+
 #     ZH_snow_list.append(np.asarray(ZH_snow.squeeze().stack(dim=["height","time"]).data))
 #     ZDR_snow_list.append(np.asarray(ZDR_snow.squeeze().stack(dim=["height","time"]).data))
 #     ZH_rain_list.append(np.asarray(ZH_rain.squeeze().stack(dim=["height","time"]).data))
 #     ZDR_rain_list.append(np.asarray(ZDR_rain.squeeze().stack(dim=["height","time"]).data))
-    
-    
-    
+
+
+
     ZH.append(np.asarray(ds.DBTH_OC.squeeze().stack(dim=["height","time"]).data))
     ZDR.append(np.asarray(ds.UZDR_OC.squeeze().stack(dim=["height","time"]).data))
     RHO.append(np.asarray(ds.RHOHV_NC.squeeze().stack(dim=["height","time"]).data))
     KDP.append(np.asarray(ds.KDP_ML_corrected.squeeze().stack(dim=["height","time"]).data))
     E.append(np.asarray(ds.min_entropy.squeeze().stack(dim=["height","time"]).data))
     valid_values.append(np.asarray(ds.valid_values_min_120.squeeze().stack(dim=["height","time"]).data))
-    TT.append(np.asarray((ds.temp_coord).squeeze().stack(dim=["height","time"]).data))   
+    TT.append(np.asarray((ds.temp_coord).squeeze().stack(dim=["height","time"]).data))
     Dm_ZDR_KDP_Z.append(np.asarray(ds.Dm_ZDR_KDP_Z.squeeze().stack(dim=["height","time"]).data))
     Nt_ZDR_KDP_Z.append(np.asarray(ds.Nt_ZDR_KDP_Z.squeeze().stack(dim=["height","time"]).data))
     Nt_ZDR_KDP_Z_log.append(np.asarray(ds.Nt_ZDR_KDP_Z_log.squeeze().stack(dim=["height","time"]).data))
 
-    IWC_ZDR_KDP_Z.append(np.asarray(ds.IWC_ZDR_KDP_Z.squeeze().stack(dim=["height","time"]).data))    
+    IWC_ZDR_KDP_Z.append(np.asarray(ds.IWC_ZDR_KDP_Z.squeeze().stack(dim=["height","time"]).data))
 #     ZH.append(ds.DBTH_OC.values.flatten())
 #     ZDR.append(ds.UZDR_OC.values.flatten())
 #     RHO.append(ds.RHOHV_NC.values.flatten())
@@ -2201,7 +2200,7 @@ ZDR_DGL = np.concatenate(ZDR_DGL)
 RHO_DGL = np.concatenate(RHO_DGL)
 KDP_DGL = np.concatenate(KDP_DGL)
 ZDR_DGL_09 = np.concatenate(ZDR_DGL_09)
-KDP_DGL_09 = np.concatenate(KDP_DGL_09) 
+KDP_DGL_09 = np.concatenate(KDP_DGL_09)
 
 
 Dm_ZDR_KDP_Z_DGL_09= np.concatenate(Dm_ZDR_KDP_Z_DGL_09)
@@ -2217,7 +2216,7 @@ Nt_ZDR_KDP_Z_max_log= np.concatenate(Nt_ZDR_KDP_Z_max_log)
 
 IWC_ZDR_KDP_Z_max= np.concatenate(IWC_ZDR_KDP_Z_max)
 
-KDP_DGL_max_test = np.concatenate(KDP_DGL_max_test) 
+KDP_DGL_max_test = np.concatenate(KDP_DGL_max_test)
 
 
 KDP_DGL_max= np.concatenate(KDP_DGL_max)
@@ -2354,7 +2353,7 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
     Function to attach temperature data from ERA5 as a new coordinate of ds. It
     interpolates the temperature profile from ERA5 levels to the ds heights. By
     default it is converted to degrees C.
-    
+
     Parameters
     ----------
     ds : xarray Dataset
@@ -2365,7 +2364,7 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
         Either site or path must be given.
     path : str, optional
         Path to the folder where ERA5 temperature and geopotential data can be found.
-        Either site or path must be given.   
+        Either site or path must be given.
     convert_to_C : bool
         If True (default), convert ERA5 temperature from K to C.
 
@@ -2381,7 +2380,7 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
             if not os.path.exists(era5_dir):
                 # if path does not exist, raise an error
                 raise RuntimeError("folder for site="+site+" not found!")
-                
+
         except TypeError:
             raise TypeError("If path is not provided, site must be provided!")
     elif type(path) is str:
@@ -2392,7 +2391,7 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
     # if time is not well defined, we try to get it from variable rtime
     if ds["time"].isnull().any():
         try:
-            ds.coords["time"] = ds.rtime.min(dim="azimuth", skipna=True).compute()    
+            ds.coords["time"] = ds.rtime.min(dim="azimuth", skipna=True).compute()
         except:
             raise KeyError("Dimension time has not valid values")
 
@@ -2409,25 +2408,25 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
     # get times of the radar files
     startdt0 = dt.datetime.utcfromtimestamp(int(ds.time[0].values)/1e9).date()
     enddt0 = dt.datetime.utcfromtimestamp(int(ds.time[-1].values)/1e9).date() + dt.timedelta(hours=24)
-        
+
     # transform the dates to datetimes
     startdt = dt.datetime.fromordinal(startdt0.toordinal())
     enddt = dt.datetime.fromordinal(enddt0.toordinal())
-    
+
     # open ERA5 files
-    era5_t = xr.open_mfdataset(reversed(sorted(glob.glob(era5_dir+"temperature/*"+str(startdt.year)+"*"), 
-                                               key=lambda file_name: int(file_name.split("/")[-1].split('_')[1]))), 
+    era5_t = xr.open_mfdataset(reversed(sorted(glob.glob(era5_dir+"temperature/*"+str(startdt.year)+"*"),
+                                               key=lambda file_name: int(file_name.split("/")[-1].split('_')[1]))),
                                concat_dim="lvl", combine="nested")
-    era5_g = xr.open_mfdataset(reversed(sorted(glob.glob(era5_dir+"geopotential/*"+str(startdt.year)+"*"), 
-                                               key=lambda file_name: int(file_name.split("/")[-1].split('_')[1]))), 
+    era5_g = xr.open_mfdataset(reversed(sorted(glob.glob(era5_dir+"geopotential/*"+str(startdt.year)+"*"),
+                                               key=lambda file_name: int(file_name.split("/")[-1].split('_')[1]))),
                                concat_dim="lvl", combine="nested")
-    
+
     # add altitude coord to temperature data
     earth_r = wrl.georef.projection.get_earth_radius(ds.latitude.values)
     gravity = 9.80665
-    
+
     era5_t.coords["height"] = (earth_r*(era5_g.z/gravity)/(earth_r - era5_g.z/gravity)).compute()
-    
+
     # Create time dimension and concatenate
     try: # this might fail because of the issue with the time dimension in elevations that some files have
         dtslice0 = startdt.strftime('%Y-%m-%d %H')
@@ -2439,29 +2438,29 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
             temperatures = temperatures -273.15
             temp_attrs["units"] = "C"
             temperatures.attrs = temp_attrs
-        
+
         # Interpolate to higher resolution
         hmax = 50000.
         ht = np.arange(0., hmax, 50)
-                
+
 
         interp_to_ht_partial = partial(interp_to_ht, ht=ht)
 
         results = []
-        
+
         with Pool() as P:
             results = P.map( interp_to_ht_partial, [temperatures[:,tt] for tt in range(len(temperatures.time)) ] )
-        
+
         itemp_da = xr.concat(results, "time")
-        
+
         # Fix Temperature below first measurement and above last one
         itemp_da = itemp_da.bfill(dim="height")
         itemp_da = itemp_da.ffill(dim="height")
-        
+
         # Attempt to fill any missing timestep with adjacent data
         itemp_da = itemp_da.ffill(dim="time")
         itemp_da = itemp_da.bfill(dim="time")
-        
+
         # Interpolate to dataset height and time, then add to dataset
         def merge_radar_profile(rds, cds):
             # cds = cds.interp({'height': rds.z}, method='linear')
@@ -2474,8 +2473,8 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
                 cds = cds.ffill(dim="z")
             except ValueError:
                 cds = cds.bfill(dim="range")
-                cds = cds.ffill(dim="range")                
-            
+                cds = cds.ffill(dim="range")
+
             # Fill any missing values in time
             cds = cds.ffill(dim="time")
             cds = cds.bfill(dim="time")
@@ -2483,16 +2482,16 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
             rds = rds.assign({"TEMP": cds})
             rds.TEMP.attrs["source"]="ERA5"
             return rds
-        
+
         ds = ds.pipe(merge_radar_profile, itemp_da)
-        
+
         ds.coords["TEMP"] = ds["TEMP"] # move TEMP from variable to coordinate
         return ds
     except ValueError:
         raise ValueError("!!!! ERROR: some issue when concatenating ERA5 data")
 
 #### KDP delta bump correction in the ML
-def KDP_ML_correction(ds, X_PHI="PHIDP_OC_MASKED", winlen=7, min_periods=2, mlt="height_ml_new_gia", 
+def KDP_ML_correction(ds, X_PHI="PHIDP_OC_MASKED", winlen=7, min_periods=2, mlt="height_ml_new_gia",
                       mlb="height_ml_bottom_new_gia", method="linear"):
     '''
     Function to correct KDP in the melting layer due to PHIDP delta bump. KDP calculation
@@ -2501,9 +2500,9 @@ def KDP_ML_correction(ds, X_PHI="PHIDP_OC_MASKED", winlen=7, min_periods=2, mlt=
     Parameter
     ---------
     ds : xarray.DataArray
-        array with PHIDP data as well as ML top and bottom heights. The array 
+        array with PHIDP data as well as ML top and bottom heights. The array
         must be georreferenced with height coordinate named "z".
-        
+
     Keyword Arguments
     -----------------
     X_PHI : str
@@ -2524,30 +2523,30 @@ def KDP_ML_correction(ds, X_PHI="PHIDP_OC_MASKED", winlen=7, min_periods=2, mlt=
     ------
     ds : xarray.DataArray
         DataArray with input data plus KDP corrected in the melting layer.
-    '''    
-    
+    '''
+
     # PHIDP delta bump correction
     # get where PHIDP has nan values
-    nan = np.isnan(ds[X_PHI]) 
+    nan = np.isnan(ds[X_PHI])
     # get PHIDP outside the ML
     phi2 = ds[X_PHI].where( (ds.z < ds[mlb]) | (ds.z > ds[mlt]) | ds[mlt].isnull() )#.interpolate_na(dim='range',dask_gufunc_kwargs = "allow_rechunk")
     # interpolate PHIDP in ML
     phi2 = phi2.chunk(dict(range=-1)).interpolate_na(dim='range', method=method)
     # restore originally nan values
     phi2 = xr.where(nan, np.nan, phi2)
-    
+
     # Derive KPD from the new PHIDP
     # dr = phi2.range.diff('range').median('range').values / 1000.
     # print("range res [km]:", dr)
     # winlen in gates
     # TODO: window length in m
     phidp_ml, kdp_ml = kdp_phidp_vulpiani(phi2, winlen, min_periods=min_periods)
-    
+
     # assign to dataset
-    ds = ds.assign({"KDP_ML_corrected": (["time", "azimuth", "range"], 
-                                         kdp_ml.values, 
+    ds = ds.assign({"KDP_ML_corrected": (["time", "azimuth", "range"],
+                                         kdp_ml.values,
                                          KDP_attrs)})
-        
+
     return ds
 
 
@@ -2566,7 +2565,7 @@ def noise_correction(ds, noise_level):
     attrs.pop('gamic', None)
     snrh = snrh.assign_attrs(attrs)
     rho = ds.RHOHV * (1. + 1. / 10. ** (snrh * 0.1))
-    rho = rho.assign_attrs(ds.RHOHV.attrs) 
+    rho = rho.assign_attrs(ds.RHOHV.attrs)
     ds = ds.assign({'SNRH': snrh, 'RHOHV_NC': rho})
     ds = ds.assign_coords({'NOISE_LEVEL': noise_level})
     return ds
@@ -2586,7 +2585,7 @@ def noise_correction2(dbz, rho, noise_level):
     snrh = snrh.assign_attrs(attrs)
     snrh.name = "SNRH"
     rho_nc = rho * (1. + 1. / 10. ** (snrh * 0.1))
-    rho_nc = rho_nc.assign_attrs(rho.attrs) 
+    rho_nc = rho_nc.assign_attrs(rho.attrs)
     rho_nc.name = "RHOHV_NC"
     return snrh, rho_nc
 
@@ -2596,9 +2595,9 @@ def calculate_noise_level(dbz, rho, noise=(-40, -20, 1), rho_bins=(0.9, 1.1, 0.0
     It returns a list of signal-to-noise and corrected rhohv arrays, as well as histograms involed in the calculations,
     a list of standard deviations for every result and the noise value with the minimum std.
     The final noise correction should be chosen based on the rn value (minumum std)
-    
+
     The default noise range is based on BoXPol data, it may be good to extend it a bit for C-Band.
-    
+
     The final noise level (rn) should be used with noise_correction2 one more time to get the final result.
     It may happen that the correction is too strong and we get some RHOHV values over 1. We should
     check this for some days of data and if that is the case, then select a noise level that is slightly less (about 2% less)
@@ -2620,57 +2619,57 @@ def calculate_noise_level(dbz, rho, noise=(-40, -20, 1), rho_bins=(0.9, 1.1, 0.0
 
 
 def hist_2d(A,B, bins1=35, bins2=35, mini=1, maxi=None, cmap='jet', colsteps=30, alpha=1, mode='absolute', fsize=15, colbar=True):
-    """ 
+    """
     # Histogram 2d Quicklooks
     # ------------------------
-    
+
     Plotting 2d Histogramm of two varibles
-    
+
     # Input
     # -----
-    
+
     A,B          ::: Variables
     bins1, bins2 ::: x, y bins
-    mini, maxi   ::: min and max 
+    mini, maxi   ::: min and max
     cmap         ::: colormap
     colsteps     ::: number of cmap steps
     alpha        ::: transperency
     fsize        ::: fontsize
     mode         ::: hist mode
-    
-    
+
+
     # Output
     # ------
-    
+
     2D Histogramm Plot
-    
-    
+
+
     ::: Hist mode:::
     absolute ::: absolute numbers
     relative ::: relative numbers
     relative_with_y ::: relative numbers of y levels
-        
+
     """
     from matplotlib.colors import LogNorm
 
     # discret cmap
     cmap = plt.cm.get_cmap(cmap, colsteps)
-    
+
     # mask array
     m=~np.isnan(A) & ~np.isnan(B)
-    
+
     if mode=='absolute':
-        
+
         plt.hist2d(A[m], B[m], bins=(bins1, bins2), cmap=cmap, norm=LogNorm( vmin=mini, vmax=maxi), alpha=alpha)
         if colbar==True:
           cb = plt.colorbar(shrink=1, pad=0.01)
           cb.set_label('number of samples', fontsize=fsize)
-          cb.ax.tick_params(labelsize=fsize) 
+          cb.ax.tick_params(labelsize=fsize)
         plt.xticks(fontsize=fsize)
         plt.yticks(fontsize=fsize)
-    
+
     if mode=='relative':
-        H, xe, ye = np.histogram2d(A[m], B[m], bins=(bins1, bins2)) 
+        H, xe, ye = np.histogram2d(A[m], B[m], bins=(bins1, bins2))
         xm = (xe[0:-1]+ xe[1:len(xe)])/2
         ym = (ye[0:-1]+ ye[1:len(ye)])/2
         nsum = np.nansum(H)
@@ -2681,9 +2680,9 @@ def hist_2d(A,B, bins1=35, bins2=35, mini=1, maxi=None, cmap='jet', colsteps=30,
           cb.ax.tick_params(labelsize=fsize)
         plt.xticks(fontsize=fsize)
         plt.yticks(fontsize=fsize)
-        
-    if mode=='relative_with_y': 
-        H, xe, ye = np.histogram2d(A[m], B[m], bins=(bins1, bins2)) 
+
+    if mode=='relative_with_y':
+        H, xe, ye = np.histogram2d(A[m], B[m], bins=(bins1, bins2))
         xm = (xe[0:-1]+ xe[1:len(xe)])/2
         ym = (ye[0:-1]+ ye[1:len(ye)])/2
         nsum = np.nansum(H, axis=0)
@@ -2694,7 +2693,7 @@ def hist_2d(A,B, bins1=35, bins2=35, mini=1, maxi=None, cmap='jet', colsteps=30,
           cb.ax.tick_params(labelsize=fsize)
         plt.xticks(fontsize=fsize)
         plt.yticks(fontsize=fsize)
-        
+
 #### Calculate phase offset
 def phase_offset_old(phioff, rng=3000.): # I do not remember why I wrote this function with differences to the one below (original from radarmet)
     """Calculate Phase offset.
@@ -2740,7 +2739,7 @@ def phase_offset_old(phioff, rng=3000.): # I do not remember why I wrote this fu
                            start_range=start_range,
                            stop_range=stop_range))
 
-        
+
 def phase_offset(phioff, method=None, rng=3000.0, npix=None, **kwargs):
     """Calculate Phase offset.
 
@@ -2830,7 +2829,7 @@ def phidp_offset_detection(ds, phidp="PHIDP", rhohv="RHOHV", dbzh="DBZH", rhohvm
     dbzhmin : float
         Minimum value for filtering DBZH.
     dphid_inithresh : float
-        Threshold value for filtering out initial high variability of PHIDP. Initial 
+        Threshold value for filtering out initial high variability of PHIDP. Initial
         (first 4) bins are masked out if their azimuthal-median range-differentiate
         values are higher than dphid_inithresh in module.
     min_height : float
@@ -2838,9 +2837,9 @@ def phidp_offset_detection(ds, phidp="PHIDP", rhohv="RHOHV", dbzh="DBZH", rhohvm
     rng : float
         range in m to calculate system phase offset.
     azmedian : bool, int
-        If True, compute the median in the azimuth dimension to reduce the offset 
+        If True, compute the median in the azimuth dimension to reduce the offset
         to a single value per PPI. Default is False. Alternatively, an integer
-        can be passed to compute a rolling median of window size azmedian over 
+        can be passed to compute a rolling median of window size azmedian over
         the azimuth dimension to smooth out the resulting offsets. Possible NaN
         values are filled with the median over all azimuths.
     kwargs: additional keyword arguments to pass to the rolling sum in phase_offset.
@@ -2875,7 +2874,7 @@ def phidp_offset_detection(ds, phidp="PHIDP", rhohv="RHOHV", dbzh="DBZH", rhohvm
                 .rolling(azimuth=azwindow, center=True, min_periods=azthirdwindow)\
                 .median("azimuth", skipna=True).isel(azimuth=slice(azhalfwindow, -azhalfwindow))\
                 .fillna(phidp_offset["PHIDP_OFFSET"].compute().median("azimuth")) # fill remaining NaN with the median of all
-    
+
     return phidp_offset
 
 def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
@@ -2905,13 +2904,13 @@ def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rh
     window : int
         Number of range bins used in calculating rng in case rng=None.
     rng : float
-        Range in m to calculate system phase offset. If None (default), it 
+        Range in m to calculate system phase offset. If None (default), it
         will be calculated according to window. It should be large enough to
-        allow sufficient data for offset identification (a value around 3000 
+        allow sufficient data for offset identification (a value around 3000
         is usually enough)
     rng_min : float
-        Minimum value of rng. If the value of rng (either passed by the user 
-        or calculated automatically) is lower than rng_min, then rng_min will be 
+        Minimum value of rng. If the value of rng (either passed by the user
+        or calculated automatically) is lower than rng_min, then rng_min will be
         used instead.
     azmedian : bool, int
         Passed to phidp_offset_detection. Default is False.
@@ -2935,7 +2934,7 @@ def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rh
     # Calculate range for offset calculation if rng is None
     if rng is None:
         rng = ds[X_PHI].range.diff("range").median().values * window
-        
+
     if rng < rng_min:
         rng = rng_min
 
@@ -2958,8 +2957,8 @@ def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rh
     if fillna is True:
         off_fix = off.broadcast_like(phi_fix)
         phi_fix = phi_fix.fillna(off_fix) - off
-    elif fillna is False:    
-        phi_fix = phi_fix - off    
+    elif fillna is False:
+        phi_fix = phi_fix - off
     elif isinstance(fillna, int) or isinstance(fillna, float):
         phi_fix = phi_fix.fillna(fillna) - off
 
@@ -2970,10 +2969,10 @@ def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rh
 
 
 def phidp_processing_old(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
-                     dbzhmin=0., min_height=0, window=7, window2 = None, fix_range=500., rng=None, rng_min=3000., 
+                     dbzhmin=0., min_height=0, window=7, window2 = None, fix_range=500., rng=None, rng_min=3000.,
                      fillna=False, clean_invalid=False, azmedian=False, tolerance=(0,0)):
     r"""
-    Calculate basic PHIDP processing including thresholding, smoothing and 
+    Calculate basic PHIDP processing including thresholding, smoothing and
     offset correction. Attach results to the input dataset.
 
     Parameters
@@ -2999,13 +2998,13 @@ def phidp_processing_old(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohv
     fix_range : int
         Minimum range from where to consider PHIDP values.
     rng : float
-        Range in m to calculate system phase offset. If None (default), it 
+        Range in m to calculate system phase offset. If None (default), it
         will be calculated according to window. It should be large enough to
-        allow sufficient data for offset identification (a value around 3000 
+        allow sufficient data for offset identification (a value around 3000
         is usually enough)
     rng_min : float
-        Minimum value of rng. If the value of rng (either passed by the user 
-        or calculated automatically) is lower than rng_min, then rng_min will be 
+        Minimum value of rng. If the value of rng (either passed by the user
+        or calculated automatically) is lower than rng_min, then rng_min will be
         used instead.
     azmedian : bool, int
         Passed to phidp_offset_detection. Default is False.
@@ -3029,7 +3028,7 @@ def phidp_processing_old(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohv
     # Calculate range for offset calculation if rng is None
     if rng is None:
         rng = ds[X_PHI].range.diff("range").median().values * window
-        
+
     if rng < rng_min:
         rng = rng_min
 
@@ -3052,8 +3051,8 @@ def phidp_processing_old(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohv
     if fillna is True:
         off_fix = off.broadcast_like(phi_fix)
         phi_fix = phi_fix.fillna(off_fix) - off
-    elif fillna is False:    
-        phi_fix = phi_fix - off    
+    elif fillna is False:
+        phi_fix = phi_fix - off
     elif isinstance(fillna, int) or isinstance(fillna, float):
         phi_fix = phi_fix.fillna(fillna) - off
 
@@ -3063,21 +3062,21 @@ def phidp_processing_old(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohv
     # Apply additional smoothing
     gkern = gauss_kernel(window, window)
     smooth_partial = partial(smooth_data, kernel=gkern)
-    phiclean = xr.apply_ufunc(smooth_partial, phi_median.compute(), 
+    phiclean = xr.apply_ufunc(smooth_partial, phi_median.compute(),
                               input_core_dims=[["azimuth","range"]], output_core_dims=[["azimuth","range"]],
                               vectorize=True)
 
-    assign = {X_PHI+"_OC_SMOOTH": phiclean.assign_attrs(ds[X_PHI].attrs),    
+    assign = {X_PHI+"_OC_SMOOTH": phiclean.assign_attrs(ds[X_PHI].attrs),
               X_PHI+"_OFFSET": off.assign_attrs(ds[X_PHI].attrs),
               X_PHI+"_OC": phi_fix.assign_attrs(ds[X_PHI].attrs)}
 
     return ds.assign(assign)
-    
+
 def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
-                     dbzhmin=-20., min_height=0, window=7, window2 = None, gauss_rng=5, gauss_az=3, fix_range=500., rng=None, rng_min=3000., 
+                     dbzhmin=-20., min_height=0, window=7, window2 = None, gauss_rng=5, gauss_az=3, fix_range=500., rng=None, rng_min=3000.,
                      fillna=False, clean_invalid=False, azmedian=False, tolerance=(0,0)):
     r"""
-    Calculate basic PHIDP processing including thresholding, smoothing and 
+    Calculate basic PHIDP processing including thresholding, smoothing and
     offset correction. Attach results to the input dataset.
 
     Parameters
@@ -3107,13 +3106,13 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
     fix_range : int
         Minimum range from where to consider PHIDP values.
     rng : float
-        Range in m to calculate system phase offset. If None (default), it 
+        Range in m to calculate system phase offset. If None (default), it
         will be calculated according to window. It should be large enough to
-        allow sufficient data for offset identification (a value around 3000 
+        allow sufficient data for offset identification (a value around 3000
         is usually enough)
     rng_min : float
-        Minimum value of rng. If the value of rng (either passed by the user 
-        or calculated automatically) is lower than rng_min, then rng_min will be 
+        Minimum value of rng. If the value of rng (either passed by the user
+        or calculated automatically) is lower than rng_min, then rng_min will be
         used instead.
     azmedian : bool, int
         Passed to phidp_offset_detection. Default is False.
@@ -3134,21 +3133,21 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
         xarray Dataset with the original data and processed PHIDP.
 
     """
-    
+
     # smooth range dim
     phi_median = ds[X_PHI].where((ds[X_RHO]>=rhohvmin) & (ds[X_DBZH]>=dbzhmin) & (ds["z"]>min_height) & (ds["range"]>fix_range) ).pipe(xr_rolling, window, window2=window2, method='median', min_periods=window//2+1, skipna=True)
 
     # Apply additional smoothing
     gkern = gauss_kernel(gauss_az, gauss_rng)
     smooth_partial = partial(smooth_data, kernel=gkern)
-    phiclean = xr.apply_ufunc(smooth_partial, phi_median.compute(), 
+    phiclean = xr.apply_ufunc(smooth_partial, phi_median.compute(),
                               input_core_dims=[["azimuth","range"]], output_core_dims=[["azimuth","range"]],
                               vectorize=True)
 
     # Calculate range for offset calculation if rng is None
     if rng is None:
         rng = ds[X_PHI].range.diff("range").median().values * window
-        
+
     if rng < rng_min:
         rng = rng_min
 
@@ -3174,15 +3173,15 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
         off_fix = off.broadcast_like(phi_fix)
         phi_fix = phi_fix.fillna(off_fix) - off
         phiclean = phiclean.fillna(off_fix) - off
-    elif fillna is False:    
-        phi_fix = phi_fix - off    
-        phiclean = phiclean - off    
+    elif fillna is False:
+        phi_fix = phi_fix - off
+        phiclean = phiclean - off
     elif isinstance(fillna, int) or isinstance(fillna, float):
         phi_fix = phi_fix.fillna(fillna) - off
         phiclean = phiclean.fillna(fillna) - off
 
     # assign results
-    assign = {X_PHI+"_OC_SMOOTH": phiclean.assign_attrs(ds[X_PHI].attrs),    
+    assign = {X_PHI+"_OC_SMOOTH": phiclean.assign_attrs(ds[X_PHI].attrs),
               X_PHI+"_OFFSET": off.assign_attrs(ds[X_PHI].attrs),
               X_PHI+"_OC": phi_fix.assign_attrs(ds[X_PHI].attrs)}
 
@@ -3194,17 +3193,17 @@ def count_and_filter_segments(da, min_length=7):
 
     # Find the indices where the valid_mask changes
     changes = np.diff(valid_mask.astype(int))
-    
+
     # Get start and end indices of segments
     start_indices = np.where(changes == 1)[0] + 1
     end_indices = np.where(changes == -1)[0] + 1
-    
+
     # Adjust for segments that start or end at the edges
     if valid_mask[0]:
         start_indices = np.insert(start_indices, 0, 0)
     if valid_mask[-1]:
         end_indices = np.append(end_indices, len(valid_mask))
-    
+
     # Calculate segment lengths
     segment_lengths = end_indices - start_indices
 
@@ -3223,10 +3222,10 @@ def count_and_filter_segments(da, min_length=7):
     return filtered_da
 
 def phidp_processing_ryzhkov(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
-                     dbzhmin=-20., min_height=0, window=3, window2 = None, window3=7, fix_range=500., rng=None, rng_min=3000., 
+                     dbzhmin=-20., min_height=0, window=3, window2 = None, window3=7, fix_range=500., rng=None, rng_min=3000.,
                      fillna=False, clean_invalid=False, azmedian=False, tolerance=(0,0)):
     r"""
-    Calculate basic PHIDP processing including thresholding, smoothing and 
+    Calculate basic PHIDP processing including thresholding, smoothing and
     offset correction like A. Ryzhkov does for NEXRAD. Attach results to the input dataset.
 
     Parameters
@@ -3254,13 +3253,13 @@ def phidp_processing_ryzhkov(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", r
     fix_range : int
         Minimum range from where to consider PHIDP values.
     rng : float
-        Range in m to calculate system phase offset. If None (default), it 
+        Range in m to calculate system phase offset. If None (default), it
         will be calculated according to window. It should be large enough to
-        allow sufficient data for offset identification (a value around 3000 
+        allow sufficient data for offset identification (a value around 3000
         is usually enough)
     rng_min : float
-        Minimum value of rng. If the value of rng (either passed by the user 
-        or calculated automatically) is lower than rng_min, then rng_min will be 
+        Minimum value of rng. If the value of rng (either passed by the user
+        or calculated automatically) is lower than rng_min, then rng_min will be
         used instead.
     azmedian : bool, int
         Passed to phidp_offset_detection. Default is False.
@@ -3281,31 +3280,31 @@ def phidp_processing_ryzhkov(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", r
         xarray Dataset with the original data and processed PHIDP.
 
     """
-    
+
     # smooth range dim
     phi_median = ds[X_PHI].where((ds[X_RHO]>=rhohvmin)).pipe(xr_rolling, window, window2=window2, method='median', min_periods=window//2+1, skipna=True)
-    
+
     # select only the segments of PHIDP that have enough valid values
     phimed_clean = xr.apply_ufunc(count_and_filter_segments, phi_median.compute(), kwargs=dict(min_length=window3),
                               input_core_dims=[["range"]], output_core_dims=[["range"]],
                               vectorize=True)
-    
+
     # calculate PHIDP for the good intervals with a running average
-    
+
     phi_mean = phimed_clean.rolling(range=window3, min_periods=window3//2+1, center=True).mean(skipna=True)
-    
+
     # fill in the gaps with linear interpolation
-    
+
     phi_mean_interp = phi_mean.interpolate_na(dim="range", method="linear")
-    
+
     # fill the edges
-    
+
     phi_mean_interp_fill = phi_mean_interp.bfill("range").ffill("range")
 
     # Calculate range for offset calculation if rng is None
     if rng is None:
         rng = ds[X_PHI].range.diff("range").median().values * window
-        
+
     if rng < rng_min:
         rng = rng_min
 
@@ -3331,15 +3330,15 @@ def phidp_processing_ryzhkov(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", r
         off_fix = off.broadcast_like(phi_fix)
         phi_fix = phi_fix.fillna(off_fix) - off
         phi_mean_interp_fill = phi_mean_interp_fill.fillna(off_fix) - off
-    elif fillna is False:    
-        phi_fix = phi_fix - off    
-        phi_mean_interp_fill = phi_mean_interp_fill - off    
+    elif fillna is False:
+        phi_fix = phi_fix - off
+        phi_mean_interp_fill = phi_mean_interp_fill - off
     elif isinstance(fillna, int) or isinstance(fillna, float):
         phi_fix = phi_fix.fillna(fillna) - off
         phi_mean_interp_fill = phi_mean_interp_fill.fillna(fillna) - off
 
     # assign results
-    assign = {X_PHI+"_OC_SMOOTH": phi_mean_interp_fill.assign_attrs(ds[X_PHI].attrs),    
+    assign = {X_PHI+"_OC_SMOOTH": phi_mean_interp_fill.assign_attrs(ds[X_PHI].attrs),
               X_PHI+"_OFFSET": off.assign_attrs(ds[X_PHI].attrs),
               X_PHI+"_OC": phi_fix.assign_attrs(ds[X_PHI].attrs)}
 
@@ -3372,7 +3371,7 @@ def kdp_from_phidp(ds, winlen, X_PHI=None, min_periods=2):
         DataArrays with differential phase values (PHI_CONV) and specific differential phase (KDP_CONV)
     """
     if type(ds) is xr.DataArray:
-    
+
         dr = ds.range.diff('range').median('range').values / 1000.
         print("range res [km]:", dr)
         print("processing window [km]:", dr * winlen)
@@ -3385,7 +3384,7 @@ def kdp_from_phidp(ds, winlen, X_PHI=None, min_periods=2):
                                           min_periods=min_periods),
                               dask_gufunc_kwargs=dict(allow_rechunk=True),
                               )
-    
+
     elif type(ds) is xr.Dataset:
         dr = ds.range.diff('range').median('range').values / 1000.
         print("range res [km]:", dr)
@@ -3431,7 +3430,7 @@ def kdp_phidp_vulpiani(ds, winlen, X_PHI=None, min_periods=2):
         DataArrays with differential phase values (PHI_CONV) and specific differential phase (KDP_CONV)
     """
     if type(ds) is xr.DataArray:
-    
+
         dr = ds.range.diff('range').median('range').values / 1000.
         print("range res [km]:", dr)
         print("processing window [km]:", dr * winlen)
@@ -3444,7 +3443,7 @@ def kdp_phidp_vulpiani(ds, winlen, X_PHI=None, min_periods=2):
                                           min_periods=min_periods),
                               dask_gufunc_kwargs=dict(allow_rechunk=True),
                               )
-    
+
     elif type(ds) is xr.Dataset:
         dr = ds.range.diff('range').median('range').values / 1000.
         print("range res [km]:", dr)
@@ -3464,7 +3463,7 @@ def kdp_phidp_vulpiani(ds, winlen, X_PHI=None, min_periods=2):
                   "PHI_CONV": phidp.assign_attrs(ds[X_PHI].attrs),
                   }
         return ds.assign(assign)
-    
+
 #### Calibration of ZDR with light-rain consistency
 from matplotlib import pyplot as plt
 
@@ -3472,7 +3471,7 @@ def zhzdr_lr_consistency_old(ZH, ZDR, RHO, TMP, rhohv_th=0.99, tmp_th=5, plot_co
     """
     ZH-ZDR Consistency in light rain, for ZDR calibration
     AR p.155-156
-    
+
     """
     zdr_zh_20 = np.nanmedian(ZDR[(ZH>=19)&(ZH<21)&(RHO>rhohv_th)&(TMP>tmp_th)])
     zdr_zh_22 = np.nanmedian(ZDR[(ZH>=21)&(ZH<23)&(RHO>rhohv_th)&(TMP>tmp_th)])
@@ -3482,7 +3481,7 @@ def zhzdr_lr_consistency_old(ZH, ZDR, RHO, TMP, rhohv_th=0.99, tmp_th=5, plot_co
     zdr_zh_30 = np.nanmedian(ZDR[(ZH>=29)&(ZH<31)&(RHO>rhohv_th)&(TMP>tmp_th)])
 
     zdroffset = np.nansum([zdr_zh_20-.23, zdr_zh_22-.27, zdr_zh_24-.33, zdr_zh_26-.40, zdr_zh_28-.48, zdr_zh_30-.56])/6.
-    
+
     if plot_correction:
         mask = (RHO>rhohv_th)&(TMP>tmp_th)
         plt.figure(figsize=(8,3))
@@ -3493,7 +3492,7 @@ def zhzdr_lr_consistency_old(ZH, ZDR, RHO, TMP, rhohv_th=0.99, tmp_th=5, plot_co
         plt.xlabel(r'$Z_H$', fontsize=15)
         plt.ylabel(r'$Z_{DR}$', fontsize=15)
         plt.grid(which='both', color='black', linestyle=':', alpha=0.5)
-        
+
         plt.subplot(1,2,2)
         hist_2d(ZH[mask], ZDR[mask]-zdroffset, bins1=np.arange(0,40,1), bins2=np.arange(-1,3,.1))
         plt.plot([20,22,24,26,28,30],[.23, .27, .33, .40, .48, .56], color='black')
@@ -3502,20 +3501,20 @@ def zhzdr_lr_consistency_old(ZH, ZDR, RHO, TMP, rhohv_th=0.99, tmp_th=5, plot_co
         plt.ylabel(r'$Z_{DR}$', fontsize=15)
         plt.grid(which='both', color='black', linestyle=':', alpha=0.5)
         plt.legend(title=r'$\Delta Z_{DR}$: '+str(np.round(zdroffset,3))+'dB')
-    
+
         plt.tight_layout()
         plt.show()
-    
+
     return zdroffset
 
-def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99, min_h=500, band="C",
+def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99, min_h=500, min_count=30, band="C",
                          mlbottom=None, temp=None, timemode="step", plot_correction=False, plot_timestep=0,
                          binszh=np.arange(0,40,1), binszdr=np.arange(-1,3,.1)):
     """
     Improved function for
     ZH-ZDR Consistency in light rain, for ZDR calibration
     Ryzhkov and Zrnic p.155-156
-    
+
     ds : xarray Dataset
         Dataset with ZDR, DBZH and RHOHV.
     zdr : str
@@ -3525,8 +3524,8 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
     rhohv : str
         Name of the variable in ds for cross-correlation coefficient data. Default is "RHOHV".
     mlbottom : str, int or float
-        If str: name of the ML bottom variable in ds. If None, it is assumed to 
-        be "height_ml_bottom_new_gia" or "height_ml_bottom" (in that order). 
+        If str: name of the ML bottom variable in ds. If None, it is assumed to
+        be "height_ml_bottom_new_gia" or "height_ml_bottom" (in that order).
         If int or float: we assume the ML bottom is not available and we take the given
         int value as the temperature level from which to consider radar bins.
         Only gates below the melting layer bottom (i.e. the rain
@@ -3539,11 +3538,13 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
         The default is 0.99.
     min_h : float, optional
         Minimum height of usable data within the polarimetric profiles, in m. This is relative to
-        sea level and not relative to the altitude of the radar (in accordance to the "z" coordinate 
+        sea level and not relative to the altitude of the radar (in accordance to the "z" coordinate
         from wradlib.georef.georeference). The default is 500.
+    min_count : int, optional
+        Minimum count of valid values in each reflectivity interval for the calculation to be valid.
     band : str, list
-        Frequency band to select the reference values according to Ryzhkov and Zrnic. Possible 
-        values are: "S", "C" or "X". Alternatively, a custom list with 6 reference values 
+        Frequency band to select the reference values according to Ryzhkov and Zrnic. Possible
+        values are: "S", "C" or "X". Alternatively, a custom list with 6 reference values
         can be passed and will be used instead. E.g.: band=[.23, .27, .32, .38, .46, .55]
     timemode : str
         How to calculate the offset in case a time dimension is found. "step" calculates one offset
@@ -3551,9 +3552,9 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
     plot_correction : bool
         If True, plot the histogram showing the uncorrected vs corrected data. Default is False.
     plot_timestep : int
-        In case timemode="step" and plot_correction=True, plot_timestep defines the time index to 
+        In case timemode="step" and plot_correction=True, plot_timestep defines the time index to
         be plotted. By default the first timestep (index=0) is plotted.
-    binszh, binszdr : ZH and ZDR bins to pass to the 2d histogram plotting function. Only used if 
+    binszh, binszdr : ZH and ZDR bins to pass to the 2d histogram plotting function. Only used if
         plot_correction=True.
 
     Returns
@@ -3561,25 +3562,25 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
     zdroffset : xarray Dataset
         xarray Dataset with the detected offset and the count of valid values used for the calculation.
     """
-    
+
     # Set the climatological values according to the book for each band for 20<Zh<30
     clim_values = {
         "S": [.23, .27, .32, .38, .46, .55],
         "C": [.23, .27, .33, .40, .48, .56],
         "X": [.23, .28, .33, .41, .49, .58]
         }
-    
+
     if type(band) is str:
         ref_vals = clim_values[band]
     elif type(band) is list:
         ref_vals = band
     else:
         raise ValueError("Keyword argument 'band' is not str nor list.")
-    
+
     # We need the ds to be georeferenced in case it is not
     if "z" not in ds.coords:
         ds = ds.pipe(wrl.georef.georeference)
-    
+
     if mlbottom is None:
         try:
             ml_bottom = ds["z"] < ds["height_ml_bottom_new_gia"]
@@ -3610,7 +3611,7 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
     # filter data below ML and above min_h
     ds_fil = ds.where(ml_bottom)
     ds_fil = ds_fil.where(ds["z"]>min_h)
-    
+
     # Define a function to filter zdr by dbzh and rhohv
     def where_dbzh_rhohv(data, db0, db1, rhv=rhvmin):
         return (data[zdr].where((data[dbzh]>=db0)&(data[dbzh]<db1)&(data[rhohv]>rhv)))
@@ -3620,16 +3621,15 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
         dims_wotime = [kk for kk in ds_fil.dims]
         while "time" in dims_wotime:
             dims_wotime.remove("time")
-        
+
         zdr_zh_20 = where_dbzh_rhohv(ds_fil, 19, 21).compute().median(dim=dims_wotime)
         zdr_zh_22 = where_dbzh_rhohv(ds_fil, 21, 23).compute().median(dim=dims_wotime)
         zdr_zh_24 = where_dbzh_rhohv(ds_fil, 23, 25).compute().median(dim=dims_wotime)
         zdr_zh_26 = where_dbzh_rhohv(ds_fil, 25, 27).compute().median(dim=dims_wotime)
         zdr_zh_28 = where_dbzh_rhohv(ds_fil, 27, 29).compute().median(dim=dims_wotime)
         zdr_zh_30 = where_dbzh_rhohv(ds_fil, 29, 31).compute().median(dim=dims_wotime)
-        
+
         # check that there are sufficient values in each interval (at least 30)
-        min_count=30
         zdr_zh_20 = zdr_zh_20.where(where_dbzh_rhohv(ds_fil, 19, 21).count(dim=dims_wotime)>=min_count)
         zdr_zh_22 = zdr_zh_22.where(where_dbzh_rhohv(ds_fil, 21, 23).count(dim=dims_wotime)>=min_count)
         zdr_zh_24 = zdr_zh_24.where(where_dbzh_rhohv(ds_fil, 23, 25).count(dim=dims_wotime)>=min_count)
@@ -3638,14 +3638,14 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
         zdr_zh_30 = zdr_zh_30.where(where_dbzh_rhohv(ds_fil, 29, 31).count(dim=dims_wotime)>=min_count)
 
         zdroffset = xr.concat([zdr_zh_20-ref_vals[0], zdr_zh_22-ref_vals[1], zdr_zh_24-ref_vals[2], zdr_zh_26-ref_vals[3], zdr_zh_28-ref_vals[4], zdr_zh_30-ref_vals[5]], dim='dataarrays').mean(dim='dataarrays', skipna=False, keep_attrs=True)
-        
+
         # get also data quality vars
         zdr_max = where_dbzh_rhohv(ds_fil, 19, 31).max(dim=dims_wotime)
         zdr_min = where_dbzh_rhohv(ds_fil, 19, 31).min(dim=dims_wotime)
         zdr_std = where_dbzh_rhohv(ds_fil, 19, 31).std(dim=dims_wotime)
         zdr_sem = ( zdr_std / where_dbzh_rhohv(ds_fil, 19, 31).count(dim=dims_wotime)**(1/2) )
         zdr_offset_datacount = where_dbzh_rhohv(ds_fil, 19, 31).count(dim=dims_wotime)
-        
+
         # drop ML coordinates if present
         for coord in zdroffset.coords:
             if "_ml" in coord:
@@ -3663,9 +3663,8 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
         zdr_zh_26 = where_dbzh_rhohv(ds_fil, 25, 27).compute().median()
         zdr_zh_28 = where_dbzh_rhohv(ds_fil, 27, 29).compute().median()
         zdr_zh_30 = where_dbzh_rhohv(ds_fil, 29, 31).compute().median()
-        
+
         # check that there are sufficient values in each interval (at least 30)
-        min_count=30
         if where_dbzh_rhohv(ds_fil, 19, 21).count()<min_count:
             zdr_zh_20 = zdr_zh_20*np.nan
         if where_dbzh_rhohv(ds_fil, 21, 23).count()<min_count:
@@ -3687,7 +3686,7 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
         zdr_std = where_dbzh_rhohv(ds_fil, 19, 31).std()
         zdr_sem = ( zdr_std / where_dbzh_rhohv(ds_fil, 19, 31).count()**(1/2) )
         zdr_offset_datacount = where_dbzh_rhohv(ds_fil, 19, 31).count()
-        
+
         # restore time dim if present
         if "time" in ds:
             zdroffset = zdroffset.expand_dims("time")
@@ -3702,7 +3701,7 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
             zdr_sem["time"] = np.atleast_1d(ds.coords["time"][0]) # put the first time value as coord
             zdr_offset_datacount = zdr_offset_datacount.expand_dims("time")
             zdr_offset_datacount["time"] = np.atleast_1d(ds.coords["time"][0]) # put the first time value as coord
-            
+
     # restore attrs
     zdroffset.attrs = ds_fil[zdr].attrs
     zdroffset.attrs["long_name"] = "ZDR offset from light rain consistency method"
@@ -3722,7 +3721,7 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
 
     zdr_offset_datacount.attrs["long_name"] = "Count of values (bins) used for the ZDR offset calculation"
     zdr_offset_datacount.attrs["standard_name"] = "count_of_values_zdr_offset"
-    
+
     if plot_correction:
         try:
             mask = ds_fil[rhohv]>rhvmin
@@ -3737,7 +3736,7 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
             plt.xlabel(r'$Z_H$', fontsize=15)
             plt.ylabel(r'$Z_{DR}$', fontsize=15)
             plt.grid(which='both', color='black', linestyle=':', alpha=0.5)
-            
+
             plt.subplot(1,2,2)
             if "time" in ds and timemode=="step":
                 hist_2d(ds_fil[dbzh].where(mask)[plot_timestep].values, ds_fil[zdr].where(mask)[plot_timestep].values-zdroffset[plot_timestep].values, bins1=binszh, bins2=binszdr)
@@ -3752,15 +3751,15 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
                 plt.legend(title=r'$\Delta Z_{DR}$: '+str(np.round(zdroffset.values[plot_timestep],3))+'dB')
             else:
                 plt.legend(title=r'$\Delta Z_{DR}$: '+str(np.round(zdroffset.values,3))+'dB')
-        
+
             plt.tight_layout()
             plt.show()
         except ValueError:
             print("No plotting: No light rain detected with current settings")
-    
+
     # change name of the array
     zdroffset.name="ZDR_offset"
-    
+
     # promote to Dataset
     zdroffset = zdroffset.to_dataset().assign({
         "ZDR_max_from_offset": zdr_max,
@@ -3769,17 +3768,17 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
         "ZDR_sem_from_offset": zdr_sem,
         "ZDR_offset_datacount": zdr_offset_datacount
         })
-    
+
     return zdroffset
 
 
-        
+
 #### ZDR calibration from VPs. Adapted from Daniel Sanchez-Rivas (TowerPy) to xarray
 def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="median",
                         mlbottom=None, temp=None, min_h=1000, zhmin=5,
                         zhmax=30, rhvmin=0.98, minbins=10, azmed=False, timemode="step"):
     r"""
-    Calculate the offset on :math:`Z_{DR}` using vertical profiles. Only gates 
+    Calculate the offset on :math:`Z_{DR}` using vertical profiles. Only gates
     below the melting layer bottom (i.e. the rain region below the melting layer)
     or below the given temperature level are included in the method.
 
@@ -3787,7 +3786,7 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
     Parameters
     ----------
     ds : xarray Dataset
-        Dataset with the vertical scan. ZDR, DBZH and RHOHV are needed. Dimensions 
+        Dataset with the vertical scan. ZDR, DBZH and RHOHV are needed. Dimensions
         should include "azimuth" and "range"
     zdr : str
         Name of the variable in ds for differential reflectivity data. Default is "ZDR".
@@ -3799,8 +3798,8 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
         Method for calculating the offset from the distribution of ZDR values in light rain.
         Can be either "median" or "mean". Default is "median".
     mlbottom : str, int or float
-        If str: name of the ML bottom variable in ds. If None, it is assumed to 
-        be "height_ml_bottom_new_gia" or "height_ml_bottom" (in that order). 
+        If str: name of the ML bottom variable in ds. If None, it is assumed to
+        be "height_ml_bottom_new_gia" or "height_ml_bottom" (in that order).
         If int or float: we assume the ML bottom is not available and we take the given
         int value as the temperature level from which to consider radar bins.
         Only gates below the melting layer bottom (i.e. the rain
@@ -3810,8 +3809,8 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
         If None is given and mlbottom is int or float, the default name "TEMP" is used.
     min_h : float, optional
         Minimum height of usable data within the polarimetric profiles, in m. This is relative to
-        sea level and not relative to the altitude of the radar (in accordance to the "z" coordinate 
-        from wradlib.georef.georeference). The default is 1000. 
+        sea level and not relative to the altitude of the radar (in accordance to the "z" coordinate
+        from wradlib.georef.georeference). The default is 1000.
     zhmin : float, optional
         Threshold on :math:`Z_{H}` (in dBZ) related to light rain.
         The default is 5.
@@ -3850,16 +3849,16 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
         of radar differential reflectivity using quasi-vertical profiles",
         Atmos. Meas. Tech., 15, 503–520,
         https://doi.org/10.5194/amt-15-503-2022
-    .. [3] Sanchez-Rivas, D., and Rico-Ramirez, M. A. (2023). Towerpy: 
-        An open-source toolbox for processing polarimetric weather radar data. 
-        Environmental Modelling & Software, 167, 105746. 
+    .. [3] Sanchez-Rivas, D., and Rico-Ramirez, M. A. (2023). Towerpy:
+        An open-source toolbox for processing polarimetric weather radar data.
+        Environmental Modelling & Software, 167, 105746.
         https://doi.org/10.1016/j.envsoft.2023.105746
     """
-    
+
     # We need the ds to be georeferenced in case it is not
     if "z" not in ds.coords:
         ds = ds.pipe(wrl.georef.georeference)
-    
+
     if mlbottom is None:
         try:
             ml_bottom = ds["z"] < ds["height_ml_bottom_new_gia"]
@@ -3886,15 +3885,15 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
             raise TypeError("temp must be str or None")
     else:
         raise TypeError("mlbottom must be str, int or None")
-    
+
     # get ZDR data and filter values below ML and above min_h
     ds_zdr = ds[zdr]
     ds_zdr = ds_zdr.where(ml_bottom)
     ds_zdr = ds_zdr.where(ds["z"]>min_h)
-    
+
     # Filter according to DBZH and RHOHV limits
     ds_zdr = ds_zdr.where(ds[dbzh]>zhmin).where(ds[dbzh]<zhmax).where(ds[rhohv]>rhvmin)
-    
+
     # Azimuth median before computing?
     if azmed:
         if "azimuth" in ds_zdr.dims:
@@ -3911,23 +3910,23 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
             dims_wotime.remove("time")
 
         # same as before but with ds_zdr, in case the azimuth has already been taken off (for the data count)
-        dims_full_wotime = [kk for kk in ds_zdr.dims] 
+        dims_full_wotime = [kk for kk in ds_zdr.dims]
         while "time" in dims_full_wotime:
             dims_full_wotime.remove("time")
-                            
-        # Filter according to the minimum number of bins limit        
+
+        # Filter according to the minimum number of bins limit
         ds_zdr_med_ready = ds_zdr_med.where(n_longest_consecutive(ds_zdr_med, dim="range").compute() > minbins)
-        
+
         # Calculate offset and others
         if mode=="median":
             zdr_offset = ds_zdr_med_ready.median(dim=dims_wotime).assign_attrs(
-                {"long_name":"ZDR offset from vertical profile (median)", 
+                {"long_name":"ZDR offset from vertical profile (median)",
                  "standard_name":"ZDR_offset_from_vertical_profile",
                  "units": "dB"}
                 )
         elif mode=="mean":
             zdr_offset = ds_zdr_med_ready.mean(dim=dims_wotime).assign_attrs(
-                {"long_name":"ZDR offset from vertical profile (mean)", 
+                {"long_name":"ZDR offset from vertical profile (mean)",
                  "standard_name":"ZDR_offset_from_vertical_profile",
                  "units": "dB"}
                 )
@@ -3935,27 +3934,27 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
             raise KeyError("mode must be either 'median' or 'mean'")
 
         zdr_max = ds_zdr_med_ready.max(dim=dims_wotime).assign_attrs(
-            {"long_name":"ZDR max from offset calculation", 
+            {"long_name":"ZDR max from offset calculation",
              "standard_name":"ZDR_max_from_offset_calculation"}
             )
         zdr_min = ds_zdr_med_ready.min(dim=dims_wotime).assign_attrs(
-            {"long_name":"ZDR min from offset calculation", 
+            {"long_name":"ZDR min from offset calculation",
              "standard_name":"ZDR_min_from_offset_calculation"}
             )
         zdr_std = ds_zdr_med_ready.std(dim=dims_wotime).assign_attrs(
-            {"long_name":"ZDR standard deviation from offset calculation", 
+            {"long_name":"ZDR standard deviation from offset calculation",
              "standard_name":"ZDR_std_from_offset_calculation"}
             )
         zdr_sem = ( zdr_std / ds_zdr_med_ready.count(dim=dims_wotime)**(1/2) ).assign_attrs(
-            {"long_name":"ZDR standard error of the mean from offset calculation", 
+            {"long_name":"ZDR standard error of the mean from offset calculation",
              "standard_name":"ZDR_sem_from_offset_calculation"}
             )
         zdr_offset_datacount = ds_zdr.where(ds_zdr_med_ready.notnull()).count(dim=dims_full_wotime).assign_attrs(
-            {"long_name":"Count of values (bins) used for the ZDR offset calculation", 
+            {"long_name":"Count of values (bins) used for the ZDR offset calculation",
              "standard_name":"count_of_values_zdr_offset"}
             )
 
-                
+
     else:
         # Filter according to the minimum number of bins limit
         ds_zdr_med_ready = ds_zdr_med.where(n_longest_consecutive(ds_zdr_med, dim="range").compute() > minbins)
@@ -3963,13 +3962,13 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
         # Calculate offset and others
         if mode=="median":
             zdr_offset = ds_zdr_med_ready.compute().median().assign_attrs(
-                {"long_name":"ZDR offset from vertical profile (median)", 
+                {"long_name":"ZDR offset from vertical profile (median)",
                  "standard_name":"ZDR_offset_from_vertical_profile",
                  "units": "dB"}
                 )
         elif mode=="mean":
             zdr_offset = ds_zdr_med_ready.compute().mean().assign_attrs(
-                {"long_name":"ZDR offset from vertical profile (mean)", 
+                {"long_name":"ZDR offset from vertical profile (mean)",
                  "standard_name":"ZDR_offset_from_vertical_profile",
                  "units": "dB"}
                 )
@@ -3977,26 +3976,26 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
             raise KeyError("mode must be either 'median' or 'mean'")
 
         zdr_max = ds_zdr_med_ready.compute().max().assign_attrs(
-            {"long_name":"ZDR max from offset calculation", 
+            {"long_name":"ZDR max from offset calculation",
              "standard_name":"ZDR_max_from_offset_calculation"}
             )
         zdr_min = ds_zdr_med_ready.compute().min().assign_attrs(
-            {"long_name":"ZDR min from offset calculation", 
+            {"long_name":"ZDR min from offset calculation",
              "standard_name":"ZDR_min_from_offset_calculation"}
             )
         zdr_std = ds_zdr_med_ready.compute().std().assign_attrs(
-            {"long_name":"ZDR standard deviation from offset calculation", 
+            {"long_name":"ZDR standard deviation from offset calculation",
              "standard_name":"ZDR_std_from_offset_calculation"}
             )
         zdr_sem = ( zdr_std / ds_zdr_med_ready.compute().count()**(1/2) ).assign_attrs(
-            {"long_name":"ZDR standard error of the mean from offset calculation", 
+            {"long_name":"ZDR standard error of the mean from offset calculation",
              "standard_name":"ZDR_sem_from_offset_calculation"}
             )
         zdr_offset_datacount = ds_zdr.where(ds_zdr_med_ready.notnull()).count().assign_attrs(
-            {"long_name":"Count of values (bins) used for the ZDR offset calculation", 
+            {"long_name":"Count of values (bins) used for the ZDR offset calculation",
              "standard_name":"count_of_values_zdr_offset"}
             )
-            
+
     # Merge results in a dataset
     ds_offset = xr.Dataset({"ZDR_offset": zdr_offset,
                             "ZDR_max_from_offset": zdr_max,
@@ -4025,14 +4024,14 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
                         mlbottom=None, temp=None, zdr_0=0.182, min_h=1000, zhmin=0,
                         zhmax=20, rhvmin=0.98, minbins=10, azmed=True, timemode="step"):
     r"""
-    Calculate the offset on :math:`Z_{DR}` using QVPs, acoording to [1]_.  Only gates 
+    Calculate the offset on :math:`Z_{DR}` using QVPs, acoording to [1]_.  Only gates
     below the melting layer bottom (i.e. the rain region below the melting layer)
     or below the given temperature level are included in the method.
 
     Parameters
     ----------
     ds : xarray Dataset
-        Dataset with the vertical scan. ZDR, DBZH and RHOHV are needed. Dimensions 
+        Dataset with the vertical scan. ZDR, DBZH and RHOHV are needed. Dimensions
         should include "azimuth" and "range"
     zdr : str
         Name of the variable in ds for differential reflectivity data. Default is "ZDR".
@@ -4044,8 +4043,8 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
         Method for calculating the offset from the distribution of ZDR values in light rain.
         Can be either "median" or "mean". Default is "median".
     mlbottom : str, int or float
-        If str: name of the ML bottom variable in ds. If None, it is assumed to 
-        be "height_ml_bottom_new_gia" or "height_ml_bottom" (in that order). 
+        If str: name of the ML bottom variable in ds. If None, it is assumed to
+        be "height_ml_bottom_new_gia" or "height_ml_bottom" (in that order).
         If int or float: we assume the ML bottom is not available and we take the given
         int value as the temperature level from which to consider radar bins.
         Only gates below the melting layer bottom (i.e. the rain
@@ -4058,8 +4057,8 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
         Defaults to 0.182.
     min_h : float, optional
         Minimum height of usable data within the polarimetric profiles, in m. This is relative to
-        sea level and not relative to the altitude of the radar (in accordance to the "z" coordinate 
-        from wradlib.georef.georeference). The default is 1000. 
+        sea level and not relative to the altitude of the radar (in accordance to the "z" coordinate
+        from wradlib.georef.georeference). The default is 1000.
     zhmin : float, optional
         Threshold on :math:`Z_{H}` (in dBZ) related to light rain.
         The default is 0.
@@ -4073,7 +4072,7 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
         Minimum number of consecutive :math:`Z_{DR}` bins related to light rain. This should
         vary according to range resolution. The default is 10.
     azmed : bool
-        If True, perform azimuthal median after filtering values and before offset calculation. 
+        If True, perform azimuthal median after filtering values and before offset calculation.
         Default is True (QVP-like)
     timemode : str
         How to calculate the offset in case a time dimension is found. "step" calculates one offset
@@ -4095,15 +4094,15 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
         of radar differential reflectivity using quasi-vertical profiles",
         Atmos. Meas. Tech., 15, 503–520,
         https://doi.org/10.5194/amt-15-503-2022
-    .. [2] Sanchez-Rivas, D., and Rico-Ramirez, M. A. (2023). Towerpy: 
-        An open-source toolbox for processing polarimetric weather radar data. 
-        Environmental Modelling & Software, 167, 105746. 
+    .. [2] Sanchez-Rivas, D., and Rico-Ramirez, M. A. (2023). Towerpy:
+        An open-source toolbox for processing polarimetric weather radar data.
+        Environmental Modelling & Software, 167, 105746.
         https://doi.org/10.1016/j.envsoft.2023.105746
     """
     # We need the ds to be georeferenced in case it is not
     if "z" not in ds.coords:
         ds = ds.pipe(wrl.georef.georeference)
-    
+
     if mlbottom is None:
         try:
             ml_bottom = ds["z"] < ds["height_ml_bottom_new_gia"]
@@ -4130,12 +4129,12 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
             raise TypeError("temp must be str or None")
     else:
         raise TypeError("mlbottom must be str, int or None")
-    
+
     # get ZDR data and filter values below ML and above min_h
     ds_zdr = ds[zdr]
     ds_zdr = ds_zdr.where(ml_bottom)
     ds_zdr = ds_zdr.where(ds["z"]>min_h)
-    
+
     # Filter according to DBZH and RHOHV limits
     ds_zdr = ds_zdr.where(ds[dbzh]>zhmin).where(ds[dbzh]<zhmax).where(ds[rhohv]>rhvmin)
 
@@ -4147,7 +4146,7 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
             raise KeyError("azimuth not found in dataset dimensions")
     else:
         ds_zdr_med = ds_zdr
-        
+
     if "time" in ds and timemode=="step":
         # Get dimensions to reduce (other than time)
         dims_wotime = [kk for kk in ds_zdr_med.dims]
@@ -4155,23 +4154,28 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
             dims_wotime.remove("time")
 
         # same as before but with ds_zdr, in case the azimuth has already been taken off (for the data count)
-        dims_full_wotime = [kk for kk in ds_zdr.dims] 
+        dims_full_wotime = [kk for kk in ds_zdr.dims]
         while "time" in dims_full_wotime:
             dims_full_wotime.remove("time")
-                                    
+
         # Filter according to the minimum number of bins limit
-        ds_zdr_med_ready = ds_zdr_med.where(n_longest_consecutive(ds_zdr_med, dim="range").compute() > minbins)
-        
+        if "range" in ds_zdr_med.dims:
+            ds_zdr_med_ready = ds_zdr_med.where(n_longest_consecutive(ds_zdr_med, dim="range").compute() > minbins)
+        elif "z" in ds_zdr_med.dims:
+            ds_zdr_med_ready = ds_zdr_med.where(n_longest_consecutive(ds_zdr_med, dim="z").compute() > minbins)
+        else:
+            warnings.warn("zdr_offset_detection_qvps: Condition for minbins could not be checked, ignored (is range or z a dimension?)")
+
         # Calculate offset and others
         if mode=="median":
             zdr_offset = ds_zdr_med_ready.median(dim=dims_wotime).assign_attrs(
-                {"long_name":"ZDR offset from QVP method (median)", 
+                {"long_name":"ZDR offset from QVP method (median)",
                  "standard_name":"ZDR_offset_from_qvp",
                  "units": "dB"}
                 ) - zdr_0
         elif mode=="mean":
             zdr_offset = ds_zdr_med_ready.mean(dim=dims_wotime).assign_attrs(
-                {"long_name":"ZDR offset from QVP method (mean)", 
+                {"long_name":"ZDR offset from QVP method (mean)",
                  "standard_name":"ZDR_offset_from_qvp",
                  "units": "dB"}
                 ) - zdr_0
@@ -4179,26 +4183,26 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
             raise KeyError("mode must be either 'median' or 'mean'")
 
         zdr_max = ds_zdr_med_ready.max(dim=dims_wotime).assign_attrs(
-            {"long_name":"ZDR max from offset calculation", 
+            {"long_name":"ZDR max from offset calculation",
              "standard_name":"ZDR_max_from_offset_calculation"}
             )
         zdr_min = ds_zdr_med_ready.min(dim=dims_wotime).assign_attrs(
-            {"long_name":"ZDR min from offset calculation", 
+            {"long_name":"ZDR min from offset calculation",
              "standard_name":"ZDR_min_from_offset_calculation"}
             )
         zdr_std = ds_zdr_med_ready.std(dim=dims_wotime).assign_attrs(
-            {"long_name":"ZDR standard deviation from offset calculation", 
+            {"long_name":"ZDR standard deviation from offset calculation",
              "standard_name":"ZDR_std_from_offset_calculation"}
             )
         zdr_sem = ( zdr_std / ds_zdr_med_ready.count(dim=dims_wotime)**(1/2) ).assign_attrs(
-            {"long_name":"ZDR standard error of the mean from offset calculation", 
+            {"long_name":"ZDR standard error of the mean from offset calculation",
              "standard_name":"ZDR_sem_from_offset_calculation"}
             )
         zdr_offset_datacount = ds_zdr.where(ds_zdr_med_ready.notnull()).count(dim=dims_full_wotime).assign_attrs(
-            {"long_name":"Count of values (bins) used for the ZDR offset calculation", 
+            {"long_name":"Count of values (bins) used for the ZDR offset calculation",
              "standard_name":"count_of_values_zdr_offset"}
             )
-                
+
     else:
         # Filter according to the minimum number of bins limit
         ds_zdr_med_ready = ds_zdr_med.where(n_longest_consecutive(ds_zdr_med, dim="range").compute() > minbins)
@@ -4206,13 +4210,13 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
         # Calculate offset and others
         if mode=="median":
             zdr_offset = ds_zdr_med_ready.compute().median().assign_attrs(
-                {"long_name":"ZDR offset from QVP method (median)", 
+                {"long_name":"ZDR offset from QVP method (median)",
                  "standard_name":"ZDR_offset_from_qvp",
                  "units": "dB"}
                 ) - zdr_0
         elif mode=="mean":
             zdr_offset = ds_zdr_med_ready.compute().mean().assign_attrs(
-                {"long_name":"ZDR offset from QVP method (mean)", 
+                {"long_name":"ZDR offset from QVP method (mean)",
                  "standard_name":"ZDR_offset_from_qvp",
                  "units": "dB"}
                 ) - zdr_0
@@ -4220,26 +4224,26 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
             raise KeyError("mode must be either 'median' or 'mean'")
 
         zdr_max = ds_zdr_med_ready.compute().max().assign_attrs(
-            {"long_name":"ZDR max from offset calculation", 
+            {"long_name":"ZDR max from offset calculation",
              "standard_name":"ZDR_max_from_offset_calculation"}
             )
         zdr_min = ds_zdr_med_ready.compute().min().assign_attrs(
-            {"long_name":"ZDR min from offset calculation", 
+            {"long_name":"ZDR min from offset calculation",
              "standard_name":"ZDR_min_from_offset_calculation"}
             )
         zdr_std = ds_zdr_med_ready.compute().std().assign_attrs(
-            {"long_name":"ZDR standard deviation from offset calculation", 
+            {"long_name":"ZDR standard deviation from offset calculation",
              "standard_name":"ZDR_std_from_offset_calculation"}
             )
         zdr_sem = ( zdr_std / ds_zdr_med_ready.compute().count()**(1/2) ).assign_attrs(
-            {"long_name":"ZDR standard error of the mean from offset calculation", 
+            {"long_name":"ZDR standard error of the mean from offset calculation",
              "standard_name":"ZDR_sem_from_offset_calculation"}
             )
         zdr_offset_datacount = ds_zdr.where(ds_zdr_med_ready.notnull()).count().assign_attrs(
-            {"long_name":"Count of values (bins) used for the ZDR offset calculation", 
+            {"long_name":"Count of values (bins) used for the ZDR offset calculation",
              "standard_name":"count_of_values_zdr_offset"}
             )
-            
+
     # Merge results in a dataset
     ds_offset = xr.Dataset({"ZDR_offset": zdr_offset,
                             "ZDR_max_from_offset": zdr_max,
@@ -4265,21 +4269,21 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
 #### Attenuation correction
 
 def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.08, betaml = 0.02,
-                            dbzh = "DBZH", zdr = "ZDR", phidp = "UPHIDP_OC", 
-                            ML_bot = "height_ml_bottom_new_gia", ML_top = "height_ml_new_gia", 
+                            dbzh = "DBZH", zdr = "ZDR", phidp = "UPHIDP_OC",
+                            ML_bot = "height_ml_bottom_new_gia", ML_top = "height_ml_new_gia",
                             temp = "TEMP", temp_mlbot = 3, temp_mltop = 0, z_mlbot = 2000, dz_ml = 500,
                             interpolate_deltabump = True ):
     r'''
-    
+
     Corrects attenuation in ZH and ZDR.
     Below the melting layer bottom:
     ZH_corr_below = ZH + alpha*PHIDP
     ZDR_corr_below = ZDR + beta*PHIDP
-    
+
     In the melting layer:
     ZH_corr_in = ZH + alphaml*PHIDP
     ZDR_corr_in = ZDR + betaml*PHIDP
-    
+
     Above the ML: the last correction values in the ML are propagated
 
     X band:
@@ -4290,15 +4294,15 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.08, betam
 
     For BoXPol and JuXPol:
     alpha = 0.25
-    
+
     From https://doi.org/10.1002/qj.3366 (X-band):
     alphaml = 0.6 (2 times the value below ML)
     betaml = 0.06 (1.1 times the value below ML)
-    
+
     Parameters
     ----------
     ds : xarray Dataset
-        Dataset with ZH and/or ZDR. 
+        Dataset with ZH and/or ZDR.
     alpha : float
         alpha value for the linear attenuation correction (in liquid phase)
     beta : float
@@ -4312,16 +4316,16 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.08, betam
     zdr : str
         Name(s) of the variable(s) with ZDR to correct. A list of strings can be used to pass more than one name.
     phidp : str
-        Name of the variable with PHIDP data. A list of strings can be used to pass more 
+        Name of the variable with PHIDP data. A list of strings can be used to pass more
         than one name, but only the first valid name is used.
     ML_bot : str
-        Name of the variable with melting layer bottom height information. A list of 
+        Name of the variable with melting layer bottom height information. A list of
         strings can be used to pass more than one name, but only the first valid name is used.
     ML_top : str
-        Name of the variable with melting layer top height information. A list of 
+        Name of the variable with melting layer top height information. A list of
         strings can be used to pass more than one name, but only the first valid name is used.
     temp : str
-        Name of the variable with temperature information. A list of 
+        Name of the variable with temperature information. A list of
         strings can be used to pass more than one name, but only the first valid name is used.
         Temperature data is used to estimate the ML bottom only where ML_bot is not valid.
     temp_mlbot : float
@@ -4350,7 +4354,7 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.08, betam
         rdim = "range"
     else:
         rdim = "z"
-    
+
     # check that phidp variable exists in ds (necessary condition)
     if isinstance(phidp, str):
         phidp = [phidp]
@@ -4361,7 +4365,7 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.08, betam
             break
     if not isinstance(phidp, str):
         raise KeyError("phidp definition is not in the dataset")
-        
+
     # filter below ML
     if isinstance(ML_bot, str):
         ML_bot = [ML_bot]
@@ -4372,7 +4376,7 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.08, betam
             ML_bot = ML_botn
             cond_belowML = (ds["z"]<ds[ML_bot]).where(ds[ML_bot].notnull())
             break
-    
+
     # filter below temp_mlbot
     if isinstance(temp, str):
         temp = [temp]
@@ -4383,18 +4387,18 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.08, betam
             temp = tempn
             cond_below_temp_mlbot = (ds[temp]>temp_mlbot).where(ds[temp].notnull())
             break
-    
+
     # filter below z_mlbot
     cond_below_z_mlbot = ds["z"]<z_mlbot
-    
+
     # combine conditions
-    cond_below_comb = cond_belowML.fillna(cond_below_temp_mlbot).fillna(cond_below_z_mlbot)    
-             
-    
+    cond_below_comb = cond_belowML.fillna(cond_below_temp_mlbot).fillna(cond_below_z_mlbot)
+
+
     #### filter above and inside ML
-    # start with the opposite of cond_below_comb 
-    cond_inabove = (cond_below_comb==0).where(cond_below_comb.notnull()) 
-    
+    # start with the opposite of cond_below_comb
+    cond_inabove = (cond_below_comb==0).where(cond_below_comb.notnull())
+
     # filter above ML
     if isinstance(ML_top, str):
         ML_top = [ML_top]
@@ -4417,43 +4421,43 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.08, betam
             cond_above_temp_mltop = (ds[temp]<temp_mltop).where(ds[temp].notnull())
             # ds_belowltemp = ds.where(ds[temp]>temp_mlbot)
             break
-    
+
     # filter above cond_below_comb + dz_ml
     cond_above_dz_ml0 = xr.full_like(ds_phidp, 1.).where(ds_phidp.notnull())*ds["z"] # expand z through time
     cond_above_dz_ml1 = cond_above_dz_ml0.where(cond_inabove) # take only z that is above the ML bottom
     cond_above_dz_ml2 = cond_above_dz_ml1.min(rdim)+dz_ml # get the min z value per ray and add + dz_ml
     cond_above_dz_ml = cond_above_dz_ml0 >= cond_above_dz_ml2 # take only z values above cond_above_dz_ml2
-    
+
     # combine conditions
-    cond_above_comb = cond_aboveML.fillna(cond_above_temp_mltop).fillna(cond_above_dz_ml)    
-    
+    cond_above_comb = cond_aboveML.fillna(cond_above_temp_mltop).fillna(cond_above_dz_ml)
+
     # get condition for in ML
     cond_in = (cond_above_comb==0).where(cond_above_comb.notnull()) * (cond_below_comb==0).where(cond_below_comb.notnull())
 
     #### Interpolate the delta bump
     if interpolate_deltabump:
         ds_phidp = ds_phidp.where(cond_in==0).where(ds_phidp.notnull()).interpolate_na(rdim)
-    
+
     #### Apply the conditions
     ds_phidp_below = ds_phidp.where(cond_below_comb)
     ds_phidp_in = ds_phidp.where(cond_in)
 
     # Make the correction
-        
+
     if isinstance(dbzh, str): # check dbzh
         dbzh = [dbzh]
     for dbzhn in dbzh:
         if dbzhn in ds:
             dbzh_corr = (alpha*ds_phidp_below).fillna(alphaml*ds_phidp_in).ffill(rdim)
             ds[dbzhn+"_AC"] = ds[dbzhn] + dbzh_corr
-            
+
     if isinstance(zdr, str): # check zdr
         zdr = [zdr]
     for zdrn in zdr:
         if zdrn in ds:
             zdr_corr = (beta*ds_phidp_below).fillna(betaml*ds_phidp_in).ffill(rdim)
             ds[zdrn+"_AC"] = ds[zdrn] + zdr_corr
-    
+
     return ds
 
 
@@ -4474,9 +4478,9 @@ elif "dmi" in ff:
     country="dmi"
     clowres0=False
 
-## Georeference 
+## Georeference
 
-ds = ds.pipe(wrl.georef.georeference) 
+ds = ds.pipe(wrl.georef.georeference)
 
 ## Define minimum height
 
@@ -4507,18 +4511,18 @@ try:
                 if "/VP/" in zdrod and "/vol5minng01/" in ff:
                     elevnr = ff.split("/vol5minng01/")[-1][0:2]
                     zdroffsetpath = utils.edit_str(zdroffsetpath, "/vol5minng01/"+elevnr, "/90gradstarng01/00")
-                    
+
                 ds = utils.load_ZDR_offset(ds, X_ZDR, zdroffsetpath+"/"+zdrof)
-                
+
                 # Change the default ZDR name to the corrected one
                 X_ZDR = X_ZDR+"_OC"
-                
+
                 # raise the custom exception to stop the loops
-                raise FileFound 
-                
+                raise FileFound
+
             except OSError:
                 pass
-            
+
     # If no ZDR offset was loaded, print a message
     print("No zdr offset to load: "+zdroffsetpath+"/"+zdrof)
 except FileFound:
@@ -4535,15 +4539,15 @@ rhoncfile = utils.rhoncfile
 
 try:
     rhoncpath = os.path.dirname(utils.edit_str(ff, country, country+rhoncdir))
-    
+
     ds = utils.load_corrected_RHOHV(ds, rhoncpath+"/"+rhoncfile)
-    
+
     # Check that the corrected RHOHV does not have much higher STD than the original (50% more)
     # if that is the case we take it that the correction did not work well so we won't use it
     if not (ds[X_RHO].std()*1.5 < ds["RHOHV_NC"].std()).compute():
         # Change the default RHOHV name to the corrected one
         X_RHO = X_RHO+"_NC"
-        
+
 except OSError:
     print("No noise corrected rhohv to load: "+rhoncpath+"/"+rhoncfile)
 
@@ -4573,33 +4577,33 @@ phase_pross_params = {
 # Check that PHIDP is in data, otherwise skip ML detection
 if X_PHI in ds.data_vars:
     # Set parameters according to data
-    
+
     for param_name in phase_pross_params[country].keys():
-        globals()[param_name] = phase_pross_params[country][param_name]    
+        globals()[param_name] = phase_pross_params[country][param_name]
     # window0, winlen0, xwin0, ywin0, fix_range = phase_pross_params[country].values() # explicit alternative
 
     # phidp may be already preprocessed (turkish case), then proceed directly to masking and then vulpiani
     if "UPHIDP" not in X_PHI:
-        # mask 
+        # mask
         phi_masked = ds[X_PHI].where((ds[X_RHO] >= 0.95) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )
-        
+
         # rename X_PHI as offset corrected
         ds = ds.rename({X_PHI: X_PHI+"_OC"})
 
     else:
         ds = utils.phidp_processing(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                              dbzhmin=0., min_height=0, window=window0, fix_range=fix_range)
-    
+
         phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.95) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )
 
     # Assign phi_masked
     assign = { X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs) }
     ds = ds.assign(assign)
-    
+
     # derive KDP from PHIDP (Vulpiani)
 
-    ds = utils.kdp_phidp_vulpiani(ds, winlen0, X_PHI+"_OC_MASKED", min_periods=winlen0/2)    
-    
+    ds = utils.kdp_phidp_vulpiani(ds, winlen0, X_PHI+"_OC_MASKED", min_periods=winlen0/2)
+
     X_PHI = X_PHI+"_OC" # continue using offset corrected PHI
 
 else:
@@ -4614,13 +4618,13 @@ ds_qvp = utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1} )
 if X_PHI in ds.data_vars:
     # Define thresholds
     moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI: (-20, 180)}
-    
+
     # Calculate ML
-    ds_qvp = utils.melting_layer_qvp_X_new(ds_qvp, moments=moments, 
+    ds_qvp = utils.melting_layer_qvp_X_new(ds_qvp, moments=moments,
              dim="z", xwin=xwin0, ywin=ywin0, min_h=min_height, all_data=True, clowres=clowres0)
-    
+
     # Assign ML values to dataset
-    
+
     ds = ds.assign_coords({'height_ml': ds_qvp.height_ml})
     ds = ds.assign_coords({'height_ml_bottom': ds_qvp.height_ml_bottom})
 
@@ -4636,35 +4640,35 @@ ds = utils.attach_ERA5_TEMP(ds, path=loc.join(utils.era5_dir.split("loc")))
 if "height_ml_new_gia" in ds_qvp:
     isotherm = -1 # isotherm for the upper limit of possible ML values
     z_isotherm = ds_qvp.TEMP.isel(z=((ds_qvp["TEMP"]-isotherm)**2).argmin("z").compute())["z"]
-    
+
     ds_qvp.coords["height_ml_new_gia"] = ds_qvp["height_ml_new_gia"].where(ds_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
     ds_qvp.coords["height_ml_bottom_new_gia"] = ds_qvp["height_ml_bottom_new_gia"].where(ds_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
-    
+
     ds = ds.assign_coords({'height_ml_new_gia': ds_qvp.height_ml_new_gia})
     ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp.height_ml_bottom_new_gia})
 
 ## Fix KDP in the ML using PHIDP:
-if X_PHI in ds.data_vars:    
+if X_PHI in ds.data_vars:
     ds = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen=winlen0)
 
     ds_qvp = ds_qvp.assign({"KDP_ML_corrected": utils.compute_qvp(ds)["KDP_ML_corrected"]})
-    
+
 ## Classification of stratiform events based on entropy
-if X_PHI in ds.data_vars:    
-    
+if X_PHI in ds.data_vars:
+
     # calculate linear values for ZH and ZDR
     ds = ds.assign({"DBZH_lin": wrl.trafo.idecibel(ds[X_DBZH]), "ZDR_lin": wrl.trafo.idecibel(ds[X_ZDR]) })
-    
+
     # calculate entropy
     Entropy = utils.Entropy_timesteps_over_azimuth_different_vars_schneller(ds, zhlin="DBZH_lin", zdrlin="ZDR_lin", rhohvnc=X_RHO, kdp="KDP_ML_corrected")
-    
-    # concate entropy for all variables and get the minimum value 
-    strati = xr.concat((Entropy.entropy_zdrlin, Entropy.entropy_Z, Entropy.entropy_RHOHV, Entropy.entropy_KDP),"entropy")        
+
+    # concate entropy for all variables and get the minimum value
+    strati = xr.concat((Entropy.entropy_zdrlin, Entropy.entropy_Z, Entropy.entropy_RHOHV, Entropy.entropy_KDP),"entropy")
     min_trst_strati = strati.min("entropy")
-    
+
     # assign to datasets
     ds["min_entropy"] = min_trst_strati
-    
+
     min_trst_strati_qvp = min_trst_strati.assign_coords({"z": ds["z"].median("azimuth")})
     min_trst_strati_qvp = min_trst_strati_qvp.swap_dims({"range":"z"}) # swap range dimension for height
     ds_qvp = ds_qvp.assign({"min_entropy": min_trst_strati_qvp})
@@ -4764,7 +4768,7 @@ def get_discrete_norm(ticks, cmap, clip=False, extend=None):
             if (cmap.get_under() != cmap.colors[0]).all():
                 has_under = True
                 ncols = ncols + 1
-                
+
             if extend is None:
                 # set extend
                 if has_over:
@@ -4775,10 +4779,10 @@ def get_discrete_norm(ticks, cmap, clip=False, extend=None):
                     extend = "min"
                 else:
                     extend = "neither"
-                
+
         except:
             raise ValueError("Something went wrong when building the discrete norm")
-        
+
     return mpl.colors.BoundaryNorm(ticks, ncols, clip=clip, extend=extend)
 
 
@@ -4791,9 +4795,9 @@ EARTH_RADIUS = 6371000.0  # m
 def _guess_bounds(points, bound_position=0.5):
     """
     Guess bounds of grid cells.
-    
+
     Simplified function from iris.coord.Coord.
-    
+
     Parameters
     ----------
     points: numpy.array
@@ -4871,7 +4875,7 @@ def grid_cell_areas(lon1d, lat1d, radius=EARTH_RADIUS):
     for a planet with the given radius.
     Only works well with regular lat/ lon grids. For irregular or rotated
     grids it is not appropriate.
-    
+
     Parameters
     ----------
     lon1d: numpy.array
@@ -4895,10 +4899,10 @@ def calc_spatial_mean(
     xr_da, lon_name="longitude", lat_name="latitude", radius=EARTH_RADIUS
 ):
     """
-    Calculate spatial mean of xr_da with grid cell weighting. 
+    Calculate spatial mean of xr_da with grid cell weighting.
     Only works well with regular lat/ lon grids. For irregular or rotated
     grids it is not appropriate.
-    
+
     Parameters
     ----------
     xr_da: xarray.DataArray or xarray.Dataset
@@ -4931,7 +4935,7 @@ def calc_spatial_integral(
     Calculate spatial integral of xr_da with grid cell weighting.
     Only works well with regular lat/ lon grids. For irregular or rotated
     grids it is not appropriate.
-    
+
     Parameters
     ----------
     xr_da: xarray.DataArray or xarray.Dataset
@@ -4956,11 +4960,11 @@ def calc_spatial_integral(
         return xr_da.weighted(xr.DataArray(area_weights, coords=xr_da[[lat_name,lon_name]].coords)).sum(dim=[lon_name, lat_name])
     else: # if not dataset, we need to convert it to dataset first
         return xr_da.weighted(xr.DataArray(area_weights, coords=xr_da.to_dataset(name="")[[lat_name,lon_name]].coords)).sum(dim=[lon_name, lat_name])
-    
+
 def get_regionmask(regionname):
     """
     Returns a mask for the desired region using regionemask and Natural Earth data.
-    
+
     Parameters
     ----------
     regionname: str or list
@@ -4982,26 +4986,26 @@ def get_regionmask(regionname):
         except TypeError:
             rmcountries = rm.defined_regions.natural_earth_v5_1_2.countries_10
             mask = rmcountries[regionname]
-            return mask            
+            return mask
         except KeyError:
             raise KeyError("Desired region "+regionname+" is not available.")
 
 def load_emvorado_to_radar_volume(path_or_data, rename=False):
     """
-    Load and reorganize EMVORADO output into a xarray.Dataset in the same flavor as DWD data. 
+    Load and reorganize EMVORADO output into a xarray.Dataset in the same flavor as DWD data.
     Optimized for EMVORADO output with one file per timestep containing all elevations and variables.
     WARNING: The resulting volume has its elevations ordered from lower to higher and
             not according to the scan strategy
-    
+
     Parameters
     ----------
     path_or_data : str or nested sequence of paths or xarray.Dataset
-        – Either a string glob in the form "path/to/my/files/*.nc" or an 
-        explicit list of files to open. Paths can be given as strings or 
-        as pathlib Paths. Feeds into xarray.open_mfdataset. Alternatively, 
+        – Either a string glob in the form "path/to/my/files/*.nc" or an
+        explicit list of files to open. Paths can be given as strings or
+        as pathlib Paths. Feeds into xarray.open_mfdataset. Alternatively,
         already-loaded data in the form of an xarray.Dataset can be passed.
-    rename : bool. If True, then rename the variables to DWD-like naming. 
-        
+    rename : bool. If True, then rename the variables to DWD-like naming.
+
     Returns
     -------
     data_vol : xarray.Dataset
@@ -5016,17 +5020,17 @@ def load_emvorado_to_radar_volume(path_or_data, rename=False):
 
     # we make the coordinate arrays
     if "time" in data.dims:
-        range_coord = np.array([ np.arange(rs, rr*rb+rs, rr) for rr, rs, rb in 
+        range_coord = np.array([ np.arange(rs, rr*rb+rs, rr) for rr, rs, rb in
                                zip(data.range_resolution[0], data.range_start[0], data.n_range_bins[0]) ])[0]
-        azimuth_coord = np.array([ np.arange(azs, azr*azb+azs, azr) for azr, azs, azb in 
+        azimuth_coord = np.array([ np.arange(azs, azr*azb+azs, azr) for azr, azs, azb in
                                zip(data.azimuthal_resolution[0], data.azimuth_start[0], data.azimuth.shape*np.ones_like(data.records)) ])[0]
-    
+
         # create time coordinate
         time_coord = xr.DataArray( [
                     dt.datetime(int(yy), int(mm), int(dd),
                                       int(hh), int(mn), int(ss))
                     for yy,mm,dd,hh,mn,ss in
-                    
+
                                     zip( data.year.isel(records=0),
                                     data.month.isel(records=0),
                                     data.day.isel(records=0),
@@ -5037,23 +5041,23 @@ def load_emvorado_to_radar_volume(path_or_data, rename=False):
                     ], dims=["time"] )
 
     else:
-        range_coord = np.array([ np.arange(rs, rr*rb+rs, rr) for rr, rs, rb in 
+        range_coord = np.array([ np.arange(rs, rr*rb+rs, rr) for rr, rs, rb in
                                zip(data.range_resolution, data.range_start, data.n_range_bins) ])[0]
-        azimuth_coord = np.array([ np.arange(azs, azr*azb+azs, azr) for azr, azs, azb in 
+        azimuth_coord = np.array([ np.arange(azs, azr*azb+azs, azr) for azr, azs, azb in
                                zip(data.azimuthal_resolution, data.azimuth_start, data.azimuth.shape*np.ones_like(data.records)) ])[0]
-    
+
         # create time coordinate
         time_coord = xr.DataArray( [
                     dt.datetime(int(yy), int(mm), int(dd),
                                       int(hh), int(mn), int(ss))
                     for yy,mm,dd,hh,mn,ss in
-                    
+
                                     zip( data.year,
                                     data.month,
                                     data.day,
                                     data.hour,
                                     data.minute,
-                                    data.second 
+                                    data.second
                                     )
                     ], dims=["time"] )[0]
 
@@ -5067,7 +5071,7 @@ def load_emvorado_to_radar_volume(path_or_data, rename=False):
     data.coords["altitude"] = float([ss for ss in data.attrs["Data_description"].split(" ") if "radar_alt_msl_mod" in ss][0].split("=")[1])
     data.coords["elevation"] = data["ray_elevation"].mean("azimuth")
     data.coords["sweep_mode"] = 'azimuth_surveillance'
-    
+
     # move some variables to attributes
     vars_to_attrs = ["station_name", "country_ID", "station_ID_national",
                      "station_longitude", "station_height",
@@ -5080,7 +5084,7 @@ def load_emvorado_to_radar_volume(path_or_data, rename=False):
                      ]
     for vta in vars_to_attrs:
         data.attrs[vta] = data[vta]
-        
+
     # add attribute "fixed_angle"
     try:
         # if one timestep
@@ -5088,7 +5092,7 @@ def load_emvorado_to_radar_volume(path_or_data, rename=False):
     except:
         # if multiple timesteps
         data.attrs["fixed_angle"] = float(data.attrs["ppi_elevation"].values.flatten()[0])
-    
+
     # drop variables that were moved to attrs
     data = data.drop_vars(vars_to_attrs)
 
@@ -5103,7 +5107,7 @@ def load_emvorado_to_radar_volume(path_or_data, rename=False):
             data[vv].attrs["units"] = data[vv].attrs["Unit"]
         except:
             print("no long_name attribute in "+vv)
-            
+
     if rename:
         return data.rename(rename_vars_emvorado_dwd)
     else:

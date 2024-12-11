@@ -18,7 +18,6 @@ except FileNotFoundError:
 
 # NEEDS WRADLIB 2.0.2 !! (OR GREATER?)
 
-import datatree as dttree
 import wradlib as wrl
 import numpy as np
 import sys
@@ -74,30 +73,30 @@ abs_zdr_off_min_thresh = 0. # if ZDR_OC has more negative values than the origin
 zdr_offset_perts = False # offset correct zdr per timesteps? if False, correct with daily offset
 mix_zdr_offsets = False # if True and zdr_offset_perts=False, try to
 # choose between daily LR-consistency and QVP offsets based on how_mix_zdr_offset.
-# If True and zdr_offset_perts=True, choose between all available timestep offsets 
+# If True and zdr_offset_perts=True, choose between all available timestep offsets
 # based on how_mix_zdr_offset. If False, just use the offsets according to the priority they are passed on.
-how_mix_zdr_offset = "count" # how to choose between the different offsets 
+how_mix_zdr_offset = "count" # how to choose between the different offsets
 # if mix_zdr_offsets = True. "count" will choose the offset that has more data points
 # in its calculation (there must be a variable ZDR_offset_datacount in the loaded offset).
 # "neg_overcorr" will choose the offset that generates less negative ZDR values.
 
 min_height_key = "default" # default = 200
-min_range_key = "GZT" # default = 1000
+min_range_key = "default" # default = 1000
 
-ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/pro/vol5minng01/07/*allmoms*"
-ff = "/automount/realpep/upload/jgiles/dmi/*/*/2019-07-17/ANK/*F/8.0/*allmoms*"
+ff = "/automount/realpep/upload/jgiles/dwd/*/*/2020-10-14/pro/vol5minng01/07/*allmoms*"
+# ff = "/automount/realpep/upload/jgiles/dmi/*/*/2019-07-17/ANK/*F/8.0/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-08-09/AFY/*/10.0/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-11-20/HTY/*/10.0/*allmoms*"
-ff = "/automount/realpep/upload/jgiles/dmi/*/*/2017-05-20/GZT/*/10.0/*allmoms*.nc"
+# ff = "/automount/realpep/upload/jgiles/dmi/*/*/2017-05-20/GZT/*/10.0/*allmoms*.nc"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-04-30/SVS/*/10.0/*allmoms*.nc"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-10-21/SVS/*/7.0/*allmoms*.nc"
 # ff = '/automount/realpep/upload/jgiles/dmi/2016/2016-08/2016-08-05/AFY/VOL_B/7.0/VOL_B-allmoms-7.0-20162016-082016-08-05-AFY-h5netcdf.nc'
 # ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-06-02/pro/90gradstarng01/00/*allmoms*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-10/2021-10-30/ess/90gradstarng01/00/*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-07/2021-07-24/ess/90gradstarng01/00/*"
-# ds = utils.load_dwd_preprocessed(ff)
+ds = utils.load_dwd_preprocessed(ff)
 # ds = utils.load_dwd_raw(ff)
-ds = utils.load_dmi_preprocessed(ff)
+# ds = utils.load_dmi_preprocessed(ff)
 # ds = utils.load_volume(sorted(glob.glob(ff)), func=utils.load_dmi_preprocessed)
 
 # check if we are dealing with several elevations
@@ -106,12 +105,12 @@ if isvolume: print("More than one elevation loaded, some processing steps may be
 
 if "dwd" in ff or "DWD" in ff:
     country="dwd"
-    
+
     if "vol5minng01" in ff:
         clowres0=True # this is for the ML detection algorithm
     else:
         clowres0=False
-        
+
     # if "umd" in ff: # this is now done automatically with the loading functions
     #     print("Flipping phase moments in UMD")
     #     for vf in ["UPHIDP", "KDP"]: # Phase moments in UMD are flipped into the negatives
@@ -123,9 +122,9 @@ elif "dmi" in ff:
     country="dmi"
     clowres0=False
 
-#### Georeference 
+#### Georeference
 
-ds = ds.pipe(wrl.georef.georeference) 
+ds = ds.pipe(wrl.georef.georeference)
 
 #### Define minimum height of usable data
 
@@ -150,22 +149,22 @@ if not isvolume:
     try:
         print("Loading noise corrected RHOHV")
         rhoncpath = os.path.dirname(utils.edit_str(ff, country, country+rhoncdir))
-        
+
         ds = utils.load_corrected_RHOHV(ds, rhoncpath+"/"+rhoncfile)
-              
+
         # Check that the corrected RHOHV does not have higher STD than the original (1 + std_margin)
         # if that is the case we take it that the correction did not work well so we won't use it
         std_margin = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_margin), otherwise use RHOHV
         min_rho = 0.6 # min RHOHV value for filtering. Only do this test with the highest values to avoid wrong results
-    
+
         if ( ds["RHOHV_NC"].where(ds["RHOHV_NC"]>min_rho * (ds["z"]>min_height)).std() < ds[X_RHO].where(ds[X_RHO]>min_rho * (ds["z"]>min_height)).std()*(1+std_margin) ).compute():
             # Change the default RHOHV name to the corrected one
-            X_RHO = "RHOHV_NC"                    
-    
-    
+            X_RHO = "RHOHV_NC"
+
+
     except OSError:
         print("No noise corrected RHOHV to load: "+rhoncpath+"/"+rhoncfile)
-    
+
     except ValueError:
         print("ValueError with corrected RHOHV: "+rhoncpath+"/"+rhoncfile)
 else:
@@ -198,7 +197,7 @@ if not isvolume:
                     if "/VP/" in zdrod and "/vol5minng01/" in ff:
                         elevnr = ff.split("/vol5minng01/")[-1][0:2]
                         zdroffsetpath = utils.edit_str(zdroffsetpath, "/vol5minng01/"+elevnr, "/90gradstarng01/00")
-                    
+
                     if zdr_offset_perts:
                         # if timestep-based offsets, we collect all of them and deal with them later
                         if zdrod not in zdr_oc_dict.keys():
@@ -207,26 +206,26 @@ if not isvolume:
                         continue
                     else:
                         ds = utils.load_ZDR_offset(ds, X_ZDR, zdroffsetpath+"/"+zdrof, zdr_oc_name=X_ZDR+"_OC", attach_all_vars=True)
-                    
+
                     # if the offset comes from LR ZH-ZDR consistency, check it against
-                    # the QVP method (if available) and choose the best one based on how_mix_zdr_offset 
+                    # the QVP method (if available) and choose the best one based on how_mix_zdr_offset
                     if "LR_consistency" in zdrod and mix_zdr_offsets:
                         for zdrof2 in zdrofffile:
                             try:
                                 zdrod2 = [pp for pp in zdroffdir if "QVP" in pp][0]
                                 zdroffsetpath_qvp = os.path.dirname(utils.edit_str(ff, country, country+zdrod2))
                                 ds_qvpoc = utils.load_ZDR_offset(ds, X_ZDR, zdroffsetpath_qvp+"/"+zdrof2, zdr_oc_name=X_ZDR+"_OC", attach_all_vars=True)
-                                
+
                                 if how_mix_zdr_offset == "neg_overcorr":
                                     # calculate the count of negative values after each correction
                                     neg_count_ds_lroc = (ds[X_ZDR+"_OC"].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum().compute()
                                     neg_count_ds_qvpoc = (ds_qvpoc[X_ZDR+"_OC"].where((ds_qvpoc[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum().compute()
-                                    
+
                                     if neg_count_ds_lroc > neg_count_ds_qvpoc:
                                         # continue with the correction with less negative values
                                         print("Changing daily ZDR offset from LR_consistency to QVP")
                                         ds = ds_qvpoc
-                                
+
                                 elif how_mix_zdr_offset == "count":
                                     if "ZDR_offset_datacount" in ds and "ZDR_offset_datacount" in ds_qvpoc:
                                         # Choose the offset that has the most data points in its calculation
@@ -236,32 +235,32 @@ if not isvolume:
                                             ds = ds_qvpoc
                                     else:
                                         print("how_mix_zdr_offset == 'count' not possible, ZDR_offset_datacount not present in all offset datasets.")
-    
+
                                 break
                             except (OSError, ValueError):
                                 pass
-                    
+
                     # calculate the count of negative values before and after correction
                     neg_count_ds = (ds[X_ZDR].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum().compute()
                     neg_count_ds_oc = (ds[X_ZDR+"_OC"].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum().compute()
-                    
+
                     if neg_count_ds_oc > neg_count_ds and abs((ds[X_ZDR] - ds[X_ZDR+"_OC"]).compute().median()) < abs_zdr_off_min_thresh:
                         # if the correction introduces more negative values and the offset is lower than abs_zdr_off_min_thresh, then do not correct
                         ds[X_ZDR+"_OC"] = ds[X_ZDR]
-                    
+
                     # Change the default ZDR name to the corrected one
                     X_ZDR = X_ZDR+"_OC"
-                    
+
                     # raise the custom exception to stop the loops
-                    raise FileFound 
-                    
+                    raise FileFound
+
                 except (OSError, ValueError):
                     pass
-        
+
         if zdr_offset_perts:
             # Clean zdr_oc_dict of empty entries
             zdr_oc_dict = {key: value for key, value in zdr_oc_dict.items() if value}
-    
+
             # Deal with all the timestep-based offsets
             final_zdr_oc_list = []
             if len(zdr_oc_dict) == 0:
@@ -269,7 +268,7 @@ if not isvolume:
                 print("No timestep-based zdr offsets to load")
             else:
                 for zdrod in zdroffdir:
-                    # For the offset from each method, we merge all variants (below ML, 
+                    # For the offset from each method, we merge all variants (below ML,
                     # below 1C, etc) to have as many values as possible. In the end we have
                     # a list of final xarray dataarrays for each entry of zdroffdir.
                     if zdrod in zdr_oc_dict.keys():
@@ -283,12 +282,12 @@ if not isvolume:
                             for zdr_oc_auxn in zdr_oc_dict[zdrod][1:]:
                                 zdr_oc_aux = zdr_oc_aux.where(zdr_oc_aux[X_ZDR+"_OC"].notnull(), zdr_oc_auxn).copy()
                             final_zdr_oc_list.append(zdr_oc_aux.copy())
-                            
+
                 # we get the first correction based on priority
                 final_zdr_oc = final_zdr_oc_list[0].copy()
-    
-                # now we pick, for each timestep, the best offset correction depending on the priority, 
-                # data quality and/or possible overcorrections            
+
+                # now we pick, for each timestep, the best offset correction depending on the priority,
+                # data quality and/or possible overcorrections
                 if len(final_zdr_oc_list) > 1 and mix_zdr_offsets:
                     print("Merging valid ZDR offsets (timestep mode)")
                     if how_mix_zdr_offset == "neg_overcorr":
@@ -300,28 +299,28 @@ if not isvolume:
                             neg_count_final_cond = neg_count_final_zdr_oc < neg_count_final_zdr_ocn
                             # Retain first ZDR_OC where the condition is True, otherwise use the new ZDR_OC
                             final_zdr_oc = final_zdr_oc.where(neg_count_final_cond, final_zdr_ocn).copy()
-    
+
                     elif how_mix_zdr_offset == "count":
                         for final_zdr_ocn in final_zdr_oc_list[1:]:
                             if "ZDR_offset_datacount" in final_zdr_oc and "ZDR_offset_datacount" in final_zdr_ocn:
                                 # Choose the offset that has the most data points in its calculation
                                 final_zdr_oc = final_zdr_oc.where(final_zdr_oc["ZDR_offset_datacount"] > final_zdr_ocn["ZDR_offset_datacount"], final_zdr_ocn).copy()
-                                
+
                     else:
                         print("how_mix_zdr_offset = "+how_mix_zdr_offset+" is not a valid option, no mixing of offsets was done")
-    
+
                 # Get only ZDR from now on
                 final_zdr_oc = final_zdr_oc[X_ZDR+"_OC"]
-                
+
                 # Compare each timestep to the original ZDR, if the offsets overcorrect and the offset is < abs_zdr_off_min_thresh, discard correction
                 neg_count_final_zdr_oc = (final_zdr_oc.where((ds[X_RHO]>0.99) * (final_zdr_oc["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
                 neg_count_final_zdr = (ds[X_ZDR].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
                 neg_count_final_cond = (neg_count_final_zdr_oc > neg_count_final_zdr) * (abs((ds[X_ZDR] - final_zdr_oc).compute().median(("range", "azimuth"))) < abs_zdr_off_min_thresh)
-                
-                # Set the final ZDR_OC and change the default ZDR name to the corrected one 
+
+                # Set the final ZDR_OC and change the default ZDR name to the corrected one
                 ds[X_ZDR+"_OC"] = final_zdr_oc.where(~neg_count_final_cond, ds[X_ZDR]).where(final_zdr_oc.notnull(), ds[X_ZDR])
-                X_ZDR = X_ZDR+"_OC"            
-                            
+                X_ZDR = X_ZDR+"_OC"
+
         else:
             # If no ZDR offset was loaded, print a message
             print("No zdr offset to load: "+zdroffsetpath+"/"+zdrof)
@@ -339,9 +338,9 @@ phase_proc_params = utils.get_phase_proc_params(ff) # get default phase processi
 # Check that PHIDP is in data, otherwise skip ML detection
 if X_PHI in ds.data_vars:
     # Set parameters according to data
-    
+
     # for param_name in phase_proc_params[country].keys():
-    #     globals()[param_name] = phase_proc_params[param_name]    
+    #     globals()[param_name] = phase_proc_params[param_name]
     window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian, rhohv_thresh_gia = phase_proc_params.values() # explicit alternative
 
     # phidp may be already preprocessed (turkish case), then only offset-correct (no smoothing) and then vulpiani
@@ -350,24 +349,24 @@ if X_PHI in ds.data_vars:
         ds = utils.phidp_offset_correction(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                              dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
                              rng_min=1000, rng=rng, azmedian=azmedian, tolerance=(0,5)) # shorter rng, rng_min for finer turkish data
-    
-        phi_masked = ds[X_PHI+"_OC"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["range"]>min_range) )   
+
+        phi_masked = ds[X_PHI+"_OC"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["range"]>min_range) )
 
     else:
         ds = utils.phidp_processing(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                              dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
                              rng=rng, azmedian=azmedian, tolerance=(0,5), clean_invalid=False, fillna=False)
-    
+
         phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["range"]>min_range) )
 
     # Assign phi_masked
     assign = { X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs) }
     ds = ds.assign(assign)
-    
+
     # derive KDP from PHIDP (Vulpiani)
 
-    ds = utils.kdp_phidp_vulpiani(ds, winlen0, X_PHI+"_OC_MASKED", min_periods=winlen0//2+1)    
-    
+    ds = utils.kdp_phidp_vulpiani(ds, winlen0, X_PHI+"_OC_MASKED", min_periods=winlen0//2+1)
+
     X_PHI = X_PHI+"_OC" # continue using offset corrected PHI
 
 else:
@@ -391,13 +390,13 @@ ds_qvp = ds_qvp.where(ds_qvp["z"]>min_height)
 if X_PHI in ds.data_vars:
     # Define thresholds
     moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI: (-20, 180)}
-    
+
     # Calculate ML
-    ds_qvp = utils.melting_layer_qvp_X_new(ds_qvp, moments=moments, dim="z", fmlh=0.3, 
+    ds_qvp = utils.melting_layer_qvp_X_new(ds_qvp, moments=moments, dim="z", fmlh=0.3,
              xwin=xwin0, ywin=ywin0, min_h=min_height, rhohv_thresh_gia=rhohv_thresh_gia, all_data=True, clowres=clowres0)
-    
+
     # Assign ML values to dataset
-    
+
     ds = ds.assign_coords({'height_ml': ds_qvp.height_ml})
     ds = ds.assign_coords({'height_ml_bottom': ds_qvp.height_ml_bottom})
 
@@ -414,53 +413,53 @@ if "height_ml_new_gia" in ds_qvp:
     ## First, filter out ML heights that are too high (above selected isotherm)
     isotherm = -1 # isotherm for the upper limit of possible ML values
     z_isotherm = ds_qvp.TEMP.isel(z=((ds_qvp["TEMP"]-isotherm)**2).argmin("z").compute())["z"]
-    
+
     ds_qvp.coords["height_ml_new_gia"] = ds_qvp["height_ml_new_gia"].where(ds_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
     ds_qvp.coords["height_ml_bottom_new_gia"] = ds_qvp["height_ml_bottom_new_gia"].where(ds_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
-    
+
     # Then, check that ML top is over ML bottom
-    cond_top_over_bottom = ds_qvp.coords["height_ml_new_gia"] > ds_qvp.coords["height_ml_bottom_new_gia"] 
-    
+    cond_top_over_bottom = ds_qvp.coords["height_ml_new_gia"] > ds_qvp.coords["height_ml_bottom_new_gia"]
+
     # Assign final values
     ds_qvp.coords["height_ml_new_gia"] = ds_qvp["height_ml_new_gia"].where(cond_top_over_bottom).compute()
     ds_qvp.coords["height_ml_bottom_new_gia"] = ds_qvp["height_ml_bottom_new_gia"].where(cond_top_over_bottom).compute()
-    
+
     ds = ds.assign_coords({'height_ml_new_gia': ds_qvp.height_ml_new_gia.where(cond_top_over_bottom)})
     ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp.height_ml_bottom_new_gia.where(cond_top_over_bottom)})
 
 if not isvolume:
     #### Attenuation correction (NOT PROVED THAT IT WORKS NICELY ABOVE THE ML)
-    if X_PHI in ds.data_vars:    
+    if X_PHI in ds.data_vars:
         ds = utils.attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.16, betaml = 0.022,
                                            dbzh="DBZH", zdr=["ZDR_OC", "ZDR"], phidp=["UPHIDP_OC", "PHIDP_OC"],
                                            ML_bot = "height_ml_bottom_new_gia", ML_top = "height_ml_new_gia",
                                            temp = "TEMP", temp_mlbot = 3, temp_mltop = 0, z_mlbot = 2000, dz_ml = 500,
                                            interpolate_deltabump = True )
-            
+
         ds_qvp = ds_qvp.assign( utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5})[[vv for vv in ds if "_AC" in vv]] )
-        
+
     #### Fix KDP in the ML using PHIDP:
-    if X_PHI in ds.data_vars:    
+    if X_PHI in ds.data_vars:
         ds = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen=winlen0, min_periods=winlen0//2+1)
-    
+
         ds_qvp = ds_qvp.assign({"KDP_ML_corrected": utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5})["KDP_ML_corrected"]})
-            
+
     #### Classification of stratiform events based on entropy
-    if X_PHI in ds.data_vars:    
-        
+    if X_PHI in ds.data_vars:
+
         # calculate linear values for ZH and ZDR
         ds = ds.assign({"DBZH_lin": wrl.trafo.idecibel(ds[X_DBZH]), "ZDR_lin": wrl.trafo.idecibel(ds[X_ZDR]) })
-        
+
         # calculate entropy
         Entropy = utils.Entropy_timesteps_over_azimuth_different_vars_schneller(ds.where(ds[X_DBZH]>0), zhlin="DBZH_lin", zdrlin="ZDR_lin", rhohvnc=X_RHO, kdp="KDP_ML_corrected")
-        
-        # concate entropy for all variables and get the minimum value 
-        strati = xr.concat((Entropy.entropy_zdrlin, Entropy.entropy_Z, Entropy.entropy_RHOHV, Entropy.entropy_KDP),"entropy")        
+
+        # concate entropy for all variables and get the minimum value
+        strati = xr.concat((Entropy.entropy_zdrlin, Entropy.entropy_Z, Entropy.entropy_RHOHV, Entropy.entropy_KDP),"entropy")
         min_trst_strati = strati.min("entropy")
-        
+
         # assign to datasets
         ds["min_entropy"] = min_trst_strati
-        
+
         min_trst_strati_qvp = min_trst_strati.assign_coords({"z": ds["z"].median("azimuth")})
         min_trst_strati_qvp = min_trst_strati_qvp.swap_dims({"range":"z"}) # swap range dimension for height
         ds_qvp = ds_qvp.assign({"min_entropy": min_trst_strati_qvp})
@@ -473,10 +472,10 @@ import re
 def create_zdrcal_dataset(loc, zdrcal_path="/automount/realpep/upload/jgiles/dmi/zdrcal"):
     zdr_offsets = []
     timestamps = []
-    
+
     file_pattern = re.compile(loc+r'(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2}).zdrcal_results')
     value_pattern = re.compile(r'results\.fNewZdrOffsetEstimate_dB = ([-+]?[0-9]*\.?[0-9]+)')
-    
+
     for filename in sorted(os.listdir(zdrcal_path)):
         match = file_pattern.match(filename)
         if match:
@@ -487,17 +486,17 @@ def create_zdrcal_dataset(loc, zdrcal_path="/automount/realpep/upload/jgiles/dmi
             # Read the file content
             with open(os.path.join(zdrcal_path, filename), 'r') as file:
                 content = file.read()
-                
+
             # Extract the fNewZdrOffsetEstimate_dB value
             value_match = value_pattern.search(content)
             if value_match:
                 zdr_offset = float(value_match.group(1))
                 timestamps.append(timestamp)
-                zdr_offsets.append(zdr_offset)        
-    
+                zdr_offsets.append(zdr_offset)
+
     # Create a DataArray with the extracted data
-    zdr_offset_da = xr.DataArray(zdr_offsets, coords=[timestamps], dims=['time'])    
-    
+    zdr_offset_da = xr.DataArray(zdr_offsets, coords=[timestamps], dims=['time'])
+
     # Create a Dataset
     zdr_offset_ds = xr.Dataset({'fNewZdrOffsetEstimate_dB': zdr_offset_da})
 
@@ -577,9 +576,9 @@ plt.title("ZDR offset differences before-after atten corr")
 plt.grid()
 plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only the hour in the x-axis
 
-#%% Plot simple PPI 
+#%% Plot simple PPI
 
-tsel = "2020-03-13T10:00"
+tsel = "2020-10-14T13:00"
 elevn = 6 # elevation index
 
 if isvolume: # if more than one elevation, we need to select the one we want
@@ -592,7 +591,7 @@ else:
         datasel = ds
     else:
         datasel = ds.sel({"time": tsel}, method="nearest")
-    
+
 datasel = datasel.pipe(wrl.georef.georeference)
 
 # New Colormap
@@ -630,7 +629,7 @@ elif plot_over_map:
 if plot_ML:
     cax = plt.gca()
     datasel["z"].wrl.vis.plot(ax=cax,
-                          levels=[datasel["height_ml_bottom_new_gia"], datasel["height_ml_new_gia"]], 
+                          levels=[datasel["height_ml_bottom_new_gia"], datasel["height_ml_new_gia"]],
                           cmap="black",
                           func="contour")
     # datasel["z"].wrl.vis.plot(fig=fig, cmap=cmap, norm=norm, crs=ccrs.Mercator(central_longitude=float(datasel["longitude"])))
@@ -639,7 +638,7 @@ if isvolume: elevtitle = " "+str(np.round(ds.isel({"sweep_fixed_angle":elevn}).s
 else: elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
 plt.title(mom+elevtitle+". "+str(datasel.time.values).split(".")[0])
 
-#%% Plot PPI as lines 
+#%% Plot PPI as lines
 
 tsel = "2020-03-13T10:00"
 if tsel == "":
@@ -666,7 +665,7 @@ plt.title(mom)
 plt.show()
 plt.close()
 
-#%% Plot simple QVP 
+#%% Plot simple QVP
 
 max_height = 12000 # max height for the qvp plots
 
@@ -675,7 +674,7 @@ if tsel == "":
     datasel = ds_qvp.loc[{"z": slice(0, max_height)}]
 else:
     datasel = ds_qvp.loc[{"time": tsel, "z": slice(0, max_height)}]
-    
+
 # New Colormap
 colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
@@ -739,7 +738,7 @@ entropy_zh_50binned_norm_clean = utils.calculate_binned_normalized_entropy(ds, v
 
 entropy_zh_50binned_norm_clean_over0 = utils.calculate_binned_normalized_entropy(ds.where(ds.DBZH>0), var_names=var_list, remove_empty_bins=True)
 
-# Binned normalized entropy with "auto" bins 
+# Binned normalized entropy with "auto" bins
 entropy_zh_autobinned_norm = utils.calculate_binned_normalized_entropy(ds, var_names=var_list, bins="auto")
 
 entropy_zh_autobinned_norm_over0 = utils.calculate_binned_normalized_entropy(ds.where(ds.DBZH>0), var_names=var_list, bins="auto")
@@ -786,7 +785,7 @@ def plot_ppi_strattest(ppi, stratres, vmin=0, vmax=50, xlim=(-50000,50000), ylim
     plt.title(title)
     # stratres.broadcast_like(ppi).wrl.vis.plot(vmin=vmin, vmax=vmax, ylim=ylim, xlim=xlim, color="lightgray")
     return None
-    
+
 # plot_ppi_strattest(ds.DBZH.sel(time="2017-05-20T16", method="nearest"), entropy_zh_tobi.entropy_DBZH.sel(time="2017-05-20T16", method="nearest")>0.8)
 
 #%% TEST: fix wet radome atten (following Fig 7 of https://doi.org/10.1002/qj.3366)
@@ -940,7 +939,7 @@ plt.show()
 plt.close()
 
 
-#%% Plot QVP as lines 
+#%% Plot QVP as lines
 
 tsel = slice("2018-03-28T17:00","2018-03-28T18:00")
 if tsel == "":
@@ -970,7 +969,7 @@ azimuth = 0. # azimuth to plot
 
 # Define projection
 epsg_code=3857
-# Create projection objects for georeferencing 
+# Create projection objects for georeferencing
 proj_utm = osr.SpatialReference()
 proj_utm.ImportFromEPSG(epsg_code)
 
@@ -1003,7 +1002,7 @@ if isvolume: # if more than one elevation, we need to select the one we want
     rec_rhi = wrl.util.cross_section_ppi(datasel, azimuth, crs=proj_utm, method="nearest")
 else:
     print("Data only has one elevation.")
-    
+
 # Plot
 rec_rhi[mom].plot(cmap=cmap, norm=norm, x="gr", y="z", ylim=(0,14000), xlim=(-xylims,xylims))
 
@@ -1011,7 +1010,7 @@ rec_rhi[mom].plot(cmap=cmap, norm=norm, x="gr", y="z", ylim=(0,14000), xlim=(-xy
 if plot_ML:
     cax = plt.gca()
     datasel["z"].wrl.vis.plot(ax=cax,
-                          levels=[datasel["height_ml_bottom_new_gia"], datasel["height_ml_new_gia"]], 
+                          levels=[datasel["height_ml_bottom_new_gia"], datasel["height_ml_new_gia"]],
                           cmap="black",
                           func="contour")
     # datasel["z"].wrl.vis.plot(fig=fig, cmap=cmap, norm=norm, crs=ccrs.Mercator(central_longitude=float(datasel["longitude"])))
@@ -1036,14 +1035,14 @@ if "dmi" in ff_ML:
             date = parts[-5]
             elevation = float(parts[-2])
             elevation_dict[date].append((elevation, path))
-    
+
         result_paths = []
         for date, elevations in elevation_dict.items():
             closest_elevation_path = min(elevations, key=lambda x: abs(x[0] - 10))[1]
             result_paths.append(closest_elevation_path)
-    
+
         return result_paths
-    
+
     ff_ML_glob = get_closest_elevation(ff_ML_glob)
 
 ff = [glob.glob(os.path.dirname(fp)+"/*allmoms*")[0] for fp in ff_ML_glob ]
@@ -1089,14 +1088,14 @@ hv.extension("matplotlib")
 
 max_height = 12000 # max height for the qvp plots (necessary because of random high points and because of dropna in the z dim)
 
-var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR', 
+var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR',
                # 'TH','UPHIDP',  # not so relevant
 #               'UVRADH', 'UZDR',  'UWRADH', 'VRADH', 'SQIH', # not implemented yet in visdict14
                # 'WRADH', 'SNRHC', 'URHOHV', 'SNRH',
                 'KDP', 'RHOHV_NC', 'UPHIDP_OC']
 
 
-vars_to_plot = ['DBZH', 'KDP_ML_corrected', 'KDP', 'ZDR_OC', 'RHOHV_NC', 
+vars_to_plot = ['DBZH', 'KDP_ML_corrected', 'KDP', 'ZDR_OC', 'RHOHV_NC',
                 'UPHIDP_OC', 'ZDR', 'RHOHV' ]
 
 # add missing units for PHIDP variables in turkish data (this was fixed on 28/12/23 but previous calculations have missing units)
@@ -1124,7 +1123,7 @@ def cbar_hook(hv_plot, _, cmap_extend, ticklist, norm, label):
         # spacing='proportional',
         orientation='vertical',
         label=label,
-    )   
+    )
 
 
 # Define the function to update plots
@@ -1147,7 +1146,7 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
             # for the plot of ZDR_OC, put the value of the offset in the subtitle if it is daily
             if np.unique((selected_data["ZDR"]-selected_data["ZDR_OC"]).compute().median("z")).std() < 0.01:
                 # if the std of the unique values of ZDR - ZDR_OC is < 0.1 we assume it is a daily offset
-                subtitle = var+" (Offset: "+str(np.round((selected_data["ZDR"]-selected_data["ZDR_OC"]).compute().median().values,3))+")"                
+                subtitle = var+" (Offset: "+str(np.round((selected_data["ZDR"]-selected_data["ZDR_OC"]).compute().median().values,3))+")"
             else:
                 subtitle = var+" (Offset: variable per timestep)"
         if var == "DBZH": # add elevation angle to DBZH panel
@@ -1182,9 +1181,9 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
         # Add shading for min_entropy when it's greater than 0.8
         if show_min_entropy:
             min_entropy_values = selected_data.min_entropy.where(selected_data.min_entropy>=0).dropna("z", how="all").compute()
-            
+
             min_entropy_shading = min_entropy_values.hvplot.quadmesh(
-                x='time', y='z', 
+                x='time', y='z',
                 xlabel='Time', ylabel='Height (m)', colorbar=False,
                 width=500, height=250,
             ).opts(
@@ -1195,7 +1194,7 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
                 )
             quadmesh = (quadmesh * min_entropy_shading)
 
-            
+
         plots.append(quadmesh)
 
     nplots = len(plots)
@@ -1205,7 +1204,7 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
                          )
     return gridplot
     # return pn.Row(*plots)
-        
+
 
 # Convert the date range to a list of datetime objects
 date_range = pd.to_datetime(ds_qvps.time.data)
@@ -1220,25 +1219,25 @@ selected_day_slider = pn.widgets.DiscreteSlider(name='Select Date', options=date
 
 show_ML_lines_toggle = pn.widgets.Toggle(name='Show ML Lines', value=True)
 
-show_min_entropy_toggle = pn.widgets.Toggle(name='Show Entropy over 0.8', value=True) 
+show_min_entropy_toggle = pn.widgets.Toggle(name='Show Entropy over 0.8', value=True)
 
 @pn.depends(selected_day_slider.param.value, show_ML_lines_toggle, show_min_entropy_toggle)
 # Define the function to update plots based on widget values
 def update_plots_callback(event):
     selected_day = str(selected_day_slider.value)
     show_ML_lines = show_ML_lines_toggle.value
-    show_min_entropy = show_min_entropy_toggle.value 
+    show_min_entropy = show_min_entropy_toggle.value
     plot = update_plots(selected_day, show_ML_lines, show_min_entropy)
     plot_panel[0] = plot
 
 selected_day_slider.param.watch(update_plots_callback, 'value')
 show_ML_lines_toggle.param.watch(update_plots_callback, 'value')
-show_min_entropy_toggle.param.watch(update_plots_callback, 'value') 
+show_min_entropy_toggle.param.watch(update_plots_callback, 'value')
 
 # Create the initial plot
 initial_day = str(start_date)
 initial_ML_lines = True
-initial_min_entropy = True 
+initial_min_entropy = True
 
 plot_panel = pn.Row(update_plots(initial_day, initial_ML_lines, initial_min_entropy))
 
@@ -1250,7 +1249,7 @@ layout = pn.Column(
 )
 
 
-layout.save("/user/jgiles/interactive_matplotlib.html", resources=INLINE, embed=True, 
+layout.save("/user/jgiles/interactive_matplotlib.html", resources=INLINE, embed=True,
             max_states=1000, max_opts=1000)
 
 
@@ -1267,7 +1266,7 @@ layout.save("/user/jgiles/interactive_matplotlib.html", resources=INLINE, embed=
 
 hv.extension("matplotlib")
 
-var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR', 
+var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR',
                # 'TH','UPHIDP',  # not so relevant
 #               'UVRADH', 'UZDR',  'UWRADH', 'VRADH', 'SQIH', # not implemented yet in visdict14
                # 'WRADH', 'SNRHC', 'URHOHV', 'SNRH',
@@ -1297,7 +1296,7 @@ def cbar_hook(hv_plot, _, cmap_extend, ticklist, norm, label):
         # spacing='proportional',
         orientation='vertical',
         label=label,
-    )   
+    )
 
 
 # Define the function to update plots
@@ -1343,9 +1342,9 @@ def update_plots(selected_day, selected_var1, selected_var2, show_ML_lines, show
         # Add shading for min_entropy when it's greater than 0.8
         if show_min_entropy:
             min_entropy_values = selected_data.min_entropy.dropna("z", how="all").interpolate_na(dim="z").compute()
-            
+
             min_entropy_shading = min_entropy_values.hvplot.quadmesh(
-                x='time', y='z', 
+                x='time', y='z',
                 xlabel='Time', ylabel='Height (m)', colorbar=False,
                 width=500, height=250,
             ).opts(
@@ -1356,7 +1355,7 @@ def update_plots(selected_day, selected_var1, selected_var2, show_ML_lines, show
                 )
             quadmesh = (quadmesh * min_entropy_shading)
 
-            
+
         plots.append(quadmesh)
 
     nplots = len(plots)
@@ -1365,7 +1364,7 @@ def update_plots(selected_day, selected_var1, selected_var2, show_ML_lines, show
                          )
     return gridplot
     # return pn.Row(*plots)
-        
+
 
 # Convert the date range to a list of datetime objects
 date_range = pd.to_datetime(ds_qvps.time.data)
@@ -1377,194 +1376,14 @@ date_range_str = list(np.unique([str(date0.date()) for date0 in date_range]))
 # Create widgets for variable selection and toggles
 selected_day_slider = pn.widgets.DiscreteSlider(name='Select Date', options=date_range_str, value=date_range_str[0])
 
-var1_selector = pn.widgets.Select(name='Select Variable 1', 
-                                                  value=var_starting1, 
+var1_selector = pn.widgets.Select(name='Select Variable 1',
+                                                  value=var_starting1,
                                                   options=var_options,
                                                   # inline=True
                                                   )
 
-var2_selector = pn.widgets.Select(name='Select Variable 2', 
-                                                  value=var_starting2, 
-                                                  options=var_options,
-                                                  # inline=True
-                                                  )
-
-show_ML_lines_toggle = pn.widgets.Toggle(name='Show ML Lines', value=True) 
-show_min_entropy_toggle = pn.widgets.Toggle(name='Show Entropy over 0.8', value=True) 
-
-
-@pn.depends(selected_day_slider.param.value, var1_selector.param.value, var2_selector.param.value,
-            show_ML_lines_toggle, show_min_entropy_toggle) 
-# Define the function to update plots based on widget values
-def update_plots_callback(event):
-    selected_day = str(selected_day_slider.value)
-    selected_var1 = var1_selector.value
-    selected_var2 = var2_selector.value
-    show_ML_lines = show_ML_lines_toggle.value
-    show_min_entropy = show_min_entropy_toggle.value
-    plot = update_plots(selected_day, selected_var1, selected_var2, show_ML_lines, show_min_entropy)
-    plot_panel[0] = plot
-
-selected_day_slider.param.watch(update_plots_callback, 'value')
-var1_selector.param.watch(update_plots_callback, 'value')
-var2_selector.param.watch(update_plots_callback, 'value')
-show_ML_lines_toggle.param.watch(update_plots_callback, 'value')
-show_min_entropy_toggle.param.watch(update_plots_callback, 'value')
-
-# Create the initial plot
-initial_day = str(start_date)
-initial_var1 = var_starting1
-initial_var2 = var_starting2
-initial_ML_lines = True
-initial_min_entropy = True
-
-plot_panel = pn.Row(update_plots(initial_day, initial_var1, initial_var2, initial_ML_lines, initial_min_entropy))
-
-# Create the Panel layout
-layout = pn.Column(
-    selected_day_slider,
-    var1_selector,
-    var2_selector,
-    show_ML_lines_toggle,
-    show_min_entropy_toggle,
-    plot_panel
-)
-
-
-layout.save("/user/jgiles/interactive_matplotlib_variable_selector.html", resources=INLINE, embed=True, 
-            max_states=1000, max_opts=1000)
-
-
-#%% Plot QPVs interactive, with matplotlib backend (testing) fix in holoviews/plotting/mpl/raster.py
-# this works with a manual fix in the holoviews files.
-# In Holoviews 1.17.1, add the following to line 192 in holoviews/plotting/mpl/raster.py:
-# if 'norm' in plot_kwargs: # vmin/vmax should now be exclusively in norm
-#          	plot_kwargs.pop('vmin', None)
-#          	plot_kwargs.pop('vmax', None)
-
-
-hv.extension("matplotlib")
-
-var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR', 
-               # 'TH','UPHIDP',  # not so relevant
-#               'UVRADH', 'UZDR',  'UWRADH', 'VRADH', 'SQIH', # not implemented yet in visdict14
-               # 'WRADH', 'SNRHC', 'URHOHV', 'SNRH',
-                'KDP', 'RHOHV_NC', 'UPHIDP_OC']
-var_options = ["ZDR_OC", "KDP_ML_corrected"]
-
-# var_starting = ['DBZH', 'RHOHV_NC', 'ZDR_OC', "KDP_ML_corrected"]
-var_starting1 = "ZDR_OC"
-var_starting2 = "KDP_ML_corrected"
-var_fix1 = "DBZH"
-var_fix2 = "RHOHV_NC"
-
-visdict14 = radarmet.visdict14
-
-# define a function for plotting a custom discrete colorbar
-def cbar_hook(hv_plot, _, cmap_extend, ticklist, norm, label):
-    COLORS = cmap_extend
-    BOUNDS = ticklist
-    # norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
-    ax = hv_plot.handles["axis"]
-    fig = hv_plot.handles["fig"]
-    fig.subplots_adjust(right=0.9)
-    cbar_ax = fig.add_axes([0.93, 0.35, 0.02, 0.35])
-    fig.colorbar(
-        mpl.cm.ScalarMappable(cmap=cmap_extend, norm=norm),
-        cax=cbar_ax,
-        extend='both',
-        ticks=ticklist[1:-1],
-        # spacing='proportional',
-        orientation='vertical',
-        label=label,
-    )   
-
-
-# Define the function to update plots
-def update_plots(selected_day, selected_var1, selected_var2, show_ML_lines, show_min_entropy):
-    selected_data = ds_qvps.sel(time=selected_day)
-    available_vars = [ var_fix1, selected_var1, var_fix2, selected_var2 ]
-
-    plots = []
-
-    for var in available_vars:
-        ticks = visdict14[var]["ticks"]
-        cmap = visdict14[var]["cmap"] # I need the cmap with extreme colors too here
-        cmap_list = [mpl.colors.rgb2hex(cc, keep_alpha=True) for cc in cmap.colors]
-        cmap_extend = utils.get_discrete_cmap(ticks, cmap)
-        ticklist = [-100]+list(ticks)+[100]
-        norm = utils.get_discrete_norm(ticks, cmap_extend)
-
-        quadmesh = selected_data[var].hvplot.quadmesh(
-            x='time', y='z', title=var,
-            xlabel='Time', ylabel='Height (m)', colorbar=False,
-            width=500, height=250, norm=norm,
-        ).opts(
-                cmap=cmap_extend,
-                color_levels=ticks.tolist(),
-                clim=(ticks[0], ticks[-1]),
-                hooks=[partial(cbar_hook, cmap_extend=cmap_extend, ticklist=ticklist, norm=norm, label=selected_data[var].units)],
-
-            )
-
-            
-        # Add line plots for height_ml_new_gia and height_ml_bottom_new_gia
-        if show_ML_lines:
-            # this parts works better and simpler with holoviews directly instead of hvplot
-            line1 = hv.Curve(
-                (selected_data.time, selected_data["height_ml_new_gia"]),
-                # line_color='black', line_width=2, line_dash='dashed', legend=False # bokeh naming?
-            ).opts(color='black', linewidth=2, show_legend=False)
-            line2 = hv.Curve(
-                (selected_data.time, selected_data["height_ml_bottom_new_gia"]),
-            ).opts(color='black', linewidth=2, show_legend=False)
-
-            quadmesh = (quadmesh * line1 * line2)
-
-        # Add shading for min_entropy when it's greater than 0.8
-        if show_min_entropy:
-            min_entropy_values = selected_data.min_entropy.dropna("z", how="all").interpolate_na(dim="z").compute()
-            
-            min_entropy_shading = min_entropy_values.hvplot.quadmesh(
-                x='time', y='z', 
-                xlabel='Time', ylabel='Height (m)', colorbar=False,
-                width=500, height=250,
-            ).opts(
-                    cmap=['#ffffff00', "#B5B1B1", '#ffffff00'],
-                    color_levels=[0, 0.8,1, 1.1],
-                    clim=(0, 1.1),
-                    alpha=0.8
-                )
-            quadmesh = (quadmesh * min_entropy_shading)
-            
-        plots.append(quadmesh)
-
-    nplots = len(plots)
-    gridplot = pn.Column(pn.Row(*plots[:round(nplots/2)]),
-                         pn.Row(*plots[round(nplots/2):]),
-                         )
-    return gridplot
-    # return pn.Row(*plots)
-        
-
-# Convert the date range to a list of datetime objects
-date_range = pd.to_datetime(ds_qvps.time.data)
-start_date = date_range.min().date()
-end_date = date_range.max().date()
-
-date_range_str = list(np.unique([str(date0.date()) for date0 in date_range]))[0:2]
-
-# Create widgets for variable selection and toggles
-selected_day_slider = pn.widgets.DiscreteSlider(name='Select Date', options=date_range_str, value=date_range_str[0])
-
-var1_selector = pn.widgets.Select(name='Select Variable 1', 
-                                                  value=var_starting1, 
-                                                  options=var_options,
-                                                  # inline=True
-                                                  )
-
-var2_selector = pn.widgets.Select(name='Select Variable 2', 
-                                                  value=var_starting2, 
+var2_selector = pn.widgets.Select(name='Select Variable 2',
+                                                  value=var_starting2,
                                                   options=var_options,
                                                   # inline=True
                                                   )
@@ -1611,7 +1430,187 @@ layout = pn.Column(
 )
 
 
-layout.save("/user/jgiles/interactive_matplotlib.html", resources=INLINE, embed=True, 
+layout.save("/user/jgiles/interactive_matplotlib_variable_selector.html", resources=INLINE, embed=True,
+            max_states=1000, max_opts=1000)
+
+
+#%% Plot QPVs interactive, with matplotlib backend (testing) fix in holoviews/plotting/mpl/raster.py
+# this works with a manual fix in the holoviews files.
+# In Holoviews 1.17.1, add the following to line 192 in holoviews/plotting/mpl/raster.py:
+# if 'norm' in plot_kwargs: # vmin/vmax should now be exclusively in norm
+#          	plot_kwargs.pop('vmin', None)
+#          	plot_kwargs.pop('vmax', None)
+
+
+hv.extension("matplotlib")
+
+var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR',
+               # 'TH','UPHIDP',  # not so relevant
+#               'UVRADH', 'UZDR',  'UWRADH', 'VRADH', 'SQIH', # not implemented yet in visdict14
+               # 'WRADH', 'SNRHC', 'URHOHV', 'SNRH',
+                'KDP', 'RHOHV_NC', 'UPHIDP_OC']
+var_options = ["ZDR_OC", "KDP_ML_corrected"]
+
+# var_starting = ['DBZH', 'RHOHV_NC', 'ZDR_OC', "KDP_ML_corrected"]
+var_starting1 = "ZDR_OC"
+var_starting2 = "KDP_ML_corrected"
+var_fix1 = "DBZH"
+var_fix2 = "RHOHV_NC"
+
+visdict14 = radarmet.visdict14
+
+# define a function for plotting a custom discrete colorbar
+def cbar_hook(hv_plot, _, cmap_extend, ticklist, norm, label):
+    COLORS = cmap_extend
+    BOUNDS = ticklist
+    # norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+    ax = hv_plot.handles["axis"]
+    fig = hv_plot.handles["fig"]
+    fig.subplots_adjust(right=0.9)
+    cbar_ax = fig.add_axes([0.93, 0.35, 0.02, 0.35])
+    fig.colorbar(
+        mpl.cm.ScalarMappable(cmap=cmap_extend, norm=norm),
+        cax=cbar_ax,
+        extend='both',
+        ticks=ticklist[1:-1],
+        # spacing='proportional',
+        orientation='vertical',
+        label=label,
+    )
+
+
+# Define the function to update plots
+def update_plots(selected_day, selected_var1, selected_var2, show_ML_lines, show_min_entropy):
+    selected_data = ds_qvps.sel(time=selected_day)
+    available_vars = [ var_fix1, selected_var1, var_fix2, selected_var2 ]
+
+    plots = []
+
+    for var in available_vars:
+        ticks = visdict14[var]["ticks"]
+        cmap = visdict14[var]["cmap"] # I need the cmap with extreme colors too here
+        cmap_list = [mpl.colors.rgb2hex(cc, keep_alpha=True) for cc in cmap.colors]
+        cmap_extend = utils.get_discrete_cmap(ticks, cmap)
+        ticklist = [-100]+list(ticks)+[100]
+        norm = utils.get_discrete_norm(ticks, cmap_extend)
+
+        quadmesh = selected_data[var].hvplot.quadmesh(
+            x='time', y='z', title=var,
+            xlabel='Time', ylabel='Height (m)', colorbar=False,
+            width=500, height=250, norm=norm,
+        ).opts(
+                cmap=cmap_extend,
+                color_levels=ticks.tolist(),
+                clim=(ticks[0], ticks[-1]),
+                hooks=[partial(cbar_hook, cmap_extend=cmap_extend, ticklist=ticklist, norm=norm, label=selected_data[var].units)],
+
+            )
+
+
+        # Add line plots for height_ml_new_gia and height_ml_bottom_new_gia
+        if show_ML_lines:
+            # this parts works better and simpler with holoviews directly instead of hvplot
+            line1 = hv.Curve(
+                (selected_data.time, selected_data["height_ml_new_gia"]),
+                # line_color='black', line_width=2, line_dash='dashed', legend=False # bokeh naming?
+            ).opts(color='black', linewidth=2, show_legend=False)
+            line2 = hv.Curve(
+                (selected_data.time, selected_data["height_ml_bottom_new_gia"]),
+            ).opts(color='black', linewidth=2, show_legend=False)
+
+            quadmesh = (quadmesh * line1 * line2)
+
+        # Add shading for min_entropy when it's greater than 0.8
+        if show_min_entropy:
+            min_entropy_values = selected_data.min_entropy.dropna("z", how="all").interpolate_na(dim="z").compute()
+
+            min_entropy_shading = min_entropy_values.hvplot.quadmesh(
+                x='time', y='z',
+                xlabel='Time', ylabel='Height (m)', colorbar=False,
+                width=500, height=250,
+            ).opts(
+                    cmap=['#ffffff00', "#B5B1B1", '#ffffff00'],
+                    color_levels=[0, 0.8,1, 1.1],
+                    clim=(0, 1.1),
+                    alpha=0.8
+                )
+            quadmesh = (quadmesh * min_entropy_shading)
+
+        plots.append(quadmesh)
+
+    nplots = len(plots)
+    gridplot = pn.Column(pn.Row(*plots[:round(nplots/2)]),
+                         pn.Row(*plots[round(nplots/2):]),
+                         )
+    return gridplot
+    # return pn.Row(*plots)
+
+
+# Convert the date range to a list of datetime objects
+date_range = pd.to_datetime(ds_qvps.time.data)
+start_date = date_range.min().date()
+end_date = date_range.max().date()
+
+date_range_str = list(np.unique([str(date0.date()) for date0 in date_range]))[0:2]
+
+# Create widgets for variable selection and toggles
+selected_day_slider = pn.widgets.DiscreteSlider(name='Select Date', options=date_range_str, value=date_range_str[0])
+
+var1_selector = pn.widgets.Select(name='Select Variable 1',
+                                                  value=var_starting1,
+                                                  options=var_options,
+                                                  # inline=True
+                                                  )
+
+var2_selector = pn.widgets.Select(name='Select Variable 2',
+                                                  value=var_starting2,
+                                                  options=var_options,
+                                                  # inline=True
+                                                  )
+
+show_ML_lines_toggle = pn.widgets.Toggle(name='Show ML Lines', value=True)
+show_min_entropy_toggle = pn.widgets.Toggle(name='Show Entropy over 0.8', value=True)
+
+
+@pn.depends(selected_day_slider.param.value, var1_selector.param.value, var2_selector.param.value,
+            show_ML_lines_toggle, show_min_entropy_toggle)
+# Define the function to update plots based on widget values
+def update_plots_callback(event):
+    selected_day = str(selected_day_slider.value)
+    selected_var1 = var1_selector.value
+    selected_var2 = var2_selector.value
+    show_ML_lines = show_ML_lines_toggle.value
+    show_min_entropy = show_min_entropy_toggle.value
+    plot = update_plots(selected_day, selected_var1, selected_var2, show_ML_lines, show_min_entropy)
+    plot_panel[0] = plot
+
+selected_day_slider.param.watch(update_plots_callback, 'value')
+var1_selector.param.watch(update_plots_callback, 'value')
+var2_selector.param.watch(update_plots_callback, 'value')
+show_ML_lines_toggle.param.watch(update_plots_callback, 'value')
+show_min_entropy_toggle.param.watch(update_plots_callback, 'value')
+
+# Create the initial plot
+initial_day = str(start_date)
+initial_var1 = var_starting1
+initial_var2 = var_starting2
+initial_ML_lines = True
+initial_min_entropy = True
+
+plot_panel = pn.Row(update_plots(initial_day, initial_var1, initial_var2, initial_ML_lines, initial_min_entropy))
+
+# Create the Panel layout
+layout = pn.Column(
+    selected_day_slider,
+    var1_selector,
+    var2_selector,
+    show_ML_lines_toggle,
+    show_min_entropy_toggle,
+    plot_panel
+)
+
+
+layout.save("/user/jgiles/interactive_matplotlib.html", resources=INLINE, embed=True,
             max_states=1000, max_opts=1000)
 
 
@@ -1658,14 +1657,14 @@ date_range_str = list(np.unique([str(date0.date()) for date0 in date_range]))
 # Create widgets for variable selection and toggles
 selected_day_slider = pn.widgets.DiscreteSlider(name='Select Date', options=date_range_str, value=date_range_str[0])
 
-selected_vars_selector = pn.widgets.CheckBoxGroup(name='Select Variables', 
-                                                  value=var_starting, 
+selected_vars_selector = pn.widgets.CheckBoxGroup(name='Select Variables',
+                                                  value=var_starting,
                                                   options=var_options,
                                                   inline=True)
 
 # # this works but the file is so large that it is not loading in Firefox or Chrome
-# selected_vars_selector = pn.widgets.Select(name='Select Variables', 
-#                                                   value="ZDR", 
+# selected_vars_selector = pn.widgets.Select(name='Select Variables',
+#                                                   value="ZDR",
 #                                                   options=["ZDR", "ZDR_OC", "UZDR"],
 #                                                   )
 
@@ -1698,11 +1697,11 @@ layout = pn.Column(
 # Display or save the plot as an HTML file
 # pn.serve(layout)
 
-layout.save("/user/jgiles/interactive.html", resources=INLINE, embed=True, 
+layout.save("/user/jgiles/interactive.html", resources=INLINE, embed=True,
             max_states=1000, max_opts=1000)
 
-# layout.save("/user/jgiles/interactive.html", resources=INLINE, embed=True, 
-#             states={"Select Date":date_range_str, "Select Variables": var_options}, 
+# layout.save("/user/jgiles/interactive.html", resources=INLINE, embed=True,
+#             states={"Select Date":date_range_str, "Select Variables": var_options},
 #             max_states=1000, max_opts=1000)
 
 
@@ -1760,18 +1759,18 @@ def update_plots(selected_day, selected_vars):
         # quadmesh = selected_data[var].hvplot.quadmesh(
         #     x='time', y='z', cmap='viridis', title=var,
         #     xlabel='Time', ylabel='Height (m)', colorbar=True
-        # ).opts(width=800, height=400, 
-        #        cmap=cmap, color_levels=ticklist, clim=(ticklist[0], ticklist[-1]), 
+        # ).opts(width=800, height=400,
+        #        cmap=cmap, color_levels=ticklist, clim=(ticklist[0], ticklist[-1]),
         #         # colorbar_opts = {'ticker': FixedTicker(ticks=ticklist),},  # this changes nothing
         #         hooks=[partial(cbar_hook, cmap=cmap, ticklist=ticklist)],
         #        )
 
-               
+
         quadmesh = []
         for n,cc in enumerate(cmap_list):
             # select only the data in this interval of the colorbar
             interval_data = selected_data[var].where(selected_data[var]>=ticklist[n]).where(selected_data[var]<ticklist[n+1])
-            
+
             quadmesh.append(interval_data.hvplot.quadmesh(
                 x='time', y='z', cmap='viridis', title=var,
                 xlabel='Time', ylabel='Height (m)', colorbar=True
@@ -1781,7 +1780,7 @@ def update_plots(selected_day, selected_vars):
                 clim=(ticklist[n], ticklist[n+1]),
                 width=800, height=400,
             ))
-        
+
         quadmesh = reduce((lambda x, y: x * y), quadmesh) *\
             selected_data[var].hvplot.quadmesh(
                 x='time', y='z', cmap='viridis', title=var,
@@ -1793,9 +1792,9 @@ def update_plots(selected_day, selected_vars):
                 hooks=[partial(cbar_hook, cmap=cmap, ticklist=ticklist)],
                 width=800, height=400,
             )
-        
-        
-               
+
+
+
         plots.append(quadmesh)
 
     nplots = len(plots)
@@ -1815,14 +1814,14 @@ date_range_str = list(np.unique([str(date0.date()) for date0 in date_range]))
 # Create widgets for variable selection and toggles
 selected_day_slider = pn.widgets.DiscreteSlider(name='Select Date', options=date_range_str, value=date_range_str[0])
 
-selected_vars_selector = pn.widgets.CheckBoxGroup(name='Select Variables', 
-                                                  value=var_starting, 
+selected_vars_selector = pn.widgets.CheckBoxGroup(name='Select Variables',
+                                                  value=var_starting,
                                                   options=var_options,
                                                   inline=True)
 
 # # this works but the file is so large that it is not loading in Firefox or Chrome
-# selected_vars_selector = pn.widgets.Select(name='Select Variables', 
-#                                                   value="ZDR", 
+# selected_vars_selector = pn.widgets.Select(name='Select Variables',
+#                                                   value="ZDR",
 #                                                   options=["ZDR", "ZDR_OC", "UZDR"],
 #                                                   )
 
@@ -1855,11 +1854,11 @@ layout = pn.Column(
 # Display or save the plot as an HTML file
 # pn.serve(layout)
 
-layout.save("/user/jgiles/interactive.html", resources=INLINE, embed=True, 
+layout.save("/user/jgiles/interactive.html", resources=INLINE, embed=True,
             max_states=1000, max_opts=1000)
 
-# layout.save("/user/jgiles/interactive.html", resources=INLINE, embed=True, 
-#             states={"Select Date":date_range_str, "Select Variables": var_options}, 
+# layout.save("/user/jgiles/interactive.html", resources=INLINE, embed=True,
+#             states={"Select Date":date_range_str, "Select Variables": var_options},
 #             max_states=1000, max_opts=1000)
 
 
@@ -1896,7 +1895,7 @@ layout = pn.Column( ds.hvplot.quadmesh("lon", "lat").opts(
 )
 )
 
-layout.save("/user/jgiles/interactive_test.html", resources=INLINE, embed=True, 
+layout.save("/user/jgiles/interactive_test.html", resources=INLINE, embed=True,
             max_states=1000, max_opts=1000)
 
 #%% Compute ZDR VP calibration
@@ -1929,7 +1928,7 @@ zdr_offset_whole_noML_all = utils.zdr_offset_detection_vps(ds, zdr="ZDR", dbzh=X
 # zdr_offset_whole_noML = utils.zdr_offset_detection_vps(ds.assign_coords({"fake_ml":ds.height_ml_bottom_new_gia+10000}).where(cond_noML), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="fake_ml", min_h=min_height, timemode="step").compute()
 # zdr_offset_whole_noML_all = utils.zdr_offset_detection_vps(ds.assign_coords({"fake_ml":ds.height_ml_bottom_new_gia+10000}), zdr="ZDR", dbzh=X_DBZH, rhohv=X_RHO, mlbottom="fake_ml", min_h=min_height, timemode="all").compute()
 
-#%% Plot ZDR VP calibration 
+#%% Plot ZDR VP calibration
 
 # Plot a moment VP, isotherms, ML bottom and calculated ZDR offset for different regions (below ML, in ML, above ML)
 mom = "RHOHV_NC"
@@ -1947,14 +1946,14 @@ offsets_to_plot = {"Below ML": zdr_offset_belowML,
 
 fig = plt.figure(figsize=(7,7))
 # set height ratios for subplots
-gs = mpl.gridspec.GridSpec(2, 1, height_ratios=[2, 1], hspace=0) 
+gs = mpl.gridspec.GridSpec(2, 1, height_ratios=[2, 1], hspace=0)
 ax = plt.subplot(gs[0])
 figvp = ds_qvp[mom].plot(x="time", cmap=cmap, norm=norm, extend="both", ylim=(0,10000), add_colorbar=False)
 figcontour = ds_qvp["TEMP"].plot.contour(x="time", y="z", levels=[0]+templevels, ylim=(0,5000))
 # ax = plt.gca()
 ax.clabel(figcontour)
 # plot ML limits
-ds_qvp["height_ml_bottom_new_gia"].plot(color="black", label="ML") 
+ds_qvp["height_ml_bottom_new_gia"].plot(color="black", label="ML")
 ds_qvp["height_ml_new_gia"].plot(color="black")
 # Plot min_height
 (xr.ones_like(ds_qvp["height_ml_new_gia"])*min_height).plot(color="black")
@@ -1971,7 +1970,7 @@ for noff in offsets_to_plot.keys():
     ax2.set_ylabel("")
     offsets_to_plot[noff]["ZDR_std_from_offset"].plot(label=str(noff), ls="--", ax=ax3, ylim=(-0.3,1), alpha=0.5)
     ax3.set_ylabel("")
-    
+
 ax2.set_title("")
 ax3.set_title("Full: offset. Dashed: offset std.")
 ax3.set_yticks([],[])
@@ -1999,14 +1998,14 @@ offsets_to_plot = {"Below ML": zdr_offset_belowML,
 
 fig = plt.figure(figsize=(7,7))
 # set height ratios for subplots
-gs = mpl.gridspec.GridSpec(3, 1, height_ratios=[2, 1, 1], hspace=0) 
+gs = mpl.gridspec.GridSpec(3, 1, height_ratios=[2, 1, 1], hspace=0)
 ax = plt.subplot(gs[0])
 figvp = ds_qvp[mom].plot(x="time", cmap=cmap, norm=norm, extend="both", ylim=(0,10000), add_colorbar=False)
 figcontour = ds_qvp["TEMP"].plot.contour(x="time", y="z", levels=[0]+templevels, ylim=(0,5000))
 # ax = plt.gca()
 ax.clabel(figcontour)
 # plot ML limits
-ds_qvp["height_ml_bottom_new_gia"].plot(color="black", label="ML") 
+ds_qvp["height_ml_bottom_new_gia"].plot(color="black", label="ML")
 ds_qvp["height_ml_new_gia"].plot(color="black")
 # Plot min_height
 (xr.ones_like(ds_qvp["height_ml_new_gia"])*min_height).plot(color="black")
@@ -2026,8 +2025,8 @@ for noff in offsets_to_plot.keys():
 
 ax2.set_title("")
 ax3.set_title("")
-ax2.text(0.5, 0.9, "Offset", transform=ax2.transAxes, horizontalalignment='center')    
-ax3.text(0.5, 0.9, "Standard Dev.", transform=ax3.transAxes, horizontalalignment='center')    
+ax2.text(0.5, 0.9, "Offset", transform=ax2.transAxes, horizontalalignment='center')
+ax3.text(0.5, 0.9, "Standard Dev.", transform=ax3.transAxes, horizontalalignment='center')
 # ax3.set_yticks([],[])
 ax2.legend(loc=(1.01,0))
 
@@ -2109,7 +2108,7 @@ lgnd = plt.legend()
 for handle in lgnd.legend_handles:
     handle.set_sizes([6.0])
 
-plt.ylabel("ZDR offsets")    
+plt.ylabel("ZDR offsets")
 plt.ylim(-1,1)
 plt.title(loc0.upper())
 
@@ -2120,10 +2119,10 @@ plt.title(loc0.upper())
 minvp = 8
 
 # put everything in the same dataset
-if minvp > 0:   
+if minvp > 0:
     zdroffsets = xr.merge([VPzdroff_below1c["ZDR_offset"].rename("VP below 1C").where(
                                 VPzdroff_below1c_ts["ZDR_offset"].resample({"time":"D"}).count()>=minvp
-                                ), 
+                                ),
                            VPzdroff_belowML["ZDR_offset"].rename("VP below ML").where(
                                 VPzdroff_belowML_ts["ZDR_offset"].resample({"time":"D"}).count()>=minvp
                                                        ),
@@ -2138,18 +2137,18 @@ if minvp > 0:
                                                        ),
                            ],)
 else:
-    zdroffsets = xr.merge([VPzdroff_below1c["ZDR_offset"].rename("VP below 1C"), 
+    zdroffsets = xr.merge([VPzdroff_below1c["ZDR_offset"].rename("VP below 1C"),
                            VPzdroff_belowML["ZDR_offset"].rename("VP below ML"),
-                           VPzdroff_wholecol["ZDR_offset"].rename("VP whole col"), 
+                           VPzdroff_wholecol["ZDR_offset"].rename("VP whole col"),
                            LRzdroff_below1c["ZDR_offset"].rename("ZH-ZDR below 1C"),
                            LRzdroff_belowML["ZDR_offset"].rename("ZH-ZDR below ML"),
                            ],)
-    
+
 # add also rolling median of the offsets
 zdroffsets_rollmed = xr.merge([
-                       zdroffsets["VP below 1C"].compute().interpolate_na("time").rolling(time=31, center=True, min_periods=10).median().rename("VP below 1C rolling median"), 
+                       zdroffsets["VP below 1C"].compute().interpolate_na("time").rolling(time=31, center=True, min_periods=10).median().rename("VP below 1C rolling median"),
                        zdroffsets["VP below ML"].compute().interpolate_na("time").rolling(time=31, center=True, min_periods=10).median().rename("VP below ML rolling median"),
-                       zdroffsets["VP whole col"].compute().interpolate_na("time").rolling(time=31, center=True, min_periods=10).median().rename("VP whole col rolling median"), 
+                       zdroffsets["VP whole col"].compute().interpolate_na("time").rolling(time=31, center=True, min_periods=10).median().rename("VP whole col rolling median"),
                        zdroffsets["ZH-ZDR below 1C"].compute().interpolate_na("time").rolling(time=31, center=True, min_periods=10).median().rename("ZH-ZDR below 1C rolling median"),
                        zdroffsets["ZH-ZDR below ML"].compute().interpolate_na("time").rolling(time=31, center=True, min_periods=10).median().rename("ZH-ZDR below ML rolling median"),
                        ],)
@@ -2157,13 +2156,13 @@ zdroffsets_rollmed = xr.merge([
 
 
 # Create an interactive scatter plot from the combined Dataset
-scatter = zdroffsets.hvplot.scatter(x='time', 
-                                    y=['VP below 1C', 'VP below ML', 'VP whole col', 
+scatter = zdroffsets.hvplot.scatter(x='time',
+                                    y=['VP below 1C', 'VP below ML', 'VP whole col',
                                        'ZH-ZDR below 1C', 'ZH-ZDR below ML'],
                                     width=1000, height=400, size=1, muted_alpha=0)
 
-lines = zdroffsets_rollmed.hvplot.line(x='time', 
-                                    y=['VP below 1C rolling median', 'VP below ML rolling median', 'VP whole col rolling median', 
+lines = zdroffsets_rollmed.hvplot.line(x='time',
+                                    y=['VP below 1C rolling median', 'VP below ML rolling median', 'VP whole col rolling median',
                                        'ZH-ZDR below 1C rolling median', 'ZH-ZDR below ML rolling median'],
                                     width=1000, height=400, muted_alpha=0)
 
@@ -2198,7 +2197,7 @@ for handle in lgnd.legend_handles:
     handle.set_sizes([6.0])
 
 plt.title("")
-plt.ylabel("ZDR offsets")    
+plt.ylabel("ZDR offsets")
 plt.ylim(-1,1)
 
 ## Plot difference
@@ -2215,7 +2214,7 @@ lgnd.legend_handles[0].set_sizes([6.0])
 
 plt.grid()
 plt.title("")
-plt.ylabel("ZDR offsets")    
+plt.ylabel("ZDR offsets")
 plt.ylim(-0.3,0.3)
 
 #%% Compare ZDR calibrations to RCA from Veli
@@ -2229,15 +2228,15 @@ rca_pro.coords["time"] = rca_pro.indexes["time"].normalize()
 
 ## Scatter over time plot
 # Create an interactive scatter plot from the combined Dataset
-scatter = zdroffsets.hvplot.scatter(x='time', 
-                                    y=['VP below 1C', 'VP below ML', 'VP whole col', 
+scatter = zdroffsets.hvplot.scatter(x='time',
+                                    y=['VP below 1C', 'VP below ML', 'VP whole col',
                                        'ZH-ZDR below 1C', 'ZH-ZDR below ML'],
                                     width=1000, height=400, size=1, muted_alpha=0)
-scatter2 = rca_pro.hvplot.scatter(x='time', 
+scatter2 = rca_pro.hvplot.scatter(x='time',
                                     y=["rca_dr"],
                                     width=1000, height=400, size=1, muted_alpha=0)
-lines = zdroffsets_rollmed.hvplot.line(x='time', 
-                                    y=['VP below 1C rolling median', 'VP below ML rolling median', 'VP whole col rolling median', 
+lines = zdroffsets_rollmed.hvplot.line(x='time',
+                                    y=['VP below 1C rolling median', 'VP below ML rolling median', 'VP whole col rolling median',
                                        'ZH-ZDR below 1C rolling median', 'ZH-ZDR below ML rolling median'],
                                     width=1000, height=400, muted_alpha=0)
 
@@ -2327,17 +2326,17 @@ zdroffsets_comb_rollmed = zdroffsets_comb.compute().interpolate_na("time").rolli
 ## Plot alongside ZDR offsets and RCA
 
 # Create an interactive scatter plot from the combined Dataset
-scatter = zdroffsets.hvplot.scatter(x='time', 
-                                    y=['VP below 1C', 'VP below ML', 'VP whole col', 
+scatter = zdroffsets.hvplot.scatter(x='time',
+                                    y=['VP below 1C', 'VP below ML', 'VP whole col',
                                        'ZH-ZDR below 1C', 'ZH-ZDR below ML'],
                                     width=1000, height=400, size=1, muted_alpha=0)
-scatter2 = rca_pro.hvplot.scatter(x='time', 
+scatter2 = rca_pro.hvplot.scatter(x='time',
                                     y=["rca_dr"],
                                     width=1000, height=400, size=1, muted_alpha=0)
 # we combine the new offset timeseries witht the previous ones, otherwise the line will not be in the legend
 zdroffsets_rollmed_extra = zdroffsets_rollmed.assign({"smoothed combined offsets":zdroffsets_comb_rollmed})
-lines = zdroffsets_rollmed_extra.hvplot.line(x='time', 
-                                    y=['VP below 1C rolling median', 'VP below ML rolling median', 'VP whole col rolling median', 
+lines = zdroffsets_rollmed_extra.hvplot.line(x='time',
+                                    y=['VP below 1C rolling median', 'VP below ML rolling median', 'VP whole col rolling median',
                                        'ZH-ZDR below 1C rolling median', 'ZH-ZDR below ML rolling median', "smoothed combined offsets"],
                                     width=1000, height=400, muted_alpha=0)
 
@@ -2368,7 +2367,7 @@ selected_paths = []
 for nn, glob0 in enumerate([f_LRzdroff_below1c_glob, f_LRzdroff_belowML_glob]):
     dates = sorted(set([ff.split("/")[-5] for ff in glob0]))
     selected_paths.append([])
-    
+
     for date in dates:
         files = [ff for ff in glob0 if date in ff]
         closest_path = min(files, key=lambda p: abs(float(p.split('/')[-2]) - 10))
@@ -2401,7 +2400,7 @@ selected_paths = []
 for nn, glob0 in enumerate([f_LRzdroff_below1c_ts_glob, f_LRzdroff_belowML_ts_glob]):
     dates = sorted(set([ff.split("/")[-5] for ff in glob0]))
     selected_paths.append([])
-    
+
     for date in dates:
         files = [ff for ff in glob0 if date in ff]
         closest_path = min(files, key=lambda p: abs(float(p.split('/')[-2]) - 10))
@@ -2434,7 +2433,7 @@ lgnd = plt.legend()
 for handle in lgnd.legend_handles:
     handle.set_sizes([6.0])
 
-plt.ylabel("ZDR offsets")    
+plt.ylabel("ZDR offsets")
 plt.ylim(-1,1)
 plt.title(loc0.upper())
 
@@ -2445,7 +2444,7 @@ plt.title(loc0.upper())
 minvp = 8
 
 # put everything in the same dataset
-if minvp > 0:   
+if minvp > 0:
     zdroffsets = xr.merge([
                            LRzdroff_below1c["ZDR_offset"].rename("ZH-ZDR below 1C").where(
                                 LRzdroff_below1c_ts["ZDR_offset"].resample({"time":"D"}).count()>=minvp
@@ -2459,7 +2458,7 @@ else:
                            LRzdroff_below1c["ZDR_offset"].rename("ZH-ZDR below 1C"),
                            LRzdroff_belowML["ZDR_offset"].rename("ZH-ZDR below ML"),
                            ],)
-    
+
 # add also rolling median of the offsets
 zdroffsets_rollmed = xr.merge([
                        zdroffsets["ZH-ZDR below 1C"].compute().interpolate_na("time").rolling(time=31, center=True, min_periods=10).median().rename("ZH-ZDR below 1C rolling median"),
@@ -2469,11 +2468,11 @@ zdroffsets_rollmed = xr.merge([
 
 
 # Create an interactive scatter plot from the combined Dataset
-scatter = zdroffsets.hvplot.scatter(x='time', 
+scatter = zdroffsets.hvplot.scatter(x='time',
                                     y=['ZH-ZDR below 1C', 'ZH-ZDR below ML'],
                                     width=1000, height=400, size=1, muted_alpha=0)
 
-lines = zdroffsets_rollmed.hvplot.line(x='time', 
+lines = zdroffsets_rollmed.hvplot.line(x='time',
                                     y=['ZH-ZDR below 1C rolling median', 'ZH-ZDR below ML rolling median'],
                                     width=1000, height=400, muted_alpha=0)
 
@@ -2563,11 +2562,11 @@ noise_v = []
 eta = []
 date_time = []
 for f0 in files:
-    aux = dttree.open_datatree(f0)
+    aux = xr.open_datatree(f0)
     noise_h.append(aux["how"]["radar_system"].attrs["noise_H_pw0"])
     noise_v.append(aux["how"]["radar_system"].attrs["noise_V_pw0"])
     eta.append(noise_h[-1]/noise_v[-1])
-    
+
     datestr = aux["what"].attrs["date"]
     timestr = aux["what"].attrs["time"]
     date_time.append(datetime.datetime.strptime(datestr + timestr, "%Y%m%d%H%M%S"))
@@ -2584,8 +2583,8 @@ otherdata.DBZH[0].plot()
 (mydata.UVRADH[0] - otherdata.UVRADH[0]).plot()
 
 # check raw metadata
-mydataraw = dttree.open_datatree(glob.glob("/automount/realpep/upload/RealPEP-SPP/newdata/2022-Nov-new/pro/2016/2016-05-27/pro/vol5minng01/05/*dbzh*")[0])
-otherdataraw = dttree.open_datatree(glob.glob("/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2016/2016-05/2016-05-27/pro/vol5minng01/05/*dbzh*")[0])
+mydataraw = xr.open_datatree(glob.glob("/automount/realpep/upload/RealPEP-SPP/newdata/2022-Nov-new/pro/2016/2016-05-27/pro/vol5minng01/05/*dbzh*")[0])
+otherdataraw = xr.open_datatree(glob.glob("/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2016/2016-05/2016-05-27/pro/vol5minng01/05/*dbzh*")[0])
 
 #%% Check ZDR offsets that come in the turkish data
 # We need to load the raw files for this
@@ -2638,14 +2637,14 @@ for f in dmipath:
     for i in range(10):
         try:
             nrays_expected_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["number_rays_file_expected"]
-            nrays_written_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["number_rays_file_written"]    
+            nrays_written_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["number_rays_file_written"]
             elevation_ = round(m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["fixed_angle"], 2)
             sweep_number_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["sweep_number"]
             break
         except KeyError:
             try:
                 nrays_expected_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["number_rays_file_expected"]
-                nrays_written_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["number_rays_file_written"]    
+                nrays_written_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["number_rays_file_written"]
                 elevation_ = round(m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["fixed_angle"], 2)
                 sweep_number_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["sweep_number"]
                 break
@@ -2662,7 +2661,7 @@ for f in dmipath:
     #nrays_expected.append(nrays_expected_)
     #nrays_written.append(nrays_written_)
     fpath.append(f)
-    horbeamwidth.append(horbeamwidth_)   
+    horbeamwidth.append(horbeamwidth_)
     sweep_number.append(sweep_number_)
     zdr_offset.append(zdr_offset_)
 
@@ -2689,12 +2688,12 @@ df = pd.DataFrame(OrderedDict(
 
 # ess = utils.load_dwd_preprocessed("/automount/agradar/operation_hydrometeors/data/obs/OpHymet2-case09-20210714/2021/2021-07/2021-07-14/ess/pcpng01/00/ras07-pcpng01_sweeph5onem_allmoms_00-202107140000-202107142355-ess-10410.hd5")
 
-ess = dttree.open_datatree("/automount/agradar/operation_hydrometeors/data/obs/OpHymet2-case09-20210714/2021/2021-07/2021-07-14/ess/pcpng01/00/ras07-pcpng01_sweeph5onem_allmoms_00-202107140000-202107142355-ess-10410.hd5")["sweep_0"].to_dataset()
+ess = xr.open_datatree("/automount/agradar/operation_hydrometeors/data/obs/OpHymet2-case09-20210714/2021/2021-07/2021-07-14/ess/pcpng01/00/ras07-pcpng01_sweeph5onem_allmoms_00-202107140000-202107142355-ess-10410.hd5")["sweep_0"].to_dataset()
 ess.attrs["sweep_mode"] = "azimuth_surveillance"
 ess_corr = utils.fix_flipped_phidp(utils.unfold_phidp(ess.copy(), phidp_lims=(-30,30)))
 ess_corr_proc = utils.phidp_processing(ess_corr.copy().pipe(wrl.georef.georeference), azmedian=True)
 
-umd = dttree.open_datatree("/automount/agradar/operation_hydrometeors/data/obs/OpHymet2-case09-20210714/2021/2021-07/2021-07-14/umd/vol5minng01/00/ras07-vol5minng01_sweeph5onem_allmoms_00-202107140000-202107142355-umd-10356.hd5")["sweep_0"].to_dataset()
+umd = xr.open_datatree("/automount/agradar/operation_hydrometeors/data/obs/OpHymet2-case09-20210714/2021/2021-07/2021-07-14/umd/vol5minng01/00/ras07-vol5minng01_sweeph5onem_allmoms_00-202107140000-202107142355-umd-10356.hd5")["sweep_0"].to_dataset()
 umd.attrs["sweep_mode"] = "azimuth_surveillance"
 umd_corr = utils.fix_flipped_phidp(utils.unfold_phidp(umd.copy(), phidp_lims=(-30,30)))
 umd_corr_proc = utils.phidp_processing(umd_corr.copy().pipe(wrl.georef.georeference), azmedian=True)
@@ -2709,7 +2708,7 @@ if tsel == "":
     datasel = ds
 else:
     datasel = ds.sel({"time": tsel}, method="nearest")
-    
+
 datasel = datasel.pipe(wrl.georef.georeference)
 
 # New Colormap

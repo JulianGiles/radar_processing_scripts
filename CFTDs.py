@@ -17,7 +17,6 @@ except FileNotFoundError:
 
 # NEEDS WRADLIB 2.0.2 !! (OR GREATER)
 
-import datatree as dttree
 import wradlib as wrl
 import numpy as np
 import sys
@@ -61,7 +60,7 @@ def find_loc(locs, path):
 
 locs = ["pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs"]
 
-realpep_path = "/data/polara/"
+realpep_path = "/automount/realpep/"
 
 #%% Load QVPs for stratiform-case CFTDs
 # This part should be run after having the QVPs computed (compute_qvps.py)
@@ -108,14 +107,14 @@ if "dmi" in path_qvps:
             date = parts[-5]
             elevation = float(parts[-2])
             elevation_dict[date].append((elevation, path))
-    
+
         result_paths = []
         for date, elevations in elevation_dict.items():
             closest_elevation_path = min(elevations, key=lambda x: abs(x[0] - 10))[1]
             result_paths.append(closest_elevation_path)
-    
+
         return result_paths
-    
+
     ff_glob = get_closest_elevation(ff_glob)
 
 ff = [glob.glob(os.path.dirname(fp)+"/*allmoms*")[0] for fp in ff_glob ]
@@ -135,19 +134,19 @@ qvps = utils.load_qvps(ff, align_z=alignz, fix_TEMP=False, fillna=False)
 
 # path_daily = []
 # for ff in path_special:
-#     if os.path.dirname(ff) in path_filter_dirs: 
+#     if os.path.dirname(ff) in path_filter_dirs:
 #         continue
 #     path_daily.append(os.path.dirname("/".join(ff.split("/qvps/")))+"/*allmoms*")
-       
+
 # if isinstance(path_daily, str):
 #     files_daily = sorted(glob.glob(path_daily))
-# elif len(path_daily)==1:    
+# elif len(path_daily)==1:
 #     files_daily = sorted(glob.glob(path_daily[0]))
 # else:
 #     files_daily = []
 #     for fglob in path_daily:
 #         files_daily.extend(glob.glob(fglob))
-        
+
 # def fix_dailys(data):
 #     # fix time dim in case some value is NaT
 #     if data.time.isnull().any():
@@ -157,7 +156,7 @@ qvps = utils.load_qvps(ff, align_z=alignz, fix_TEMP=False, fillna=False)
 #     for coord in ["latitude", "longitude", "altitude", "elevation"]:
 #         if "time" in data[coord].dims:
 #             data.coords[coord] = data.coords[coord].min("time")
-    
+
 #     for X_PHI in ["PHIDP"]:
 #         if X_PHI in data.data_vars:
 #             # flip PHIDP in case it is wrapping around the edges (case for turkish radars)
@@ -173,10 +172,10 @@ qvps = utils.load_qvps(ff, align_z=alignz, fix_TEMP=False, fillna=False)
 # for ff in files_daily[0:20]:
 #     if "dwd" in ff:
 #         # basepath=ff.split("dwd")
-#         open_files.append(fix_dailys(dttree.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset()))
+#         open_files.append(fix_dailys(xr.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset()))
 #     else:
 #         open_files.append(fix_dailys(xr.open_dataset(ff)))
-        
+
 # data = xr.concat(open_files, dim="time")
 total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
@@ -198,17 +197,17 @@ if "_NC" in X_RHO:
     # if that is the case we take it that the correction did not work well so we won't use it
     cond_rhohv = (
                     qvps[X_RHO].where(qvps[X_RHO]>min_rho).resample({"time":"D"}).std(dim=("time", "z")) < \
-                    qvps["RHOHV"].where(qvps["RHOHV"]>min_rho).resample({"time":"D"}).std(dim=("time", "z"))*(1+std_margin) 
+                    qvps["RHOHV"].where(qvps["RHOHV"]>min_rho).resample({"time":"D"}).std(dim=("time", "z"))*(1+std_margin)
                     ).compute()
-    
+
     # create an xarray.Dataarray with the valid timesteps
     valid_dates = cond_rhohv.where(cond_rhohv, drop=True).time.dt.date
     valid_datetimes = [date.values in valid_dates for date in qvps.time.dt.date]
     valid_datetimes_xr = xr.DataArray(valid_datetimes, coords={"time": qvps["time"]})
-    
+
     # Redefine RHOHV_NC: keep it in the valid datetimes, put RHOHV in the rest
     qvps[X_RHO] = qvps[X_RHO].where(valid_datetimes_xr, qvps["RHOHV"])
-    
+
 
 # Conditions to clean ML height values
 max_change = 400 # set a maximum value of ML height change from one timestep to another (in m)
@@ -246,7 +245,7 @@ qvps_strat_relaxed_fil = qvps_strat_relaxed.where((qvps_strat_relaxed[X_TH] > -1
                                   (qvps_strat_relaxed[X_ZDR] > -1) &
                                   (qvps_strat_relaxed[X_ZDR] < 3))
 
-try: 
+try:
     qvps_strat_fil = qvps_strat_fil.where(qvps_strat_fil["SNRHC"]>10)
     qvps_strat_relaxed_fil = qvps_strat_relaxed_fil.where(qvps_strat_relaxed_fil["SNRHC"]>10)
 except KeyError:
@@ -279,21 +278,21 @@ except NameError:
 
 for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
     print("   ... for "+stratname)
-    
+
     retrievals[stratname] = {}
-    
-    # LWC 
+
+    # LWC
     lwc_zh_zdr = 10**(0.058*stratqvp[X_DBZH] - 0.118*stratqvp[X_ZDR] - 2.36) # Reimann et al 2021 (adjusted for Germany)
     lwc_zh_zdr2 = 1.38*10**(-3) *10**(0.1*stratqvp[X_DBZH] - 2.43*stratqvp[X_ZDR] + 1.12*stratqvp[X_ZDR]**2 - 0.176*stratqvp[X_ZDR]**3 ) # Ryzhkov et al 2022, used in S band
     lwc_kdp = 10**(0.568*np.log10(stratqvp[X_KDP]) + 0.06) # Reimann et al 2021(adjusted for Germany)
-    
+
     # IWC (Collected from Blanke et al 2023)
     iwc_zh_t = 10**(0.06 * stratqvp[X_DBZH] - 0.0197*stratqvp["TEMP"] - 1.7) # empirical from Hogan et al 2006
-    
+
     iwc_zdr_zh_kdp = xr.where(stratqvp[X_ZDR]>0.4, # Carlin et al 2021
-                              4*10**(-3)*( stratqvp[X_KDP]*Lambda/( 1-wrl.trafo.idecibel(stratqvp[X_ZDR])**-1 ) ), 
-                              0.031474 * ( stratqvp[X_KDP]*Lambda )**0.66 * stratqvp[X_DBZH]**0.28 ) 
-    
+                              4*10**(-3)*( stratqvp[X_KDP]*Lambda/( 1-wrl.trafo.idecibel(stratqvp[X_ZDR])**-1 ) ),
+                              0.031474 * ( stratqvp[X_KDP]*Lambda )**0.66 * stratqvp[X_DBZH]**0.28 )
+
     # Dm
     Dm_ice_zh = 1.055*stratqvp[X_DBZH]**0.271 # Matrosov et al. (2019)
     Dm_ice_zh_kdp = 0.67*( stratqvp[X_DBZH]/(stratqvp[X_KDP]*Lambda) )**(1/3) # Bukovcic et al. (2020)
@@ -303,11 +302,11 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
                             0.0203*stratqvp[X_ZDR]**4 - 0.149*stratqvp[X_ZDR]**3 + 0.221*stratqvp[X_ZDR]**2 + 0.557*stratqvp[X_ZDR] + 0.801,
                             0.0355*stratqvp[X_ZDR]**3 - 0.302*stratqvp[X_ZDR]**2 + 1.06*stratqvp[X_ZDR] + 0.684
                             )
-    
+
     # log(Nt)
     Nt_ice_zh_iwc = (3.39 + 2*np.log10(iwc_zh_t) - 0.1*stratqvp[X_DBZH]) # (Hu and Ryzhkov 2022, different than Carlin et al 2021 only in the offset, but works better)
     Nt_rain_zh_zdr = ( -2.37 + 0.1*stratqvp[X_DBZH] - 2.89*stratqvp[X_ZDR] + 1.28*stratqvp[X_ZDR]**2 - 0.213*stratqvp[X_ZDR]**3 )# Hu and Ryzhkov 2022
-    
+
     # Put everything together
     retrievals[stratname][find_loc(locs, ff[0])] = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
                                                              "lwc_zh_zdr2":lwc_zh_zdr2,
@@ -344,18 +343,18 @@ except NameError:
 
 for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
     print("   ... for "+stratname)
-    
+
     stats[stratname] = {}
-    
+
     values_sfc = stratqvp.where( (stratqvp["z"] < (stratqvp["height_ml_bottom_new_gia"]+stratqvp["z"][0])/2) ).bfill("z").isel({"z": 0}) # selects the closest value to the ground starting from below half of the ML height (with respect to the radar altitude)
     values_snow = stratqvp.where( (stratqvp["z"] > stratqvp["height_ml_new_gia"]) ).bfill("z").ffill("z").sel({"z": stratqvp["height_ml_new_gia"] + z_snow_over_ML}, method="nearest")
     values_rain = stratqvp.where( (stratqvp["z"] < stratqvp["height_ml_bottom_new_gia"]) ).ffill("z").bfill("z").sel({"z": stratqvp["height_ml_bottom_new_gia"] - z_rain_below_ML}, method="nearest")
-    
+
     #### ML statistics
     # select values inside the ML
     qvps_ML = stratqvp.where( (stratqvp["z"] < stratqvp["height_ml_new_gia"]) & \
                                    (stratqvp["z"] > stratqvp["height_ml_bottom_new_gia"]), drop=True)
-    
+
     values_ML_max = qvps_ML.max(dim="z")
     values_ML_min = qvps_ML.min(dim="z")
     values_ML_mean = qvps_ML.mean(dim="z")
@@ -364,10 +363,10 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
 
     ML_bottom_TEMP = stratqvp["TEMP"].sel(z=stratqvp["height_ml_bottom_new_gia"], method="nearest")
     ML_thickness_TEMP = ML_bottom_TEMP - stratqvp["TEMP"].sel(z=stratqvp["height_ml_new_gia"], method="nearest")
-    
+
     height_ML_max = qvps_ML.idxmax("z")
     height_ML_min = qvps_ML.idxmin("z")
-    
+
     # Silke style
     # select timesteps with detected ML
     # gradient_silke = stratqvp.where(stratqvp["height_ml_new_gia"] > stratqvp["height_ml_bottom_new_gia"], drop=True)
@@ -375,7 +374,7 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
     # gradient_silke_ML_plus_2km = gradient_silke.sel({"z": gradient_silke_ML["z"]+2000}, method="nearest")
     # gradient_final = (gradient_silke_ML_plus_2km - gradient_silke_ML)/2
     # beta = gradient_final[X_TH] #### TH OR DBZH??
-    
+
     # Gradient above the ML
     # We select above z_snow_over_ML and below z_snow_over_ML + z_grad_above_ML
     # Then we compute the gradient as the linear fit of the valid values
@@ -383,7 +382,7 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
     beta = stratqvp.where(stratqvp["z"] > (stratqvp["height_ml_new_gia"] + z_snow_over_ML) ) \
                         .where(stratqvp["z"] < (stratqvp["height_ml_new_gia"] + z_snow_over_ML + z_grad_above_ML) )\
                             .polyfit("z", 1, skipna=True).isel(degree=0) * 1000 # x1000 to transform the gradients to /km
-                            
+
     beta = beta.rename({var: var.replace("_polyfit_coefficients", "") for var in beta.data_vars})
 
     # Gradient below the ML
@@ -392,9 +391,9 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
 
     beta_belowML = stratqvp.where(stratqvp["z"] < (stratqvp["height_ml_bottom_new_gia"] - z_rain_below_ML ) )\
                             .polyfit("z", 1, skipna=True).isel(degree=0) * 1000 # x1000 to transform the gradients to /km
-                            
+
     beta_belowML = beta_belowML.rename({var: var.replace("_polyfit_coefficients", "") for var in beta_belowML.data_vars})
-    
+
     # Cloud top (3 methods)
     # Get the height value of the last not null value with a minimum of entropy 0.2 (this min entropy is to filter out random noise pixels)
     cloudtop = stratqvp[X_DBZH].where(stratqvp["z"] > (stratqvp["height_ml_new_gia"]) ) \
@@ -416,21 +415,21 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
 
 
     #### DGL statistics
-    # select values in the DGL 
+    # select values in the DGL
     qvps_DGL = stratqvp.where(((stratqvp["TEMP"] >= -20)&(stratqvp["TEMP"] <= -10)).compute(), drop=True)
-    
+
     values_DGL_max = qvps_DGL.max(dim="z")
     values_DGL_min = qvps_DGL.min(dim="z")
     values_DGL_mean = qvps_DGL.mean(dim="z")
 
     #### Needle zone statistics
-    # select values in the NZ 
+    # select values in the NZ
     qvps_NZ = stratqvp.where(((stratqvp["TEMP"] >= -8)&(stratqvp["TEMP"] <= -1)).compute(), drop=True)
-    
+
     values_NZ_max = qvps_NZ.max(dim="z")
     values_NZ_min = qvps_NZ.min(dim="z")
     values_NZ_mean = qvps_NZ.mean(dim="z")
-        
+
     # Put in the dictionary
     stats[stratname][find_loc(locs, ff[0])] = {"values_sfc": values_sfc.compute().copy(deep=True).assign_attrs({"Description": "value closest to the ground (at least lower than half of the ML height)"}),
                                        "values_snow": values_snow.compute().copy(deep=True).assign_attrs({"Description": "value in snow ("" m above the ML)"}),
@@ -459,7 +458,7 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
                                        "cloudtop_TEMP_5dbz": cloudtop_TEMP_5dbz.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest ZH value > 5 dBZ)"}),
                                        "cloudtop_TEMP_10dbz": cloudtop_TEMP_10dbz.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest ZH value > 10 dBZ)"}),
         }
-    
+
     # Save stats
     for ll in stats[stratname].keys():
         for xx in stats[stratname][ll].keys():
@@ -476,23 +475,23 @@ with open('/automount/agradar/jgiles/riming_model/gbm_model_23.10.2024.pkl', 'rb
 with open('/automount/agradar/jgiles/riming_model/gbm_zh_zdr_model_23.10.2024.pkl', 'rb') as f:
     riming_model_zh_zdr = pickle.load(f)
 
-def calc_depolarization(da, zdr="ZDR_OC", rho="RHOHV_NC"):   
+def calc_depolarization(da, zdr="ZDR_OC", rho="RHOHV_NC"):
     return xr.apply_ufunc(wrl.dp.depolarization,
-                          da[zdr], da[rho].where(da[rho]<1),                         
-                        dask='parallelized',                        
+                          da[zdr], da[rho].where(da[rho]<1),
+                        dask='parallelized',
     )
-    
+
 # We will put the final riming classification in a dict
 try: # check if exists, if not, create it
     riming_classif
 except NameError:
     riming_classif = {}
-    
+
 loc = find_loc(locs, ff[0])
 
 for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
     print("   ... for "+stratname)
-    
+
     riming_classif[stratname] = {}
     riming_classif[stratname][loc] = xr.Dataset()
 
@@ -504,28 +503,28 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
              'units': 'dB'}
             ))
         riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
-    
+
     if "UDR" not in stratqvp:
-        UDR = calc_depolarization(stratqvp, "ZDR", "RHOHV")            
+        UDR = calc_depolarization(stratqvp, "ZDR", "RHOHV")
         assign = dict(UDR = UDR.assign_attrs(
             {'long_name': 'Depolarization ratio based on ZDR and RHOHV',
              'standard_name': 'depolarization_ratio',
              'units': 'dB'}
             ))
         riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
-        
+
     # predict riming with the model
     for XDR, XZDR, XZH in [("DR", X_ZDR, X_DBZH), ("UDR", "ZDR", "DBZH")]:
-        
+
         idx = np.isfinite(riming_classif[stratname][loc][XDR].values.flatten() + \
                           stratqvp[XZDR].values.flatten() + \
                               stratqvp[XZH].values.flatten())
         X = np.concatenate((riming_classif[stratname][loc][XDR].values.flatten()[idx].reshape(-1, 1), \
                             stratqvp[XZDR].values.flatten()[idx].reshape(-1, 1), \
                                 stratqvp[XZH].values.flatten()[idx].reshape(-1, 1)), axis=1)
-        
+
         pred = riming_model.predict(X)
-        
+
         pred_riming = np.zeros_like(riming_classif[stratname][loc][XDR]).flatten() + np.nan
         pred_riming[idx] = pred
         pred_riming = xr.zeros_like(riming_classif[stratname][loc][XDR]) + pred_riming.reshape(riming_classif[stratname][loc][XDR].shape)
@@ -536,47 +535,47 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
             'long_name': 'Riming prediction based on '+XDR+', '+XZDR+' and '+XZH+' with gradient boosting model',
              'standard_name': 'riming_prediction',
             }).rename(varname)
-                
+
         assign = {varname: pred_riming.copy()}
         riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
 
         # save to file
         if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname):
             os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname)
-        
+
         pred_riming.to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+ll+"_"+varname+".nc")
 
     # predict riming with the model that uses only zh and zdr
     for XZDR, XZH in [(X_ZDR, X_DBZH), ("ZDR", "DBZH")]:
-        
+
         idx = np.isfinite(stratqvp[XZDR].values.flatten() + \
                           stratqvp[XZH].values.flatten())
         X = np.concatenate((stratqvp[XZDR].values.flatten()[idx].reshape(-1, 1), \
                             stratqvp[XZH].values.flatten()[idx].reshape(-1, 1)), axis=1)
-        
+
         pred = riming_model_zh_zdr.predict(X)
-        
+
         pred_riming = np.zeros_like(stratqvp[XZH]).flatten() + np.nan
         pred_riming[idx] = pred
         pred_riming = xr.zeros_like(stratqvp[XZH]) + pred_riming.reshape(stratqvp[XZH].shape)
-        
+
         varname = "riming_"+XZDR+"_"+XZH
 
         pred_riming = pred_riming.assign_attrs({
             'long_name': 'Riming prediction based on '+XZDR+' and '+XZH+' with gradient boosting model',
              'standard_name': 'riming_prediction',
             }).rename(varname)
-                
+
         assign = {varname: pred_riming.copy()}
         riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
 
         # save to file
         if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname):
             os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname)
-        
+
         pred_riming.to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+ll+"_"+varname+".nc")
 
-# Assign 
+# Assign
 qvps_strat_fil = qvps_strat_fil.assign( riming_classif['stratiform'][loc] )
 qvps_strat_relaxed_fil = qvps_strat_relaxed_fil.assign( riming_classif['stratiform_relaxed'][loc] )
 
@@ -590,23 +589,23 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
     # save to file
     if not os.path.exists(realpep_path+"/upload/jgiles/stratiform_qvps/"+stratname):
         os.makedirs(realpep_path+"/upload/jgiles/stratiform_qvps/"+stratname)
-    
+
     stratqvp.to_netcdf(realpep_path+"/upload/jgiles/stratiform_qvps/"+stratname+"/"+ll+".nc")
 
 
 #%% CFTDs Plot
 
 # If auto_plot is True, then produce and save the plots automatically based on
-# default configurations (only change savepath and ds_to_plot accordingly). 
+# default configurations (only change savepath and ds_to_plot accordingly).
 # If False, then produce the plot as given below and do not save.
-auto_plot = True 
+auto_plot = True
 savepath = "/automount/agradar/jgiles/images/CFTDs/stratiform/"
 
 # Which to plot, qvps_strat_fil or qvps_strat_relaxed_fil
 ds_to_plot = qvps_strat_fil.copy()
 
 # Define list of seasons
-selseaslist = [           
+selseaslist = [
             ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
             ("DJF", [12,1,2]),
             ("MAM", [3,4,5]),
@@ -639,7 +638,7 @@ colsteps=10
 
 cmaphist="Oranges"
 
-savedict = {"custom": None} # placeholder for the for loop below, not important 
+savedict = {"custom": None} # placeholder for the for loop below, not important
 
 # Plot horizontally
 # DMI
@@ -651,17 +650,17 @@ savedict = {"custom": None} # placeholder for the for loop below, not important
 # PHIDP: 0.708661 deg
 if country=="dmi":
 
-    vars_to_plot = {"DBZH": [0, 45.5, 0.5], 
+    vars_to_plot = {"DBZH": [0, 45.5, 0.5],
                     "ZDR_OC": [-0.505, 2.05, 0.1],
                     "KDP_ML_corrected":  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
                     "RHOHV_NC": [0.9, 1.002, 0.002]}
-    
+
     if auto_plot:
-        vtp = [{"DBZH": [0, 45.5, 0.5], 
+        vtp = [{"DBZH": [0, 45.5, 0.5],
                         "ZDR_OC": [-0.505, 2.05, 0.1],
                         "KDP_ML_corrected":  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
                         "RHOHV_NC": [0.9, 1.002, 0.002]},
-               {"DBZH": [0, 45.5, 0.5], 
+               {"DBZH": [0, 45.5, 0.5],
                                "ZDR": [-0.505, 2.05, 0.1],
                                "KDP_CONV":  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
                                "RHOHV": [0.9, 1.002, 0.002]} ]
@@ -670,22 +669,22 @@ if country=="dmi":
         add_relaxed = ["_relaxed" if "relaxed" in savepath else ""][0]
         savedict = {}
         for selseas in selseaslist:
-            savedict.update( 
+            savedict.update(
                         {selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+".png": [vtp[0], ytlimlist[0], selseas[1]],
                         selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
                         selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_uncorr.png": [vtp[1], ytlimlist[0], selseas[1]],
                         selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_uncorr_extended.png": [vtp[1], ytlimlist[1], selseas[1]],
                         }
                             )
-        
+
     for savename in savedict.keys():
         if auto_plot:
             vars_to_plot = savedict[savename][0]
             ytlim = savedict[savename][1]
             selmonths = savedict[savename][2]
-    
+
         fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
-        
+
         for nn, vv in enumerate(vars_to_plot.keys()):
             so=False
             binsx2=None
@@ -707,22 +706,22 @@ if country=="dmi":
                 binsx2 = [0.9, 1.005, 0.005]
                 rd=3
             utils.hist2d(ax[nn], ds_to_plot[vv].sel(\
-                                                    time=ds_to_plot['time'].dt.month.isin(selmonths)).round(rd), 
+                                                    time=ds_to_plot['time'].dt.month.isin(selmonths)).round(rd),
                          ds_to_plot["TEMP"].sel(\
-                                             time=ds_to_plot['time'].dt.month.isin(selmonths))+adjtemp, 
-                         whole_x_range=True, 
+                                             time=ds_to_plot['time'].dt.month.isin(selmonths))+adjtemp,
+                         whole_x_range=True,
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
-                         cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
-                         fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
+                         cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
+                         fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
             ax[nn].set_ylim(15,ytlim)
             ax[nn].set_xlabel(vv, fontsize=10)
-            
+
             ax[nn].tick_params(labelsize=15) #change font size of ticks
             plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
-        
+
         ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
-        
+
         if auto_plot:
             # Create savefolder
             savepath_seas = os.path.dirname(savepath+savename)
@@ -736,14 +735,14 @@ if country=="dmi":
 # DWD
 # plot CFTDs moments
 if country=="dwd":
-    
+
     vars_to_plot = {"DBZH": [0, 46, 1],
                     "ZDR_OC": [-0.5, 2.1, 0.1],
                     "KDP_ML_corrected": [-0.1, 0.52, 0.02],
                     "RHOHV_NC": [0.9, 1.004, 0.004]}
 
     if auto_plot:
-        vtp = [{"DBZH": [0, 46, 1], 
+        vtp = [{"DBZH": [0, 46, 1],
                         "ZDR_OC": [-0.5, 2.1, 0.1],
                         "KDP_ML_corrected":  [-0.1, 0.52, 0.02],
                         "RHOHV_NC": [0.9, 1.004, 0.004]},
@@ -756,14 +755,14 @@ if country=="dwd":
         savedict = {}
         add_relaxed = ["_relaxed" if "relaxed" in savepath else ""][0]
         for selseas in selseaslist:
-            savedict.update( 
+            savedict.update(
                         {selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+".png": [vtp[0], ytlimlist[0], selseas[1]],
                         selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
                         selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_uncorr.png": [vtp[1], ytlimlist[0], selseas[1]],
                         selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_uncorr_extended.png": [vtp[1], ytlimlist[1], selseas[1]],
                         }
                             )
-        
+
     for savename in savedict.keys():
         if auto_plot:
             vars_to_plot = savedict[savename][0]
@@ -771,7 +770,7 @@ if country=="dwd":
             selmonths = savedict[savename][2]
 
         fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
-        
+
         for nn, vv in enumerate(vars_to_plot.keys()):
             so=False
             binsx2=None
@@ -781,19 +780,19 @@ if country=="dwd":
                 binsx2 = [0.9, 1.005, 0.005]
             if "KDP" in vv:
                 adj=1
-            utils.hist2d(ax[nn], ds_to_plot[vv].sel(time=ds_to_plot['time'].dt.month.isin(selmonths))*adj, 
+            utils.hist2d(ax[nn], ds_to_plot[vv].sel(time=ds_to_plot['time'].dt.month.isin(selmonths))*adj,
                          ds_to_plot["TEMP"].sel(time=ds_to_plot['time'].dt.month.isin(selmonths))+adjtemp,
-                         whole_x_range=True, 
+                         whole_x_range=True,
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
-                         cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
-                         fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
+                         cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
+                         fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
             ax[nn].set_ylim(15,ytlim)
             ax[nn].set_xlabel(vv, fontsize=10)
-            
+
             ax[nn].tick_params(labelsize=15) #change font size of ticks
             plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
-        
+
         ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
         if auto_plot:
             # Create savefolder
@@ -808,9 +807,9 @@ if country=="dwd":
 # We assume that everything above ML is frozen and everything below is liquid
 
 # If auto_plot is True, then produce and save the plots automatically based on
-# default configurations (only change savepath and ds_to_plot accordingly). 
+# default configurations (only change savepath and ds_to_plot accordingly).
 # If False, then produce the plot as given below and do not save.
-auto_plot = True 
+auto_plot = True
 savepath = "/automount/agradar/jgiles/images/CFTDs/stratiform/"
 
 # Which to plot, stratiform or stratiform_relaxed
@@ -819,7 +818,7 @@ ds_to_plot = retrievals["stratiform"].copy()
 loc = find_loc(locs, ff[0]) # by default, plot only the histograms of the currently loaded QVPs.
 
 # Define list of seasons
-selseaslist = [           
+selseaslist = [
             ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
             ("DJF", [12,1,2]),
             ("MAM", [3,4,5]),
@@ -848,34 +847,34 @@ Dm_rain = "Dm_rain_zdr3" # Dm_rain_zdr, Dm_rain_zdr2 or Dm_rain_zdr3
 Nt_ice = "Nt_ice_zh_iwc" # Nt_ice_zh_iwc
 Nt_rain = "Nt_rain_zh_zdr" # Nt_rain_zh_zdr
 
-vars_to_plot = {"IWC/LWC [g/m^{3}]": [-0.1, 0.82, 0.02], # [-0.1, 0.82, 0.02], 
+vars_to_plot = {"IWC/LWC [g/m^{3}]": [-0.1, 0.82, 0.02], # [-0.1, 0.82, 0.02],
                 "Dm [mm]": [0, 3.1, 0.1], # [0, 3.1, 0.1],
                 "log10(Nt) [1/L]": [-2, 2.1, 0.1], # [-2, 2.1, 0.1],
                 }
 
-savedict = {"custom": None} # placeholder for the for loop below, not important 
+savedict = {"custom": None} # placeholder for the for loop below, not important
 
 if auto_plot:
     ytlimlist = [-20, -50]
     add_relaxed = ["_relaxed" if "relaxed" in savepath else ""][0]
     savedict = {}
     for selseas in selseaslist:
-        savedict.update( 
-                    {selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys.png": [ytlimlist[0], 
-                                                           "iwc_zh_t", "lwc_zh_zdr", 
-                                                           "Dm_ice_zh", "Dm_rain_zdr3", 
+        savedict.update(
+                    {selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys.png": [ytlimlist[0],
+                                                           "iwc_zh_t", "lwc_zh_zdr",
+                                                           "Dm_ice_zh", "Dm_rain_zdr3",
                                                            "Nt_ice_zh_iwc", "Nt_rain_zh_zdr", selseas[1]],
                     selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys_extended.png": [ytlimlist[1],
-                                                                "iwc_zh_t", "lwc_zh_zdr", 
-                                                                "Dm_ice_zh", "Dm_rain_zdr3", 
+                                                                "iwc_zh_t", "lwc_zh_zdr",
+                                                                "Dm_ice_zh", "Dm_rain_zdr3",
                                                                 "Nt_ice_zh_iwc", "Nt_rain_zh_zdr", selseas[1]],
                     selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys_KDP.png": [ytlimlist[0],
-                                                               "iwc_zdr_zh_kdp", "lwc_kdp", 
-                                                               "Dm_ice_zh_kdp", "Dm_rain_zdr3", 
+                                                               "iwc_zdr_zh_kdp", "lwc_kdp",
+                                                               "Dm_ice_zh_kdp", "Dm_rain_zdr3",
                                                                "Nt_ice_zh_iwc", "Nt_rain_zh_zdr", selseas[1]],
                     selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys_KDP_extended.png": [ytlimlist[1],
-                                                               "iwc_zdr_zh_kdp", "lwc_kdp", 
-                                                               "Dm_ice_zh_kdp", "Dm_rain_zdr3", 
+                                                               "iwc_zdr_zh_kdp", "lwc_kdp",
+                                                               "Dm_ice_zh_kdp", "Dm_rain_zdr3",
                                                                "Nt_ice_zh_iwc", "Nt_rain_zh_zdr", selseas[1]],
                     }
                 )
@@ -899,9 +898,9 @@ for savename in savedict.keys():
                                     "log10(Nt) [1/L]": (ds_to_plot[loc][Nt_ice].where(ds_to_plot[loc][Nt_ice].z > ds_to_plot[loc].height_ml_new_gia,
                                                                       ds_to_plot[loc][Nt_rain].where(ds_to_plot[loc][Nt_rain].z < ds_to_plot[loc].height_ml_bottom_new_gia ) ) ),
         })
-        
+
     fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15,5), width_ratios=(1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
-    
+
     for nn, vv in enumerate(vars_to_plot.keys()):
         so=False
         binsx2=None
@@ -911,21 +910,21 @@ for savename in savedict.keys():
             binsx2 = [0.9, 1.005, 0.005]
         if "KDP" in vv:
             adj=1
-        utils.hist2d(ax[nn], retreivals_merged[vv].sel(time=retreivals_merged['time'].dt.month.isin(selmonths))*adj, 
-                     retreivals_merged["TEMP"].sel(time=retreivals_merged['time'].dt.month.isin(selmonths))+adjtemp, 
-                     whole_x_range=True, 
+        utils.hist2d(ax[nn], retreivals_merged[vv].sel(time=retreivals_merged['time'].dt.month.isin(selmonths))*adj,
+                     retreivals_merged["TEMP"].sel(time=retreivals_merged['time'].dt.month.isin(selmonths))+adjtemp,
+                     whole_x_range=True,
                      binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
-                     cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
-                     fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
+                     cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
+                     fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
                      cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
         ax[nn].set_ylim(15,ytlim)
         ax[nn].set_xlabel(vv, fontsize=10)
-        
+
         ax[nn].tick_params(labelsize=15) #change font size of ticks
         plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
-    
+
     ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
-    
+
     if auto_plot:
         # Create savefolder
         savepath_seas = os.path.dirname(savepath+savename)
@@ -950,7 +949,7 @@ def plot_qvp(data, momname="DBZH", tloc=slice("2015-01-01", "2020-12-31"), plot_
     norm = utils.get_discrete_norm(ticks, cmap, extend="both")
 
     data[momname].loc[{"time":tloc}].dropna("z", how="all").plot(x="time", cmap=cmap, norm=norm, extend="both", **kwargs)
-    
+
     if plot_ml:
         try:
             data.loc[{"time":tloc}].height_ml_bottom_new_gia.plot(color="black")
@@ -968,9 +967,9 @@ def plot_qvp(data, momname="DBZH", tloc=slice("2015-01-01", "2020-12-31"), plot_
         # select the times in the riming ds
         add_riming_tloc = add_riming.loc[{"time":tloc}]
         # add riming with hatches
-        add_riming_tloc.where(add_riming_tloc>0.9).where(add_riming_tloc.z>add_riming_tloc.height_ml_new_gia).dropna("z", how="all").plot.contourf(x="time", levels=[0.8,1.1], hatches=["","**", ""], colors=[(1,1,1,0)], add_colorbar=False, extend="both")        
+        add_riming_tloc.where(add_riming_tloc>0.9).where(add_riming_tloc.z>add_riming_tloc.height_ml_new_gia).dropna("z", how="all").plot.contourf(x="time", levels=[0.8,1.1], hatches=["","**", ""], colors=[(1,1,1,0)], add_colorbar=False, extend="both")
         # add riming with color shade
-        add_riming_tloc.where(add_riming_tloc>0.9).where(add_riming_tloc.z>add_riming_tloc.height_ml_new_gia).dropna("z", how="all").plot.contourf(x="time", levels=[0.8,1.1], colors="gray", add_colorbar=False, alpha=0.9)        
+        add_riming_tloc.where(add_riming_tloc>0.9).where(add_riming_tloc.z>add_riming_tloc.height_ml_new_gia).dropna("z", how="all").plot.contourf(x="time", levels=[0.8,1.1], colors="gray", add_colorbar=False, alpha=0.9)
     except:
         None
     plt.title(mom)
@@ -978,9 +977,9 @@ def plot_qvp(data, momname="DBZH", tloc=slice("2015-01-01", "2020-12-31"), plot_
 qvps_fix = qvps.copy()
 # qvps_fix["KDP_ML_corrected"] = qvps_fix["KDP_ML_corrected"].where(qvps_fix.height_ml_new_gia.notnull(),  qvps_fix["KDP_CONV"])
 with mpl.rc_context({'font.size': 10}):
-    plot_qvp(qvps_fix, "ZDR", tloc="2020-08-02", plot_ml=True, plot_entropy=True, 
-              # add_riming = qvps_strat_relaxed_fil.riming_DR, 
-             ylim = (qvps.altitude,10000), 
+    plot_qvp(qvps_fix, "ZDR", tloc="2020-08-02", plot_ml=True, plot_entropy=True,
+              # add_riming = qvps_strat_relaxed_fil.riming_DR,
+             ylim = (qvps.altitude,10000),
               xlim=[datetime.date(2020, 8, 2), datetime.date(2020, 8, 3)],
              )
 
@@ -1024,7 +1023,7 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
 locs_to_plot = locs #[find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
 savepath = "/automount/agradar/jgiles/images/stats_histograms/"
 
-selseaslist = [           
+selseaslist = [
             ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
             ("DJF", [12,1,2]),
             ("MAM", [3,4,5]),
@@ -1047,7 +1046,7 @@ for loc in locs_to_plot:
 
         for selseas in selseaslist:
             print(" ... ... ... "+selseas[0])
-    
+
             # Create savefolder
             savepath_seas = savepath+stratname+"/"+selseas[0]+"/"+loc+"/"
             if not os.path.exists(savepath_seas):
@@ -1063,30 +1062,30 @@ for loc in locs_to_plot:
 
                     # Create temperature bins (1-degree intervals)
                     temp_bins = np.arange(-20, 1)
-                    
+
                     # Create an empty list to store the values
                     percentages = []
                     count = []
-                    
+
                     # Loop through each temperature bin
                     for i in range(len(temp_bins) - 1):
                         # Mask for the current temperature bin
                         temp_mask = (to_plot_sel.TEMP >= temp_bins[i]) & (to_plot_sel.TEMP < temp_bins[i+1])
-                        
+
                         # Get the data corresponding to the current temperature bin
                         data_in_bin = to_plot_sel[vv].where(temp_mask.compute(), drop=True)
-                        
+
                         # Calculate the percentage of 1s (ignoring NaNs)
                         total_values = np.isfinite(data_in_bin).sum()  # Total number of finite values (non-nan)
                         ones_count = (data_in_bin == 1).sum()          # Count of values equal to 1
                         percentage = (ones_count / total_values) * 100 if total_values > 0 else np.nan
-                        
+
                         # Append the percentage to the list
                         percentages.append(percentage.values)
-                        
+
                         # Append the total_values to the list
                         count.append(total_values.values)
-                    
+
                     # Plot the percentage against temperature
                     fig = plt.figure(figsize=(8, 6))
                     # plt.plot(percentages, temp_bins[:-1], marker='o', linestyle='-')
@@ -1101,39 +1100,39 @@ for loc in locs_to_plot:
                     ax2.plot(count, temp_bins[:-1]-0.5, color="red")
                     plt.xlabel("Number of events", color="red")
                     # plt.show
-                                                                          
+
                     fig.savefig(savepath_seas+"/"+loc+"_"+vv+"_vsTEMP.png",
                                     bbox_inches="tight")
                     plt.close(fig)
-    
-    
+
+
                     # Repeat for height above ML in the y-axis
                     # Create z bins
                     z_bins = np.arange(0, 6215, 215)
-                    
+
                     # Create an empty list to store the values
                     percentages = []
                     count = []
-                    
+
                     # Loop through each temperature bin
                     for i in range(len(z_bins) - 1):
                         # Mask for the current z bin
                         z_mask = ( (to_plot_sel.z - to_plot_sel.height_ml_new_gia) >= z_bins[i]) & ( (to_plot_sel.z - to_plot_sel.height_ml_new_gia) < z_bins[i+1])
-                        
+
                         # Get the data corresponding to the current z bin
                         data_in_bin = to_plot_sel[vv].where(z_mask.compute(), drop=True)
-                        
+
                         # Calculate the percentage of 1s (ignoring NaNs)
                         total_values = np.isfinite(data_in_bin).sum().values  # Total number of finite values (non-nan)
                         ones_count = (data_in_bin == 1).sum().values          # Count of values equal to 1
                         percentage = (ones_count / total_values) * 100 if total_values > 0 else np.nan
-                        
+
                         # Append the percentage to the list
                         percentages.append(percentage)
-                        
+
                         # Append the total_values to the list
                         count.append(total_values)
-    
+
                     # Plot the percentage against height above ML
                     fig = plt.figure(figsize=(8, 6))
                     # plt.plot(percentages, temp_bins[:-1], marker='o', linestyle='-')
@@ -1147,11 +1146,11 @@ for loc in locs_to_plot:
                     ax2.plot(count, z_bins[:-1]+107.5, color="red")
                     plt.xlabel("Number of events", color="red")
                     # plt.show
-                                                                          
+
                     fig.savefig(savepath_seas+"/"+loc+"_"+vv+"_vsHeight.png",
                                     bbox_inches="tight")
                     plt.close(fig)
-                
+
                 except:
                     print("!!! Unable to plot "+vv+" !!!")
 
@@ -1174,16 +1173,16 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
             stats[stratname][ll] = {}
         elif type(stats[stratname][ll]) is not dict:
             stats[stratname][ll] = {}
-        for xx in ['values_sfc', 'values_snow', 'values_rain', 'values_ML_max', 'values_ML_min', 'values_ML_mean', 
+        for xx in ['values_sfc', 'values_snow', 'values_rain', 'values_ML_max', 'values_ML_min', 'values_ML_mean',
                    'ML_thickness', 'ML_bottom', 'ML_thickness_TEMP', 'ML_bottom_TEMP', 'values_DGL_max', 'values_DGL_min',
-                   'values_DGL_mean', 'values_NZ_max', 'values_NZ_min', 'values_NZ_mean', 'height_ML_max', 'height_ML_min', 
-                   'ML_bottom', 'beta', 'beta_belowML', 'cloudtop', 'cloudtop_5dbz', 'cloudtop_10dbz', 
+                   'values_DGL_mean', 'values_NZ_max', 'values_NZ_min', 'values_NZ_mean', 'height_ML_max', 'height_ML_min',
+                   'ML_bottom', 'beta', 'beta_belowML', 'cloudtop', 'cloudtop_5dbz', 'cloudtop_10dbz',
                    'cloudtop_TEMP', 'cloudtop_TEMP_5dbz', 'cloudtop_TEMP_10dbz']:
             try:
                 stats[stratname][ll][xx] = xr.open_dataset(realpep_path+"/upload/jgiles/radar_stats/"+stratname+"/"+ll+"_"+xx+".nc")
                 if len(stats[stratname][ll][xx].data_vars)==1:
                     # if only 1 var, convert to data array
-                    stats[stratname][ll][xx] = stats[stratname][ll][xx].to_dataarray() 
+                    stats[stratname][ll][xx] = stats[stratname][ll][xx].to_dataarray()
                 if "variable" in stats[stratname][ll][xx].coords:
                     if len(stats[stratname][ll][xx]["variable"]) == 1:
                         # if there is a generic coord called "variable", remove it
@@ -1219,7 +1218,7 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
 locs_to_plot = locs # [find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
 savepath = "/automount/agradar/jgiles/images/stats_histograms/"
 
-selseaslist = [           
+selseaslist = [
             ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
             ("DJF", [12,1,2]),
             ("MAM", [3,4,5]),
@@ -1264,7 +1263,7 @@ for loc in locs_to_plot:
             deltaZH = MLmaxZH - ZHrain
             MLminRHOHV = stats[stratname][loc]["values_ML_min"]["RHOHV_NC"].sel(\
                                 time=stats[stratname][loc]["values_ML_min"]['time'].dt.month.isin(selseas[1]))
-            
+
             MLdepth = stats[stratname][loc]["ML_thickness"].sel(\
                                 time=stats[stratname][loc]["ML_thickness"]['time'].dt.month.isin(selseas[1]))
             MLbot = stats[stratname][loc]["ML_bottom"].sel(\
@@ -1283,7 +1282,7 @@ for loc in locs_to_plot:
                 binsx = np.linspace(0.0, 4, 81)
                 binsy = np.linspace(0.8, 1, 51)
                 MLminRHOHVcurve = 0.97 - 0.028*binsx
-                
+
                 # fit our own linear regression
                 idx = np.isfinite(MLmaxZDR.values) & np.isfinite(MLminRHOHV.values)
                 fit = np.polyfit(MLmaxZDR.values[idx], MLminRHOHV.values[idx], 1)
@@ -1314,7 +1313,7 @@ for loc in locs_to_plot:
                 binsx = np.linspace(0.0, 4, 81)
                 binsy = np.linspace(-1, 3, 41)
                 # MLminRHOHVcurve = 0.97 - 0.028*binsx
-                
+
                 utils.hist_2d(MLmaxZDR.compute(), ZDRrain.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
                 # plt.plot(binsx, MLminRHOHVcurve, c="black", label="Reference curve")
                 # plt.legend()
@@ -1338,7 +1337,7 @@ for loc in locs_to_plot:
                 binsx = np.linspace(-20, 50, 141)
                 binsy = np.linspace(-1, 5, 61)
                 # MLminRHOHVcurve = 0.97 - 0.028*binsx
-                
+
                 utils.hist_2d(MLmaxZH.compute(), MLmaxZDR.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
                 # plt.plot(binsx, MLminRHOHVcurve, c="black", label="Reference curve")
                 # plt.legend()
@@ -1367,7 +1366,7 @@ for loc in locs_to_plot:
                 lambda_s = 10 #cm
                 lambda_c = 5.3 #cm
                 logMLmaxKDPcurve_scaled = -3.21 + 0.05*binsx - np.log(lambda_s/lambda_c)
-                
+
                 # fit our own linear regression
                 idx = np.isfinite(MLmaxZH.values) & np.isfinite(np.log(MLmaxKDP).values)
                 fit = np.polyfit(MLmaxZH.values[idx], np.log(MLmaxKDP).values[idx], 1)
@@ -1401,7 +1400,7 @@ for loc in locs_to_plot:
                 binsx = np.linspace(-20, 50, 71)
                 binsy = np.linspace(-20, 40, 61)
                 ZHraincurve = -2.74 + 1.03*binsx - 0.005*binsx**2
-                
+
                 # fit our own linear regression
                 idx = np.isfinite(MLmaxZH.values) & np.isfinite(ZHrain.values)
                 fit = np.polyfit(MLmaxZH.values[idx], ZHrain.values[idx], 2)
@@ -1432,7 +1431,7 @@ for loc in locs_to_plot:
                 binsx = np.linspace(-20, 50, 71)
                 binsy = np.linspace(-20, 40, 61)
                 ZHsnowcurve = -3.86 + 1.08*binsx - 0.0071*binsx**2
-                
+
                 # fit our own linear regression
                 idx = np.isfinite(MLmaxZH.values) & np.isfinite(ZHrain.values)
                 fit = np.polyfit(MLmaxZH.values[idx], ZHrain.values[idx], 2)
@@ -1463,10 +1462,10 @@ for loc in locs_to_plot:
                 plt.close()
                 binsx = np.linspace(0.8, 1, 41)
                 binsy = np.linspace(-10, 20, 61)
-                deltaZHcurve = 4.27 + 6.89*(1-binsx) + 341*(1-binsx)**2 
-                deltaZHcurve2 = -5.25 + 261.26*(1-binsx) - 974.38*(1-binsx)**2 
+                deltaZHcurve = 4.27 + 6.89*(1-binsx) + 341*(1-binsx)**2
+                deltaZHcurve2 = -5.25 + 261.26*(1-binsx) - 974.38*(1-binsx)**2
                 deltaZHcurve3 = -0.12 + 113.86*(1-binsx)
-                
+
                 # fit our own regressions
                 idx = np.isfinite(MLminRHOHV.values) & np.isfinite(deltaZH.values)
                 fit = np.polyfit((1-MLminRHOHV.values[idx]), deltaZH.values[idx], 1)
@@ -1499,14 +1498,14 @@ for loc in locs_to_plot:
                     print(" ... ... ... !!! not possible to plot deltaZH vs MLminRHOHV due to insufficient data points !!! ")
                 else:
                     print(" ... ... ... !!! not possible to plot deltaZH vs MLminRHOHV for unknown reason !!! ")
-            
+
             # plot b
             try:
                 plt.close()
                 binsx = np.linspace(0, 4, 16*5+1)
                 binsy = np.linspace(-10, 20, 61)
-                deltaZHcurve = 3.18 + 2.19*binsx 
-                
+                deltaZHcurve = 3.18 + 2.19*binsx
+
                 # fit our own linear regression
                 idx = np.isfinite(MLmaxZDR.values) & np.isfinite(deltaZH.values)
                 fit = np.polyfit(MLmaxZDR.values[idx], deltaZH.values[idx], 1)
@@ -1536,8 +1535,8 @@ for loc in locs_to_plot:
                 plt.close()
                 binsx = np.linspace(0.8, 1, 41)
                 binsy = np.linspace(0, 1, 26)
-                MLdepthcurve = -0.64 + 30.8*(1-binsx) - 315*(1-binsx)**2 + 1115*(1-binsx)**3 
-                                
+                MLdepthcurve = -0.64 + 30.8*(1-binsx) - 315*(1-binsx)**2 + 1115*(1-binsx)**3
+
                 # fit our own regression
                 idx = np.isfinite(MLminRHOHV.values) & np.isfinite(MLdepth.values)
                 fit = np.polyfit((1 - MLminRHOHV.values[idx]), MLdepth.values[idx]/1000, 3)
@@ -1567,16 +1566,16 @@ for loc in locs_to_plot:
                 plt.close()
                 binsx = np.linspace(0, 4, 16*5+1)
                 binsy = np.linspace(0, 1, 26)
-                MLdepthcurve = 0.21 + 0.091*binsx 
-       
+                MLdepthcurve = 0.21 + 0.091*binsx
+
                 # fit our own regression
                 idx = np.isfinite(MLmaxZDR.values) & np.isfinite(MLdepth.values)
                 fit = np.polyfit(MLmaxZDR.values[idx], MLdepth.values[idx]/1000, 1)
                 MLdepthcurve_fit = fit[1] + fit[0]*binsx
 
                 utils.hist_2d(MLmaxZDR.compute(), MLdepth.compute()/1000, bins1=binsx, bins2=binsy, cmap="Blues")
-                plt.plot(binsx, MLdepthcurve, c="black", label="Reference curve") 
-                plt.plot(binsx, MLdepthcurve_fit, c="red", label="Fitted curve") 
+                plt.plot(binsx, MLdepthcurve, c="black", label="Reference curve")
+                plt.plot(binsx, MLdepthcurve_fit, c="red", label="Fitted curve")
                 plt.legend()
                 plt.xlabel(r"$\mathregular{Maximum \ Z_{DR} \ in \ ML \ [dB]}$")
                 plt.ylabel(r"Depth of ML [km]")
@@ -1601,7 +1600,7 @@ for loc in locs_to_plot:
                 MLdepthcurve = 0.315 + 0.000854*binsx
                 MLdepthcurve2 = -0.041 + 0.009133*binsx
                 MLdepthcurve3 = 0.176 + 0.006098*binsx
-                
+
                 # fit our own regression
                 idx = np.isfinite(MLmaxZH.values) & np.isfinite(MLdepth.values)
                 fit = np.polyfit(MLmaxZH.values[idx], MLdepth.values[idx]/1000, 1)
@@ -1638,17 +1637,17 @@ for loc in locs_to_plot:
                 binsx = np.linspace(10, 50, 41)
                 binsy = np.linspace(-4, 0, 21)
                 logMLmeanKDPcurve = -2.4 + 0.05*binsx
-                
+
                 # scale the reference curve to C band
                 lambda_x = 3 #cm
                 lambda_c = 5.3 #cm
                 logMLmeanKDPcurve_scaled = -2.4 + 0.05*binsx - np.log(lambda_x/lambda_c)
-                
+
                 # fit our own linear regression
                 idx = np.isfinite(MLmaxZH.values) & np.isfinite(np.log(MLmeanKDP).values)
                 fit = np.polyfit(MLmaxZH.values[idx], np.log(MLmeanKDP).values[idx], 1)
                 logMLmeanKDPcurve_fit = fit[1] + fit[0]*binsx
-                
+
                 utils.hist_2d(MLmaxZH.compute(), np.log(MLmeanKDP).compute(), bins1=binsx, bins2=binsy, cmap="Blues")
                 plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
                 plt.plot(binsx, logMLmeanKDPcurve_scaled, c="darkgreen", label="Scaled reference curve")
@@ -1677,12 +1676,12 @@ for loc in locs_to_plot:
                 binsx = np.linspace(-0.5, 2, 51)
                 binsy = np.linspace(-1, 2, 31)
                 # logMLmeanKDPcurve = -2.4 + 0.05*binsx
-                
+
                 # fit our own regression
                 idx = np.isfinite(ZDRrain.values) & np.isfinite(ZDRsfc.values)
                 fit = np.polyfit(ZDRrain.values[idx], ZDRsfc.values[idx], 1)
                 ZDRatSfccurve_fit = fit[1] + fit[0]*binsx
-                
+
                 utils.hist_2d(ZDRrain.compute(), ZDRsfc.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
                 # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
                 plt.plot(binsx, ZDRatSfccurve_fit, c="red", label="Fitted curve")
@@ -1708,7 +1707,7 @@ for loc in locs_to_plot:
                 binsx = np.linspace(0, 40, 41)
                 binsy = np.linspace(0, 40, 41)
                 # logMLmeanKDPcurve = -2.4 + 0.05*binsx
-                
+
                 # fit our own regression
                 idx = np.isfinite(ZHrain.values) & np.isfinite(ZHsfc.values)
                 fit = np.polyfit(ZHrain.values[idx], ZHsfc.values[idx], 1)
@@ -1740,7 +1739,7 @@ for loc in locs_to_plot:
                 binsx = np.linspace(0, 50, 26)
                 binsy = np.linspace(-15, 10, 26)
                 # logMLmeanKDPcurve = -2.4 + 0.05*binsx
-                
+
                 # fit our own regression
                 idx = np.isfinite(MLmaxZH.values) & np.isfinite(betaZH.values)
                 fit = np.polyfit(MLmaxZH.values[idx], betaZH.values[idx], 1)
@@ -1766,14 +1765,14 @@ for loc in locs_to_plot:
                     print(" ... ... ... !!! not possible to plot MLmaxZH vs betaZH for unknown reason !!! ")
 
             #### Histograms: custom
-            
+
             # Plot beta vs ZHrain
             try:
                 plt.close()
                 binsx = np.linspace(0, 50, 26)
                 binsy = np.linspace(-15, 10, 26)
                 # logMLmeanKDPcurve = -2.4 + 0.05*binsx
-                
+
                 utils.hist_2d(ZHrain.compute(), betaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
                 # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
                 # plt.legend()
@@ -1797,7 +1796,7 @@ for loc in locs_to_plot:
                 binsx = np.linspace(-0.5, 2, 51)
                 binsy = np.linspace(-15, 10, 26)
                 # logMLmeanKDPcurve = -2.4 + 0.05*binsx
-                
+
                 utils.hist_2d(ZDRrain.compute(), betaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
                 # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
                 # plt.legend()
@@ -1821,7 +1820,7 @@ for loc in locs_to_plot:
                 binsx = np.linspace(5, 15, 51)
                 binsy = np.linspace(-15, 10, 26)
                 # logMLmeanKDPcurve = -2.4 + 0.05*binsx
-                
+
                 utils.hist_2d(cloudtop.compute()/1000, betaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
                 # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
                 # plt.legend()
@@ -1846,7 +1845,7 @@ for loc in locs_to_plot:
                 binsx = np.linspace(5, 15, 51)
                 binsy = np.linspace(-15, 10, 26)
                 # logMLmeanKDPcurve = -2.4 + 0.05*binsx
-                
+
                 utils.hist_2d(cloudtop_5dbz.compute()/1000, betaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
                 # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
                 # plt.legend()
@@ -1870,7 +1869,7 @@ for loc in locs_to_plot:
                 binsx = np.linspace(0, 1, 26)
                 binsy = np.linspace(-15, 10, 26)
                 # logMLmeanKDPcurve = -2.4 + 0.05*binsx
-                
+
                 utils.hist_2d(MLdepth.compute()/1000, betaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
                 # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
                 # plt.legend()
@@ -1894,7 +1893,7 @@ for loc in locs_to_plot:
                 binsx = np.linspace(1.5, 4.5, 26)
                 binsy = np.linspace(-15, 10, 26)
                 # logMLmeanKDPcurve = -2.4 + 0.05*binsx
-                
+
                 utils.hist_2d((MLdepth+MLbot).compute()/1000, betaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
                 # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
                 # plt.legend()
@@ -1915,13 +1914,13 @@ for loc in locs_to_plot:
 #%%% ridgeplots
 savepath = "/automount/agradar/jgiles/images/stats_ridgeplots/"
 
-vars_ticks = {X_DBZH: np.arange(0, 46, 1), 
+vars_ticks = {X_DBZH: np.arange(0, 46, 1),
                 X_ZDR: np.arange(-0.5, 2.1, 0.1),
                 X_KDP: np.arange(-0.1, 0.52, 0.02),
                 X_RHO: np.arange(0.9, 1.004, 0.004)
                 }
 
-beta_vars_ticks = {X_DBZH: np.linspace(-15, 10, int((10--15)/1)+1 ), 
+beta_vars_ticks = {X_DBZH: np.linspace(-15, 10, int((10--15)/1)+1 ),
                 X_ZDR: np.linspace(-0.5, 1, int((1--0.5)/0.1)+1 ),
                 X_KDP: np.linspace(-0.2, 0.2, int((0.2--0.2)/0.01)+1 ),
                 X_RHO: np.linspace(-0.05, 0.05, int((0.05--0.05)/0.001)+1 ),
@@ -1957,7 +1956,7 @@ bins = {"ML_thickness": np.arange(0,1200,50),
         "delta_z_ZHmaxML_RHOHVminML": np.arange(0,440, 40),
         }
 
-# set a dictionary of bandwidths, this is important for the cases where the low resolution of the 
+# set a dictionary of bandwidths, this is important for the cases where the low resolution of the
 # data generates a histogram with only a few intervals with data. "normal_reference" is the default
 default_bandwidth_dict = {vv:"normal_reference" for vv in vars_ticks.keys()}
 default_bandwidth = "normal_reference"
@@ -1998,7 +1997,7 @@ bandwidths['values_snow']['RHOHV_NC'] = 0.01
 order = ['tur', 'umd', 'pro', 'afy', 'ank', 'gzt', 'hty', 'svs']
 # order = ['umd', 'pro', 'hty']
 
-selseaslist = [           
+selseaslist = [
             ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
             ("DJF", [12,1,2]),
             ("MAM", [3,4,5]),
@@ -2011,15 +2010,15 @@ selseaslist = [
 def reorder_tuple_elements(data, n):
     # Extract the last n elements
     last_n = data[-n:]
-    
+
     # Convert the tuple to a list to facilitate reordering
     data_list = list(data[:-n])
-    
+
     # Insert each of the last n elements at the desired positions
     for i in range(n):
         target_position = i * 3 + 2
         data_list.insert(target_position, last_n[i])
-    
+
     # Convert back to a tuple and return
     return tuple(data_list)
 
@@ -2056,14 +2055,14 @@ for selseas in selseaslist:
 
         for ss in bins.keys():
             print("...plotting "+ss)
-            try: 
+            try:
                 for vv in ridge_vars:
-                                        
+
                     # Get the samples for each radar and filter out the radars that have zero samples.
                     samples = {loc: stats[stratname][loc][ss][vv].sel(\
                                 time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time").values\
                                for loc in order_fil}
-                    
+
                     if ss in ["beta"] and vv in ["RHOHV_NC", "RHOHV"]: # filter out unrealistic zero beta values
                         samples = {loc: samples[loc][abs(samples[loc])>0.0001] for loc in samples.keys()}
 
@@ -2071,7 +2070,7 @@ for selseas in selseaslist:
                         samples = {loc: samples[loc][abs(samples[loc])>0.001] for loc in samples.keys()}
 
                     samples = {loc: samples[loc] for loc in samples.keys() if len(samples[loc])>10} # filter out radars with less than 10 samples
-                    
+
                     fig = ridgeplot.ridgeplot(samples=samples.values(),
                                             colorscale="viridis",
                                             colormode="row-index",
@@ -2091,37 +2090,37 @@ for selseas in selseaslist:
                                     title=ss+" "+vv,
                                     xaxis_tickvals=bins[ss][vv],
                     )
-    
+
                     # Add vertical zero line
                     fig.add_vline(x=0, line_width=2, line_color="gray")
-                    
+
                     # Get densities data from the plot
                     densities = [ fig.data[2*i+1] for i in range(len(samples)) ]
-                    
+
                     # calculate means
                     means = [np.mean(sample) for sample in samples.values()]
-                    
+
                     # Add a vertical line at the mean for each distribution
                     for i, mean in enumerate(means):
-                        # define the bottom and top of each distribution                    
+                        # define the bottom and top of each distribution
                         y_bot = np.array(densities[i]["y"]).min()
                         y_top = np.array(densities[i]["y"])[(np.where(np.array(densities[i]["x"]) >= mean))][0]
-                        
+
                         fig.add_scatter(
                             mode="lines",
                             x=[mean, mean],  # Vertical line at the mean
                             y=[y_bot , y_top],  # Set y0 and y1 based on the vertical offset
                             line=dict(color=change_rgba_alpha(densities[i]["fillcolor"], 1), width=2),
                         )
-    
-                    # We need to reorder the elements of the fig.data tuple so that 
+
+                    # We need to reorder the elements of the fig.data tuple so that
                     # the mean lines go below each distribution.
                     fig.data = reorder_tuple_elements(fig.data,len(means))
-                    
+
                     # save figure
-                    fig.write_html(savepath_seas+"/"+ss+"_"+vv+".html")            
-    
-            except KeyError: 
+                    fig.write_html(savepath_seas+"/"+ss+"_"+vv+".html")
+
+            except KeyError:
                 try:
                     samples = {loc: stats[stratname][loc][ss].sel(\
                                 time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time").values\
@@ -2147,47 +2146,47 @@ for selseas in selseaslist:
                                     title=ss,
                                     xaxis_tickvals=bins[ss],
                     )
-                    
+
                     # Add vertical zero line
                     fig.add_vline(x=0, line_width=2, line_color="gray")
-                    
+
                     # Get densities data from the plot
                     densities = [ fig.data[2*i+1] for i in range(len(samples)) ]
-                    
+
                     # calculate means
                     means = [np.mean(sample) for sample in samples.values()]
-                    
+
                     # Add a vertical line at the mean for each distribution
                     for i, mean in enumerate(means):
-                        # define the bottom and top of each distribution                    
+                        # define the bottom and top of each distribution
                         y_bot = np.array(densities[i]["y"]).min()
                         y_top = np.array(densities[i]["y"])[(np.where(np.array(densities[i]["x"]) >= mean))][0]
-                        
+
                         fig.add_scatter(
                             mode="lines",
                             x=[mean, mean],  # Vertical line at the mean
                             y=[y_bot , y_top],  # Set y0 and y1 based on the vertical offset
                             line=dict(color=change_rgba_alpha(densities[i]["fillcolor"], 1), width=2),
                         )
-    
-                    # We need to reorder the elements of the fig.data tuple so that 
+
+                    # We need to reorder the elements of the fig.data tuple so that
                     # the mean lines go below each distribution.
                     fig.data = reorder_tuple_elements(fig.data,len(means))
-                    
+
                     fig.write_html(savepath_seas+"/"+ss+".html")
                 except:
                     print("!!! unable to plot "+stratname+" "+ss+" !!!")
             except:
                 print("!!! unable to plot "+stratname+" "+ss+" !!!")
-        
-    
+
+
 #%% Checking PHIDP
 # get and plot a random selection of QVPs
 import random
 rand_dates = [random.randint(0, len(qvps_strat.time)) for _ in range(100)]
 for xx in range(100):
     qvps.where(qvps_strat.time).loc[{"time":"2017-07-25"}]["KDP_ML_corrected"][xx].plot(color="b", alpha=0.1)
-    
+
 
 # PLot a random selection of QVPs with negative KDP in the first 7 bins
 qvps_negKDP = qvps.where((qvps_strat["KDP_ML_corrected"][:,0:7]<=0).all("z"), drop=True)
@@ -2211,7 +2210,7 @@ zdr_off_LR_below3C_timesteps = xr.open_mfdataset(files_off, combine="nested", co
 #%% Test ZDR calibration
 
 # ZDR offset looks nice for a nice stratiform case
-pro_vp_20170725 = dttree.open_datatree(realpep_path+"/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/90gradstarng01/00/ras07-90gradstarng01_sweeph5onem_allmoms_00-2017072500041700-pro-10392-hd5")["sweep_0"].to_dataset()
+pro_vp_20170725 = xr.open_datatree(realpep_path+"/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/90gradstarng01/00/ras07-90gradstarng01_sweeph5onem_allmoms_00-2017072500041700-pro-10392-hd5")["sweep_0"].to_dataset()
 if pro_vp_20170725.time.isnull().any():
     pro_vp_20170725.coords["time"] = pro_vp_20170725["rtime"].min(dim="azimuth", skipna=True).compute()
 loc="pro"
@@ -2223,7 +2222,7 @@ zdr_offset_vp_pro_20170725 = utils.zdr_offset_detection_vps(pro_vp_20170725, min
 zdr_offset_vp_pro_20170725_azmedian = utils.zdr_offset_detection_vps(pro_vp_20170725, min_h=400, timemode="all", mlbottom=3, azmed=True).compute()
 
 # Let's find a not-nice case
-pro_vp_20170126 = dttree.open_datatree(glob.glob(realpep_path+"/upload/jgiles/dwd/2016/2016-01/2016-01-26/pro/90gradstarng01/00/ras07-90gradstarng01*")[0])["sweep_0"].to_dataset()
+pro_vp_20170126 = xr.open_datatree(glob.glob(realpep_path+"/upload/jgiles/dwd/2016/2016-01/2016-01-26/pro/90gradstarng01/00/ras07-90gradstarng01*")[0])["sweep_0"].to_dataset()
 if pro_vp_20170126.time.isnull().any():
     pro_vp_20170126.coords["time"] = pro_vp_20170126["rtime"].min(dim="azimuth", skipna=True).compute()
 loc="pro"
@@ -2239,7 +2238,7 @@ pro_vp_20170126.ZDR.median("azimuth").plot(x="time", vmin=-5, vmax=5)
 pro_vp_20170126.TEMP.median("azimuth").plot.contour(x="time", levels=[0,3], colors="white")
 
 utils.zdr_offset_detection_vps(pro_vp_20170126, min_h=400, timemode="step", mlbottom=3, azmed=True).compute().ZDR_offset.plot()
-# only the timesteps in the end where the ZDR reasonable values touch the ground give reasonable ZDR offset, 
+# only the timesteps in the end where the ZDR reasonable values touch the ground give reasonable ZDR offset,
 # lets check the distribution of ZDR values
 pro_vp_20170126.ZDR.plot.hist(bins=np.arange(-10,10.1,0.1))
 # the distribution is has several values around -4, probably due to the noisy values close to the ML
@@ -2280,7 +2279,7 @@ ank_12_20180306.ZDR.where(ank_12_20180306.TEMP>3).where(ank_12_20180306["z"]>ank
 
 #%% Test KDP from ZPHI
 ff = realpep_path+"/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/ras07-vol5minng01_sweeph5onem_allmoms_07-2017072500033500-pro-10392-hd5"
-pro20170725=dttree.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset()
+pro20170725=xr.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset()
 
 #%% Load multiple elevations of DWD to check if there is better PHIDP
 ff = realpep_path+"/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/*/*allmoms*"
@@ -2289,7 +2288,7 @@ files = sorted(glob.glob(ff))
 
 vollist = []
 for fx in files:
-    vollist.append(dttree.open_datatree(fx)["sweep_"+fx.split("/")[-2][1]].to_dataset())
+    vollist.append(xr.open_datatree(fx)["sweep_"+fx.split("/")[-2][1]].to_dataset())
     vollist[-1].coords["elevation"] = vollist[-1].coords["elevation"].median()
     vollist[-1] = vollist[-1].expand_dims("elevation")
 
@@ -2304,7 +2303,7 @@ vol = xr.concat(vollist, dim="elevation")
 
 
 #%% Convective events
-# filter 
+# filter
 data_fil = data.where(data[X_DBZH]>30, drop=True).where(qvps.height_ml_new_gia.isnull(), drop=True)
 data_fil = data_fil.pipe(wrl.georef.georeference_dataset)
 
@@ -2337,14 +2336,14 @@ colsteps=10
 
 
 if country=="dwd":
-    
-    vars_to_plot = {"DBZH": [0, 46, 1], 
+
+    vars_to_plot = {"DBZH": [0, 46, 1],
                     "ZDR": [-0.5, 2.1, 0.1],
                     "KDP": [-0.1, 0.52, 0.02],
                     "RHOHV": [0.9, 1.004, 0.004]}
 
     fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
-    
+
     for nn, vv in enumerate(vars_to_plot.keys()):
         so=False
         binsx2=None
@@ -2354,19 +2353,19 @@ if country=="dwd":
             binsx2 = [0.9, 1.005, 0.005]
         if "KDP" in vv:
             adj=1
-        utils.hist2d(ax[nn], data_fil[vv]*adj, data_fil["TEMP"]+adjtemp, whole_x_range=True, 
+        utils.hist2d(ax[nn], data_fil[vv]*adj, data_fil["TEMP"]+adjtemp, whole_x_range=True,
                      binsx=vars_to_plot[vv], binsy=[-20,16,tb], mode='rel_y', qq=0.2,
-                     cb_mode=(nn+1)/len(vars_to_plot), cmap="plasma", colsteps=colsteps, 
-                     fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
+                     cb_mode=(nn+1)/len(vars_to_plot), cmap="plasma", colsteps=colsteps,
+                     fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
                      cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
         ax[nn].set_ylim(15,ytlim)
         ax[nn].set_xlabel(vv, fontsize=10)
-        
+
         ax[nn].tick_params(labelsize=15) #change font size of ticks
         plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
-    
-    
-    
+
+
+
     ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
 
 
@@ -2401,55 +2400,55 @@ wgs84.ImportFromEPSG(4326)
 
 CBB_list = []
 for ff in files:
-    
+
     # Load a sample PPI
     if "dwd" in files[0]:
-        swpx = dttree.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset().DBZH[0]
+        swpx = xr.open_datatree(ff)["sweep_"+ff.split("/")[-2][1]].to_dataset().DBZH[0]
     if "dmi" in files[0]:
         swpx = xr.open_dataset(ff).DBZH[0]
-        
+
     swpx = swpx.pipe(wrl.georef.georeference, proj=wgs84)
-    
+
     # Download DEM data
-    
+
     extent = wrl.zonalstats.get_bbox(swpx.x.values, swpx.y.values)
     extent
-    
+
     # apply token
     os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = "eyJ0eXAiOiJKV1QiLCJvcmlnaW4iOiJFYXJ0aGRhdGEgTG9naW4iLCJzaWciOiJlZGxqd3RwdWJrZXlfb3BzIiwiYWxnIjoiUlMyNTYifQ.eyJ0eXBlIjoiVXNlciIsInVpZCI6ImpnaWxlcyIsImV4cCI6MTY5NzkwMDAyMiwiaWF0IjoxNjkyNzE2MDIyLCJpc3MiOiJFYXJ0aGRhdGEgTG9naW4ifQ.4OhlJ-fTL_ii7EB2Eavyg7fPotk_U6g5ZC9ryS1RFp0cb8KGDl0ptwtifmV7A1__5FbLQlvH3MUKQg_Gq5LKTGi61bn_BBeXzRxx2Z8WJW7uuESQQH61urrbji-xwiIVo65r0tDfT0qYYulbA4X9DPBom2BHMvcvitgnvwRiQFpK8S6h7xoYLqCgHJOtATBc_2Su28qaDfH_SwRLI81iQYDnfLPhL_iWVf3bQxdObl31WD4inrST8IMSg59KMuioRRHdydE7PPsGxHWV5U2PFfRwjS1dqi0ntP_mlXoBpG-Eh-vNdaWi4KSGZA4PYN4AuTV1ijzGEzd8Qvw2aIo6Xg"
     # set location of wradlib-data, where wradlib will search for any available data
     os.environ["WRADLIB_DATA"] = "/home/jgiles/wradlib-data-main/"
     # get the tiles
     dem = wrl.io.get_srtm(extent.values())
-    
+
     # DEM to spherical coords
-    
+
     sitecoords = (swpx.longitude.values, swpx.latitude.values, swpx.altitude.values)
     r = swpx.range.values
     az = swpx.azimuth.values
     bw = 1
     beamradius = wrl.util.half_power_radius(r, bw)
-    
+
     rastervalues, rastercoords, proj = wrl.georef.extract_raster_dataset(
         dem, nodata=-32768.0
     )
-    
+
     rlimits = (extent["left"], extent["bottom"], extent["right"], extent["top"])
     # Clip the region inside our bounding box
     ind = wrl.util.find_bbox_indices(rastercoords, rlimits)
     rastercoords = rastercoords[ind[1] : ind[3], ind[0] : ind[2], ...]
     rastervalues = rastervalues[ind[1] : ind[3], ind[0] : ind[2]]
-    
+
     polcoords = np.dstack([swpx.x.values, swpx.y.values])
     # Map rastervalues to polar grid points
     polarvalues = wrl.ipol.cart_to_irregular_spline(
         rastercoords, rastervalues, polcoords, order=3, prefilter=False
     )
-    
+
     # Partial and cumulative beam blockage
     PBB = wrl.qual.beam_block_frac(polarvalues, swpx.z.values, beamradius)
     PBB = np.ma.masked_invalid(PBB)
-    
+
     CBB = wrl.qual.cum_beam_block_frac(PBB)
     CBB_xr = xr.ones_like(swpx)*CBB
     CBB_list.append(CBB_xr.rename("Beam blockage fraction").copy())
@@ -2459,38 +2458,38 @@ for ff in files:
 fs = 5
 with mpl.rc_context({'font.size': fs}):
     fig = plt.figure()
-    
+
     # create subplots
     ax = fig.add_subplot(1, 1, 1, projection=terrain_map.crs)
-    
+
     # Limit the extent of the map to a small longitude/latitude range.
     # ax.set_extent([13, 15, 52, 54], crs=ccrs.Geodetic())  # [0, 20, 45, 55]
     if "dwd" in files[0]:
         ax.set_extent([6, 15, 47, 55], crs=ccrs.Geodetic())  # [0, 20, 45, 55]
     if "dmi" in files[0]:
         ax.set_extent([25, 45, 35, 42], crs=ccrs.Geodetic())  # [0, 20, 45, 55]
-    
+
     # Add the Stamen data at zoom level 8.
     ax.add_image(terrain_map, 8, alpha=1)
-    
+
     for nn,CBB_xr in enumerate(CBB_list):
         # Plot CBB (on ax1)
         cbarbool = False
         if nn == 0: cbarbool = True
         CBB_xr.plot(x="x", y="y", ax=ax, alpha= 0.7, vmin=0, vmax=1, cmap=mpl.cm.PuRd, transform=ccrs.PlateCarree(), add_colorbar=cbarbool)
         # ax1, cbb = wrl.vis.plot_ppi(CBB_xr, ax=ax, r=r, az=az, cmap=mpl.cm.PuRd, vmin=0, vmax=1)
-        
+
         # add a marker in center of the radar
         ax.plot(CBB_xr.longitude, CBB_xr.latitude, marker='o', color='red', markersize=1,
                 alpha=1, transform=ccrs.Geodetic())
-    
+
     ax.coastlines(alpha=0.7, linewidth=0.5)
     gl = ax.gridlines(draw_labels={"bottom": "x", "left": "y"}, visible=False)
     gl.xlabel_style = {'size': fs}
     gl.ylabel_style = {'size': fs}
     ax.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=0.5, alpha=0.4) #countries
     ax.tick_params(axis='both', labelsize=fs)
-    
+
     plt.title("")
 
 #%% Plot partial beam blockage and scan with DEM
@@ -2501,7 +2500,7 @@ wgs84.ImportFromEPSG(4326)
 
 # Load a sample PPI
 # swpx = dttree.open_datatree(realpep_path+"/upload/jgiles/dwd/2016/2016-01/2016-01-01/pro/vol5minng01/07/ras07-vol5minng01_sweeph5onem_allmoms_07-2016010100034100-pro-10392-hd5")["sweep_7"].to_dataset().DBZH[0]
-swpx = dttree.open_datatree(realpep_path+"/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/05/ras07-vol5minng01_sweeph5onem_allmoms_05-2017072500030000-pro-10392-hd5")["sweep_5"].to_dataset().DBZH[0]
+swpx = xr.open_datatree(realpep_path+"/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/05/ras07-vol5minng01_sweeph5onem_allmoms_05-2017072500030000-pro-10392-hd5")["sweep_5"].to_dataset().DBZH[0]
 # swpx = xr.open_dataset(realpep_path+"/upload/jgiles/dmi/2018/2018-03/2018-03-06/HTY/VOL_B/10.0/VOL_B-allmoms-10.0-2018-03-06-HTY-h5netcdf.nc").DBZH[0]
 swpx = swpx.pipe(wrl.georef.georeference_dataset,  proj=wgs84)
 
@@ -2672,4 +2671,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-    
