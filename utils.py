@@ -364,7 +364,7 @@ def check_time_dimension_alignment(datasets, tolerance="S"):
         return False, "No datasets provided."
 
     # Check that all datasets have the same length of the time dimension
-    time_lengths = [ds.dims['time'] for ds in datasets]
+    time_lengths = [ds.sizes['time'] for ds in datasets]
     if len(set(time_lengths)) != 1:
         return False, "Datasets have different lengths of the time dimension."
 
