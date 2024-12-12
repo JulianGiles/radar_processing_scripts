@@ -451,10 +451,10 @@ if not isvolume:
         ds = ds.assign({"DBZH_lin": wrl.trafo.idecibel(ds[X_DBZH]), "ZDR_lin": wrl.trafo.idecibel(ds[X_ZDR]) })
 
         # calculate entropy
-        Entropy = utils.Entropy_timesteps_over_azimuth_different_vars_schneller(ds.where(ds[X_DBZH]>0), zhlin="DBZH_lin", zdrlin="ZDR_lin", rhohvnc=X_RHO, kdp="KDP_ML_corrected")
+        Entropy = utils.calculate_pseudo_entropy(ds.where(ds[X_DBZH]>0), dim='azimuth', var_names=["DBZH_lin", "ZDR_lin", X_RHO, "KDP_ML_corrected"], n_lowest=30)
 
         # concate entropy for all variables and get the minimum value
-        strati = xr.concat((Entropy.entropy_zdrlin, Entropy.entropy_Z, Entropy.entropy_RHOHV, Entropy.entropy_KDP),"entropy")
+        strati = xr.concat((Entropy.entropy_DBZH_lin, Entropy.entropy_ZDR_lin, Entropy["entropy_"+X_RHO], Entropy.entropy_KDP_ML_corrected),"entropy")
         min_trst_strati = strati.min("entropy")
 
         # assign to datasets
