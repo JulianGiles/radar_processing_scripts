@@ -87,21 +87,22 @@ var_names_map_sim = {"VRADH": "vrsim",
 
 # Define paths
 path_dwd = "/automount/realpep/upload/jgiles/dwd/2020/2020-02/2020-02-01/pro/vol5minng01/*/*-hd5"
+path_dwd = "/automount/realpep/upload/jgiles/dmi/2020/2020-01/2020-01-03/HTY/VOL_*/*/*.nc"
 # path_emvorado_obs = "/home/jgiles/emvorado-offline-results/output/20171028_*/radarout/cdfin_allobs_id-010392_*_volscan"
-path_emvorado_sim = "/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_2020013122/radout/cdfin_allsim_id-010392_*_volscan"
+path_emvorado_sim = "/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_2020010222/radout/cdfin_allsim_id-017373_*_volscan"
 # path_emvorado_sim = "/automount/ags/jgiles/emvorado-offline-results/output/20170712_*/radarout/cdfin_allsim_id-010392_*_volscan"
 
 # Load files
-vol_dwd = utils.load_volume(sorted(glob.glob(path_dwd)), func=utils.load_dwd_preprocessed, verbose=True)
+vol_dwd = utils.load_volume(sorted(glob.glob(path_dwd)), func=utils.load_dmi_preprocessed, verbose=True)
 # vol_emvorado_obs = utils.load_emvorado_to_radar_volume(path_emvorado_obs, rename=True)
 vol_emvorado_sim = utils.load_emvorado_to_radar_volume(path_emvorado_sim, rename=True)
 
 #%% Plot PPI
-tsel = "2020-02-01T13:00"
-elevn = 5 # elevation index
+tsel = "2020-01-03T20"
+elevn = 7 # elevation index
 
 datatype = "sim" # sim, obs or ori (original)
-mom = "DBZH"
+mom = "ZDR"
 xylims = 180000 # xlim and ylim (from -xylims to xylims)
 
 cities = {
@@ -111,13 +112,13 @@ cities = {
 
 if datatype == "sim":
     ds = vol_emvorado_sim.copy()
-    
+
 elif datatype == "obs":
     ds = vol_emvorado_obs.copy()
-    
+
 elif datatype == "ori":
     ds = vol_dwd.copy()
-    
+
 else:
     raise Exception("select correct data source")
 
@@ -134,7 +135,7 @@ else:
         datasel = ds
     else:
         datasel = ds.sel({"time": tsel}, method="nearest")
-    
+
 datasel = datasel.pipe(wrl.georef.georeference)
 
 # New Colormap
@@ -169,22 +170,22 @@ elif plot_over_map:
 if plot_ML:
     cax = plt.gca()
     datasel["z"].wrl.vis.plot(ax=cax,
-                          levels=[datasel["height_ml_bottom_new_gia"], datasel["height_ml_new_gia"]], 
+                          levels=[datasel["height_ml_bottom_new_gia"], datasel["height_ml_new_gia"]],
                           cmap="black",
                           func="contour")
     # datasel["z"].wrl.vis.plot(fig=fig, cmap=cmap, norm=norm, crs=ccrs.Mercator(central_longitude=float(datasel["longitude"])))
 
- # add cities
+# add cities
 for city, coord in cities.items():
     ax.plot(coord['lon'], coord['lat'], 'ro', markersize=5, transform=ccrs.PlateCarree(), color="black")  # Plot the city as a red dot
     ax.text(coord['lon'] + 0.02, coord['lat'], city, transform=ccrs.PlateCarree(), fontsize=12, color='black')  # Add city name
 
-if isvolume: 
+if isvolume:
     try:
         elevtitle = " "+str(np.round(ds.isel({"sweep_fixed_angle":elevn}).sweep_fixed_angle.values, 2))+"°"
     except AttributeError:
         elevtitle = " "+str(np.round(ds.isel({"sweep_fixed_angle":elevn}).elevation.mean().values, 2))+"°"
-else: 
+else:
     try:
         elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
     except AttributeError:
@@ -197,22 +198,22 @@ plt.title(mom+elevtitle+". "+str(datasel.time.values).split(".")[0])
 
 max_height = 12000 # max height for the qvp plots
 tsel = ""
-elevn = 1 # elevation index
+elevn = 7 # elevation index
 plot_ML = False
 
-datatype = "ori" # sim, obs or ori (original)
-mom = "DBZH"
+datatype = "sim" # sim, obs or ori (original)
+mom = "ZDR"
 xylims = 180000 # xlim and ylim (from -xylims to xylims)
 
 if datatype == "sim":
     ds = vol_emvorado_sim.copy()
-    
+
 elif datatype == "obs":
     ds = vol_emvorado_obs.copy()
-    
+
 elif datatype == "ori":
     ds = vol_dwd.copy()
-    
+
 else:
     raise Exception("select correct data source")
 
@@ -229,14 +230,14 @@ else:
         datasel = ds
     else:
         datasel = ds.sel({"time": tsel}, method="nearest")
-    
+
 datasel = datasel.pipe(wrl.georef.georeference)
 if "time" in datasel.z.dims:
     datasel = datasel.assign_coords(z=datasel.z.mean('time'))
 
 qvps = utils.compute_qvp(datasel, min_thresh={"RHOHV":0.7, "DBZH":0, "ZDR":-1, "SNRH":10, "SNRHC":10, "SQIH":0.5})
 
-    
+
 # New Colormap
 colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
@@ -294,13 +295,13 @@ xylims = 180000 # xlim and ylim (from -xylims to xylims)
 
 if datatype == "sim":
     ds = vol_emvorado_sim.copy()
-    
+
 elif datatype == "obs":
     ds = vol_emvorado_obs.copy()
-    
+
 elif datatype == "ori":
     ds = vol_dwd.copy()
-    
+
 else:
     raise Exception("select correct data source")
 
@@ -317,7 +318,7 @@ else:
         datasel = ds
     else:
         datasel = ds.sel({"time": tsel}, method="nearest")
-    
+
 datasel = datasel.pipe(wrl.georef.georeference)
 if "time" in datasel.z.dims:
     datasel = datasel.assign_coords(z=datasel.z.mean('time'))
@@ -329,7 +330,7 @@ qvps = utils.compute_qvp(datasel, min_thresh={"RHOHV":0.7, "DBZH":0, "ZDR":-1, "
 moments={"DBZH": (10., 60.), "RHOHV": (0.65, 1.), "PHIDP": (-20, 180)}
 
 # Calculate ML
-qvps = utils.melting_layer_qvp_X_new(qvps, moments=moments, dim="z", fmlh=0.3, 
+qvps = utils.melting_layer_qvp_X_new(qvps, moments=moments, dim="z", fmlh=0.3,
          xwin=xwin0, ywin=ywin0, min_h=min_height, rhohv_thresh_gia=rhohv_thresh_gia, all_data=True, clowres=clowres0)
 qvps.coords["elevation"] = qvps.coords["elevation"].mean()
 
@@ -406,7 +407,7 @@ hv.extension("matplotlib")
 
 max_height = 12000 # max height for the qvp plots (necessary because of random high points and because of dropna in the z dim)
 
-var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR', 
+var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR',
                # 'TH','UPHIDP',  # not so relevant
 #               'UVRADH', 'UZDR',  'UWRADH', 'VRADH', 'SQIH', # not implemented yet in visdict14
                # 'WRADH', 'SNRHC', 'URHOHV', 'SNRH',
@@ -434,7 +435,7 @@ def cbar_hook(hv_plot, _, cmap_extend, ticklist, norm, label):
         # spacing='proportional',
         orientation='vertical',
         label=label,
-    )   
+    )
 
 
 # Define the function to update plots
@@ -457,7 +458,7 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
             # for the plot of ZDR_OC, put the value of the offset in the subtitle if it is daily
             if np.unique((selected_data["ZDR"]-selected_data["ZDR_OC"]).compute().median("z")).std() < 0.01:
                 # if the std of the unique values of ZDR - ZDR_OC is < 0.1 we assume it is a daily offset
-                subtitle = var+" (Offset: "+str(np.round((selected_data["ZDR"]-selected_data["ZDR_OC"]).compute().median().values,3))+")"                
+                subtitle = var+" (Offset: "+str(np.round((selected_data["ZDR"]-selected_data["ZDR_OC"]).compute().median().values,3))+")"
             else:
                 subtitle = var+" (Offset: variable per timestep)"
         if var == "DBZH": # add elevation angle to DBZH panel
@@ -492,9 +493,9 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
         # Add shading for min_entropy when it's greater than 0.8
         if show_min_entropy:
             min_entropy_values = selected_data.min_entropy.where(selected_data.min_entropy>=0).dropna("z", how="all").compute()
-            
+
             min_entropy_shading = min_entropy_values.hvplot.quadmesh(
-                x='time', y='z', 
+                x='time', y='z',
                 xlabel='Time', ylabel='Height (m)', colorbar=False,
                 width=500, height=250,
             ).opts(
@@ -505,7 +506,7 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
                 )
             quadmesh = (quadmesh * min_entropy_shading)
 
-            
+
         plots.append(quadmesh)
 
     nplots = len(plots)
@@ -515,7 +516,7 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
                          )
     return gridplot
     # return pn.Row(*plots)
-        
+
 
 # Convert the date range to a list of datetime objects
 date_range = pd.to_datetime(ds_qvps.time.data)
@@ -530,25 +531,25 @@ selected_day_slider = pn.widgets.DiscreteSlider(name='Select Date', options=date
 
 show_ML_lines_toggle = pn.widgets.Toggle(name='Show ML Lines', value=True)
 
-show_min_entropy_toggle = pn.widgets.Toggle(name='Show Entropy over 0.9', value=True) 
+show_min_entropy_toggle = pn.widgets.Toggle(name='Show Entropy over 0.9', value=True)
 
 @pn.depends(selected_day_slider.param.value, show_ML_lines_toggle, show_min_entropy_toggle)
 # Define the function to update plots based on widget values
 def update_plots_callback(event):
     selected_day = str(selected_day_slider.value)
     show_ML_lines = show_ML_lines_toggle.value
-    show_min_entropy = show_min_entropy_toggle.value 
+    show_min_entropy = show_min_entropy_toggle.value
     plot = update_plots(selected_day, show_ML_lines, show_min_entropy)
     plot_panel[0] = plot
 
 selected_day_slider.param.watch(update_plots_callback, 'value')
 show_ML_lines_toggle.param.watch(update_plots_callback, 'value')
-show_min_entropy_toggle.param.watch(update_plots_callback, 'value') 
+show_min_entropy_toggle.param.watch(update_plots_callback, 'value')
 
 # Create the initial plot
 initial_day = str(start_date)
 initial_ML_lines = True
-initial_min_entropy = True 
+initial_min_entropy = True
 
 plot_panel = pn.Row(update_plots(initial_day, initial_ML_lines, initial_min_entropy))
 
@@ -560,7 +561,7 @@ layout = pn.Column(
 )
 
 
-layout.save("/user/jgiles/interactive_matplotlib.html", resources=INLINE, embed=True, 
+layout.save("/user/jgiles/interactive_matplotlib.html", resources=INLINE, embed=True,
             max_states=1000, max_opts=1000)
 
 #%% Filters (conditions for stratiform)
@@ -569,9 +570,9 @@ print("Filtering stratiform conditions...")
 #### Set variable names
 X_DBZH = "DBZH"
 X_TH = "DBZH"
-X_RHO = "RHOHV" # if RHOHV_NC is set here, it is then checked agains the original RHOHV in the next cell
-X_ZDR = "ZDR"
-X_KDP = "KDP"
+X_RHO = "RHOHV_NC" # if RHOHV_NC is set here, it is then checked agains the original RHOHV in the next cell
+X_ZDR = "ZDR_OC"
+X_KDP = "KDP_ML_corrected"
 
 # Filter only stratiform events (min entropy >= 0.8) and ML detected
 # with ProgressBar():
@@ -616,24 +617,92 @@ qvps_strat_relaxed_fil = qvps_strat_relaxed.where((qvps_strat_relaxed[X_TH] > -1
 total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
 
+
+#### Calculate retreivals
+# We do this for both qvps_strat_fil and relaxed qvps_strat_relaxed_fil
+start_time = time.time()
+print("Calculating microphysical retrievals...")
+
+# to check the wavelength of each radar, in cm for DWD, in 1/100 cm for DMI ()
+# filewl = ""
+# xr.open_dataset(filewl, group="how") # DWD
+# file1 = realpep_path+"/upload/jgiles/dmi_raw/acq/OLDDATA/uza/RADAR/2015/01/01/ANK/RAW/ANK150101000008.RAW6M00"
+# xd.io.backends.iris.IrisRawFile(file1, loaddata=False).ingest_header["task_configuration"]["task_misc_info"]["wavelength"]
+
+Lambda = 53.1 # radar wavelength in mm (pro: 53.138, ANK: 53.1, AFY: 53.3, GZT: 53.3, HTY: 53.3, SVS:53.3)
+
+# We will put the final retrievals in a dict
+try: # check if exists, if not, create it
+    retrievals
+except NameError:
+    retrievals = {}
+
+for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
+    print("   ... for "+stratname)
+
+    retrievals[stratname] = {}
+
+    # LWC
+    lwc_zh_zdr = 10**(0.058*stratqvp[X_DBZH] - 0.118*stratqvp[X_ZDR] - 2.36) # Reimann et al 2021 (adjusted for Germany)
+    lwc_zh_zdr2 = 1.38*10**(-3) *10**(0.1*stratqvp[X_DBZH] - 2.43*stratqvp[X_ZDR] + 1.12*stratqvp[X_ZDR]**2 - 0.176*stratqvp[X_ZDR]**3 ) # Ryzhkov et al 2022, used in S band
+    lwc_kdp = 10**(0.568*np.log10(stratqvp[X_KDP]) + 0.06) # Reimann et al 2021(adjusted for Germany)
+
+    # IWC (Collected from Blanke et al 2023)
+    iwc_zh_t = 10**(0.06 * stratqvp[X_DBZH] - 0.0197*stratqvp["TEMP"] - 1.7) # empirical from Hogan et al 2006
+
+    iwc_zdr_zh_kdp = xr.where(stratqvp[X_ZDR]>0.4, # Carlin et al 2021
+                              4*10**(-3)*( stratqvp[X_KDP]*Lambda/( 1-wrl.trafo.idecibel(stratqvp[X_ZDR])**-1 ) ),
+                              0.031474 * ( stratqvp[X_KDP]*Lambda )**0.66 * stratqvp[X_DBZH]**0.28 )
+
+    # Dm
+    Dm_ice_zh = 1.055*stratqvp[X_DBZH]**0.271 # Matrosov et al. (2019)
+    Dm_ice_zh_kdp = 0.67*( stratqvp[X_DBZH]/(stratqvp[X_KDP]*Lambda) )**(1/3) # Bukovcic et al. (2020)
+    Dm_rain_zdr = 0.3015*stratqvp[X_ZDR]**3 - 1.2087*stratqvp[X_ZDR]**2 + 1.9068*stratqvp[X_ZDR] + 0.5090 # (for rain but tuned for Germany X-band, JuYu Chen, Zdr in dB, Dm in mm)
+    Dm_rain_zdr2 = 0.171*stratqvp[X_ZDR]**3 - 0.725*stratqvp[X_ZDR]**2 + 1.48*stratqvp[X_ZDR] + 0.717 # (Hu and Ryzhkov 2022, used in S band data but could work for C band)
+    Dm_rain_zdr3 = xr.where(stratqvp[X_ZDR]<1.25, # Bringi et al 2009 (C-band)
+                            0.0203*stratqvp[X_ZDR]**4 - 0.149*stratqvp[X_ZDR]**3 + 0.221*stratqvp[X_ZDR]**2 + 0.557*stratqvp[X_ZDR] + 0.801,
+                            0.0355*stratqvp[X_ZDR]**3 - 0.302*stratqvp[X_ZDR]**2 + 1.06*stratqvp[X_ZDR] + 0.684
+                            )
+
+    # log(Nt)
+    Nt_ice_zh_iwc = (3.39 + 2*np.log10(iwc_zh_t) - 0.1*stratqvp[X_DBZH]) # (Hu and Ryzhkov 2022, different than Carlin et al 2021 only in the offset, but works better)
+    Nt_rain_zh_zdr = ( -2.37 + 0.1*stratqvp[X_DBZH] - 2.89*stratqvp[X_ZDR] + 1.28*stratqvp[X_ZDR]**2 - 0.213*stratqvp[X_ZDR]**3 )# Hu and Ryzhkov 2022
+
+    # Put everything together
+    retrievals[stratname][utils.find_loc(utils.locs, ff[0])] = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
+                                                             "lwc_zh_zdr2":lwc_zh_zdr2,
+                                                             "lwc_kdp": lwc_kdp,
+                                                             "iwc_zh_t": iwc_zh_t,
+                                                             "iwc_zdr_zh_kdp": iwc_zdr_zh_kdp,
+                                                             "Dm_ice_zh": Dm_ice_zh,
+                                                             "Dm_ice_zh_kdp": Dm_ice_zh_kdp,
+                                                             "Dm_rain_zdr": Dm_rain_zdr,
+                                                             "Dm_rain_zdr2": Dm_rain_zdr2,
+                                                             "Dm_rain_zdr3": Dm_rain_zdr3,
+                                                             "Nt_ice_zh_iwc": Nt_ice_zh_iwc,
+                                                             "Nt_rain_zh_zdr": Nt_rain_zh_zdr,
+                                                             }).compute()
+total_time = time.time() - start_time
+print(f"took {total_time/60:.2f} minutes.")
+
 #%% CFTDs Plot
 
 # If auto_plot is True, then produce and save the plots automatically based on
-# default configurations (only change savepath and ds_to_plot accordingly). 
+# default configurations (only change savepath and ds_to_plot accordingly).
 # If False, then produce the plot as given below and do not save.
-auto_plot = True 
+auto_plot = False
 savepath = "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform/"
 
 # Which to plot, qvps_strat_fil or qvps_strat_relaxed_fil
 ds_to_plot = qvps_strat_fil.copy()
 
 # Define list of seasons
-selseaslist = [           
+selseaslist = [
             ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
-            # ("DJF", [12,1,2]),
-            # ("MAM", [3,4,5]),
-            # ("JJA", [6,7,8]),
-            # ("SON", [9,10,11]),
+            ("DJF", [12,1,2]),
+            ("MAM", [3,4,5]),
+            ("JJA", [6,7,8]),
+            ("SON", [9,10,11]),
            ] # ("nameofseas", [months included])
 
 # adjustment from K to C (disabled now because I know that all qvps have ERA5 data)
@@ -661,39 +730,268 @@ colsteps=10
 
 cmaphist="Oranges"
 
-savedict = {"custom": None} # placeholder for the for loop below, not important 
+savedict = {"custom": None} # placeholder for the for loop below, not important
 
-# Plot horizontally    
-vars_to_plot = {"DBZH": [0, 46, 1],
-                "ZDR": [-0.5, 2.1, 0.1],
-                "KDP": [-0.1, 0.52, 0.02],
-                "RHOHV": [0.9, 1.004, 0.004]}
+# Plot horizontally
+# DMI
+# Native worst-resolution of the data (for 1-byte moments)
+# DBZH: 0.5 dB
+# ZDR: 0.0625 dB
+# KDP: complicated. From 0.013 at KDP approaching zero to 7.42 at extreme KDP. KDP min absolute value is 0.25 and max abs is 150 (both positive and negative)
+# RHOHV: scales with a square root (finer towards RHOHV=1), so from 0.00278 at RHOHV=0.7 to 0.002 resolution at RHOHV=1
+# PHIDP: 0.708661 deg
+loc = utils.find_loc(utils.locs, ff[0])
+if loc in ['afy', 'ank', 'gzt', 'hty', 'svs']:
+
+    vars_to_plot = {"DBZH": [0, 45.5, 0.5],
+                    "ZDR_OC": [-0.505, 2.05, 0.1],
+                    "KDP_ML_corrected":  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
+                    "RHOHV_NC": [0.9, 1.002, 0.002]}
+
+    if auto_plot:
+        vtp = [{"DBZH": [0, 45.5, 0.5],
+                        "ZDR_OC": [-0.505, 2.05, 0.1],
+                        "KDP_ML_corrected":  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
+                        "RHOHV_NC": [0.9, 1.002, 0.002]},
+               {"DBZH": [0, 45.5, 0.5],
+                               "ZDR": [-0.505, 2.05, 0.1],
+                               "KDP_CONV":  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
+                               "RHOHV": [0.9, 1.002, 0.002]} ]
+        ytlimlist = [-20, -50]
+
+        add_relaxed = ["_relaxed" if "relaxed" in savepath else ""][0]
+        savedict = {}
+        for selseas in selseaslist:
+            savedict.update(
+                        {selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+".png": [vtp[0], ytlimlist[0], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_uncorr.png": [vtp[1], ytlimlist[0], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_uncorr_extended.png": [vtp[1], ytlimlist[1], selseas[1]],
+                        }
+                            )
+
+    for savename in savedict.keys():
+        if auto_plot:
+            vars_to_plot = savedict[savename][0]
+            ytlim = savedict[savename][1]
+            selmonths = savedict[savename][2]
+
+        fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+        for nn, vv in enumerate(vars_to_plot.keys()):
+            so=False
+            binsx2=None
+            rd=10 # arbitrarily large decimal position to round to (so it is actually not rounded)
+            if "DBZH" in vv:
+                so=True
+                binsx2 = [0, 46, 1]
+                rd = 1 # decimal position to round to
+            if "ZDR" in vv:
+                so=True
+                binsx2 = [-0.5, 2.1, 0.1]
+                rd=1
+            if "KDP" in vv:
+                so=True #True
+                binsx2 = [-0.1, 0.52, 0.02]
+                rd=2
+            if "RHOHV" in vv:
+                so = True
+                binsx2 = [0.9, 1.005, 0.005]
+                rd=3
+            utils.hist2d(ax[nn], ds_to_plot[vv].sel(\
+                                                    time=ds_to_plot['time'].dt.month.isin(selmonths)).round(rd),
+                         ds_to_plot["TEMP"].sel(\
+                                             time=ds_to_plot['time'].dt.month.isin(selmonths))+adjtemp,
+                         whole_x_range=True,
+                         binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                         cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
+                         fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
+            ax[nn].set_ylim(15,ytlim)
+            ax[nn].set_xlabel(vv, fontsize=10)
+
+            ax[nn].tick_params(labelsize=15) #change font size of ticks
+            plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+
+        ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+
+        if auto_plot:
+            # Create savefolder
+            savepath_seas = os.path.dirname(savepath+savename)
+            if not os.path.exists(savepath_seas):
+                os.makedirs(savepath_seas)
+            fig.savefig(savepath+savename, bbox_inches="tight")
+            print("AUTO PLOT: saved "+savename)
+
+
+
+# DWD
+# plot CFTDs moments
+elif loc in ['pro', 'tur', 'umd', 'ess']:
+
+    vars_to_plot = {"DBZH": [0, 46, 1],
+                    "ZDR_OC": [-0.5, 2.1, 0.1],
+                    "KDP_ML_corrected": [-0.1, 0.52, 0.02],
+                    "RHOHV_NC": [0.9, 1.004, 0.004]}
+
+    if auto_plot:
+        vtp = [{"DBZH": [0, 46, 1],
+                        "ZDR_OC": [-0.5, 2.1, 0.1],
+                        "KDP_ML_corrected":  [-0.1, 0.52, 0.02],
+                        "RHOHV_NC": [0.9, 1.004, 0.004]},
+               {"DBZH": [0, 46, 1],
+                               "ZDR": [-0.5, 2.1, 0.1],
+                               "KDP_CONV":  [-0.1, 0.52, 0.02],
+                               "RHOHV": [0.9, 1.004, 0.004]} ]
+        ytlimlist = [-20, -50]
+        savedict = {}
+        add_relaxed = ["_relaxed" if "relaxed" in savepath else ""][0]
+        for selseas in selseaslist:
+            savedict.update(
+                        {selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+".png": [vtp[0], ytlimlist[0], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_uncorr.png": [vtp[1], ytlimlist[0], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_uncorr_extended.png": [vtp[1], ytlimlist[1], selseas[1]],
+                        }
+                            )
+
+    for savename in savedict.keys():
+        if auto_plot:
+            vars_to_plot = savedict[savename][0]
+            ytlim = savedict[savename][1]
+            selmonths = savedict[savename][2]
+
+        fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+        for nn, vv in enumerate(vars_to_plot.keys()):
+            so=False
+            binsx2=None
+            adj=1
+            if "RHOHV" in vv:
+                so = True
+                binsx2 = [0.9, 1.005, 0.005]
+            if "KDP" in vv:
+                adj=1
+            utils.hist2d(ax[nn], ds_to_plot[vv].sel(time=ds_to_plot['time'].dt.month.isin(selmonths))*adj,
+                         ds_to_plot["TEMP"].sel(time=ds_to_plot['time'].dt.month.isin(selmonths))+adjtemp,
+                         whole_x_range=True,
+                         binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                         cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
+                         fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
+            ax[nn].set_ylim(15,ytlim)
+            ax[nn].set_xlabel(vv, fontsize=10)
+
+            ax[nn].tick_params(labelsize=15) #change font size of ticks
+            plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+
+        ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+        if auto_plot:
+            # Create savefolder
+            savepath_seas = os.path.dirname(savepath+savename)
+            if not os.path.exists(savepath_seas):
+                os.makedirs(savepath_seas)
+            fig.savefig(savepath+savename, bbox_inches="tight")
+            print("AUTO PLOT: saved "+savename)
+
+#%% CFTDs retreivals Plot
+# We assume that everything above ML is frozen and everything below is liquid
+
+# If auto_plot is True, then produce and save the plots automatically based on
+# default configurations (only change savepath and ds_to_plot accordingly).
+# If False, then produce the plot as given below and do not save.
+auto_plot = False
+savepath = "/automount/agradar/jgiles/images/CFTDs/stratiform/"
+
+# Which to plot, stratiform or stratiform_relaxed
+ds_to_plot = retrievals["stratiform"].copy()
+
+loc = utils.find_loc(utils.locs, ff[0]) # by default, plot only the histograms of the currently loaded QVPs.
+
+# Define list of seasons
+selseaslist = [
+            ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
+            ("DJF", [12,1,2]),
+            ("MAM", [3,4,5]),
+            ("JJA", [6,7,8]),
+            ("SON", [9,10,11]),
+           ] # ("nameofseas", [months included])
+
+# adjustment from K to C (disabled now because I know that all qvps have ERA5 data)
+adjtemp = 0
+# if (qvps_strat_fil["TEMP"]>100).any(): #if there is any temp value over 100, we assume the units are Kelvin
+#     print("at least one TEMP value > 100 found, assuming TEMP is in K and transforming to C")
+#     adjtemp = -273.15 # adjustment parameter from K to C
+
+# top temp limit (only works if auto_plot=False)
+ytlim=-20
+
+# season to plot (only works if auto_plot=False)
+selseas = selseaslist[0]
+selmonths = selseas[1]
+
+# Select which retrievals to plot (only works if auto_plot=False)
+IWC = "iwc_zh_t" # iwc_zh_t or iwc_zdr_zh_kdp
+LWC = "lwc_zh_zdr" # lwc_zh_zdr (adjusted for Germany) or lwc_zh_zdr2 (S-band) or lwc_kdp
+Dm_ice = "Dm_ice_zh" # Dm_ice_zh or Dm_ice_zh_kdp
+Dm_rain = "Dm_rain_zdr3" # Dm_rain_zdr, Dm_rain_zdr2 or Dm_rain_zdr3
+Nt_ice = "Nt_ice_zh_iwc" # Nt_ice_zh_iwc
+Nt_rain = "Nt_rain_zh_zdr" # Nt_rain_zh_zdr
+
+vars_to_plot = {"IWC/LWC [g/m^{3}]": [-0.1, 0.82, 0.02], # [-0.1, 0.82, 0.02],
+                "Dm [mm]": [0, 3.1, 0.1], # [0, 3.1, 0.1],
+                "log10(Nt) [1/L]": [-2, 2.1, 0.1], # [-2, 2.1, 0.1],
+                }
+
+savedict = {"custom": None} # placeholder for the for loop below, not important
 
 if auto_plot:
-    vtp = [
-           {"DBZH": [0, 46, 1],
-                           "ZDR": [-0.5, 2.1, 0.1],
-                           "KDP":  [-0.1, 0.52, 0.02],
-                           "RHOHV": [0.9, 1.004, 0.004]} ]
     ytlimlist = [-20, -50]
-    loc = utils.find_loc(utils.locs, ff[0])
-    savedict = {}
     add_relaxed = ["_relaxed" if "relaxed" in savepath else ""][0]
+    savedict = {}
     for selseas in selseaslist:
-        savedict.update( 
-                    {selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+".png": [vtp[0], ytlimlist[0], selseas[1]],
-                    selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
+        savedict.update(
+                    {selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys.png": [ytlimlist[0],
+                                                           "iwc_zh_t", "lwc_zh_zdr",
+                                                           "Dm_ice_zh", "Dm_rain_zdr3",
+                                                           "Nt_ice_zh_iwc", "Nt_rain_zh_zdr", selseas[1]],
+                    selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys_extended.png": [ytlimlist[1],
+                                                                "iwc_zh_t", "lwc_zh_zdr",
+                                                                "Dm_ice_zh", "Dm_rain_zdr3",
+                                                                "Nt_ice_zh_iwc", "Nt_rain_zh_zdr", selseas[1]],
+                    selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys_KDP.png": [ytlimlist[0],
+                                                               "iwc_zdr_zh_kdp", "lwc_kdp",
+                                                               "Dm_ice_zh_kdp", "Dm_rain_zdr3",
+                                                               "Nt_ice_zh_iwc", "Nt_rain_zh_zdr", selseas[1]],
+                    selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys_KDP_extended.png": [ytlimlist[1],
+                                                               "iwc_zdr_zh_kdp", "lwc_kdp",
+                                                               "Dm_ice_zh_kdp", "Dm_rain_zdr3",
+                                                               "Nt_ice_zh_iwc", "Nt_rain_zh_zdr", selseas[1]],
                     }
-                        )
-    
+                )
+
 for savename in savedict.keys():
     if auto_plot:
-        vars_to_plot = savedict[savename][0]
-        ytlim = savedict[savename][1]
-        selmonths = savedict[savename][2]
+        ytlim = savedict[savename][0]
+        IWC = savedict[savename][1]
+        LWC = savedict[savename][2]
+        Dm_ice = savedict[savename][3]
+        Dm_rain = savedict[savename][4]
+        Nt_ice = savedict[savename][5]
+        Nt_rain = savedict[savename][6]
+        selmonths = savedict[savename][7]
 
-    fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
-    
+    retreivals_merged = xr.Dataset({
+                                    "IWC/LWC [g/m^{3}]": ds_to_plot[loc][IWC].where(ds_to_plot[loc][IWC].z > ds_to_plot[loc].height_ml_new_gia,
+                                                                      ds_to_plot[loc][LWC].where(ds_to_plot[loc][LWC].z < ds_to_plot[loc].height_ml_bottom_new_gia ) ),
+                                    "Dm [mm]": ds_to_plot[loc][Dm_ice].where(ds_to_plot[loc][Dm_ice].z > ds_to_plot[loc].height_ml_new_gia,
+                                                                      ds_to_plot[loc][Dm_rain].where(ds_to_plot[loc][Dm_rain].z < ds_to_plot[loc].height_ml_bottom_new_gia ) ),
+                                    "log10(Nt) [1/L]": (ds_to_plot[loc][Nt_ice].where(ds_to_plot[loc][Nt_ice].z > ds_to_plot[loc].height_ml_new_gia,
+                                                                      ds_to_plot[loc][Nt_rain].where(ds_to_plot[loc][Nt_rain].z < ds_to_plot[loc].height_ml_bottom_new_gia ) ) ),
+        })
+
+    fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15,5), width_ratios=(1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
     for nn, vv in enumerate(vars_to_plot.keys()):
         so=False
         binsx2=None
@@ -703,20 +1001,21 @@ for savename in savedict.keys():
             binsx2 = [0.9, 1.005, 0.005]
         if "KDP" in vv:
             adj=1
-        utils.hist2d(ax[nn], ds_to_plot[vv].sel(time=ds_to_plot['time'].dt.month.isin(selmonths))*adj, 
-                     ds_to_plot["TEMP"].sel(time=ds_to_plot['time'].dt.month.isin(selmonths))+adjtemp,
-                     whole_x_range=True, 
+        utils.hist2d(ax[nn], retreivals_merged[vv].sel(time=retreivals_merged['time'].dt.month.isin(selmonths))*adj,
+                     retreivals_merged["TEMP"].sel(time=retreivals_merged['time'].dt.month.isin(selmonths))+adjtemp,
+                     whole_x_range=True,
                      binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
-                     cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps, 
-                     fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot), 
+                     cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
+                     fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
                      cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
         ax[nn].set_ylim(15,ytlim)
         ax[nn].set_xlabel(vv, fontsize=10)
-        
+
         ax[nn].tick_params(labelsize=15) #change font size of ticks
         plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
-    
+
     ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+
     if auto_plot:
         # Create savefolder
         savepath_seas = os.path.dirname(savepath+savename)
@@ -724,7 +1023,6 @@ for savename in savedict.keys():
             os.makedirs(savepath_seas)
         fig.savefig(savepath+savename, bbox_inches="tight")
         print("AUTO PLOT: saved "+savename)
-
 
 #%% OLD CODE FROM HERE
 #%% Classify stratiform/convective precip
@@ -735,7 +1033,7 @@ pclass_obs = list()
 for i in range(len(momobs["time"])):
     print(str(i+1)+"/"+str(len(momobs["time"])))
     pclass_obs.append( classify_precip_typ(momobs[i].values, momobs[i].x.values/1000, momobs[i].y.values/1000) )
-    
+
 pcobs = xr.ones_like(momobs)
 pcobs[:] = np.array(pclass_obs)
 pcobs.attrs["Unit"] = ""
@@ -749,7 +1047,7 @@ pclass_sim = list()
 for i in range(len(momsim["time"])):
     print(str(i+1)+"/"+str(len(momobs["time"])))
     pclass_sim.append( classify_precip_typ(momsim[i].values, momsim[i].x.values/1000, momsim[i].y.values/1000) )
-    
+
 pcsim = xr.ones_like(momsim)
 pcsim[:] = np.array(pclass_sim)
 pcsim.attrs["Unit"] = ""
@@ -776,13 +1074,13 @@ data = dict()
 
 #### TSMP
 # The timestamps of accumulated P are located at the center of the corresponding interval (1:30, 4:30, ...)
-# Also, every monthly file has the last timestep from the previous month because of how the data is outputted by 
+# Also, every monthly file has the last timestep from the previous month because of how the data is outputted by
 # the model, so some data are overlapped. The overlaped data are negligible different (around the 5th decimal)
 
 print("Loading TSMP...")
 def preprocess_tsmp(ds): # discard the first timestep of every monthly file (discard overlapping data)
     return ds.isel({"time":slice(1,None)})
-    
+
 data["TSMP"] = xr.open_mfdataset('/automount/ags/jgiles/TSMP/rcsm_TSMP-ERA5-eval_IBG3/o.data_v01/*/*TOT_PREC*',
                              preprocess=preprocess_tsmp, chunks={"time":1000})
 
@@ -814,7 +1112,7 @@ countries = cfeature.NaturalEarthFeature(
     scale='10m',
     facecolor='none')
 
-    
+
 # PLOT EMVORADO
 timestep = 14
 plot_timestep_map(swp, timestep)
@@ -824,13 +1122,13 @@ plot_timestep_map(swp, timestep)
 # PLOT EMVORADO CAPPI
 # reload the emvorado volume data before doing this
 ds = xr.concat([v.assign_coords({"elevation": v.attrs.get("fixed_angle")}) for v in vol_emvorado_sim], dim="elevation", coords="minimal")
-         
+
 # choose variable and timestep
 vv = "zrsim"
 timestep = -2
 
 # Georeference the data
-ds = ds.pipe(wrl.georef.georeference, proj=map_proj) 
+ds = ds.pipe(wrl.georef.georeference, proj=map_proj)
 
 # define elevation and azimuth angles, ranges, radar site coordinates,
 elevs  = [ds.fixed_angle for ds in vol_emvorado_sim]
@@ -881,9 +1179,9 @@ for i in range(len(ds.elevation)):
     data_ = ds[vv][i, timestep]# what["offset"] + what["gain"] * raw["dataset%d/data1/data" % (i + 1)]
     # transfer to containers
     xyz, dt = np.vstack((xyz, xyz_)), np.append(dt, np.ravel(data_))
-    
+
 # Make the new grid interpolation
-gridder = wrl.vpr.CAPPI(xyz, trgxyz, trgshape, maxrange=ds.range.max().values,  
+gridder = wrl.vpr.CAPPI(xyz, trgxyz, trgshape, maxrange=ds.range.max().values,
                             minelev=ds.elevation.min().values, maxelev=ds.elevation.max().values,
                             ipclass=wrl.ipol.Idw)
 
@@ -912,7 +1210,7 @@ plt.title(vv+" at "+str(hgt)+" m")
 
 # PLOT TSMP
 # Set rotated pole
-# Euro-CORDEX rotated pole coordinates RotPole (198.0; 39.25) 
+# Euro-CORDEX rotated pole coordinates RotPole (198.0; 39.25)
 rp = ccrs.RotatedPole(pole_longitude=198.0,
                       pole_latitude=39.25,
                       globe=ccrs.Globe(semimajor_axis=6370000,
@@ -955,7 +1253,7 @@ plot.axes.add_feature(cfeature.BORDERS, linestyle='-', linewidth=1, alpha=0.7) #
 
 #%% Plot a movie of model precip to search stratiform events
 
-import hvplot.xarray 
+import hvplot.xarray
 from bokeh.resources import INLINE
 
 #### I tried several ways of making an html interactive plot but I got several different errors using hvplot
@@ -991,11 +1289,11 @@ hv.save(hv_plot, 'test.html')
 # dataplot = data["TSMP"]["TOT_PREC"].sel({"time":slice("2015-01-01", "2020-12-31")})
 dataplot = data["TSMP"]["TOT_PREC"].sel({"time":slice("2017-01-01", "2017-12-31")})
 def plot_data(i):
-    
+
     plt.subplot(111, projection=map_proj)
     # plot = data["TSMP"]["TOT_PREC"][i].plot(transform = rp, levels=5, vmin=0, vmax=0.1, cmap="YlGnBu")
     plot = dataplot[i].plot(transform = rp, norm=mpl.colors.LogNorm(vmin=0.001, vmax=10), cmap="YlGnBu")
-    
+
     #plt.gca().set_extent([11, 17, 51, 54.5])
     plot.axes.coastlines()
     plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"})
@@ -1015,7 +1313,7 @@ ani.save("test.mp4", writer='ffmpeg', fps=5)
 proj = ccrs.PlateCarree(central_longitude=0.0)
 
 # Set rotated pole
-# Euro-CORDEX rotated pole coordinates RotPole (198.0; 39.25) 
+# Euro-CORDEX rotated pole coordinates RotPole (198.0; 39.25)
 rp = ccrs.RotatedPole(pole_longitude=198.0,
                       pole_latitude=39.25,
                       globe=ccrs.Globe(semimajor_axis=6370000,
@@ -1051,7 +1349,7 @@ def plot_data(i):
     dataplot2 = dataplot[i, nelev]
     plt.subplot(111, projection=ccrs.PlateCarree())
     plot = dataplot2.where(dataplot2>-999).plot(x="longitude", y="latitude", levels=radarmet.visdict14["DBZH"]["ticks"], cmap=cmap, extend="both")
-    
+
     plt.gca().set_extent([4.5, 16, 46, 56])
     plot.axes.coastlines()
     plot.axes.gridlines(draw_labels={"bottom": "x", "left": "y"})
