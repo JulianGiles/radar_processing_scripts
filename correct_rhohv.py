@@ -90,9 +90,13 @@ def make_savedir(ff, name):
 
 for ff in files:
 
+    separator = "any"
+    if "allmoms" in ff: # allmoms naming is deprecated but old files remain
+        separator = "allmoms"
+
     # check if the QVP file already exists before starting
     savepath = make_savedir(ff, "")
-    if os.path.exists(("rhohv_nc").join(savepath.split("allmoms"))) and not overwrite:
+    if os.path.exists(("rhohv_nc").join(savepath.split(separator))) and not overwrite:
         continue
 
     print("processing "+ff)
@@ -192,10 +196,10 @@ for ff in files:
         rho_nc_out2["SNRH"].encoding = rho_nc_dwd["SNRH"].encoding
 
     # save the arrays
-    filename = ("rhohv_nc").join(savepath.split("allmoms"))
+    filename = ("rhohv_nc").join(savepath.split(separator))
     rho_nc_out.to_netcdf(filename)
 
-    filename = ("rhohv_nc_2percent").join(savepath.split("allmoms"))
+    filename = ("rhohv_nc_2percent").join(savepath.split(separator))
     rho_nc_out2.to_netcdf(filename)
 
 #%% print how much time did it take

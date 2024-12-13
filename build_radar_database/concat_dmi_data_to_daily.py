@@ -46,8 +46,8 @@ dest = sys.argv[2]
 
 # create dest if it does not exist
 if not os.path.exists(dest):
-      
-    # if the demo_folder directory is not present 
+
+    # if the demo_folder directory is not present
     # then create it.
     os.makedirs(dest)
 
@@ -177,14 +177,14 @@ for f in htypath:
     for i in range(10):
         try:
             nrays_expected_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["number_rays_file_expected"]
-            nrays_written_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["number_rays_file_written"]    
+            nrays_written_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["number_rays_file_written"]
             elevation_ = round(m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["fixed_angle"], 2)
             sweep_number_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ"]["sweep_number"]
             break
         except KeyError:
             try:
                 nrays_expected_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["number_rays_file_expected"]
-                nrays_written_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["number_rays_file_written"]    
+                nrays_written_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["number_rays_file_written"]
                 elevation_ = round(m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["fixed_angle"], 2)
                 sweep_number_ = m.data[i]["ingest_data_hdrs"]["DB_DBZ2"]["sweep_number"]
                 break
@@ -201,7 +201,7 @@ for f in htypath:
     #nrays_expected.append(nrays_expected_)
     #nrays_written.append(nrays_written_)
     fpath.append(f)
-    horbeamwidth.append(horbeamwidth_)   
+    horbeamwidth.append(horbeamwidth_)
     sweep_number.append(sweep_number_)
 
 # put attributes in a dataframe
@@ -218,7 +218,7 @@ df = pd.DataFrame(OrderedDict(
                    "binlength": binlength,
                    "horbeamwidth": horbeamwidth,
                    "fpath": fpath,
-                    "sweep_number": sweep_number              
+                    "sweep_number": sweep_number
                   }))
 
 
@@ -233,23 +233,23 @@ engine = "h5netcdf"
 #%% Here starts the processing for each elev/taskname combo
 for elev in allelevs:
     for mode in alltasknames:
-        
+
         # Use the dataframe to get the paths that correspond to our selection
         paths = df["fpath"].loc[df["elevation"]==elev].loc[df["taskname"]==mode]
-        
+
         paths = sorted(list(paths))
         # print(len(paths))
-    
+
         if len(paths) == 0:
             continue
-        
+
         print("processing "+str(elev)+" "+mode)
-        
+
         #%% Reading functions
-        
+
         # get sweep number
         sweepnr = str( df["sweep_number"].loc[df["elevation"]==elev].loc[df["taskname"]==mode].unique()[0]-1 )
-        
+
         # extract the angle information for the first of the files, so we reindex accordingly all the files
         dsini = xr.open_dataset(paths[0], engine=xd.io.iris.IrisBackendEntrypoint, group="sweep_"+sweepnr, reindex_angle=False, mask_and_scale=False) # if this fails with KeyError try changing: engine=xd.io.iris.IrisBackendEntrypoint
         try:
@@ -259,19 +259,19 @@ for elev in allelevs:
             # if angles could not be extracted is because something is wrong with the data, then ignore
             print("ignoring because of incorrect dims: "+str(dsini.dims))
             continue
-        
-        
+
+
         if "RHI" in mode:
             # make different functions for RHIs
             def read_single(f):
                 # reindex = dict(start_angle=-0.5, stop_angle=360, angle_res=1., direction=1) # we moved this outside
-                
-                ds = xr.open_dataset(f, engine=xd.io.iris.IrisBackendEntrypoint, group="sweep_"+sweepnr) 
+
+                ds = xr.open_dataset(f, engine=xd.io.iris.IrisBackendEntrypoint, group="sweep_"+sweepnr)
                 # if we put reindex inside the open_dataset I get an error because azimuth is not a dim, thus do it manually
                 ds = xd.util.reindex_angle(ds, start_angle=reindex["start_angle"], stop_angle=reindex["stop_angle"],
                                            angle_res=reindex["angle_res"], direction=reindex["direction"],
                                            method="nearest", tolerance=None)
-    
+
                 ds = ds.set_coords("sweep_mode")
                 ds = ds.rename_vars(time="rtime")
                 ds = ds.assign_coords(time=ds.rtime.min())
@@ -280,7 +280,7 @@ for elev in allelevs:
                 ds["time"].encoding["dtype"] = np.int64
                 ds["rtime"].encoding["dtype"] = np.int64
                 return ds
-            
+
             # @dask.delayed # We ditch dask to use multiprocessing below
             def process_single(f, num, dest, scheme="unpacked", sdict={}):
                 try:
@@ -290,41 +290,41 @@ for elev in allelevs:
                     if "unpacked" in scheme:
                         valid = ["dtype", "_FillValue"]
                         new_enc = {k: {key: val for key, val in ds[k].encoding.items() if key in valid} for k in moments}
-                    else: 
+                    else:
                         new_enc = {k: dwd_enc[k] for k in moments if k in dwd_enc}
-                    
+
                     shape = ds[moments[0]].shape
                     #print(shape)
                     enc_new = dict(chunksizes=shape)
-                    enc_new.update(sdict) 
+                    enc_new.update(sdict)
                     [new_enc[k].update(enc_new) for k in new_enc]
-                            
+
                     if "unpacked" not in scheme:
                         # set _FillValue according IRIS
                         for mom in moments:
                             if mom in ["DB_HCLASS2", "DB_HCLASS"]:
                                 continue
-                                                
+
                             # here is our only assumption: at least one IRIS "zero" value is in the data
                             iris_minval = np.nanmin(ds[mom])
-                            
+
                             try:
                                 if mom in ["DB_SNR8", "DB_SNR16"]:
                                     # these moments need special treatment
-    
+
                                     # this is normally already set, but anyway, use DWD fillvalue
                                     # but: 255 is reserved in the IRIS software for areas not scanned
                                     new_enc[mom]["_FillValue"] = new_enc[mom]["dtype"].type(255)
-    
+
                                     # DWD minval/maxval in Iris-space
                                     minval = new_enc[mom]["dtype"].type(0) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
                                     maxval = new_enc[mom]["dtype"].type(254) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
-                                    
+
                                 else:
                                     # this is normally already set, but anyway, use DWD fillvalue
                                     # but: 65535 is reserved in the IRIS software for areas not scanned
                                     new_enc[mom]["_FillValue"] = new_enc[mom]["dtype"].type(65535)
-    
+
                                     # DWD minval/maxval in Iris-space
                                     # zero is OK for all cases
                                     # 65534 is safe for most cases
@@ -333,34 +333,34 @@ for elev in allelevs:
                             except KeyError:
                                 print("!!! No encoding for "+mom+", skipping moment !!!")
                                 continue
-                                
-                                
+
+
                             # check that minval >= iris_minval
                             if minval < iris_minval:
                                 print("! WARNING: there are "+mom+" values below the IRIS minimum encoded value !")
-                        
+
                             # set IRIS NoData to NaN
                             ds[mom] = ds[mom].where(ds[mom] > iris_minval)
-                        
+
                             # special treatment of PHIDP
                             if mom == "PHIDP":
                                 # [0, 360] -> [-180, 180]
                                 ds[mom] -= 180
-                        
-                            # clip values to DWD, set out-of-bound values to minval/maxval 
+
+                            # clip values to DWD, set out-of-bound values to minval/maxval
                             ds[mom] = ds[mom].where((ds[mom] > minval) | np.isnan(ds[mom]), minval)
-                            ds[mom] = ds[mom].where((ds[mom] < maxval) | np.isnan(ds[mom]), maxval)     
-                        
-                    
+                            ds[mom] = ds[mom].where((ds[mom] < maxval) | np.isnan(ds[mom]), maxval)
+
+
                     dest = f"{dest}part_{num:03d}.nc"
                     ds.to_netcdf(dest, engine=engine, encoding=new_enc)
                     return dest
                 except:
                     print("something went wrong, ignoring file "+f)
-            
-            
+
+
         else: # if not RHI
-            
+
             # the reindex is not working correctly due to the high noise in azimuth values giving erroneous angle_res
             # and due to files having differently aligned angles ([0,..,359] or [1,...,360])
             # we fix this manually then in the read_single function
@@ -369,30 +369,30 @@ for elev in allelevs:
             az05 = np.arange(0.5,360,1)
             az1 = np.arange(1,361,1)
             possazims = np.array([az0, az05, az1])
-    
-            
+
+
             # revamped functions
             def read_single(f):
                 # reindex = dict(start_angle=-0.5, stop_angle=360, angle_res=1., direction=1) # we moved this outside
-                
+
                 # ds = xr.open_dataset(f, engine=xd.io.iris.IrisBackendEntrypoint, group="sweep_"+sweepnr, reindex_angle=reindex) # simple method if we did not had the issue
-                
+
                 # we open the file without reindex_angle
                 ds = xr.open_dataset(f, engine=xd.io.iris.IrisBackendEntrypoint, group="sweep_"+sweepnr)
                 azattrs = ds.coords["azimuth"].attrs.copy() # copy the attrs otherwise they may be lost later
-                
+
                 try:
-                    # we get the differences to each of the possible azimuth arrays defined above and we choose the one with the 
+                    # we get the differences to each of the possible azimuth arrays defined above and we choose the one with the
                     # smaller total absolute error
                     tae0 = np.nansum( np.abs(ds["azimuth"].data - az0) )
                     tae05 = np.nansum( np.abs(ds["azimuth"].data - az05) )
                     tae1 = np.nansum( np.abs(ds["azimuth"].data - az1) )
                     tae = np.array([tae0, tae05, tae1])
-                
-                    # change the coord 
+
+                    # change the coord
                     ds.coords["azimuth"] = possazims[tae.argmin()]
                     ds.coords["azimuth"].attrs = azattrs
-                    
+
                 except ValueError: # if the previous fail due to extra rays or whatever
                     # then just use reindex_angle but with some tweaks
                     angle_params = xd.util.extract_angle_parameters(ds)
@@ -400,21 +400,21 @@ for elev in allelevs:
                     if 0.25 < uniquecounts[0][ uniquecounts[1].argmax() ] < 0.75:
                         # if the most common decimals are .5 then align to .5 array
                         ds = xd.util._reindex_angle(ds, az05, 0.5)
-                    else: 
+                    else:
                         # if not, we align to .0
                         if angle_params["min_angle"].round() == 1. and angle_params["max_angle"].round() == 360. :
                             ds = xd.util._reindex_angle(ds, az1, 0.5)
                         else:
                             ds = xd.util._reindex_angle(ds, az0, 0.5)
-                
-                
+
+
                 # in case the most suitable azimuth coord is [1,...,360] we need to align it to be concatenable to [0,...,359]
                 if 360 in ds["azimuth"]:
                     ds = ds.roll({"azimuth":1}, roll_coords=True)
                     ds.coords["azimuth"] = az0
                     ds.coords["azimuth"].attrs = azattrs
-    
-    
+
+
                 ds = ds.set_coords("sweep_mode")
                 ds = ds.rename_vars(time="rtime")
                 ds = ds.assign_coords(time=ds.rtime.min())
@@ -422,19 +422,19 @@ for elev in allelevs:
                 # fix time dtype to prevent uint16 overflow
                 ds["time"].encoding["dtype"] = np.int64
                 ds["rtime"].encoding["dtype"] = np.int64
-                
+
                 # Fixes
                 # It may happen that some time value is missing, fix that using info in rtime
                 if ds["time"].isnull().any():
-                    ds.coords["time"] = ds.rtime.min(dim="azimuth", skipna=True).compute()    
-                    
+                    ds.coords["time"] = ds.rtime.min(dim="azimuth", skipna=True).compute()
+
                 # if some coord has dimension time, reduce using median
                 for coord in ["latitude", "longitude", "altitude", "elevation"]:
                     if "time" in ds[coord].dims:
                         ds.coords[coord] = ds.coords[coord].median("time")
 
                 return ds.dropna("azimuth", how="all")
-            
+
             # @dask.delayed # We ditch dask to use multiprocessing below
             def process_single(f, num, dest, scheme="unpacked", sdict={}):
                 try:
@@ -444,41 +444,41 @@ for elev in allelevs:
                     if "unpacked" in scheme:
                         valid = ["dtype", "_FillValue"]
                         new_enc = {k: {key: val for key, val in ds[k].encoding.items() if key in valid} for k in moments}
-                    else: 
+                    else:
                         new_enc = {k: dwd_enc[k] for k in moments if k in dwd_enc}
-                    
+
                     shape = ds[moments[0]].shape
                     #print(shape)
                     enc_new = dict(chunksizes=shape)
-                    enc_new.update(sdict) 
+                    enc_new.update(sdict)
                     [new_enc[k].update(enc_new) for k in new_enc]
-                            
+
                     if "unpacked" not in scheme:
                         # set _FillValue according IRIS
                         for mom in moments:
                             if mom in ["DB_HCLASS2", "DB_HCLASS"]:
                                 continue
-                                                
+
                             # here is our only assumption: at least one IRIS "zero" value is in the data
                             iris_minval = np.nanmin(ds[mom])
-                        
+
                             try:
                                 if mom in ["DB_SNR8", "DB_SNR16"]:
                                     # these moments need special treatment
-    
+
                                     # this is normally already set, but anyway, use DWD fillvalue
                                     # but: 255 is reserved in the IRIS software for areas not scanned
                                     new_enc[mom]["_FillValue"] = new_enc[mom]["dtype"].type(255)
-    
+
                                     # DWD minval/maxval in Iris-space
                                     minval = new_enc[mom]["dtype"].type(0) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
                                     maxval = new_enc[mom]["dtype"].type(254) * new_enc[mom]["scale_factor"] + new_enc[mom]["add_offset"]
-                                    
+
                                 else:
                                     # this is normally already set, but anyway, use DWD fillvalue
                                     # but: 65535 is reserved in the IRIS software for areas not scanned
                                     new_enc[mom]["_FillValue"] = new_enc[mom]["dtype"].type(65535)
-    
+
                                     # DWD minval/maxval in Iris-space
                                     # zero is OK for all cases
                                     # 65534 is safe for most cases
@@ -487,46 +487,46 @@ for elev in allelevs:
                             except KeyError:
                                 print("!!! No encoding for "+mom+", skipping moment !!!")
                                 continue
-                        
+
                             # check that minval >= iris_minval
                             #if minval < iris_minval:
                                 #print("! WARNING: there are "+mom+" values below the IRIS minimum encoded value !")
-                        
+
                             # set IRIS NoData to NaN
                             ds[mom] = ds[mom].where(ds[mom] > iris_minval)
-                        
+
                             # special treatment of PHIDP
                             if mom == "PHIDP":
                                 # [0, 360] -> [-180, 180]
                                 ds[mom] -= 180
-                        
-                            # clip values to DWD, set out-of-bound values to minval/maxval 
+
+                            # clip values to DWD, set out-of-bound values to minval/maxval
                             ds[mom] = ds[mom].where((ds[mom] > minval) | np.isnan(ds[mom]), minval)
-                            ds[mom] = ds[mom].where((ds[mom] < maxval) | np.isnan(ds[mom]), maxval)     
-                        
-                    
+                            ds[mom] = ds[mom].where((ds[mom] < maxval) | np.isnan(ds[mom]), maxval)
+
+
                     dest = f"{dest}part_{num:03d}.nc"
                     ds.to_netcdf(dest, engine=engine, encoding=new_enc)
                     return dest
                 except:
                     print("something went wrong, ignoring file "+f)
-            
+
         #%%time  convert files in subfolder
-        
+
         # delete all partial files in the folder, if any
         to_remove = glob.glob(dest+"part_*")
         # delete each file in the list
         for file_path in to_remove:
             os.remove(file_path)
-        
+
         # dest = "/home/jgiles/turkey_test/testank_"
         results = []
-            
+
         process_single_partial = partial(process_single, dest=dest, scheme="packed")
         with Pool() as P:
             results = P.starmap( process_single_partial, [(f, i) for i, f in enumerate(paths)] )
-            
-        
+
+
         #%%time Reload converted files
         try:
             dsr = xr.open_mfdataset(f"{dest}part_*", concat_dim="time", combine="nested", engine=engine)
@@ -534,36 +534,36 @@ for elev in allelevs:
             print("!!! no files to open, ignoring !!!")
             continue
         # display(dsr)
-        
+
         #%% Fix encoding before writing to single file
-        
+
         moments = [k for k,v in dsr.variables.items() if v.ndim == 3]
         shape = dsr[moments[0]].shape
         enc_new= dict(chunksizes=(1, ) + shape[1:])
-        
+
         drop = ['szip', 'zstd', 'bzip2', 'blosc', 'coordinates']
         enc = {k: {key: v.encoding[key] for key in v.encoding if key not in drop} for k, v in dsr.data_vars.items() if k in moments}
         [enc[k].update(enc_new) for k in moments]
         encoding = {k: enc[k] for k in moments}
         # print(encoding)
-        
+
         #%% check that the object has 360 azimuths
         if len(dsr.azimuth) != 360:
             print("The resulting array has "+str(len(dsr.azimuth))+" azimuth values instead of 360")
-        
+
         #%% Write to single daily file
         date=htypath[0].split("/")[-4]
         loc=htypath[0].split("/")[-3]
-        
-        dsr.to_netcdf(f"{dest}{mode}-allmoms-{elev}-{date}-{loc}-{engine}.nc", engine=engine, encoding=encoding)
-        
-        
+
+        dsr.to_netcdf(f"{dest}{mode}-allm-{elev}-{date}-{loc}-{engine}.nc", engine=engine, encoding=encoding)
+
+
         # delete all partial files in the folder, if any
         to_remove = glob.glob(dest+"part_*")
         # delete each file in the list
         for file_path in to_remove:
             os.remove(file_path)
-            
+
         # close dsr
         dsr.close()
         del(dsr)

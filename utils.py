@@ -161,7 +161,7 @@ def get_phase_proc_params(path):
     else:
         raise ValueError("path must be str or list")
 
-    if "dwd" in path:
+    if "dwd" in path or "DWD" in path:
         if "vol5minng01" in path:
             if "/tur/" in path:
                 phase_proc_params_tur = phase_proc_params["dwd"]["vol5minng01"].copy()
@@ -197,7 +197,7 @@ KDP_attrs={'_Undetect': 0.0,
  'standard_name': 'radar_specific_differential_phase_hv'}
 
 # we define a funtion to look for loc inside a path string
-locs = ["pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs"] # possible locs
+locs = ["pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs", "ess"] # possible locs
 
 def find_loc(locs, path):
     components = path.split(os.path.sep)
@@ -622,11 +622,14 @@ def load_dwd_preprocessed(filepath):
         dwd0 = xr.open_datatree(ff, chunks={})
 
         # check how many sweeps there are
-        if len(dwd0.descendants) != 1:
+        if len(dwd0.descendants) > 1:
             raise TypeError("More than one dataset inside the datatree. Currently not supported")
-
-        # get dataset and fix time coordinate
-        dwddata.append(fix_flipped_phidp(unfold_phidp(fix_time_in_coords(dwd0.descendants[0].to_dataset()))))
+        elif len(dwd0.descendants) == 1:
+            # get dataset and fix time coordinate
+            dwddata.append(fix_flipped_phidp(unfold_phidp(fix_time_in_coords(dwd0.descendants[0].to_dataset()))))
+        else:
+            # get dataset and fix time coordinate
+            dwddata.append(fix_flipped_phidp(unfold_phidp(fix_time_in_coords(dwd0.to_dataset()))))
 
     if len(dwddata) == 1:
         return dwddata[0]
@@ -5109,7 +5112,7 @@ def load_emvorado_to_radar_volume(path_or_data, rename=False):
             print("no long_name attribute in "+vv)
 
     if rename:
-        return data.rename(rename_vars_emvorado_dwd)
+        return data.rename({k: rename_vars_emvorado_dwd[k] for k in rename_vars_emvorado_dwd.keys() if k in data.data_vars or k in data.dims})
     else:
         return data
 

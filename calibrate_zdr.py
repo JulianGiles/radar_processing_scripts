@@ -156,6 +156,10 @@ elif "giles1" in files[0]:
 #%% Load data
 
 for ff in files:
+    separator = "any"
+    if "allmoms" in ff: # allmoms naming is deprecated but old files remain
+        separator = "allmoms"
+
     # check if the resulting calib file already exists before starting
     calib_1 = True # by default we compute as if overwrite is True
     calib_2 = True
@@ -349,7 +353,7 @@ for ff in files:
 
                     # save the arrays
                     savepath = make_savedir(ff, "VP")
-                    filename = ("zdr_offset_belowML"+fn_app).join(savepath.split("allmoms"))
+                    filename = ("zdr_offset_belowML"+fn_app).join(savepath.split(separator))
                     zdr_offset.to_netcdf(filename)
 
                 # calculate offset below 1 degree C
@@ -365,7 +369,7 @@ for ff in files:
 
                 # save the arrays
                 savepath = make_savedir(ff, "VP")
-                filename = ("zdr_offset_below1C"+fn_app).join(savepath.split("allmoms"))
+                filename = ("zdr_offset_below1C"+fn_app).join(savepath.split(separator))
                 zdr_offset.to_netcdf(filename)
 
                 # calculate offset above 0 degrees C
@@ -381,7 +385,7 @@ for ff in files:
 
                 # save the arrays
                 savepath = make_savedir(ff, "VP")
-                filename = ("zdr_offset_above0C"+fn_app).join(savepath.split("allmoms"))
+                filename = ("zdr_offset_above0C"+fn_app).join(savepath.split(separator))
                 zdr_offset.to_netcdf(filename)
 
 
@@ -398,7 +402,7 @@ for ff in files:
 
                 # save the arrays
                 savepath = make_savedir(ff, "VP")
-                filename = ("zdr_offset_wholecol"+fn_app).join(savepath.split("allmoms"))
+                filename = ("zdr_offset_wholecol"+fn_app).join(savepath.split(separator))
                 zdr_offset.to_netcdf(filename)
 
         if 2 in calib_types and calib_2:
@@ -411,7 +415,7 @@ for ff in files:
 
                 # save the arrays
                 savepath = make_savedir(ff, "LR_consistency")
-                filename = ("zdr_offset_belowML_timesteps").join(savepath.split("allmoms"))
+                filename = ("zdr_offset_belowML_timesteps").join(savepath.split(separator))
                 zdr_offset.to_netcdf(filename)
 
                 # Calculate offset below ML for full timespan
@@ -422,7 +426,7 @@ for ff in files:
 
                 # save the arrays
                 savepath = make_savedir(ff, "LR_consistency")
-                filename = ("zdr_offset_belowML").join(savepath.split("allmoms"))
+                filename = ("zdr_offset_belowML").join(savepath.split(separator))
                 zdr_offset.to_netcdf(filename)
 
             # Calculate offset below 1 degree C per timestep
@@ -433,7 +437,7 @@ for ff in files:
 
             # save the arrays
             savepath = make_savedir(ff, "LR_consistency")
-            filename = ("zdr_offset_below1C_timesteps").join(savepath.split("allmoms"))
+            filename = ("zdr_offset_below1C_timesteps").join(savepath.split(separator))
             zdr_offset.to_netcdf(filename)
 
             # Calculate offset below 1 degree C for full timespan
@@ -444,7 +448,7 @@ for ff in files:
 
             # save the arrays
             savepath = make_savedir(ff, "LR_consistency")
-            filename = ("zdr_offset_below1C").join(savepath.split("allmoms"))
+            filename = ("zdr_offset_below1C").join(savepath.split(separator))
             zdr_offset.to_netcdf(filename)
 
         if 3 in calib_types and calib_3:
@@ -472,7 +476,7 @@ for ff in files:
                         # save the arrays
                         if azmed: savepath = make_savedir(ff, "QVP")
                         else: savepath = make_savedir(ff, "falseQVP")
-                        filename = ("zdr_offset_belowML"+fn_app).join(savepath.split("allmoms"))
+                        filename = ("zdr_offset_belowML"+fn_app).join(savepath.split(separator))
                         zdr_offset.to_netcdf(filename)
 
                     # calculate offset below 1 degree C
@@ -489,7 +493,7 @@ for ff in files:
                     # save the arrays
                     if azmed: savepath = make_savedir(ff, "QVP")
                     else: savepath = make_savedir(ff, "falseQVP")
-                    filename = ("zdr_offset_below1C"+fn_app).join(savepath.split("allmoms"))
+                    filename = ("zdr_offset_below1C"+fn_app).join(savepath.split(separator))
                     zdr_offset.to_netcdf(filename)
 
 #%% print how much time did it take
