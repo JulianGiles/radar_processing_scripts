@@ -323,7 +323,7 @@ def plot_moment(mom, ticks, fig=None, ax=None, cmap=None, norm=None, cbar_kwargs
                       pad=0.05,
                       fraction=0.1,
                      )
-    
+
     if cbar_kwargs is not None:
         cbarkwargs.update(cbar_kwargs)
 
@@ -335,7 +335,7 @@ def plot_moment(mom, ticks, fig=None, ax=None, cmap=None, norm=None, cbar_kwargs
     # define cmap
     if cmap is None:
         cmap = get_discrete_cmap(ticks, colors_prabhakar)
-    
+
     if mom.sweep_mode == "rhi":
         xstr = "gr"
         ystr = "z"
@@ -587,12 +587,13 @@ def phidp_from_kdp(da, winlen):
     dr = da.range.diff('range').median('range').values / 1000.
     print("range res [km]:", dr)
     print("processing window [km]:", dr * winlen)
-    return xr.apply_ufunc(scipy.integrate.cumtrapz,
+    return xr.apply_ufunc(scipy.integrate.cumulative_trapezoid,
                           da,
                           input_core_dims=[["range"]],
                           output_core_dims=[["range"]],
                           dask='parallelized',
                           kwargs=dict(dx=dr, initial=0.0, axis=-1),
+                          dask_gufunc_kwargs={"allow_rechunk":True}
                           ) * 2
 
 
@@ -649,9 +650,9 @@ def xr_rolling(da, window, window2=None, method="mean", min_periods=2, rangepad=
     min_periods : int
         minimum number of valid bins
     rangepad : string
-        Padding method for the edges of the range dimension. "fill" will fill the 
+        Padding method for the edges of the range dimension. "fill" will fill the
         nan values resulting from not enough bins by stretching the closest value.
-        "reflect" will extend the original array by reflecting around the edges 
+        "reflect" will extend the original array by reflecting around the edges
         so there is enough bins for the calculation
     **kwargs : dict
         kwargs to feed to rolling function
@@ -683,10 +684,10 @@ def xr_rolling(da, window, window2=None, method="mean", min_periods=2, rangepad=
 
     da_new = getattr(rolling, method)(**kwargs)
     da_new = da_new.isel(**isel)
-    
+
     if rangepad == "fill":
         da_new = da_new.bfill("range").ffill("range")
-    
+
     return da_new
 
 '''
@@ -718,7 +719,7 @@ def phidp_giangrande(radar, gatefilter, refl_field='DBZH', ncp_field='NCP',
     kdp_gg: dict
         Field dictionary containing recalculated differential phases.
     """
-    
+
     unfphidic = pyart.correct.dealias_unwrap_phase(radar,
                                                    gatefilter=gatefilter,
                                                    skip_checks=True,
@@ -726,7 +727,7 @@ def phidp_giangrande(radar, gatefilter, refl_field='DBZH', ncp_field='NCP',
                                                    nyquist_vel=90)
 
     radar.add_field_like(phidp_field, 'PHITMP', unfphidic['data'])
-    
+
     phidp_gg, kdp_gg = pyart.correct.phase_proc_lp(radar, 0.0,
                                                    LP_solver='cylp',
                                                    ncp_field=ncp_field,
@@ -748,7 +749,7 @@ def phidp_giangrande(radar, gatefilter, refl_field='DBZH', ncp_field='NCP',
     phidp_gg['_Least_significant_digit'] = 4
     kdp_gg['data'] = kdp_gg['data'].astype(np.float32)
     kdp_gg['_Least_significant_digit'] = 4
-    
+
     return phidp_gg, kdp_gg
 
 '''
@@ -3160,7 +3161,7 @@ better_colormaps = {
 def vertical_interpolation(vol, elevs=None, method="nearest"):
     """
     Vertically interpolate volume data
-    
+
     elevs: iterable of elevations to which interpolate the data. Defaults to None, which does no interpolation and returns a stacked array of the data.
     method: method for interpolation, defaults to "nearest"
     """
@@ -3217,7 +3218,7 @@ def georeference_dataset(obj, **kwargs):
 
     # create meshgrid to overcome dimension problem with spherical_to_xyz
     r, az = np.meshgrid(obj["range"], obj["azimuth"])
-    
+
     # GDAL OSR, convert to this proj
     if isinstance(proj, osr.SpatialReference):
         xyz = wrl.georef.polar.spherical_to_proj(
@@ -3234,9 +3235,9 @@ def georeference_dataset(obj, **kwargs):
             r, az, obj["elevation"], site, re=re, ke=ke, squeeze=True
         )
         xyz += np.array(site).T
-    
+
     #print(xyz.ndim, xyz.shape)
-    
+
     # calculate center point
     # use first range bins
     ax = tuple(range(xyz.ndim - 2))
@@ -3266,7 +3267,7 @@ def georeference_dataset(obj, **kwargs):
     dimlist += ["range"]
 
     #print(dimlist, xyz.shape)
-    
+
     # add xyz, ground range coordinates
     obj.coords["x"] = (dimlist, xyz[..., 0])
     obj.coords["y"] = (dimlist, xyz[..., 1])
