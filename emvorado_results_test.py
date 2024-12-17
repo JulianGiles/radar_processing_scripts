@@ -235,7 +235,7 @@ datasel = datasel.pipe(wrl.georef.georeference)
 if "time" in datasel.z.dims:
     datasel = datasel.assign_coords(z=datasel.z.mean('time'))
 
-qvps = utils.compute_qvp(datasel, min_thresh={"RHOHV":0.7, "DBZH":0, "ZDR":-1, "SNRH":10, "SNRHC":10, "SQIH":0.5})
+qvps = utils.compute_qvp(datasel, min_thresh={"RHOHV":0.7, "DBZH":0, "ZDR":-1, "SNRH":10, "SNRHC":10, "SQIH":0.5}).compute()
 
 
 # New Colormap
