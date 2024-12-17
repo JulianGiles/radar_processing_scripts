@@ -2812,6 +2812,33 @@ def phase_offset(phioff, method=None, rng=3000.0, npix=None, **kwargs):
 
 
 #### PHIDP processing
+def phidp_from_kdp(da, winlen):
+    """Derive PHIDP from KDP.
+
+    Parameter
+    ---------
+    da : xarray.DataArray
+        array with specific differential phase data
+    winlen : int
+        size of window in range dimension
+
+    Return
+    ------
+    phi : xarray.DataArray
+        DataArray with differential phase values
+    """
+    dr = da.range.diff('range').median('range').values / 1000.
+    print("range res [km]:", dr)
+    print("processing window [km]:", dr * winlen)
+    return xr.apply_ufunc(scipy.integrate.cumulative_trapezoid,
+                          da,
+                          input_core_dims=[["range"]],
+                          output_core_dims=[["range"]],
+                          dask='parallelized',
+                          kwargs=dict(dx=dr, initial=0.0, axis=-1),
+                          dask_gufunc_kwargs={"allow_rechunk":True}
+                          ) * 2
+
 def phidp_offset_detection(ds, phidp="PHIDP", rhohv="RHOHV", dbzh="DBZH", rhohvmin=0.9,
                            dbzhmin=0., dphid_inithresh=10, min_height=0., rng=3000., azmedian=False, **kwargs):
     r"""
