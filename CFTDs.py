@@ -291,21 +291,24 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
 
     iwc_zdr_zh_kdp = xr.where(stratqvp[X_ZDR]>0.4, # Carlin et al 2021
                               4*10**(-3)*( stratqvp[X_KDP]*Lambda/( 1-wrl.trafo.idecibel(stratqvp[X_ZDR])**-1 ) ),
-                              0.031474 * ( stratqvp[X_KDP]*Lambda )**0.66 * stratqvp[X_DBZH]**0.28 )
+                              0.031474 * ( stratqvp[X_KDP]*Lambda )**0.66 * wrl.trafo.idecibel(stratqvp[X_DBZH])**0.28 )
 
-    # Dm
-    Dm_ice_zh = 1.055*stratqvp[X_DBZH]**0.271 # Matrosov et al. (2019)
-    Dm_ice_zh_kdp = 0.67*( stratqvp[X_DBZH]/(stratqvp[X_KDP]*Lambda) )**(1/3) # Bukovcic et al. (2020)
+    # Dm (ice collected from Blanke et al 2023)
+    Dm_ice_zh = 1.055*wrl.trafo.idecibel(stratqvp[X_DBZH])**0.271 # Matrosov et al. (2019)
+    Dm_ice_zh_kdp = 0.67*( wrl.trafo.idecibel(stratqvp[X_DBZH])/(stratqvp[X_KDP]*Lambda) )**(1/3) # Bukovcic et al. (2020)
     Dm_rain_zdr = 0.3015*stratqvp[X_ZDR]**3 - 1.2087*stratqvp[X_ZDR]**2 + 1.9068*stratqvp[X_ZDR] + 0.5090 # (for rain but tuned for Germany X-band, JuYu Chen, Zdr in dB, Dm in mm)
-    Dm_rain_zdr2 = 0.171*stratqvp[X_ZDR]**3 - 0.725*stratqvp[X_ZDR]**2 + 1.48*stratqvp[X_ZDR] + 0.717 # (Hu and Ryzhkov 2022, used in S band data but could work for C band)
-    Dm_rain_zdr3 = xr.where(stratqvp[X_ZDR]<1.25, # Bringi et al 2009 (C-band)
-                            0.0203*stratqvp[X_ZDR]**4 - 0.149*stratqvp[X_ZDR]**3 + 0.221*stratqvp[X_ZDR]**2 + 0.557*stratqvp[X_ZDR] + 0.801,
-                            0.0355*stratqvp[X_ZDR]**3 - 0.302*stratqvp[X_ZDR]**2 + 1.06*stratqvp[X_ZDR] + 0.684
+    Dm_rain_zdr2 = 0.171*stratqvp[X_ZDR]**3 - 0.725*stratqvp[X_ZDR]**2 + 1.48*stratqvp[X_ZDR] + 0.717 # (D0 from Hu and Ryzhkov 2022, used in S band data but could work for C band)
+    Dm_rain_zdr3 = xr.where(stratqvp[X_ZDR]<1.25, # Bringi et al 2009 (C-band) eq. 1
+                            0.0203*stratqvp[X_ZDR]**4 - 0.1488*stratqvp[X_ZDR]**3 + 0.2209*stratqvp[X_ZDR]**2 + 0.5571*stratqvp[X_ZDR] + 0.801,
+                            0.0355*stratqvp[X_ZDR]**3 - 0.3021*stratqvp[X_ZDR]**2 + 1.0556*stratqvp[X_ZDR] + 0.6844
                             )
 
     # log(Nt)
-    Nt_ice_zh_iwc = (3.39 + 2*np.log10(iwc_zh_t) - 0.1*stratqvp[X_DBZH]) # (Hu and Ryzhkov 2022, different than Carlin et al 2021 only in the offset, but works better)
-    Nt_rain_zh_zdr = ( -2.37 + 0.1*stratqvp[X_DBZH] - 2.89*stratqvp[X_ZDR] + 1.28*stratqvp[X_ZDR]**2 - 0.213*stratqvp[X_ZDR]**3 )# Hu and Ryzhkov 2022
+    Nt_ice_zh_iwc = (3.39 + 2*np.log10(iwc_zh_t) - 0.1*stratqvp[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, different than Carlin et al 2021 only in the offset, but works better)
+    Nt_ice_zh_iwc2 = (6.69 + 2*np.log10(iwc_zh_t) - 0.1*stratqvp[X_DBZH]) # Carlin et al 2021 eq. 7
+    Nt_ice_zh_iwc_kdp = (3.39 + 2*np.log10(iwc_zdr_zh_kdp) - 0.1*stratqvp[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, different than Carlin et al 2021 only in the offset, but works better)
+    Nt_ice_zh_iwc2_kdp = (6.69 + 2*np.log10(iwc_zdr_zh_kdp) - 0.1*stratqvp[X_DBZH]) # Carlin et al 2021 eq. 7
+    Nt_rain_zh_zdr = ( -2.37 + 0.1*stratqvp[X_DBZH] - 2.89*stratqvp[X_ZDR] + 1.28*stratqvp[X_ZDR]**2 - 0.213*stratqvp[X_ZDR]**3 )# Hu and Ryzhkov 2022 eq. 3
 
     # Put everything together
     retrievals[stratname][find_loc(locs, ff[0])] = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
@@ -319,6 +322,9 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
                                                              "Dm_rain_zdr2": Dm_rain_zdr2,
                                                              "Dm_rain_zdr3": Dm_rain_zdr3,
                                                              "Nt_ice_zh_iwc": Nt_ice_zh_iwc,
+                                                             "Nt_ice_zh_iwc2": Nt_ice_zh_iwc2,
+                                                             "Nt_ice_zh_iwc_kdp": Nt_ice_zh_iwc_kdp,
+                                                             "Nt_ice_zh_iwc2_kdp": Nt_ice_zh_iwc2_kdp,
                                                              "Nt_rain_zh_zdr": Nt_rain_zh_zdr,
                                                              }).compute()
 
