@@ -282,33 +282,39 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
     retrievals[stratname] = {}
 
     # LWC
-    lwc_zh_zdr = 10**(0.058*stratqvp[X_DBZH] - 0.118*stratqvp[X_ZDR] - 2.36) # Reimann et al 2021 (adjusted for Germany)
-    lwc_zh_zdr2 = 1.38*10**(-3) *10**(0.1*stratqvp[X_DBZH] - 2.43*stratqvp[X_ZDR] + 1.12*stratqvp[X_ZDR]**2 - 0.176*stratqvp[X_ZDR]**3 ) # Ryzhkov et al 2022, used in S band
+    lwc_zh_zdr = 10**(0.058*stratqvp[X_DBZH] - 0.118*stratqvp[X_ZDR] - 2.36) # Reimann et al 2021 eq 3.7 (adjusted for Germany)
+    lwc_zh_zdr2 = 1.38*10**(-3) *10**(0.1*stratqvp[X_DBZH] - 2.43*stratqvp[X_ZDR] + 1.12*stratqvp[X_ZDR]**2 - 0.176*stratqvp[X_ZDR]**3 ) # used in S band, Ryzhkov 2022 PROM presentation https://www2.meteo.uni-bonn.de/spp2115/lib/exe/fetch.php?media=internal:uploads:all_hands_schneeferner_july2022:ryzhkov.pdf
     lwc_kdp = 10**(0.568*np.log10(stratqvp[X_KDP]) + 0.06) # Reimann et al 2021(adjusted for Germany)
 
     # IWC (Collected from Blanke et al 2023)
-    iwc_zh_t = 10**(0.06 * stratqvp[X_DBZH] - 0.0197*stratqvp["TEMP"] - 1.7) # empirical from Hogan et al 2006
+    iwc_zh_t = 10**(0.06 * stratqvp[X_DBZH] - 0.0197*stratqvp["TEMP"] - 1.7) # empirical from Hogan et al 2006 Table 2
 
-    iwc_zdr_zh_kdp = xr.where(stratqvp[X_ZDR]>0.4, # Carlin et al 2021
+    iwc_zdr_zh_kdp = xr.where(stratqvp[X_ZDR]>=0.4, # Carlin et al 2021 eqs 4b and 5b
                               4*10**(-3)*( stratqvp[X_KDP]*Lambda/( 1-wrl.trafo.idecibel(stratqvp[X_ZDR])**-1 ) ),
-                              0.031474 * ( stratqvp[X_KDP]*Lambda )**0.66 * wrl.trafo.idecibel(stratqvp[X_DBZH])**0.28 )
+                              0.033 * ( stratqvp[X_KDP]*Lambda )**0.67 * wrl.trafo.idecibel(stratqvp[X_DBZH])**0.33 )
 
     # Dm (ice collected from Blanke et al 2023)
-    Dm_ice_zh = 1.055*wrl.trafo.idecibel(stratqvp[X_DBZH])**0.271 # Matrosov et al. (2019)
-    Dm_ice_zh_kdp = 0.67*( wrl.trafo.idecibel(stratqvp[X_DBZH])/(stratqvp[X_KDP]*Lambda) )**(1/3) # Bukovcic et al. (2020)
+    Dm_ice_zh = 1.055*wrl.trafo.idecibel(stratqvp[X_DBZH])**0.271 # Matrosov et al. (2019) Fig 10 (S band)
+    Dm_ice_zh_kdp = 0.67*( wrl.trafo.idecibel(stratqvp[X_DBZH])/(stratqvp[X_KDP]*Lambda) )**(1/3) # Ryzhkov and Zrnic (2019). Idk exactly where does the 0.67 approximation comes from, Blanke et al. 2023 eq 10 and Carlin et al 2021 eq 5a cite Bukovčić et al. (2018, 2020) but those two references do not show this formula.
+    Dm_ice_zdp_kdp = -0.1 + 2*( (wrl.trafo.idecibel(stratqvp[X_DBZH])*(1-wrl.trafo.idecibel(X_ZDR)**-1 ) ) / (stratqvp[X_KDP]*Lambda) )**(1/2) # Ryzhkov and Zrnic (2019). Zdp = Z(1-ZDR**-1) from Carlin et al 2021
+
     Dm_rain_zdr = 0.3015*stratqvp[X_ZDR]**3 - 1.2087*stratqvp[X_ZDR]**2 + 1.9068*stratqvp[X_ZDR] + 0.5090 # (for rain but tuned for Germany X-band, JuYu Chen, Zdr in dB, Dm in mm)
-    Dm_rain_zdr2 = 0.171*stratqvp[X_ZDR]**3 - 0.725*stratqvp[X_ZDR]**2 + 1.48*stratqvp[X_ZDR] + 0.717 # (D0 from Hu and Ryzhkov 2022, used in S band data but could work for C band)
-    Dm_rain_zdr3 = xr.where(stratqvp[X_ZDR]<1.25, # Bringi et al 2009 (C-band) eq. 1
+
+    D0_rain_zdr2 = 0.171*stratqvp[X_ZDR]**3 - 0.725*stratqvp[X_ZDR]**2 + 1.48*stratqvp[X_ZDR] + 0.717 # (D0 from Hu and Ryzhkov 2022, used in S band data but could work for C band) [mm]
+    D0_rain_zdr3 = xr.where(stratqvp[X_ZDR]<1.25, # D0 from Bringi et al 2009 (C-band) eq. 1 [mm]
                             0.0203*stratqvp[X_ZDR]**4 - 0.1488*stratqvp[X_ZDR]**3 + 0.2209*stratqvp[X_ZDR]**2 + 0.5571*stratqvp[X_ZDR] + 0.801,
                             0.0355*stratqvp[X_ZDR]**3 - 0.3021*stratqvp[X_ZDR]**2 + 1.0556*stratqvp[X_ZDR] + 0.6844
                             )
+    mu = 0
+    Dm_rain_zdr2 = D0_rain_zdr2 * (4+mu)/(3.67+mu) # conversion from D0 to Dm according to eq 4 of Hu and Ryzhkov 2022.
+    Dm_rain_zdr3 = D0_rain_zdr3 * (4+mu)/(3.67+mu)
 
     # log(Nt)
-    Nt_ice_zh_iwc = (3.39 + 2*np.log10(iwc_zh_t) - 0.1*stratqvp[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, different than Carlin et al 2021 only in the offset, but works better)
-    Nt_ice_zh_iwc2 = (6.69 + 2*np.log10(iwc_zh_t) - 0.1*stratqvp[X_DBZH]) # Carlin et al 2021 eq. 7
-    Nt_ice_zh_iwc_kdp = (3.39 + 2*np.log10(iwc_zdr_zh_kdp) - 0.1*stratqvp[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, different than Carlin et al 2021 only in the offset, but works better)
-    Nt_ice_zh_iwc2_kdp = (6.69 + 2*np.log10(iwc_zdr_zh_kdp) - 0.1*stratqvp[X_DBZH]) # Carlin et al 2021 eq. 7
-    Nt_rain_zh_zdr = ( -2.37 + 0.1*stratqvp[X_DBZH] - 2.89*stratqvp[X_ZDR] + 1.28*stratqvp[X_ZDR]**2 - 0.213*stratqvp[X_ZDR]**3 )# Hu and Ryzhkov 2022 eq. 3
+    Nt_ice_zh_iwc = (3.39 + 2*np.log10(iwc_zh_t) - 0.1*stratqvp[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, [log(1/L)]
+    Nt_ice_zh_iwc2 = (3.69 + 2*np.log10(iwc_zh_t) - 0.1*stratqvp[X_DBZH]) # Carlin et al 2021 eq. 7 originally in [log(1/m3)], transformed units here to [log(1/L)] by subtracting 3
+    Nt_ice_zh_iwc_kdp = (3.39 + 2*np.log10(iwc_zdr_zh_kdp) - 0.1*stratqvp[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, [log(1/L)]
+    Nt_ice_zh_iwc2_kdp = (3.69 + 2*np.log10(iwc_zdr_zh_kdp) - 0.1*stratqvp[X_DBZH]) # Carlin et al 2021 eq. 7 originally in [log(1/m3)], transformed units here to [log(1/L)] by subtracting 3
+    Nt_rain_zh_zdr = ( -2.37 + 0.1*stratqvp[X_DBZH] - 2.89*stratqvp[X_ZDR] + 1.28*stratqvp[X_ZDR]**2 - 0.213*stratqvp[X_ZDR]**3 )# Hu and Ryzhkov 2022 eq. 3 [log(1/L)]
 
     # Put everything together
     retrievals[stratname][find_loc(locs, ff[0])] = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
@@ -318,6 +324,7 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
                                                              "iwc_zdr_zh_kdp": iwc_zdr_zh_kdp,
                                                              "Dm_ice_zh": Dm_ice_zh,
                                                              "Dm_ice_zh_kdp": Dm_ice_zh_kdp,
+                                                             "Dm_ice_zdp_kdp": Dm_ice_zdp_kdp,
                                                              "Dm_rain_zdr": Dm_rain_zdr,
                                                              "Dm_rain_zdr2": Dm_rain_zdr2,
                                                              "Dm_rain_zdr3": Dm_rain_zdr3,
@@ -848,9 +855,9 @@ selmonths = selseas[1]
 # Select which retrievals to plot (only works if auto_plot=False)
 IWC = "iwc_zh_t" # iwc_zh_t or iwc_zdr_zh_kdp
 LWC = "lwc_zh_zdr" # lwc_zh_zdr (adjusted for Germany) or lwc_zh_zdr2 (S-band) or lwc_kdp
-Dm_ice = "Dm_ice_zh" # Dm_ice_zh or Dm_ice_zh_kdp
+Dm_ice = "Dm_ice_zh" # Dm_ice_zh, Dm_ice_zh_kdp, Dm_ice_zdp_kdp
 Dm_rain = "Dm_rain_zdr3" # Dm_rain_zdr, Dm_rain_zdr2 or Dm_rain_zdr3
-Nt_ice = "Nt_ice_zh_iwc" # Nt_ice_zh_iwc
+Nt_ice = "Nt_ice_zh_iwc" # Nt_ice_zh_iwc, Nt_ice_zh_iwc2, Nt_ice_zh_iwc_kdp, Nt_ice_zh_iwc2_kdp
 Nt_rain = "Nt_rain_zh_zdr" # Nt_rain_zh_zdr
 
 vars_to_plot = {"IWC/LWC [g/m^{3}]": [-0.1, 0.82, 0.02], # [-0.1, 0.82, 0.02],
