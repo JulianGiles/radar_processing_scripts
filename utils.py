@@ -24,6 +24,8 @@ import warnings
 from xhistogram.xarray import histogram
 import wradlib as wrl
 import regionmask as rm
+from osgeo import osr
+import pandas as pd
 
 #### Helper functions and definitions
 
@@ -5046,10 +5048,13 @@ def load_emvorado_to_radar_volume(path_or_data, rename=False):
     else:
         data_emvorado_xr = xr.open_mfdataset(path_or_data, concat_dim="time", combine="nested")
 
-    data = data_emvorado_xr.rename_dims({"n_range": "range", "n_azimuth": "azimuth"})
+    try:
+        data = data_emvorado_xr.rename_dims({"n_range": "range", "n_azimuth": "azimuth"})
+    except ValueError:
+        data = data_emvorado_xr
 
     # we make the coordinate arrays
-    if "time" in data.dims:
+    if "time" in data.dims and "time" not in data.coords:
         range_coord = np.array([ np.arange(rs, rr*rb+rs, rr) for rr, rs, rb in
                                zip(data.range_resolution[0], data.range_start[0], data.n_range_bins[0]) ])[0]
         azimuth_coord = np.array([ np.arange(azs, azr*azb+azs, azr) for azr, azs, azb in
@@ -5070,7 +5075,7 @@ def load_emvorado_to_radar_volume(path_or_data, rename=False):
                                     )
                     ], dims=["time"] )
 
-    else:
+    elif "time" not in data.coords:
         range_coord = np.array([ np.arange(rs, rr*rb+rs, rr) for rr, rs, rb in
                                zip(data.range_resolution, data.range_start, data.n_range_bins) ])[0]
         azimuth_coord = np.array([ np.arange(azs, azr*azb+azs, azr) for azr, azs, azb in
@@ -5092,14 +5097,26 @@ def load_emvorado_to_radar_volume(path_or_data, rename=False):
                     ], dims=["time"] )[0]
 
     # add coordinates for range, azimuth, time, latitude, longitude, altitude, elevation, sweep_mode
-
-    data.coords["range"] = ( ( "range"), range_coord)
-    data.coords["azimuth"] = ( ( "azimuth"), azimuth_coord)
-    data.coords["time"] = time_coord
+    try:
+        data.coords["range"] = ( ( "range"), range_coord)
+    except NameError: pass
+    try:
+        data.coords["azimuth"] = ( ( "azimuth"), azimuth_coord)
+    except NameError: pass
+    try:
+        data.coords["time"] = time_coord
+    except NameError: pass
     data.coords["latitude"] = float( data["station_latitude"].values.flatten()[0] )
     data.coords["longitude"] = float( data["station_longitude"].values.flatten()[0] )
-    data.coords["altitude"] = float([ss for ss in data.attrs["Data_description"].split(" ") if "radar_alt_msl_mod" in ss][0].split("=")[1])
-    data.coords["elevation"] = data["ray_elevation"].mean("azimuth")
+    try:
+        data.coords["altitude"] = float([ss for ss in data.attrs["Data_description"].split(" ") if "radar_alt_msl_mod" in ss][0].split("=")[1])
+    except KeyError:
+        data.coords["altitude"] = float( data["station_height"].values.flatten()[0] )
+    if "elevation" not in data.coords:
+        if "time" in data['ray_elevation'].dims:
+            data.coords["elevation"] = data["ray_elevation"].mean(("azimuth", "time"))
+        else:
+            data.coords["ray_elevation"] = data["ray_elevation"].mean("azimuth")
     data.coords["sweep_mode"] = 'azimuth_surveillance'
 
     # move some variables to attributes
@@ -5113,18 +5130,23 @@ def load_emvorado_to_radar_volume(path_or_data, rename=False):
                      "ppi_azimuth", "ppi_elevation", "n_range_bins"
                      ]
     for vta in vars_to_attrs:
-        data.attrs[vta] = data[vta]
+        try:
+            data.attrs[vta] = data[vta]
+        except KeyError:
+            pass
 
     # add attribute "fixed_angle"
     try:
         # if one timestep
         data.attrs["fixed_angle"] = float(data.attrs["ppi_elevation"])
-    except:
+    except TypeError:
         # if multiple timesteps
         data.attrs["fixed_angle"] = float(data.attrs["ppi_elevation"].values.flatten()[0])
+    except KeyError:
+        data.attrs["fixed_angle"] = float(data["elevation"].values.flatten()[0])
 
     # drop variables that were moved to attrs
-    data = data.drop_vars(vars_to_attrs)
+    data = data.drop_vars(vars_to_attrs, errors="ignore")
 
     # for each remaining variable add "long_name" and "units" attribute
     for vv in data.data_vars.keys():
@@ -5157,3 +5179,272 @@ rename_vars_emvorado_dwd = {
     "vrsim":"VRADH",
     "records": "sweep_fixed_angle"
     }
+
+
+def load_icon(files, file_z=None):
+    """
+    Load ICON data and transform the time coordinate to datetime format. In
+    case the vertical axis is provided in a separate file (file_z), load it and
+    attach it to the dataset.
+
+    Parameters
+    ----------
+    files : str or nested sequence of paths
+        Either a string glob in the form "path/to/my/files/*.nc" or an
+        explicit list of files to open. Paths can be given as strings or
+        as pathlib Paths. Feeds into xarray.open_mfdataset.
+    file_z : str or nested sequence of paths
+        Like 'file' but for the vertical coordinate.
+
+    Returns
+    -------
+    data_vol : xarray.Dataset
+    """
+
+    icon_field = xr.open_mfdataset(files)
+
+    if file_z is not None:
+        icon_field_z = xr.open_dataset(file_z)
+        icon_field_z = icon_field_z.rename({"height": "height_2"})
+
+        icon_field["z_ifc"] = icon_field_z["z_ifc"]
+
+    # Separate the date and fractional day
+    date_part = icon_field.time.astype(int)  # Extract the integer part as YYYYMMDD
+    fractional_day = icon_field.time.values - date_part  # Extract the fractional part
+
+    # Convert the date part to datetime
+    date_part_datetime = pd.to_datetime(date_part.astype(str), format="%Y%m%d")
+
+    # Add the fractional day converted to timedelta
+    corrected_time = date_part_datetime + pd.to_timedelta(fractional_day * 24, unit="h")
+
+    # Assign the corrected time back to the dataset
+    icon_field['time'] = xr.DataArray(corrected_time, dims="time")
+
+    return icon_field
+
+def icon_to_radar_volume(icon_field, radar_volume):
+    """
+    Function to interpolate variable fields from ICON output into the
+    shape of radar_volume using nearest neighbors.
+
+    Parameters
+    ----------
+    radar_volume : xarray.Dataset
+        Dataset with volume data
+    icon_field : xarray.Dataset
+        ICON fields.
+
+    Returns
+    -------
+    icon_vol : xarray.Dataset
+        ICON fields interpolated into the shape of radar_volume.
+    """
+
+    sitecoords = [float(radar_volume.longitude),
+                  float(radar_volume.latitude),
+                  float(radar_volume.altitude)]
+
+    # proj_wgs84 = wrl.georef.epsg_to_osr(4326)
+
+    # maybe I have to shift the ranges:
+    # wrl.georef.spherical_to_centroids: The ranges are assumed to define the exterior
+    # boundaries of the range bins (thus they must be positive). The angles are assumed
+    # to describe the pointing direction fo the main beam lobe.
+    # cent_coords = wrl.georef.spherical_to_centroids(radar_volume["range"],
+    #                                                 radar_volume["azimuth"],
+    #                                                 radar_volume["elevation"],
+    #                                                 sitecoords,
+    #                                                 crs=proj_wgs84)
+
+    # lon = xr.ones_like(radar_volume["x"])*cent_coords[:,:,:,0]
+    # lat = xr.ones_like(radar_volume["x"])*cent_coords[:,:,:,1]
+    # alt = xr.ones_like(radar_volume["x"])*cent_coords[:,:,:,2]
+
+    # radar_volume = radar_volume.assign_coords({"lon": lon,
+    #                                            "lat": lat,
+    #                                            "alt": alt})
+
+    xyz, proj_aeqd = wrl.georef.spherical_to_centroids(radar_volume["range"],
+                                                   radar_volume["azimuth"],
+                                                   radar_volume["elevation"],
+                                                   sitecoords,
+                                                   )
+
+    if "x" not in radar_volume.coords:
+        radar_volume = wrl.georef.georeference(radar_volume)
+
+    lon_icon = np.rad2deg(icon_field["clon"])
+    lat_icon = np.rad2deg(icon_field["clat"])
+    alt_icon = icon_field["z_ifc"]
+    alt_icon_hl = (icon_field["z_ifc"] + icon_field["z_ifc"].shift(height_2=-1))[:-1].rename({"height_2": "height"})/2 # transform from half levels to levels
+
+    # reproject icon into radar grid
+    proj_wgs = osr.SpatialReference()
+    proj_wgs.ImportFromEPSG(4326)
+
+    # proj_stereo = wrl.georef.create_osr("dwd-radolan")
+    # mod_x, mod_y = wrl.georef.reproject(lon_icon.values,
+    #                                     lat_icon.values,
+    #                                     trg_crs=proj_stereo,
+    #                                     src_crs =proj_wgs)
+    # rad_x, rad_y = wrl.georef.reproject(lon.values,
+    #                                     lat.values,
+    #                                     trg_crs=proj_stereo,
+    #                                     src_crs=proj_wgs)
+
+    mod_x, mod_y = wrl.georef.reproject(lon_icon.values,
+                                        lat_icon.values,
+                                        trg_crs=proj_aeqd,
+                                        src_crs =proj_wgs)
+    rad_x, rad_y, alt = radar_volume.x.values, radar_volume.y.values, radar_volume.z
+
+
+    # x y version
+    # only those model data that are in radar domain + bordering volume
+    outer_x = max(0.3 * (rad_x.max() - rad_x.min()), 1)
+    outer_y = max(0.3 * (rad_y.max() - rad_y.min()), 1)
+    lower_z = 50
+    upper_z = 2000
+
+    mask = ((mod_x >= rad_x.min() - outer_x) & (
+            mod_x <= rad_x.max() + outer_x) & (
+                   mod_y >= rad_y.min() - outer_y) & (
+                   mod_y <= rad_y.max() + outer_y) & (
+                   alt_icon >= alt.min() - lower_z) & (
+                   alt_icon <= alt.max() + upper_z)).compute()
+    mask_hl = ((mod_x >= rad_x.min() - outer_x) & (
+            mod_x <= rad_x.max() + outer_x) & (
+                   mod_y >= rad_y.min() - outer_y) & (
+                   mod_y <= rad_y.max() + outer_y) & (
+                   alt_icon_hl >= alt.min() - lower_z) & (
+                   alt_icon_hl <= alt.max() + upper_z)).compute()
+
+    mod_x_hl = mod_x[mask[0]].copy() # make copy because we will modify them below
+    mod_y_hl = mod_y[mask[0]].copy()
+    alt_icon_hl = alt_icon_hl.where(mask_hl, other=False, drop=True)
+
+    mod_x = mod_x[mask[0]]
+    mod_y = mod_y[mask[0]]
+    alt_icon = alt_icon.where(mask, other=False, drop=True)
+
+    src = np.vstack((np.repeat(mod_x[np.newaxis, :], alt_icon.shape[0], axis=0).ravel(),
+                     np.repeat(mod_y[np.newaxis, :], alt_icon.shape[0], axis=0).ravel(),
+                     alt_icon.values.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
+    src_hl = np.vstack((np.repeat(mod_x_hl[np.newaxis, :], alt_icon_hl.shape[0], axis=0).ravel(),
+                     np.repeat(mod_y_hl[np.newaxis, :], alt_icon_hl.shape[0], axis=0).ravel(),
+                     alt_icon_hl.values.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
+    trg = np.vstack((rad_x.flatten().ravel(),
+                     rad_y.flatten().ravel(),
+                     alt.values.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
+
+    import time
+
+    # interpolate with pyinterp (only way I was able to compute this quickly)
+    # use nearest neighborhs (inverse_distance_weighting with k=1)
+    # I also tried different configurations of dask delayed, futures and map that
+    # either crashed because of filled memory or were too slow.
+    # Using dask.bag with map worked when creating the bags with appropriate size,
+    # but it is not faster than just looping over timesteps
+    # I also tried xarray.map_blocks but it only works for the first timestep, when
+    # trying to compute other timesteps there is an error.
+    # I did not try with multiprocessing, it could work.
+    import pyinterp
+    start_time = time.time()
+    vars_to_compute = []
+    vars_to_compute_hl = []
+    for vv in icon_field.data_vars:
+        if vv not in ["z_ifc"]:
+            if "height_2" in icon_field[vv].dims and "ncells" in icon_field[vv].dims:
+                vars_to_compute.append(vv)
+            if "height" in icon_field[vv].dims and "ncells" in icon_field[vv].dims:
+                vars_to_compute_hl.append(vv)
+
+    # Define a reggriding function for one variable and one timestep. The time
+    # dimension must be present (only first timestep is computed)
+    def pyinterp_NN(data):
+        mesh = pyinterp.RTree(ecef=True)
+        mesh.packing(src, data.isel(time=0).where(mask, drop=True).stack(stacked=['height_2', 'ncells']))
+        data_interp, neighbors = mesh.inverse_distance_weighting(trg, within=False, k=1) # k=1 is like nearest neighbors
+        data_interp_reshape = data_interp.reshape(radar_volume["x"].shape)
+        data_interp_reshape_xr = xr.DataArray(data_interp_reshape,
+                                              coords=radar_volume["x"].coords,
+                                              dims=radar_volume["x"].dims,
+                                              name="data_interp_shape").expand_dims(dim={"time": data["time"]}, axis=0)
+        return data_interp_reshape_xr
+
+    def pyinterp_NN_hl(data):
+        mesh = pyinterp.RTree(ecef=True)
+        mesh.packing(src_hl, data.isel(time=0).where(mask_hl, drop=True).stack(stacked=['height', 'ncells']))
+        data_interp, neighbors = mesh.inverse_distance_weighting(trg, within=False, k=1) # k=1 is like nearest neighbors
+        data_interp_reshape = data_interp.reshape(radar_volume["x"].shape)
+        data_interp_reshape_xr = xr.DataArray(data_interp_reshape,
+                                              coords=radar_volume["x"].coords,
+                                              dims=radar_volume["x"].dims,
+                                              name="data_interp_shape").expand_dims(dim={"time": data["time"]}, axis=0)
+        return data_interp_reshape_xr
+
+    # Define a function to process each variable and timestep
+    def process_variable_time(var, func):
+        """Apply a function to each timestep of a variable."""
+        results = []
+        for t in range(var.sizes['time']):
+            result = func(var.isel(time=t).expand_dims("time"))
+            results.append(result)
+
+        # Combine the results along the time dimension
+        return xr.concat(results, dim='time')
+
+    # Wrapper to process all variables in the dataset
+    def process_dataset(ds, func):
+        """Apply a function to all variables and timesteps in a dataset."""
+        processed_vars = {}
+
+        for var_name, var_data in ds.data_vars.items():
+            print(var_name)
+            processed_vars[var_name] = process_variable_time(var_data, func)
+
+        # Combine all variables back into a dataset
+        return xr.Dataset(processed_vars)
+
+    # Apply the function to icon_field
+    start_time = time.time()
+    print("Regridding ICON fields to radar volume...")
+    icon_vol = process_dataset(icon_field[vars_to_compute], pyinterp_NN)
+    icon_vol_hl = process_dataset(icon_field[vars_to_compute_hl], pyinterp_NN_hl)
+    total_time = time.time() - start_time
+    print(f"... took {total_time/60:.2f} minutes to run.")
+    # Regridding took 14.92 minutes to run for temp, u, v
+    # Regridding took 4.58 minutes to run for temp
+
+    return xr.merge([icon_vol, icon_vol_hl])
+
+#testing fields
+'''
+ff = "/automount/realpep/upload/jgiles/ICON_EMVORADO_radardata/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/2020/2020-01/2020-01-02/pro/vol/cdfin_allsim_id-010392_*_volscan"
+data = utils.load_emvorado_to_radar_volume(ff, rename=True)
+radar_volume=data.copy()
+
+ff_icon = "/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_2020010222/out_EU-R13B5_inst_DOM01_ML_20200102T220000Z_1h.nc"
+icon_field = xr.open_mfdataset(ff_icon)
+
+ff_icon_z = '/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_2020010222/out_EU-R13B5_constant_20200102T220000Z.nc'
+icon_field_z = xr.open_dataset(ff_icon_z)
+icon_field_z = icon_field_z.rename({"height": "height_2"})
+
+icon_field["z_ifc"] = icon_field_z["z_ifc"]
+
+# Separate the date and fractional day
+date_part = icon_field.time.astype(int)  # Extract the integer part as YYYYMMDD
+fractional_day = icon_field.time.values - date_part  # Extract the fractional part
+
+# Convert the date part to datetime
+date_part_datetime = pd.to_datetime(date_part.astype(str), format="%Y%m%d")
+
+# Add the fractional day converted to timedelta
+corrected_time = date_part_datetime + pd.to_timedelta(fractional_day * 24, unit="h")
+
+# Assign the corrected time back to the dataset
+icon_field['time'] = xr.DataArray(corrected_time, dims="time")
+'''
