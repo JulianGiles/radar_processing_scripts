@@ -5022,6 +5022,10 @@ def get_regionmask(regionname):
         except KeyError:
             raise KeyError("Desired region "+regionname+" is not available.")
 
+#### Functions to load and compute fields from EMVORADO and ICON
+# Some functions are adapted from Julian Steinheuer:
+# https://github.com/JSteinheuer/RADAR_toolbox/blob/master/SET_SYN_RADAR.py
+# https://github.com/JSteinheuer/RADAR_toolbox/blob/master/PROCESS_SYN_RADAR.py
 def load_emvorado_to_radar_volume(path_or_data, rename=False):
     """
     Load and reorganize EMVORADO output into a xarray.Dataset in the same flavor as DWD data.
@@ -5248,11 +5252,11 @@ def icon_to_radar_volume(icon_field, radar_volume):
 
     # proj_wgs84 = wrl.georef.epsg_to_osr(4326)
 
-    # maybe I have to shift the ranges:
+    # I have to shift the ranges:
     # wrl.georef.spherical_to_centroids: The ranges are assumed to define the exterior
     # boundaries of the range bins (thus they must be positive). The angles are assumed
     # to describe the pointing direction fo the main beam lobe.
-    # cent_coords = wrl.georef.spherical_to_centroids(radar_volume["range"],
+    # cent_coords = wrl.georef.spherical_to_centroids(radar_volume["range"] + radar_volume["range"].diff("range").mean().values/2,
     #                                                 radar_volume["azimuth"],
     #                                                 radar_volume["elevation"],
     #                                                 sitecoords,
@@ -5266,7 +5270,7 @@ def icon_to_radar_volume(icon_field, radar_volume):
     #                                            "lat": lat,
     #                                            "alt": alt})
 
-    xyz, proj_aeqd = wrl.georef.spherical_to_centroids(radar_volume["range"],
+    xyz, proj_aeqd = wrl.georef.spherical_to_centroids(radar_volume["range"] + radar_volume["range"].diff("range").mean().values/2,
                                                    radar_volume["azimuth"],
                                                    radar_volume["elevation"],
                                                    sitecoords,
@@ -5403,7 +5407,7 @@ def icon_to_radar_volume(icon_field, radar_volume):
 
         for var_name, var_data in ds.data_vars.items():
             print(var_name)
-            processed_vars[var_name] = process_variable_time(var_data, func)
+            processed_vars[var_name] = process_variable_time(var_data, func).assign_attrs(ds[var_name].attrs)
 
         # Combine all variables back into a dataset
         return xr.Dataset(processed_vars)
@@ -5420,6 +5424,298 @@ def icon_to_radar_volume(icon_field, radar_volume):
 
     return xr.merge([icon_vol, icon_vol_hl])
 
+
+def icon_hydromets():
+    """
+    Preparing dict with ICON 2mom micro-physics (original PSD- and m-D-params)
+    """
+    hydromets = {}
+    hydromets['cloud'] = seifert2general(
+        {'nu': 1.0, 'mu': 1.0, 'xmax': 2.6e-10, 'xmin': 4.2e-15,
+         'a': 1.24e-01, 'b': 0.333333})
+    hydromets['rain'] = seifert2general(
+        {'nu': 0.0, 'mu': 0.333333, 'xmax': 3.0e-6, 'xmin': 2.6e-10,
+         'a': 1.24e-01, 'b': 0.333333})
+    hydromets['ice'] = seifert2general(
+        {'nu': 0.0, 'mu': 0.333333, 'xmax': 1.0e-5, 'xmin': 1.0e-12,
+         'a': 0.835, 'b': 0.39})
+    hydromets['snow'] = seifert2general(
+        {'nu': 0.0, 'mu': 0.5, 'xmax': 2.0e-5, 'xmin': 1.0e-10,
+         'a': 5.13, 'b': 0.5})
+    hydromets['graupel'] = seifert2general(
+        {'nu': 1.0, 'mu': 0.333333, 'xmax': 5.3e-4, 'xmin': 4.19e-9,
+         'a': 1.42e-1, 'b': 0.314})
+    hydromets['hail'] = seifert2general(
+        {'nu': 1.0, 'mu': 0.333333, 'xmax': 5.0e-3, 'xmin': 2.6e-9,
+         'a': 0.1366, 'b': 0.333333})
+    return hydromets
+
+
+def seifert2general(hymet_seif):
+    """
+    Convert original ICON (mass-based, Seifert notation) to Dmax-based,
+    "general" notation micro-physical parameters.
+    (in = COSMO/ICON) N(m) = N0 * m^nu_x * exp(-lam*m^mu_x)
+                      D(m) = a * m^b
+    (out = EMVORADO)  N(D) = N0 * D^mu_D * exp(-lam*D^nu_D)
+                      m(D) = a * D^b   [ -> D = (m/a)^(1/b)
+    """
+    hymet_gen = {}
+    hymet_gen['mu'] = (1.0 / hymet_seif['b']) * (hymet_seif['nu'] + 1.0) - 1.0
+    hymet_gen['nu'] = (1.0 / hymet_seif['b']) * hymet_seif['mu']
+    hymet_gen['xmax'] = hymet_seif['xmax']
+    hymet_gen['xmin'] = hymet_seif['xmin']
+    hymet_gen['a'] = (1.0 / hymet_seif['a']) ** (1.0 / hymet_seif['b'])
+    hymet_gen['b'] = 1.0 / hymet_seif['b']
+    return hymet_gen
+
+
+def adjust_icon_fields(infields, hymets=icon_hydromets(), spec2dens=1):
+    """
+    Take hydrometeor fields with qx and qnx, convert them to mass/number
+    densities (from specific mass/number contents to densities) if necessary
+    (spec2dens=1), and adjust qn to meet ICON min/max bounds of mean
+    hydrometeor masses.
+    Required input:
+        Hydrometeor qx and qnx (all 6), qv (water vapor content), temp
+        (temperature), pres (pressure).
+    Output:
+        volume specific qx, qnx.
+    """
+    r_d = 287.05  # dry air gas constant
+    r_v = 461.51  # water vapor gas constant
+    q = {}
+    qn = {}
+
+    hmdict = {"cloud": "c",
+              "rain": "r",
+              "ice": "i",
+              "snow": "s",
+              "graupel": "g",
+              "hail": "h",
+              }
+
+    for hmname in hmdict.keys():
+        try:
+            q[hmname] = infields["q"+hmdict[hmname]]
+        except:
+            warnings.warn("q"+hmdict[hmname]+" not present in input icon field")
+            pass
+        try:
+            qn[hmname] = infields["qn"+hmdict[hmname]]
+        except:
+            warnings.warn("qn"+hmdict[hmname]+" not present in input icon field")
+            pass
+
+    qv = infields['qv']
+    t = infields['temp']
+    p = infields['pres']
+    for hmn, hmkey in enumerate(q.keys()):
+        if hmn==0:
+            qx = q[hmkey]
+        else:
+            qx += q[hmkey]
+
+    rvd_m_o = r_v / r_d - 1.0
+
+    if spec2dens:
+        rho = p / (r_d * t * (1.0 + rvd_m_o * qv - qx))
+        for key in q:
+            q[key] = q[key] * rho
+        for key in qn:
+            qn[key] = qn[key] * rho
+
+    for key in q:
+        if key in qn:
+            x = q[key] / (qn[key] + 1e-38)
+            x = x.where(x > hymets[key]['xmin'], other= hymets[key]['xmin'])
+            x = x.where(x < hymets[key]['xmax'], other= hymets[key]['xmax'])
+            qn[key] = q[key] / x.copy()
+            q[key] = q[key].where(q[key] > 1e-7, other=0.)
+            qn[key] = qn[key].where(q[key] > 1e-7, other=1.) # for numeric stability.
+        else:
+            q[key] = q[key].where(q[key] > 1e-7, other=0.)
+
+    return q, qn
+
+
+def gfct(x):
+    """
+    Gamma function (as implemented and used in EMVORADO)
+    """
+    c1 = 76.18009173
+    c2 = -86.50532033
+    c3 = 24.01409822
+    c4 = -1.231739516
+    c5 = 0.120858003e-2
+    c6 = -0.536382e-5
+    stp = 2.50662827465
+
+    tmp = x + 4.5
+    p = stp * (1.0 + c1 / x + c2 / (x + 1.0) + c3 / (x + 2.0) +
+               c4 / (x + 3.0) + c5 / (x + 4.0) + c6 / (x + 5.0))
+    g_fct = p * np.exp((x - 0.5) * np.log(tmp) - tmp)
+    return g_fct
+
+
+def mgdparams(q, qn, hymets=icon_hydromets()):
+    """
+    Derive non-constant MGD-PSD parameters N0 and lam (mu & nu set constant
+    from ICON microphysics)
+    """
+    mgd = {}
+    for key in q:
+        mgd[key] = {}
+        tmp1 = (hymets[key]['mu'] + 1.0) / hymets[key]['nu']
+        tmp2 = (hymets[key]['mu'] + hymets[key]['b'] + 1.0) / hymets[key]['nu']
+        gfct_tmp1 = gfct(tmp1)
+        gfct_tmp2 = gfct(tmp2)
+
+        mgd[key]['lam'] = ((hymets[key]['a'] * qn[key].where(q[key] > 0.) * gfct_tmp2) /
+             (q[key].where(q[key] > 0.) * gfct_tmp1)).fillna(1.) ** (hymets[key]['nu'] /
+                                                                     hymets[key]['b'])
+
+        mgd[key]['n0'] = (qn[key].where(q[key] > 0.) * hymets[key]['nu'] * \
+                        mgd[key]['lam'].where(q[key] > 0.)).fillna(0.) ** tmp1 / gfct_tmp1
+
+    return mgd
+
+
+def calc_moments(mgd, k=[0, 3, 4], hymets=icon_hydromets(), adjust=0):
+    """
+    Calculate (fields of) (Dmax-based) PSD moments from given constant (mu,nu)
+    and qx/qnx derived fields of variable (N0,lam) MGD-parameters.
+    Usage:
+      k: list of moments to be computed
+      adjust: Flag whether to zero out (all) k moments if one of them is 0.
+            Beside for qx=0, mom[k]=0 might occur due to number accuracy
+            limitations. So, to avoid different moments contributing
+            differently to multi-PSD statistics, zero all remaining if one of
+            them has number issues.
+    """
+    Mk = {}
+    for key in mgd:
+        Mk[key] = {}
+        for kk in k:
+            c1 = (hymets[key]['mu'] + kk + 1) / hymets[key]['nu']
+            c2 = gfct(c1) / hymets[key]['nu']
+
+            Mk[key][kk] = (c2 * mgd[key]['n0'].where(mgd[key]['n0'] > 0.) / \
+                            mgd[key]['lam'].where(mgd[key]['n0'] > 0.)).fillna(0.) ** c1
+
+        if adjust:
+            for kk in k:
+                for ik in k:
+                    Mk[key][kk] = Mk[key][kk].where(Mk[key][ik] != 0., other=0.)
+    return Mk
+
+
+def calc_multimoments(Mk, inhm=['ice', 'snow', 'graupel', 'hail'],
+                      outhm='totice'):
+    Mk[outhm] = {}
+    for hm in inhm:
+        assert (hm in Mk.keys()), \
+            'Class %s to accumulate moments not in input moments dict' % hm
+    for kk in Mk[inhm[0]]:
+        Mk[outhm][kk] = xr.zeros_like(Mk[inhm[0]][kk])
+        for hm in inhm:
+            Mk[outhm][kk] += Mk[hm][kk]
+    return Mk
+
+
+def calc_Dmean(Mk, meantype='vol'):
+    k_needed = {'vol': [4, 3], 'mass': [3, 0]}
+    Dmean = {}
+    for hm in Mk.keys():
+        Dmean[hm] = xr.where(Mk[hm][k_needed[meantype][0]] > 0,
+                             (Mk[hm][k_needed[meantype][0]] /
+                              Mk[hm][k_needed[meantype][1]]) **
+                             (1. / (k_needed[meantype][0] -
+                                    k_needed[meantype][1])), 0)
+    return Dmean
+
+def calc_microphys(icon_fields):
+    """
+    Calculate volumetric versions of qx and qnx and mean diameters.
+
+    Parameters
+    ----------
+    icon_fields : xarray.Dataset
+        Dataset with icon fields. Must include hydrometeors qx and qnx (if available),
+        qv (water vapor content), temp (temperature), pres (pressure).
+
+    Returns
+    -------
+    icon_nc : xarray.Dataset
+        A dataset with the same data as icon_fields and the calculated new fields.
+    """
+    icon_nc = icon_fields.copy()
+    q_dens, qn_dens = adjust_icon_fields(icon_nc)
+    try:
+        multi_params = mgdparams(q_dens, qn_dens)
+        moments = calc_moments(mgd=multi_params)
+        multimoments = calc_multimoments(moments)
+        mean_volume_diameter = calc_Dmean(multimoments)
+    except:
+        warnings.warn("Calculation of Dm not possible")
+    for hm in ['cloud', 'rain', 'ice', 'snow', 'graupel', 'hail']:
+        try:
+            icon_nc['vol_q' + hm[0]] = q_dens[hm].assign_attrs(
+                dict( standard_name='volume ' + icon_nc[
+                        'q' + hm[0]].standard_name,
+                    units='m3 m-3'))
+        except:
+            warnings.warn("Creation of vol_q"+hm[0]+" not possible")
+        try:
+            icon_nc['vol_qn' + hm[0]] = qn_dens[hm].assign_attrs(
+                dict( standard_name=icon_nc['qn' + hm[0]].standard_name +
+                              ' per volume',
+                    units='m3 m-3'))
+        except:
+            warnings.warn("Creation of vol_qn"+hm[0]+" not possible")
+        try:
+            icon_nc['D0_' + hm[0]] = (mean_volume_diameter[hm]*1000).assign_attrs(
+                    dict(standard_name='mean volume diameter of ' +
+                                       icon_nc['qn' + hm[0]].standard_name[21:],#!!! check this [21:] slicing
+                         units='mm'))
+        except:
+            warnings.warn("Creation of D0_"+hm[0]+" not possible")
+
+    vol_qtotice = icon_nc["vol_qi"]
+    comment = "vol_qi"
+    for hm in ['snow', 'graupel', 'hail']:
+        if 'vol_q' + hm[0] in icon_nc.keys():
+            vol_qtotice += icon_nc['vol_q' + hm[0]]
+            comment += " + vol_q" + hm[0]
+
+    icon_nc['vol_qtotice'] = vol_qtotice.assign_attrs( dict (
+        standard_name='volume specific total ice water content',
+        comments=comment,
+        units='m3 m-3'))
+
+    try:
+        vol_qntotice = icon_nc["vol_qni"]
+        comment = "vol_qni"
+        for hm in ['snow', 'graupel', 'hail']:
+            if 'vol_qn' + hm[0] in icon_nc.keys():
+                vol_qntotice += icon_nc['vol_qn' + hm[0]]
+                comment += " + vol_qn" + hm[0]
+        icon_nc['vol_qntotice'] = vol_qntotice.assign_attrs( dict (
+            standard_name='number concentration total ice water content',
+            comments=comment,
+            units='m-3'))
+    except:
+        warnings.warn("Creation of vol_qntotice not possible")
+
+    try:
+        icon_nc['D0_totice'] = (mean_volume_diameter['totice'] *1000).assign_attrs(dict(
+            standard_name='mean volume diameter of total ice',
+            units='mm'))
+    except:
+        warnings.warn("Creation of D0_totice not possible")
+
+    return icon_nc
+
 #testing fields
 '''
 ff = "/automount/realpep/upload/jgiles/ICON_EMVORADO_radardata/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/2020/2020-01/2020-01-02/pro/vol/cdfin_allsim_id-010392_*_volscan"
@@ -5427,24 +5723,8 @@ data = utils.load_emvorado_to_radar_volume(ff, rename=True)
 radar_volume=data.copy()
 
 ff_icon = "/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_2020010222/out_EU-R13B5_inst_DOM01_ML_20200102T220000Z_1h.nc"
-icon_field = xr.open_mfdataset(ff_icon)
-
 ff_icon_z = '/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_2020010222/out_EU-R13B5_constant_20200102T220000Z.nc'
-icon_field_z = xr.open_dataset(ff_icon_z)
-icon_field_z = icon_field_z.rename({"height": "height_2"})
 
-icon_field["z_ifc"] = icon_field_z["z_ifc"]
+icon_field = utils.load_icon(ff_icon, ff_icon_z)
 
-# Separate the date and fractional day
-date_part = icon_field.time.astype(int)  # Extract the integer part as YYYYMMDD
-fractional_day = icon_field.time.values - date_part  # Extract the fractional part
-
-# Convert the date part to datetime
-date_part_datetime = pd.to_datetime(date_part.astype(str), format="%Y%m%d")
-
-# Add the fractional day converted to timedelta
-corrected_time = date_part_datetime + pd.to_timedelta(fractional_day * 24, unit="h")
-
-# Assign the corrected time back to the dataset
-icon_field['time'] = xr.DataArray(corrected_time, dims="time")
 '''
