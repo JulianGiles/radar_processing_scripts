@@ -26,6 +26,8 @@ import wradlib as wrl
 import regionmask as rm
 from osgeo import osr
 import pandas as pd
+import time
+import pyinterp
 
 #### Helper functions and definitions
 
@@ -5343,8 +5345,6 @@ def icon_to_radar_volume(icon_field, radar_volume):
                      rad_y.flatten().ravel(),
                      alt.values.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
 
-    import time
-
     # interpolate with pyinterp (only way I was able to compute this quickly)
     # use nearest neighborhs (inverse_distance_weighting with k=1)
     # I also tried different configurations of dask delayed, futures and map that
@@ -5354,7 +5354,6 @@ def icon_to_radar_volume(icon_field, radar_volume):
     # I also tried xarray.map_blocks but it only works for the first timestep, when
     # trying to compute other timesteps there is an error.
     # I did not try with multiprocessing, it could work.
-    import pyinterp
     start_time = time.time()
     vars_to_compute = []
     vars_to_compute_hl = []
