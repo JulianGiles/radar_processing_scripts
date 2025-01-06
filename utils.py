@@ -5354,7 +5354,6 @@ def icon_to_radar_volume(icon_field, radar_volume):
     # I also tried xarray.map_blocks but it only works for the first timestep, when
     # trying to compute other timesteps there is an error.
     # I did not try with multiprocessing, it could work.
-    start_time = time.time()
     vars_to_compute = []
     vars_to_compute_hl = []
     for vv in icon_field.data_vars:
