@@ -2346,14 +2346,298 @@ ax[2,1].set_position([box6.x0, box6.y0 + box6.height * 0.9, box6.width* 1.15, bo
 
 
 '''
+#### Function to interpolate ERA5 to radar grid
+def era5_to_radar_volume(radar_volume, site=None, path=None, convert_to_C=True,
+                         variables=["temperature"], rename={"t":"TEMP"}, pre_interpolate_z=False):
+    """
+    Function to interpolate ERA5 fields into the shape of radar_volume.
+
+    Parameters
+    ----------
+    radar_volume : xarray Dataset
+        Reference radar volume dataset to interpolate to.
+    site : str, optional
+        (Short) Name of the radar site to locate the data in the default folder:
+        "/automount/ags/jgiles/ERA5/hourly/"
+        Either site or path must be given.
+    path : str, optional
+        Path to the folder where ERA5 temperature and geopotential data can be found.
+        Either site or path must be given.
+    convert_to_C : bool
+        If True (default), convert ERA5 temperature from K to C.
+    variables : list
+        List of variables to load (named as in the folders). By default load only temperature.
+    rename : dict
+        Dictionary to rename from dataset variable name to new names. Leave the
+        dictionary empty for no renaming.
+    pre_interpolate_z : bool
+        If True, linearly interpolate the vertical coordinate of ERA5 to higher resolution
+        before the regridding, for smoother results. Default is False.
+
+    Returns
+    ----------
+    era5_vol : xarray Dataset
+        ERA5 fields interpolated into the shape of radar_volume
+    """
+    if path is None:
+        # Set the default path if path is None
+        try:
+            era5_dir = "/automount/ags/jgiles/ERA5/hourly/"+site+"/pressure_level_vars/"
+            if not os.path.exists(era5_dir):
+                # if path does not exist, raise an error
+                raise RuntimeError("folder for site="+site+" not found!")
+
+        except TypeError:
+            raise TypeError("If path is not provided, site must be provided!")
+    elif type(path) is str:
+        era5_dir = path
+    else:
+        raise TypeError("path must be type str!")
+
+    # if time is not well defined, we try to get it from variable rtime
+    if radar_volume["time"].isnull().any():
+        try:
+            radar_volume.coords["time"] = radar_volume.rtime.min(dim="azimuth", skipna=True).compute()
+        except:
+            raise KeyError("Dimension time has not valid values")
+
+    # if some coord has dimension time, reduce using median
+    for coord in ["latitude", "longitude", "altitude", "elevation"]:
+        if coord in radar_volume.coords:
+            if "time" in radar_volume[coord].dims:
+                radar_volume.coords[coord] = radar_volume.coords[coord].median("time")
+
+    # We need the ds to be georeferenced in case it is not
+    if "z" not in radar_volume.coords:
+        radar_volume = radar_volume.pipe(wrl.georef.georeference)
+
+    # get times of the radar files
+    startdt0 = dt.datetime.utcfromtimestamp(int(radar_volume.time[0].values)/1e9).date()
+    enddt0 = dt.datetime.utcfromtimestamp(int(radar_volume.time[-1].values)/1e9).date() + dt.timedelta(hours=24)
+
+    # transform the dates to datetimes
+    startdt = dt.datetime.fromordinal(startdt0.toordinal())
+    enddt = dt.datetime.fromordinal(enddt0.toordinal())
+
+    # open ERA5 geopotental file
+    era5_g = xr.open_mfdataset(reversed(sorted(glob.glob(era5_dir+"geopotential/*"+str(startdt.year)+"*"),
+                                               key=lambda file_name: int(file_name.split("/")[-1].split('_')[1]))),
+                               concat_dim="lvl", combine="nested")
+
+    # compute z coord
+    earth_r = wrl.georef.projection.get_earth_radius(radar_volume.latitude.values)
+    gravity = 9.80665
+    z_coord = (earth_r*(era5_g.z/gravity)/(earth_r - era5_g.z/gravity)).compute()
+
+    era5_fields = {}
+    for vv in variables:
+        era5_fields[vv] = xr.open_mfdataset(reversed(sorted(glob.glob(era5_dir+vv+"/*"+str(startdt.year)+"*"),
+                                                   key=lambda file_name: int(file_name.split("/")[-1].split('_')[1]))),
+                                   concat_dim="lvl", combine="nested")
+
+        era5_fields[vv].coords["z"] = z_coord
+
+        # select time slice
+        dtslice0 = startdt.strftime('%Y-%m-%d %H')
+        dtslice1 = enddt.strftime('%Y-%m-%d %H')
+        era5_fields[vv] = era5_fields[vv].loc[{"time":slice(dtslice0, dtslice1)}]
+        if convert_to_C and vv == "temperature":
+            # convert from K to C
+            temp_attrs = era5_fields[vv]["t"].attrs
+            era5_fields[vv]["t"] = era5_fields[vv]["t"] -273.15
+            temp_attrs["units"] = "C"
+            era5_fields[vv]["t"].attrs = temp_attrs
+
+        if pre_interpolate_z:
+            era5_fields[vv] = interp_to_ht_parallel(era5_fields[vv].rename({"z":"height"}),
+                                                    ht=np.arange(0,50000,50))\
+                                                    .rename({"height":"z"})\
+                .transpose(*tuple(dd if dd != "lvl" else "z" for dd in era5_fields[vv].dims )).compute()
+
+    # create coordinates for the interpolation
+    sitecoords = [float(radar_volume.longitude),
+                    float(radar_volume.latitude),
+                    float(radar_volume.altitude)]
+
+
+    xyz, proj_aeqd = wrl.georef.spherical_to_centroids(radar_volume["range"] + radar_volume["range"].diff("range").mean().values/2,
+                                                    radar_volume["azimuth"],
+                                                    radar_volume["elevation"],
+                                                    sitecoords,
+                                                    )
+
+    lon_era5 = np.meshgrid(era5_g["longitude"], era5_g["latitude"])[0].flatten()
+    lat_era5 = np.meshgrid(era5_g["longitude"], era5_g["latitude"])[0].flatten()
+    # the vertical coordinates of ERA5 changes with time so we need to include
+    # them in the function below and not here
+
+    # reproject icon into radar grid
+    proj_wgs = osr.SpatialReference()
+    proj_wgs.ImportFromEPSG(4326)
+
+    mod_x, mod_y = wrl.georef.reproject(lon_era5,
+                                        lat_era5,
+                                        trg_crs=proj_aeqd,
+                                        src_crs =proj_wgs)
+    rad_x, rad_y, alt = radar_volume.x.values, radar_volume.y.values, radar_volume.z
+
+    trg = np.vstack((rad_x.flatten().ravel(),
+                        rad_y.flatten().ravel(),
+                        alt.values.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
+
+    def pyinterp_NN(data):
+        if "time" in data["z"].coords:
+            alt_era5 = np.vstack(data["z"].isel(time=0).T).T
+        else:
+            alt_era5 = np.vstack(data["z"].T).T
+        if pre_interpolate_z:
+            alt_era5 = np.repeat(alt_era5.T,len(mod_x), axis=1)
+
+        src = np.vstack((np.repeat(mod_x[np.newaxis, :], alt_era5.shape[0], axis=0).ravel(),
+                            np.repeat(mod_y[np.newaxis, :], alt_era5.shape[0], axis=0).ravel(),
+                            alt_era5.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
+
+        mesh = pyinterp.RTree(ecef=True)
+        if pre_interpolate_z:
+            mesh.packing(src, data.isel(time=0).stack(stacked=['z', 'latitude', 'longitude']))
+        else:
+            mesh.packing(src, data.isel(time=0).stack(stacked=['lvl', 'latitude', 'longitude']))
+        data_interp, neighbors = mesh.inverse_distance_weighting(trg, within=False, k=9) # k=1 is like nearest neighbors
+        data_interp_reshape = data_interp.reshape(radar_volume["x"].shape)
+        data_interp_reshape_xr = xr.DataArray(data_interp_reshape,
+                                                coords=radar_volume["x"].coords,
+                                                dims=radar_volume["x"].dims,
+                                                name=data.name).expand_dims(dim={"time": data["time"]}, axis=0)
+        return data_interp_reshape_xr
+
+    # Define a function to process each variable and timestep
+    def process_variable_time(var, func):
+        """Apply a function to each timestep of a variable."""
+        results = []
+        for t in range(var.sizes['time']):
+            result = func(var.isel(time=t).expand_dims("time"))
+            results.append(result)
+
+        # Combine the results along the time dimension
+        return xr.concat(results, dim='time')
+
+    # Wrapper to process all variables in the dataset
+    def process_dataset(ds_dict, func):
+        """Apply a function to all variables and timesteps in a dataset."""
+        processed_vars = {}
+
+        for var_name, ds in ds_dict.items():
+            for vv_name, var_data in ds.data_vars.items():
+                print(vv_name)
+                processed_vars[vv_name] = process_variable_time(var_data, func).assign_attrs(var_data.attrs)
+
+        # Combine all variables back into a dataset
+        return xr.Dataset(processed_vars)
+
+    # Apply the function to icon_field
+    start_time = time.time()
+    print("Regridding ERA5 fields to radar volume...")
+    era5_vol = process_dataset(era5_fields, pyinterp_NN)
+    total_time = time.time() - start_time
+    print(f"... took {total_time/60:.2f} minutes to run.")
+
+    if len(rename) >0:
+        era5_vol = era5_vol.rename(rename)
+
+    return era5_vol
+
+#### Function to attach the interpolated ERA5 fields into a dataset
+def attach_ERA5_fields(radar_volume, site=None, path=None, convert_to_C=True,
+                       variables=["temperature"], rename={"t":"TEMP"}, set_as_coords=False,
+                       pre_interpolate_z=False):
+    """
+    Function to interpolate and attach data from ERA5 into radar_volume.
+
+    Parameters
+    ----------
+    radar_volume : xarray Dataset
+        Dataset to which to attach the ERA5 fields.
+    site : str, optional
+        (Short) Name of the radar site to locate the data in the default folder:
+        "/automount/ags/jgiles/ERA5/hourly/"
+        Either site or path must be given.
+    path : str, optional
+        Path to the folder where ERA5 temperature and geopotential data can be found.
+        Either site or path must be given.
+    convert_to_C : bool
+        If True (default), convert ERA5 temperature from K to C.
+    variables : list
+        List of variables to load (named as in the folders). By default load only temperature.
+    rename : dict
+        Dictionary to rename from dataset variable name to new names. Leave the
+        dictionary empty for no renaming.
+    set_as_coords : bool
+        If True, set the attach the ERA5 fields as coordinates instead of variables
+    pre_interpolate_z : bool
+        If True, linearly interpolate the vertical coordinate of ERA5 to higher resolution
+        before the regridding, for smoother results. Default is False.
+
+    Returns
+    ----------
+    ds : xarray Dataset
+        Original dataset with added ERA5 fields.
+    """
+
+    era5_vol = era5_to_radar_volume(radar_volume, site=site, path=path, convert_to_C=convert_to_C,
+                             variables=variables, rename=rename, pre_interpolate_z=pre_interpolate_z)
+
+    radar_volume_era5 = xr.merge((radar_volume, era5_vol.interp({"time": radar_volume["time"]}, method="linear")))
+    if set_as_coords:
+        radar_volume_era5 = radar_volume_era5.set_coords([vv for vv in era5_vol.data_vars])
+
+    return radar_volume_era5
 
 #### Function to load ERA5 temperature into a dataset
-def interp_to_ht(ds_temp, ht):
+def interp_to_ht(ds, ht):
     """
-    Interpolate temperature profile from ERA5 to higher resolution
+    Interpolate 1D profile from ERA5 to higher resolution
     """
-    ds_temp = ds_temp.swap_dims({"lvl":"height"})
-    return ds_temp.interp({"height": ht})
+    ds = ds.swap_dims({"lvl":"height"})
+    return ds.interp({"height": ht})
+
+def interp_to_ht_parallel(ds, ht=np.arange(0,50000,50)):
+    """
+    Interpolate an ERA5 field to higher vertical resolution
+
+    Parameters
+    ----------
+    ds : xarray.Dataset or xarray.Dataarray
+        Dataset to interpolate.
+    ht : numpy.array
+        Array of height values to interpolate to.
+
+    Returns
+    ----------
+    ds_interp : xarray.Dataset
+        ds interpolated to new height coordinate.
+    """
+    # Interpolate to higher resolution
+
+    interp_to_ht_partial = partial(interp_to_ht, ht=ht)
+
+    results = []
+
+    with Pool() as P:
+        results = P.map( interp_to_ht_partial,
+                        [ds.isel({"time":tt, "longitude":lon, "latitude":lat}) for tt in range(len(ds.time)) for lon in range(len(ds.longitude)) for lat in range(len(ds.latitude)) ] )
+
+    ds_interp = xr.combine_by_coords([ds.expand_dims(("time", "longitude", "latitude")) for ds in results])
+
+    # Fix Temperature below first measurement and above last one
+    ds_interp = ds_interp.bfill(dim="height")
+    ds_interp = ds_interp.ffill(dim="height")
+
+    # Attempt to fill any missing timestep with adjacent data
+    ds_interp = ds_interp.ffill(dim="time")
+    ds_interp = ds_interp.bfill(dim="time")
+
+    return ds_interp
+
 
 def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
     """
