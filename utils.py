@@ -5495,22 +5495,39 @@ def load_icon(files, file_z=None):
 
     if file_z is not None:
         icon_field_z = xr.open_dataset(file_z)
-        icon_field_z = icon_field_z.rename({"height": "height_2"})
 
-        icon_field["z_ifc"] = icon_field_z["z_ifc"]
+        if "time" in icon_field_z.dims:
+            icon_field_z = icon_field_z.isel(time=0)
 
-    # Separate the date and fractional day
-    date_part = icon_field.time.astype(int)  # Extract the integer part as YYYYMMDD
-    fractional_day = icon_field.time.values - date_part  # Extract the fractional part
+        # We need to flip the "height" and "height_2" dimension names because
+        # of a naming issue when transforming to netcdf
+        rename_heights = {}
+        if "height" in icon_field_z.dims:
+            rename_heights["height"] = "height_2"
+        if "height_2" in icon_field_z.dims:
+            rename_heights["height_2"] = "height"
 
-    # Convert the date part to datetime
-    date_part_datetime = pd.to_datetime(date_part.astype(str), format="%Y%m%d")
+        icon_field_z = icon_field_z.rename(rename_heights)
 
-    # Add the fractional day converted to timedelta
-    corrected_time = date_part_datetime + pd.to_timedelta(fractional_day * 24, unit="h")
+        if "z_ifc" in icon_field_z:
+            icon_field["z_ifc"] = icon_field_z["z_ifc"]
+        if "z_mc" in icon_field_z:
+            icon_field["z_mc"] = icon_field_z["z_mc"]
 
-    # Assign the corrected time back to the dataset
-    icon_field['time'] = xr.DataArray(corrected_time, dims="time")
+    # Convert time dimension if necessary
+    if icon_field.time.dtype==np.float64:
+        # Separate the date and fractional day
+        date_part = icon_field.time.astype(int)  # Extract the integer part as YYYYMMDD
+        fractional_day = icon_field.time.values - date_part  # Extract the fractional part
+
+        # Convert the date part to datetime
+        date_part_datetime = pd.to_datetime(date_part.astype(str), format="%Y%m%d")
+
+        # Add the fractional day converted to timedelta
+        corrected_time = date_part_datetime + pd.to_timedelta(fractional_day * 24, unit="h")
+
+        # Assign the corrected time back to the dataset
+        icon_field['time'] = xr.DataArray(corrected_time, dims="time")
 
     return icon_field
 
@@ -5567,8 +5584,11 @@ def icon_to_radar_volume(icon_field, radar_volume):
 
     lon_icon = np.rad2deg(icon_field["clon"])
     lat_icon = np.rad2deg(icon_field["clat"])
-    alt_icon = icon_field["z_ifc"]
-    alt_icon_hl = (icon_field["z_ifc"] + icon_field["z_ifc"].shift(height_2=-1))[:-1].rename({"height_2": "height"})/2 # transform from half levels to levels
+    alt_icon_hl = icon_field["z_ifc"]
+    if "z_mc" in icon_field:
+        alt_icon = icon_field["z_mc"]
+    else: # if z_mc is not in the output then calculated based on z_ifc
+        alt_icon = (icon_field["z_ifc"] + icon_field["z_ifc"].shift(height_2=-1))[:-1]/2 # transform from half levels to levels
 
     # reproject icon into radar grid
     proj_wgs = osr.SpatialReference()
@@ -5611,8 +5631,8 @@ def icon_to_radar_volume(icon_field, radar_volume):
                    alt_icon_hl >= alt.min() - lower_z) & (
                    alt_icon_hl <= alt.max() + upper_z)).compute()
 
-    mod_x_hl = mod_x[mask[0]].copy() # make copy because we will modify them below
-    mod_y_hl = mod_y[mask[0]].copy()
+    mod_x_hl = mod_x[mask_hl[0]].copy() # make copy because we will modify them below
+    mod_y_hl = mod_y[mask_hl[0]].copy()
     alt_icon_hl = alt_icon_hl.where(mask_hl, other=False, drop=True)
 
     mod_x = mod_x[mask[0]]
@@ -5641,17 +5661,17 @@ def icon_to_radar_volume(icon_field, radar_volume):
     vars_to_compute = []
     vars_to_compute_hl = []
     for vv in icon_field.data_vars:
-        if vv not in ["z_ifc"]:
-            if "height_2" in icon_field[vv].dims and "ncells" in icon_field[vv].dims:
-                vars_to_compute.append(vv)
+        if vv not in ["z_ifc", "z_mc"]:
             if "height" in icon_field[vv].dims and "ncells" in icon_field[vv].dims:
+                vars_to_compute.append(vv)
+            if "height_2" in icon_field[vv].dims and "ncells" in icon_field[vv].dims:
                 vars_to_compute_hl.append(vv)
 
     # Define a reggriding function for one variable and one timestep. The time
     # dimension must be present (only first timestep is computed)
     def pyinterp_NN(data):
         mesh = pyinterp.RTree(ecef=True)
-        mesh.packing(src, data.isel(time=0).where(mask, drop=True).stack(stacked=['height_2', 'ncells']))
+        mesh.packing(src, data.isel(time=0).where(mask, drop=True).stack(stacked=['height', 'ncells']))
         data_interp, neighbors = mesh.inverse_distance_weighting(trg, within=False, k=1) # k=1 is like nearest neighbors
         data_interp_reshape = data_interp.reshape(radar_volume["x"].shape)
         data_interp_reshape_xr = xr.DataArray(data_interp_reshape,
@@ -5662,7 +5682,7 @@ def icon_to_radar_volume(icon_field, radar_volume):
 
     def pyinterp_NN_hl(data):
         mesh = pyinterp.RTree(ecef=True)
-        mesh.packing(src_hl, data.isel(time=0).where(mask_hl, drop=True).stack(stacked=['height', 'ncells']))
+        mesh.packing(src_hl, data.isel(time=0).where(mask_hl, drop=True).stack(stacked=['height_2', 'ncells']))
         data_interp, neighbors = mesh.inverse_distance_weighting(trg, within=False, k=1) # k=1 is like nearest neighbors
         data_interp_reshape = data_interp.reshape(radar_volume["x"].shape)
         data_interp_reshape_xr = xr.DataArray(data_interp_reshape,
