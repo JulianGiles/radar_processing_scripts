@@ -28,6 +28,7 @@ from osgeo import osr
 import pandas as pd
 import time
 import pyinterp
+from scipy.spatial import cKDTree
 
 #### Helper functions and definitions
 
@@ -5531,7 +5532,7 @@ def load_icon(files, file_z=None):
 
     return icon_field
 
-def icon_to_radar_volume(icon_field, radar_volume):
+def icon_to_radar_volume_old(icon_field, radar_volume):
     """
     Function to interpolate variable fields from ICON output into the
     shape of radar_volume using nearest neighbors.
@@ -5726,6 +5727,239 @@ def icon_to_radar_volume(icon_field, radar_volume):
 
     return xr.merge([icon_vol, icon_vol_hl])
 
+def icon_to_radar_volume(icon_field, radar_volume):
+    """
+    Function to interpolate variable fields from ICON output into the
+    shape of radar_volume using nearest neighbors.
+
+    Parameters
+    ----------
+    radar_volume : xarray.Dataset
+        Dataset with volume data
+    icon_field : xarray.Dataset
+        ICON fields.
+
+    Returns
+    -------
+    icon_vol : xarray.Dataset
+        ICON fields interpolated into the shape of radar_volume.
+    """
+
+    sitecoords = [float(radar_volume.longitude),
+                  float(radar_volume.latitude),
+                  float(radar_volume.altitude)]
+
+    # proj_wgs84 = wrl.georef.epsg_to_osr(4326)
+
+    # I have to shift the ranges:
+    # wrl.georef.spherical_to_centroids: The ranges are assumed to define the exterior
+    # boundaries of the range bins (thus they must be positive). The angles are assumed
+    # to describe the pointing direction fo the main beam lobe.
+    # cent_coords = wrl.georef.spherical_to_centroids(radar_volume["range"] + radar_volume["range"].diff("range").mean().values/2,
+    #                                                 radar_volume["azimuth"],
+    #                                                 radar_volume["elevation"],
+    #                                                 sitecoords,
+    #                                                 crs=proj_wgs84)
+
+    # lon = xr.ones_like(radar_volume["x"])*cent_coords[:,:,:,0]
+    # lat = xr.ones_like(radar_volume["x"])*cent_coords[:,:,:,1]
+    # alt = xr.ones_like(radar_volume["x"])*cent_coords[:,:,:,2]
+
+    # radar_volume = radar_volume.assign_coords({"lon": lon,
+    #                                            "lat": lat,
+    #                                            "alt": alt})
+
+    xyz, proj_aeqd = wrl.georef.spherical_to_centroids(radar_volume["range"] + radar_volume["range"].diff("range").mean().values/2,
+                                                   radar_volume["azimuth"],
+                                                   radar_volume["elevation"],
+                                                   sitecoords,
+                                                   )
+
+    if "x" not in radar_volume.coords:
+        radar_volume = wrl.georef.georeference(radar_volume)
+
+    lon_icon = np.rad2deg(icon_field["clon"])
+    lat_icon = np.rad2deg(icon_field["clat"])
+    alt_icon_hl = icon_field["z_ifc"]
+    if "z_mc" in icon_field:
+        alt_icon = icon_field["z_mc"]
+    else: # if z_mc is not in the output then calculated based on z_ifc
+        alt_icon = (icon_field["z_ifc"] + icon_field["z_ifc"].shift(height_2=-1))[:-1]/2 # transform from half levels to levels
+        alt_icon = alt_icon.rename({"height_2":"height"})
+
+    # reproject icon into radar grid
+    proj_wgs = osr.SpatialReference()
+    proj_wgs.ImportFromEPSG(4326)
+
+    # proj_stereo = wrl.georef.create_osr("dwd-radolan")
+    # mod_x, mod_y = wrl.georef.reproject(lon_icon.values,
+    #                                     lat_icon.values,
+    #                                     trg_crs=proj_stereo,
+    #                                     src_crs =proj_wgs)
+    # rad_x, rad_y = wrl.georef.reproject(lon.values,
+    #                                     lat.values,
+    #                                     trg_crs=proj_stereo,
+    #                                     src_crs=proj_wgs)
+
+    mod_x, mod_y = wrl.georef.reproject(lon_icon.values,
+                                        lat_icon.values,
+                                        trg_crs=proj_aeqd,
+                                        src_crs =proj_wgs)
+    rad_x, rad_y, alt = radar_volume.x.values, radar_volume.y.values, radar_volume.z
+
+
+    # x y version
+    # only those model data that are in radar domain + bordering volume
+    outer_x = max(0.3 * (rad_x.max() - rad_x.min()), 1)
+    outer_y = max(0.3 * (rad_y.max() - rad_y.min()), 1)
+    lower_z = 50
+    upper_z = 2000
+
+    mask = ((mod_x >= rad_x.min() - outer_x) & (
+            mod_x <= rad_x.max() + outer_x) & (
+                   mod_y >= rad_y.min() - outer_y) & (
+                   mod_y <= rad_y.max() + outer_y) & (
+                   alt_icon >= alt.min() - lower_z) & (
+                   alt_icon <= alt.max() + upper_z)).compute()
+    mask_hl = ((mod_x >= rad_x.min() - outer_x) & (
+            mod_x <= rad_x.max() + outer_x) & (
+                   mod_y >= rad_y.min() - outer_y) & (
+                   mod_y <= rad_y.max() + outer_y) & (
+                   alt_icon_hl >= alt.min() - lower_z) & (
+                   alt_icon_hl <= alt.max() + upper_z)).compute()
+
+    mod_x_hl = mod_x[mask_hl[0]].copy() # make copy because we will modify them below
+    mod_y_hl = mod_y[mask_hl[0]].copy()
+    alt_icon_hl = alt_icon_hl.where(mask_hl, other=False, drop=True)
+
+    mod_x = mod_x[mask[0]]
+    mod_y = mod_y[mask[0]]
+    alt_icon = alt_icon.where(mask, other=False, drop=True)
+
+    src = np.vstack((np.repeat(mod_x[np.newaxis, :], alt_icon.shape[0], axis=0).ravel(),
+                     np.repeat(mod_y[np.newaxis, :], alt_icon.shape[0], axis=0).ravel(),
+                     alt_icon.values.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
+    src_hl = np.vstack((np.repeat(mod_x_hl[np.newaxis, :], alt_icon_hl.shape[0], axis=0).ravel(),
+                     np.repeat(mod_y_hl[np.newaxis, :], alt_icon_hl.shape[0], axis=0).ravel(),
+                     alt_icon_hl.values.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
+    trg = np.vstack((rad_x.flatten().ravel(),
+                     rad_y.flatten().ravel(),
+                     alt.values.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
+
+    # interpolate with pyinterp (only way I was able to compute this quickly)
+    # use nearest neighborhs (inverse_distance_weighting with k=1)
+    # I also tried different configurations of dask delayed, futures and map that
+    # either crashed because of filled memory or were too slow.
+    # Using dask.bag with map worked when creating the bags with appropriate size,
+    # but it is not faster than just looping over timesteps
+    # I also tried xarray.map_blocks but it only works for the first timestep, when
+    # trying to compute other timesteps there is an error.
+    # I did not try with multiprocessing, it could work.
+    vars_to_compute = []
+    vars_to_compute_hl = []
+    for vv in icon_field.data_vars:
+        if vv not in ["z_ifc", "z_mc"]:
+            if "height" in icon_field[vv].dims and "ncells" in icon_field[vv].dims:
+                vars_to_compute.append(vv)
+            if "height_2" in icon_field[vv].dims and "ncells" in icon_field[vv].dims:
+                vars_to_compute_hl.append(vv)
+
+    # Define the nearest neighbors indeces
+
+    if len(vars_to_compute)>0:
+        data0 = icon_field[vars_to_compute[0]].isel(time=0).where(mask, drop=True).stack(stacked=['height', 'ncells'])
+        mesh = pyinterp.RTree(ecef=True)
+        mesh.packing(src, data0)
+        coords, values = mesh.value(trg, k=1, within=False)
+
+        tree = cKDTree(src)
+        _, indices = tree.query(coords[:,0,:], k=1)  # Find nearest neighbor indices
+
+    if len(vars_to_compute_hl)>0:
+        data0_hl = icon_field[vars_to_compute_hl[0]].isel(time=0).where(mask_hl, drop=True).stack(stacked=['height_2', 'ncells'])
+        mesh = pyinterp.RTree(ecef=True)
+        mesh.packing(src_hl, data0_hl)
+        coords_hl, values_hl = mesh.value(trg, k=1, within=False)
+
+        tree = cKDTree(src_hl)
+        _, indices_hl = tree.query(coords_hl[:,0,:], k=1)  # Find nearest neighbor indices
+
+    # Define a reggriding function for one variable and one timestep. The time
+    # dimension must be present (only first timestep is computed)
+    # def pyinterp_NN(data):
+    #     data_interp = data.isel(time=0)[indices]
+    #     data_interp_reshape = data_interp.values.reshape(radar_volume["x"].shape)
+    #     data_interp_reshape_xr =  xr.DataArray(data_interp_reshape,
+    #                                           coords=radar_volume["x"].coords,
+    #                                           dims=radar_volume["x"].dims,
+    #                                           name=data.name).expand_dims(dim={"time": data["time"]}, axis=0)
+    #     return data_interp_reshape_xr
+
+    # def pyinterp_NN_hl(data):
+    #     data_interp = data.isel(time=0)[indices_hl]
+    #     data_interp_reshape = data_interp.values.reshape(radar_volume["x"].shape)
+    #     data_interp_reshape_xr =  xr.DataArray(data_interp_reshape,
+    #                                           coords=radar_volume["x"].coords,
+    #                                           dims=radar_volume["x"].dims,
+    #                                           name=data.name).expand_dims(dim={"time": data["time"]}, axis=0)
+    #     return data_interp_reshape_xr
+
+    # # Define a function to process each variable and timestep
+    # def process_variable_time(var, func):
+    #     """Apply a function to each timestep of a variable."""
+    #     results = []
+    #     for t in range(var.sizes['time']):
+    #         result = func(var.isel(time=t).expand_dims("time"))
+    #         results.append(result)
+
+    #     # Combine the results along the time dimension
+    #     return xr.concat(results, dim='time')
+
+    # Define functions to select the indices
+    def pyinterp_NN(data):
+        data_interp = data[:, indices]
+        return data_interp
+
+    def pyinterp_NN_hl(data):
+        data_interp = data[:, indices_hl]
+        return data_interp
+
+    # Define a function to process all timesteps from one variable
+    def process_variable_time(var, func):
+        """Apply a function to all timestep of a variable."""
+
+        result = func(var)
+
+        data_interp_reshape = result.values.reshape((-1, *radar_volume["x"].shape))
+        data_interp_reshape_xr =  xr.DataArray(data_interp_reshape,
+                                              coords={"time":var["time"], **radar_volume["x"].coords},
+                                              dims=("time", *radar_volume["x"].dims),
+                                              name=var.name)
+        return data_interp_reshape_xr
+
+    # Wrapper to process all variables in the dataset
+    def process_dataset(ds, func):
+        """Apply a function to all variables and timesteps in a dataset."""
+        processed_vars = {}
+
+        for var_name, var_data in ds.data_vars.items():
+            print(var_name)
+            processed_vars[var_name] = process_variable_time(var_data, func).assign_attrs(ds[var_name].attrs)
+
+        # Combine all variables back into a dataset
+        return xr.Dataset(processed_vars)
+
+    # Apply the function to icon_field
+    start_time = time.time()
+    print("Regridding ICON fields to radar volume...")
+    icon_vol = process_dataset(icon_field[vars_to_compute].where(mask, drop=True).stack(stacked=['height', 'ncells']), pyinterp_NN)
+    icon_vol_hl = process_dataset(icon_field[vars_to_compute_hl].where(mask_hl, drop=True).stack(stacked=['height_2', 'ncells']), pyinterp_NN_hl)
+    total_time = time.time() - start_time
+    print(f"... took {total_time/60:.2f} minutes to run.")
+    # Regridding took 14.92 minutes to run for temp, u, v
+    # Regridding took 4.58 minutes to run for temp
+
+    return xr.merge([icon_vol, icon_vol_hl])
 
 def icon_hydromets():
     """
