@@ -5590,6 +5590,7 @@ def icon_to_radar_volume_old(icon_field, radar_volume):
         alt_icon = icon_field["z_mc"]
     else: # if z_mc is not in the output then calculated based on z_ifc
         alt_icon = (icon_field["z_ifc"] + icon_field["z_ifc"].shift(height_2=-1))[:-1]/2 # transform from half levels to levels
+        alt_icon = alt_icon.rename({"height_2": "height"})
 
     # reproject icon into radar grid
     proj_wgs = osr.SpatialReference()
