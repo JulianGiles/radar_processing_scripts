@@ -2706,12 +2706,36 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
     enddt = dt.datetime.fromordinal(enddt0.toordinal())
 
     # open ERA5 files
-    era5_t = xr.open_mfdataset(reversed(sorted(glob.glob(era5_dir+"temperature/*"+str(startdt.year)+"*"),
-                                               key=lambda file_name: int(file_name.split("/")[-1].split('_')[1]))),
-                               concat_dim="lvl", combine="nested")
-    era5_g = xr.open_mfdataset(reversed(sorted(glob.glob(era5_dir+"geopotential/*"+str(startdt.year)+"*"),
-                                               key=lambda file_name: int(file_name.split("/")[-1].split('_')[1]))),
-                               concat_dim="lvl", combine="nested")
+    try:
+        era5_t = xr.open_mfdataset(reversed(sorted(glob.glob(era5_dir+"temperature/*"+str(startdt.year)+"*"),
+                                                   key=lambda file_name: int(file_name.split("/")[-1].split('_')[1]))),
+                                   concat_dim="lvl", combine="nested")
+        era5_g = xr.open_mfdataset(reversed(sorted(glob.glob(era5_dir+"geopotential/*"+str(startdt.year)+"*"),
+                                                   key=lambda file_name: int(file_name.split("/")[-1].split('_')[1]))),
+                                   concat_dim="lvl", combine="nested")
+
+    except:
+        # first glob all files and then retain only the ones inside the period we want
+        start_year_month = (startdt.year, startdt.month)
+        end_year_month = (enddt.year, enddt.month)
+
+        era5_t_files = glob.glob(era5_dir+"temperature/*all*")
+        era5_t_files = [ file for file in era5_t_files
+                if start_year_month <= tuple(map(int, file.split('_')[-1].split('.')[0].split('-'))) <= end_year_month
+            ]
+
+        era5_g_files = glob.glob(era5_dir+"geopotential/*all*")
+        era5_g_files = [ file for file in era5_g_files
+                if start_year_month <= tuple(map(int, file.split('_')[-1].split('.')[0].split('-'))) <= end_year_month
+            ]
+
+        era5_t = xr.open_mfdataset(era5_t_files).rename({"pressure_level": "lvl"})
+        era5_g = xr.open_mfdataset(era5_g_files).rename({"pressure_level": "lvl"})
+
+        if "valid_time" in era5_t:
+            era5_t = era5_t.rename({"valid_time": "time"})
+        if "valid_time" in era5_g:
+            era5_g = era5_g.rename({"valid_time": "time"})
 
     # add altitude coord to temperature data
     earth_r = wrl.georef.projection.get_earth_radius(ds.latitude.values)
@@ -2723,7 +2747,7 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
     try: # this might fail because of the issue with the time dimension in elevations that some files have
         dtslice0 = startdt.strftime('%Y-%m-%d %H')
         dtslice1 = enddt.strftime('%Y-%m-%d %H')
-        temperatures = era5_t["t"].loc[{"time":slice(dtslice0, dtslice1)}].isel({"latitude":0, "longitude":0})
+        temperatures = era5_t["t"].loc[{"time":slice(dtslice0, dtslice1)}].isel({"latitude":round(len(era5_t.latitude)/2), "longitude":round(len(era5_t.longitude)/2)})
         if convert_to_C:
             # convert from K to C
             temp_attrs = temperatures.attrs
@@ -2741,7 +2765,7 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
         results = []
 
         with Pool() as P:
-            results = P.map( interp_to_ht_partial, [temperatures[:,tt] for tt in range(len(temperatures.time)) ] )
+            results = P.map( interp_to_ht_partial, [temperatures.isel(time=tt) for tt in range(len(temperatures.time)) ] )
 
         itemp_da = xr.concat(results, "time")
 
@@ -6261,6 +6285,9 @@ radar_volume=data.copy()
 
 ff_icon = "/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_2020010222/out_EU-R13B5_inst_DOM01_ML_20200102T220000Z_1h.nc"
 ff_icon_z = '/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_2020010222/out_EU-R13B5_constant_20200102T220000Z.nc'
+
+ff_icon = "/automount/data02/agradar/jgiles/out_EU-R13B5_inst_DOM01_ML_20200102T220000Z_1h.nc"
+ff_icon_z = '/automount/data02/agradar/jgiles/out_EU-R13B5_constant_20200102T220000Z.nc'
 
 icon_field = utils.load_icon(ff_icon, ff_icon_z)
 
