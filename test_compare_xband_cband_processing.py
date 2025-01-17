@@ -202,8 +202,11 @@ for dn in data.keys():
 for dn in data.keys():
     clowres0 = False
     if dn=="cband":
-        phase_proc_params = utils.get_phase_proc_params(path_cband) # get default phase processing parameters
-        clowres0 = True
+        if data[dn].range.diff("range").mean() <750 :
+            phase_proc_params = utils.get_phase_proc_params("dmi")
+        else:
+            phase_proc_params = utils.get_phase_proc_params(path_cband) # get default phase processing parameters
+            clowres0 = True
     else:
         phase_proc_params = utils.get_phase_proc_params("dmi") # get default phase processing parameters
 
