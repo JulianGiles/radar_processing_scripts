@@ -296,7 +296,7 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
     # Dm (ice collected from Blanke et al 2023)
     Dm_ice_zh = 1.055*wrl.trafo.idecibel(stratqvp[X_DBZH])**0.271 # Matrosov et al. (2019) Fig 10 (S band)
     Dm_ice_zh_kdp = 0.67*( wrl.trafo.idecibel(stratqvp[X_DBZH])/(stratqvp[X_KDP]*Lambda) )**(1/3) # Ryzhkov and Zrnic (2019). Idk exactly where does the 0.67 approximation comes from, Blanke et al. 2023 eq 10 and Carlin et al 2021 eq 5a cite Bukovčić et al. (2018, 2020) but those two references do not show this formula.
-    Dm_ice_zdp_kdp = -0.1 + 2*( (wrl.trafo.idecibel(stratqvp[X_DBZH])*(1-wrl.trafo.idecibel(X_ZDR)**-1 ) ) / (stratqvp[X_KDP]*Lambda) )**(1/2) # Ryzhkov and Zrnic (2019). Zdp = Z(1-ZDR**-1) from Carlin et al 2021
+    Dm_ice_zdp_kdp = -0.1 + 2*( (wrl.trafo.idecibel(stratqvp[X_DBZH])*(1-wrl.trafo.idecibel(stratqvp[X_ZDR])**-1 ) ) / (stratqvp[X_KDP]*Lambda) )**(1/2) # Ryzhkov and Zrnic (2019). Zdp = Z(1-ZDR**-1) from Carlin et al 2021
 
     Dm_rain_zdr = 0.3015*stratqvp[X_ZDR]**3 - 1.2087*stratqvp[X_ZDR]**2 + 1.9068*stratqvp[X_ZDR] + 0.5090 # (for rain but tuned for Germany X-band, JuYu Chen, Zdr in dB, Dm in mm)
 
