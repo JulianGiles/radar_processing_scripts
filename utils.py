@@ -132,6 +132,21 @@ phase_proc_params["dwd"]["90gradstarng01"] = { # for the vertical scan
         }
 phase_proc_params["dwd"]["pcpng01"] = phase_proc_params["dwd"]["90gradstarng01"] # for the precip scan
 
+phase_proc_params["dwd-hres"] = {}
+phase_proc_params["dwd-hres"]["vol5minng01"] = { # for the volume scan
+    "window0": 17, # number of range bins for phidp smoothing (this one is quite important!)
+    "winlen0": 21, # size of range window (bins) for the kdp-phidp calculations
+    "xwin0": 5, # window size (bins) for the time rolling median smoothing in ML detection
+    "ywin0": 5, # window size (bins) for the height rolling mean smoothing in ML detection
+    "fix_range": 500, # range from where to consider phi values (dwd data is bad in the first bin)
+    "rng": 1000, # range for phidp offset correction, if None it is auto calculated based on window0
+    "azmedian": True, # reduce the phidp offset by applying median along the azimuths?
+    "rhohv_thresh_gia": (0.97, 1) # rhohv thresholds for ML Giangrande refinement of KDP
+}
+phase_proc_params["dwd-hres"]["90gradstarng01"] = phase_proc_params["dwd-hres"]["vol5minng01"] # for the precip scan
+phase_proc_params["dwd-hres"]["90gradstarng10dft"] = phase_proc_params["dwd-hres"]["vol5minng01"] # for the precip scan
+phase_proc_params["dwd-hres"]["pcpng01"] = phase_proc_params["dwd-hres"]["vol5minng01"] # for the precip scan
+
 phase_proc_params["dmi"] = {
         "window0": 17,
         "winlen0": 21,
@@ -167,17 +182,22 @@ def get_phase_proc_params(path):
         raise ValueError("path must be str or list")
 
     if "dwd" in path or "DWD" in path:
+        dwd_key = "dwd"
+        if "dwd-hres" in path or "DWD-hres" in path:
+            dwd_key = "dwd-hres"
         if "vol5minng01" in path:
             if "/tur/" in path:
-                phase_proc_params_tur = phase_proc_params["dwd"]["vol5minng01"].copy()
+                phase_proc_params_tur = phase_proc_params[dwd_key]["vol5minng01"].copy()
                 phase_proc_params_tur["azmedian"] = 5
                 return phase_proc_params_tur
             else:
-                return phase_proc_params["dwd"]["vol5minng01"]
+                return phase_proc_params[dwd_key]["vol5minng01"]
         if "90gradstarng01" in path:
-            return phase_proc_params["dwd"]["90gradstarng01"]
+            return phase_proc_params[dwd_key]["90gradstarng01"]
+        if "90gradstarng10dft" in path:
+            return phase_proc_params[dwd_key]["90gradstarng10dft"]
         if "pcpng01" in path:
-            return phase_proc_params["dwd"]["pcpng01"]
+            return phase_proc_params[dwd_key]["pcpng01"]
 
     elif "dmi" in path:
         return phase_proc_params["dmi"]
