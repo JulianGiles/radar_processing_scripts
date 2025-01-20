@@ -2666,6 +2666,10 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
     interpolates the temperature profile from ERA5 levels to the ds heights. By
     default it is converted to degrees C.
 
+    This function is deprecated because it only takes the lon/lat point closest
+    to the radar site instead of interpolating the whole scanned area. It is
+    kept for backwards compatibility. Use instead attach_ERA5_fields.
+
     Parameters
     ----------
     ds : xarray Dataset
@@ -2767,7 +2771,7 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
     try: # this might fail because of the issue with the time dimension in elevations that some files have
         dtslice0 = startdt.strftime('%Y-%m-%d %H')
         dtslice1 = enddt.strftime('%Y-%m-%d %H')
-        temperatures = era5_t["t"].loc[{"time":slice(dtslice0, dtslice1)}].isel({"latitude":round(len(era5_t.latitude)/2), "longitude":round(len(era5_t.longitude)/2)})
+        temperatures = era5_t["t"].loc[{"time":slice(dtslice0, dtslice1)}].sel({"latitude":ds["latitude"], "longitude":ds["longitude"]}, method="nearest")
         if convert_to_C:
             # convert from K to C
             temp_attrs = temperatures.attrs
