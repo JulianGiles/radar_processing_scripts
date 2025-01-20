@@ -1037,6 +1037,62 @@ for savename in savedict.keys():
         fig.savefig(savepath+savename, bbox_inches="tight")
         print("AUTO PLOT: saved "+savename)
 
+
+#%% TEST Load Julian S ICON-EMVORADO files and compare to my workflow
+
+ff_js = "/automount/data02/agradar/operation_hydrometeors/data/Syn_vol/20210714/ASS_2411/MAIN_2411.1/EMVO_00510000.2/120min_spinup/EMV_Vol_ESS_*.nc"
+data = utils.load_emvorado_to_radar_volume(ff_js, rename=True)
+radar_volume=data.copy()
+
+ff_icon_vol_js = "/automount/data02/agradar/operation_hydrometeors/data/Syn_vol/20210714/ASS_2411/MAIN_2411.1/ICONdata/120min_spinup/ICON_Vol_ESS_?????????????????????????.nc"
+icon_vol_js = utils.load_emvorado_to_radar_volume(ff_icon_vol_js, rename=True)
+
+ff_icon_js = "/automount/data02/agradar/operation_hydrometeors/data/mod/20210714/ASS_2411/MAIN_2411.1/ICONdata/20210714150000/main0200/fc_R19B07.*.RADOLAN"
+ff_icon_z_js = '/automount/data02/agradar/operation_hydrometeors/data/mod/grid/vgrd_R19B07.RADOLAN.nc'
+ff_icon_hgrid_js = "/automount/data02/agradar/operation_hydrometeors/data/mod/grid/hgrd_R19B07.RADOLAN.nc"
+
+icon_field = utils.load_icon(ff_icon_js, ff_icon_z_js)
+
+icon_hgrid = xr.open_dataset(ff_icon_hgrid_js)
+
+icon_field = icon_field.assign_coords({"clon":icon_hgrid["clon"], "clat":icon_hgrid["clat"]})
+
+icon_volume = utils.icon_to_radar_volume(icon_field, radar_volume)
+
+# test
+icon_volume = utils.icon_to_radar_volume(icon_field[["u", "v", "w", "temp", "clon", "clat", "z_ifc", "z_mc"]], radar_volume)
+
+icon_volume_new = utils.icon_to_radar_volume_new(icon_field[["u", "v", "w", "temp", "clon", "clat", "z_ifc", "z_mc"]], radar_volume)
+
+import pyinterp
+from scipy.spatial import cKDTree
+start_time = time.time()
+
+data0 = icon_field["u"].isel(time=0).where(mask, drop=True).stack(stacked=['height', 'ncells'])
+mesh = pyinterp.RTree(ecef=True)
+mesh.packing(src, data0)
+coords, values = mesh.value(trg, k=1, within=False)
+
+
+tree = cKDTree(src)
+_, indices = tree.query(coords[:,0,:], k=1)  # Find nearest neighbor indices
+interp_field = []
+vv = "u"
+icon_field_vv_masked = icon_field[vv].where(mask, drop=True).stack(stacked=['height', 'ncells'])
+for it in range(len(icon_field["time"])):
+    data_interp = icon_field_vv_masked.isel(time=it)[indices]
+    data_interp_reshape = data_interp.values.reshape(radar_volume["x"].shape)
+    interp_field.append( xr.DataArray(data_interp_reshape,
+                                          coords=radar_volume["x"].coords,
+                                          dims=radar_volume["x"].dims,
+                                          name=vv).expand_dims(dim={"time": icon_field["time"][it].expand_dims("time")}, axis=0)
+                        )
+
+icon_volume_test = xr.merge(interp_field)
+
+total_time = time.time() - start_time
+print(f"took {total_time/60:.2f} minutes.")
+
 #%% OLD CODE FROM HERE
 #%% Classify stratiform/convective precip
 
