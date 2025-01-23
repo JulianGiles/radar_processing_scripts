@@ -1816,7 +1816,7 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
     mincounts: minimum sample number to plot
     N: plot sample size?
     cborientation: orientation of the colorbar, "horizontal" or "vertical"
-    shading: shading argeument for matplotlib pcolormesh. Should be 'nearest' (no interpolation) or 'gouraud' (interpolated).
+    shading: shading argument for matplotlib pcolormesh. Should be 'nearest' (no interpolation) or 'gouraud' (interpolated).
     kwargs: additional arguments for matplotlib pcolormesh
 
     # Output
@@ -6001,40 +6001,120 @@ def icon_to_radar_volume(icon_field, radar_volume):
     # Apply the function to icon_field
     start_time = time.time()
     print("Regridding ICON fields to radar volume...")
-    icon_vol = process_dataset(icon_field[vars_to_compute].where(mask, drop=True).stack(stacked=['height', 'ncells']), pyinterp_NN)
-    icon_vol_hl = process_dataset(icon_field[vars_to_compute_hl].where(mask_hl, drop=True).stack(stacked=['height_2', 'ncells']), pyinterp_NN_hl)
+    if len(vars_to_compute) == 0 and len(vars_to_compute_hl) == 0:
+        raise ValueError("ERROR: icon_field has no appropriate variables to regrid")
+    if len(vars_to_compute) > 0:
+        icon_vol = process_dataset(icon_field[vars_to_compute].where(mask, drop=True).stack(stacked=['height', 'ncells']), pyinterp_NN)
+    if len(vars_to_compute_hl) > 0:
+        icon_vol_hl = process_dataset(icon_field[vars_to_compute_hl].where(mask_hl, drop=True).stack(stacked=['height_2', 'ncells']), pyinterp_NN_hl)
     total_time = time.time() - start_time
     print(f"... took {total_time/60:.2f} minutes to run.")
     # Regridding took 14.92 minutes to run for temp, u, v
     # Regridding took 4.58 minutes to run for temp
 
-    return xr.merge([icon_vol, icon_vol_hl])
+    if len(vars_to_compute) > 0 and len(vars_to_compute_hl) > 0:
+        return xr.merge([icon_vol, icon_vol_hl])
+    elif len(vars_to_compute) > 0 :
+        return icon_vol
+    elif len(vars_to_compute_hl) > 0 :
+        return icon_vol_hl
 
-def icon_hydromets():
-    """
-    Preparing dict with ICON 2mom micro-physics (original PSD- and m-D-params)
-    """
+
+# ICON / EMVORADO specific stuff, code adapted from Jana Mendrok (DWD)
+
+def icon_hydromets(mom=2, which='all', add_emvo=False):
+    '''
+    Preparing dict with ICON 2mom or 1mom microphysics (original PSD- and m-D-parameters)
+
+    Parameters
+    ----------
+    mom : int
+        If 1, then use the 1-mom scheme parameters. If 2, then use the 2-mom scheme parameters.
+    which : list or str
+        List of hydrometeor names to prepare. If "all", then return all default hydrometeors
+        according to 1- or 2-mom scheme.
+    add_emvo : bool
+        If True, add EMVORADO Dmin and Dmax parameters to the 2-mom dict.
+
+    Returns
+    -------
+    icon_vol : xarray.Dataset
+        ICON fields interpolated into the shape of radar_volume.
+
+    '''
     hydromets = {}
-    hydromets['cloud'] = seifert2general(
-        {'nu': 1.0, 'mu': 1.0, 'xmax': 2.6e-10, 'xmin': 4.2e-15,
-         'a': 1.24e-01, 'b': 0.333333})
-    hydromets['rain'] = seifert2general(
-        {'nu': 0.0, 'mu': 0.333333, 'xmax': 3.0e-6, 'xmin': 2.6e-10,
-         'a': 1.24e-01, 'b': 0.333333})
-    hydromets['ice'] = seifert2general(
-        {'nu': 0.0, 'mu': 0.333333, 'xmax': 1.0e-5, 'xmin': 1.0e-12,
-         'a': 0.835, 'b': 0.39})
-    hydromets['snow'] = seifert2general(
-        {'nu': 0.0, 'mu': 0.5, 'xmax': 2.0e-5, 'xmin': 1.0e-10,
-         'a': 5.13, 'b': 0.5})
-    hydromets['graupel'] = seifert2general(
-        {'nu': 1.0, 'mu': 0.333333, 'xmax': 5.3e-4, 'xmin': 4.19e-9,
-         'a': 1.42e-1, 'b': 0.314})
-    hydromets['hail'] = seifert2general(
-        {'nu': 1.0, 'mu': 0.333333, 'xmax': 5.0e-3, 'xmin': 2.6e-9,
-         'a': 0.1366, 'b': 0.333333})
-    return hydromets
 
+    a_w = 1e3 * np.pi/6.
+
+    if not mom in [1,2]:
+      raise TypeError("ERROR icon_hydromets: Wrong 'mom' value. Needs to be 1 or 2.")
+
+    if isinstance(which,str):
+      if which=='all':
+        whichlist=['cloud','rain','ice','snow','graupel']
+        if mom>1:
+          whichlist.append('hail')
+      else:
+        whichlist=[which]
+    elif isinstance(which,list):
+      whichlist=which
+    else:
+      raise TypeError("ERROR icon_hydromets: Wrong 'which' type. Needs to be either list or string.")
+
+    if mom>1:
+      for item in whichlist:
+        if item=='cloud':
+          hydromets[item] = \
+            seifert2general({'nu': 1.0, 'mu': 1.0, 'xmax': 2.6e-10, 'xmin': 4.2e-15, 'a': 1.24e-01, 'b': 0.333333})
+        elif item=='rain.pre2023':
+          hydromets[item] = \
+            seifert2general({'nu': 0.0, 'mu': 0.333333, 'xmax': 3.0e-6, 'xmin': 2.6e-10, 'a': 1.24e-01, 'b': 0.333333})
+          if add_emvo:
+            hydromets[item].update({'Dmin': 50.0e-6, 'Dmax': 10.0e-3})
+        elif item=='rain':
+          hydromets[item] = \
+            seifert2general({'nu': 1.0, 'mu': 0.333333, 'xmax': 6.50e-05, 'xmin': 2.6e-10, 'a': 1.24e-01, 'b': 0.333333})
+          if add_emvo:
+            hydromets[item].update({'Dmin': 50.0e-6, 'Dmax': 10.0e-3})
+        elif item=='ice':
+          hydromets[item] = \
+            seifert2general({'nu': 0.0, 'mu': 0.333333, 'xmax': 1.0e-5, 'xmin': 1.0e-12, 'a': 0.835, 'b': 0.39})
+          if add_emvo:
+            hydromets[item].update({'Dmin': 5.0e-6, 'Dmax': 10.0e-3})
+        elif item=='snow':
+          hydromets[item] = \
+            seifert2general({'nu': 0.0, 'mu': 0.5, 'xmax': 2.0e-5, 'xmin': 1.0e-10, 'a': 5.13, 'b': 0.5})
+          if add_emvo:
+            hydromets[item].update({'Dmin': 50.0e-6, 'Dmax': 50.0e-3})
+        elif item=='graupel':
+          hydromets[item] = \
+            seifert2general({'nu': 1.0, 'mu': 0.333333, 'xmax': 5.3e-4, 'xmin': 4.19e-9, 'a': 1.42e-1, 'b': 0.314})
+          if add_emvo:
+            hydromets[item].update({'Dmin': 10.0e-6, 'Dmax': 30.0e-3})
+        elif item=='hail':
+          hydromets[item] = \
+            seifert2general({'nu': 1.0, 'mu': 0.333333, 'xmax': 5.0e-3, 'xmin': 2.6e-9, 'a': 0.1366, 'b': 0.333333})
+          if add_emvo:
+            hydromets[item].update({'Dmin': 50.0e-6, 'Dmax': 100.0e-3})
+        else:
+          warnings.warn("WARNING icon_hydromets: Unknown entry in 'which' (%s)." %item)
+    else:
+      for item in whichlist:
+        if item=='cloud':
+          hydromets[item] = {'nu': 3.0, 'mu': 3.0, 'n0': 1.0, 'a': a_w, 'b': 3.0}
+        elif item=='rain':
+          hm = {'nu': 1.0, 'mu': 0.5, 'a': a_w, 'b': 3.0}
+          hm['n0'] = 8e6 * np.exp(3.2*hm['mu']) * (1e-2)**(-hm['mu'])
+          hydromets[item] = hm
+        elif item=='ice':
+          hydromets[item] = {'nu': 3.0, 'mu': 20.0, 'n0': 1.0, 'a': 130.0, 'b': 3.0}
+        elif item=='snow':
+          hydromets[item] = {'nu': 1.0, 'mu': 0.0, 'n0': 1.0, 'a': 0.038, 'b': 2.0}
+        elif item=='graupel':
+          hydromets[item] = {'nu': 1.0, 'mu': 0.0, 'n0': 4e6, 'a': 169.6, 'b': 3.1}
+        else:
+          warnings.warn("WARNING icon_hydromets: Unknown entry in 'which' (%s)." %item)
+    return hydromets
 
 def seifert2general(hymet_seif):
     """
@@ -6043,7 +6123,7 @@ def seifert2general(hymet_seif):
     (in = COSMO/ICON) N(m) = N0 * m^nu_x * exp(-lam*m^mu_x)
                       D(m) = a * m^b
     (out = EMVORADO)  N(D) = N0 * D^mu_D * exp(-lam*D^nu_D)
-                      m(D) = a * D^b   [ -> D = (m/a)^(1/b)
+                      m(D) = a * D^b   [ -> D = (m/a)^(1/b) ]
     """
     hymet_gen = {}
     hymet_gen['mu'] = (1.0 / hymet_seif['b']) * (hymet_seif['nu'] + 1.0) - 1.0
@@ -6055,7 +6135,7 @@ def seifert2general(hymet_seif):
     return hymet_gen
 
 
-def adjust_icon_fields(infields, hymets=icon_hydromets(), spec2dens=1):
+def adjust_icon_fields(infields, hymets=icon_hydromets(), spec2dens=1, mom=2):
     """
     Take hydrometeor fields with qx and qnx, convert them to mass/number
     densities (from specific mass/number contents to densities) if necessary
@@ -6086,18 +6166,19 @@ def adjust_icon_fields(infields, hymets=icon_hydromets(), spec2dens=1):
         except:
             warnings.warn("q"+hmdict[hmname]+" not present in input icon field")
             pass
-        try:
-            qn[hmname] = infields["qn"+hmdict[hmname]]
-        except:
-            warnings.warn("qn"+hmdict[hmname]+" not present in input icon field")
-            pass
+        if mom>1:
+            try:
+                qn[hmname] = infields["qn"+hmdict[hmname]]
+            except:
+                warnings.warn("qn"+hmdict[hmname]+" not present in input icon field")
+                pass
 
     qv = infields['qv']
     t = infields['temp']
     p = infields['pres']
     for hmn, hmkey in enumerate(q.keys()):
         if hmn==0:
-            qx = q[hmkey]
+            qx = q[hmkey].copy()
         else:
             qx += q[hmkey]
 
@@ -6124,6 +6205,7 @@ def adjust_icon_fields(infields, hymets=icon_hydromets(), spec2dens=1):
     return q, qn
 
 
+# MGD parameter and PSD-moments calculations
 def gfct(x):
     """
     Gamma function (as implemented and used in EMVORADO)
@@ -6142,6 +6224,121 @@ def gfct(x):
     g_fct = p * np.exp((x - 0.5) * np.log(tmp) - tmp)
     return g_fct
 
+def calc_n0_snow(qs, t, ageos):
+    '''
+    Snow n0 from temperature-dependent parametrization by Field05
+    '''
+    n0 = xr.zeros_like(qs) + 1e9
+
+    quasi_zero = 1e-20
+    T0C_fwo = 273.15
+    zn0s1 = 13.5 * 5.65e5
+    zn0s2 = -0.107
+    mma = [5.065339, -0.062659, -3.032362, 0.029469, -0.000285, \
+           0.312550,  0.000204,  0.003199, 0.000000, -0.015952]
+    mmb = [0.476221, -0.015896,  0.165977, 0.007468, -0.000141, \
+           0.060366,  0.000079,  0.000594, 0.000000, -0.003577]
+
+    ztc = t.where(qs>=quasi_zero) - T0C_fwo
+    ztc = ztc.where(ztc >= -40., other = -40.).where(ztc <= 0., other = 0.)
+    ztc2 = ztc**2
+    ztc3 = ztc**3
+
+    nn  = 3
+    nn2 = nn**2
+    nn3 = nn**3
+
+    hlp = mma[0]    +mma[1]*ztc    +mma[2]*nn     +mma[3]*ztc*nn+mma[4]*ztc2 \
+        + mma[5]*nn2+mma[6]*ztc2*nn+mma[7]*ztc*nn2+mma[8]*ztc3  +mma[9]*nn3
+
+    alf = 10.0**hlp
+
+    bet = mmb[0]    +mmb[1]*ztc    +mmb[2]*nn     +mmb[3]*ztc*nn+mmb[4]*ztc2 \
+        + mmb[5]*nn2+mmb[6]*ztc2*nn+mmb[7]*ztc*nn2+mmb[8]*ztc3  +mmb[9]*nn3
+
+    m2s = qs.where(qs >= quasi_zero) / ageos
+    m3s = alf*np.exp(bet*np.log(m2s))
+    hlp = zn0s1*np.exp(zn0s2*ztc)
+    zn0s = 13.50 * m2s**4 / m3s**3
+    zn0s = np.maximum(zn0s,0.5*hlp)
+    zn0s = np.minimum(zn0s,1e2*hlp)
+    zn0s = np.minimum(zn0s,1e9)
+    n0_s = np.maximum(zn0s,8e5)
+    n0 = n0.where(qs < quasi_zero, other=n0_s) #!!! should this be n0 or n0_s?
+    return n0
+
+def nice_mono_1mom(t,q):
+    '''
+    '''
+    znimax_Thom  = 250.0e3
+    tmelt        = 273.15
+
+    #qn = N.zeros_like(q)
+    #qn[q>0.0] = N.minimum(5.0 * N.exp(0.304*N.maximum(tmelt-t[q>0.0],0.0)), znimax_Thom)
+    qn = np.minimum(5.0 * np.exp(0.304*np.maximum(tmelt-t,0.0)), znimax_Thom)
+    return qn
+
+def mgdparams_1mom(q, hymets=icon_hydromets(mom=1), t=None, qn_out=False):
+    '''
+    Derive non-constant MGD-PSD parameter lam (mu & nu & N0 set constant from
+      ICON microphysics)
+    '''
+    mgd={}
+    if ('snow' in q.keys()) or ('ice' in q.keys()):
+      assert(t is not None), \
+        "Model field 'temperature' required for mgd parameters of classes 'ice' and 'snow', but is missing"
+    for key in ['ice','snow']:
+      if key in q.keys():
+        assert(t.shape==q[key].shape), \
+          "Shape of model field 'temperature' inconsistent with field 'q' of class '%s'" %key
+    for key in q:
+        if key!='ice':
+            # initialize
+            mgd[key] = {}
+            mgd[key]['mu']  = hymets[key]['mu']
+            mgd[key]['nu']  = hymets[key]['nu']
+            mgd[key]['n0']  = xr.zeros_like(q[key])
+            # n0 of snow according to temperature-dependent parametrization by Field05
+            if key=='snow':
+                mgd[key]['n0'] = mgd[key]['n0'].where(q[key]<=0., other = calc_n0_snow(q[key].where(q[key]>0.),
+                                                                                      t.where(q[key]>0.),
+                                                                                      hymets[key]['a']) )
+            else:
+                mgd[key]['n0'] = mgd[key]['n0'].where(q[key]<=0., other = hymets[key]['n0'] )
+
+            mgd[key]['lam'] = xr.ones_like(q[key])
+
+            # precalc auxiliary parameters
+            tmp2 = (mgd[key]['mu'] + hymets[key]['b'] + 1.0) / mgd[key]['nu']
+
+            # calculate for valid (q)
+            mgd[key]['lam'] = mgd[key]['lam'].where(q[key] <= 0., other= ( \
+                                           ( hymets[key]['a'] * mgd[key]['n0'].where(q[key]>0.) * gfct(tmp2) ) / \
+                                           ( q[key].where(q[key]>0.) * mgd[key]['nu'] ) \
+                                         )**(1.0/tmp2) )
+        else:
+            # Predict qn_ice dependent on temperature, then mimic a monodisperse size
+            # distribution around a mean mass of q_i/n_i by using 2-mom mgd method and
+            # very large values for ice['mu'] and ice['nu']
+            qn = {'ice': nice_mono_1mom(t, q['ice'])}
+            mgd['ice'] = mgdparams({'ice': q['ice']}, qn, {'ice': hymets['ice']})['ice']
+            mgd[key]['mu']  = hymets[key]['mu']
+            mgd[key]['nu']  = hymets[key]['nu']
+            mgd[key]['n0']  = xr.zeros_like(q[key])
+            mgd[key]['n0'] = mgd[key]['n0'].where(q[key]<=0., other = hymets[key]['n0'] )
+
+    if qn_out:
+        qn={}
+        for key in q:
+            tmp1 = (mgd[key]['mu'] + 1.0) / mgd[key]['nu']
+            qn[key] = xr.ones_like(q[key]).where(q[key] <= 0., other= #!!! not sure this is correct
+                                                             mgd[key]['n0'].where(q[key]>0.) * gfct(tmp1) / \
+                                                            (mgd[key]['n0'].where(q[key]>0.) * mgd[key]['lam']**tmp1)
+                                                            )
+
+        return mgd, qn
+    else:
+        return mgd
 
 def mgdparams(q, qn, hymets=icon_hydromets()):
     """
@@ -6153,15 +6350,18 @@ def mgdparams(q, qn, hymets=icon_hydromets()):
         mgd[key] = {}
         tmp1 = (hymets[key]['mu'] + 1.0) / hymets[key]['nu']
         tmp2 = (hymets[key]['mu'] + hymets[key]['b'] + 1.0) / hymets[key]['nu']
+        tmp3 = hymets[key]['nu'] / hymets[key]['b']
         gfct_tmp1 = gfct(tmp1)
         gfct_tmp2 = gfct(tmp2)
+        tmp4 = hymets[key]['a'] * gfct_tmp2
+        tmp5 = hymets[key]['nu'] / gfct_tmp1
 
-        mgd[key]['lam'] = ((hymets[key]['a'] * qn[key].where(q[key] > 0.) * gfct_tmp2) /
-             (q[key].where(q[key] > 0.) * gfct_tmp1)).fillna(1.) ** (hymets[key]['nu'] /
-                                                                     hymets[key]['b'])
+        # calculate for valid (q,qn)
+        mgd[key]['lam'] = (( tmp4 * qn[key].where(q[key] > 0.) ) /
+             (q[key].where(q[key] > 0.) * gfct_tmp1)).fillna(1.) ** tmp3
 
-        mgd[key]['n0'] = (qn[key].where(q[key] > 0.) * hymets[key]['nu'] * \
-                        mgd[key]['lam'].where(q[key] > 0.)).fillna(0.) ** tmp1 / gfct_tmp1
+        mgd[key]['n0'] = (qn[key].where(q[key] > 0.) * tmp5 * \
+                        mgd[key]['lam'].where(q[key] > 0.)** tmp1 ).fillna(0.)
 
     return mgd
 
@@ -6185,6 +6385,7 @@ def calc_moments(mgd, k=[0, 3, 4], hymets=icon_hydromets(), adjust=0):
             c1 = (hymets[key]['mu'] + kk + 1) / hymets[key]['nu']
             c2 = gfct(c1) / hymets[key]['nu']
 
+            # calculate Mk[kk] only if q, ie n0, is non-zero
             Mk[key][kk] = (c2 * mgd[key]['n0'].where(mgd[key]['n0'] > 0.) / \
                             mgd[key]['lam'].where(mgd[key]['n0'] > 0.)).fillna(0.) ** c1
 
@@ -6210,16 +6411,25 @@ def calc_multimoments(Mk, inhm=['ice', 'snow', 'graupel', 'hail'],
 
 def calc_Dmean(Mk, meantype='vol'):
     k_needed = {'vol': [4, 3], 'mass': [3, 0]}
+    assert(meantype in k_needed.keys()), 'Meantype "%s" unknown.' %meantype
+
     Dmean = {}
     for hm in Mk.keys():
+        for k in k_needed[meantype]:
+            assert(k in Mk[hm].keys()), \
+              'Moment %i needed for meantype=%s, but not available for hymet %s' \
+              %(k,meantype,hm)
+
         Dmean[hm] = xr.where(Mk[hm][k_needed[meantype][0]] > 0,
                              (Mk[hm][k_needed[meantype][0]] /
-                              Mk[hm][k_needed[meantype][1]]) **
+                              Mk[hm][k_needed[meantype][1]]).where(Mk[hm][3]>0.) ** #!!! This where condition is not on Julian S code
                              (1. / (k_needed[meantype][0] -
-                                    k_needed[meantype][1])), 0)
+                                    k_needed[meantype][1])),
+                             np.nan) #!!! In Julian S implementation the alternative value here is 0
+
     return Dmean
 
-def calc_microphys(icon_fields):
+def calc_microphys(icon_fields, mom=2):
     """
     Calculate volumetric versions of qx and qnx and mean diameters.
 
@@ -6228,6 +6438,8 @@ def calc_microphys(icon_fields):
     icon_fields : xarray.Dataset
         Dataset with icon fields. Must include hydrometeors qx and qnx (if available),
         qv (water vapor content), temp (temperature), pres (pressure).
+    mom : int
+        Use 1- or 2- moment scheme.
 
     Returns
     -------
@@ -6235,33 +6447,50 @@ def calc_microphys(icon_fields):
         A dataset with the same data as icon_fields and the calculated new fields.
     """
     icon_nc = icon_fields.copy()
-    q_dens, qn_dens = adjust_icon_fields(icon_nc)
-    try:
-        multi_params = mgdparams(q_dens, qn_dens)
-        moments = calc_moments(mgd=multi_params)
+
+    hymets = icon_hydromets(mom=mom)
+
+    if mom>1:
+      q_dens, qn_dens = adjust_icon_fields(icon_nc, hymets, mom=mom)
+      multi_params = mgdparams(q_dens, qn_dens, hymets)
+    else:
+      q_dens, qn_dens = adjust_icon_fields(icon_nc, hymets, mom=mom)
+      if "hail" in q_dens.keys(): del(q_dens["hail"]) # remove hail in case it is present
+      t = icon_nc['temp']
+      multi_params, qn_dens = mgdparams_1mom(q_dens, hymets, t=t, qn_out=True)
+
+    moments = calc_moments(multi_params, hymets=hymets, adjust=1) #!!! Julian S uses adjust=0
+
+    if mom>1:
         multimoments = calc_multimoments(moments)
+    else:
+        multimoments = calc_multimoments(moments, inhm=['ice','snow','graupel'])
+
+    try:
         mean_volume_diameter = calc_Dmean(multimoments)
     except:
         warnings.warn("Calculation of Dm not possible")
+
     for hm in ['cloud', 'rain', 'ice', 'snow', 'graupel', 'hail']:
         try:
             icon_nc['vol_q' + hm[0]] = q_dens[hm].assign_attrs(
-                dict( standard_name='volume ' + icon_nc[
-                        'q' + hm[0]].standard_name,
+                dict( standard_name='volume ' +
+                         " ".join(icon_nc['q' + hm[0]].long_name.split(" ")),
                     units='m3 m-3'))
         except:
             warnings.warn("Creation of vol_q"+hm[0]+" not possible")
         try:
             icon_nc['vol_qn' + hm[0]] = qn_dens[hm].assign_attrs(
-                dict( standard_name=icon_nc['qn' + hm[0]].standard_name +
+                dict( standard_name=
+                         " ".join(icon_nc['qn' + hm[0]].long_name.split("_")) +
                               ' per volume',
-                    units='m3 m-3'))
+                    units='m-3'))
         except:
             warnings.warn("Creation of vol_qn"+hm[0]+" not possible")
         try:
             icon_nc['D0_' + hm[0]] = (mean_volume_diameter[hm]*1000).assign_attrs(
                     dict(standard_name='mean volume diameter of ' +
-                                       icon_nc['qn' + hm[0]].standard_name[21:],#!!! check this [21:] slicing
+                                     " ".join(icon_nc['q' + hm[0]].long_name.split(" ")[1:-1]),
                          units='mm'))
         except:
             warnings.warn("Creation of D0_"+hm[0]+" not possible")
@@ -6286,7 +6515,7 @@ def calc_microphys(icon_fields):
                 vol_qntotice += icon_nc['vol_qn' + hm[0]]
                 comment += " + vol_qn" + hm[0]
         icon_nc['vol_qntotice'] = vol_qntotice.assign_attrs( dict (
-            standard_name='number concentration total ice water content',
+            standard_name='number concentration total ice water content per volume',
             comments=comment,
             units='m-3'))
     except:
