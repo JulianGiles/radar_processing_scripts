@@ -1093,6 +1093,104 @@ icon_volume_test = xr.merge(interp_field)
 total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
 
+
+#%% TEST Load Julian S ICON-EMVORADO files and apply microphysics calculations
+
+ff_js = "/automount/data02/agradar/operation_hydrometeors/data/Syn_vol/20210714/ASS_2411/MAIN_2411.1/EMVO_00510000.2/120min_spinup/EMV_Vol_ESS_*.nc"
+data = utils.load_emvorado_to_radar_volume(ff_js, rename=True)
+radar_volume=data.copy()
+
+ff_icon_vol_js = "/automount/data02/agradar/operation_hydrometeors/data/Syn_vol/20210714/ASS_2411/MAIN_2411.1/ICONdata/120min_spinup/ICON_Vol_ESS_?????????????????????????.nc"
+icon_vol_js = utils.load_emvorado_to_radar_volume(ff_icon_vol_js, rename=True)
+
+ff_icon_js = "/automount/data02/agradar/operation_hydrometeors/data/mod/20210714/ASS_2411/MAIN_2411.1/ICONdata/20210714120000/main0200/fc_R19B07.*.RADOLAN"
+ff_icon_z_js = '/automount/data02/agradar/operation_hydrometeors/data/mod/grid/vgrd_R19B07.RADOLAN.nc'
+ff_icon_hgrid_js = "/automount/data02/agradar/operation_hydrometeors/data/mod/grid/hgrd_R19B07.RADOLAN.nc"
+
+icon_field = utils.load_icon(ff_icon_js, ff_icon_z_js)
+
+icon_hgrid = xr.open_dataset(ff_icon_hgrid_js)
+
+icon_field = icon_field.assign_coords({"clon":icon_hgrid["clon"], "clat":icon_hgrid["clat"]})
+
+# regridding to radar volume geometry
+icon_volume = utils.icon_to_radar_volume(icon_field, radar_volume)
+icon_volume["TEMP"] = icon_volume["temp"] - 273.15
+
+# calculate microphysics
+icon_volume_new = utils.calc_microphys(icon_volume, mom=2)
+
+# Make QVP
+elev = 7
+
+radar_volume_new = xr.merge([radar_volume.sel(time=slice(icon_volume_new.time[0].values, icon_volume_new.time[-1].values)),
+                             icon_volume_new])
+qvps = utils.compute_qvp(radar_volume_new.isel(elevation=elev), min_thresh = {"RHOHV":0.9, "DBZH":0, "ZDR":-1, "SNRH":10,"SNRHC":10, "SQIH":0.5} )
+
+#%% TEST Load DETECT ICON-EMVORADO files and apply microphysics calculations
+ff = "/automount/realpep/upload/jgiles/ICON_EMVORADO_radardata/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/2020/2020-10/2020-10-14/pro/vol/cdfin_allsim_id-010392_*_volscan"
+data = utils.load_emvorado_to_radar_volume(ff, rename=True)
+radar_volume=data.copy()
+
+ff_icon = "/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_2020101322/out_EU-R13B5_inst_DOM01_ML_20201013T220000Z_1h.nc"
+ff_icon_z = '/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_2020101322/out_EU-R13B5_constant_20201013T220000Z.nc'
+
+icon_field = utils.load_icon(ff_icon, ff_icon_z)
+icon_field['time'] = icon_field['time'].dt.round('1s') # round time coord to the second
+
+# regridding to radar volume geometry
+icon_volume = utils.icon_to_radar_volume(icon_field[["temp", "pres", "qv", "qc", "qi", "qr", "qs", "qg", "z_ifc"]], radar_volume)
+icon_volume["TEMP"] = icon_volume["temp"] - 273.15
+
+# calculate microphysics
+icon_volume_new = utils.calc_microphys(icon_volume, mom=1)
+
+# Make QVP
+elev = 7
+
+radar_volume_new = xr.merge([radar_volume.sel(time=slice(icon_volume_new.time[0].values, icon_volume_new.time[-1].values)),
+                             icon_volume_new])
+qvps = utils.compute_qvp(radar_volume_new.isel(elevation=elev), min_thresh = {"RHOHV":0.9, "DBZH":0, "ZDR":-1, "SNRH":10,"SNRHC":10, "SQIH":0.5} )
+
+#%% PLOT QVP
+
+ds_qvp = qvps
+
+max_height = 12000 # max height for the qvp plots
+
+tsel = ""# slice("2017-08-31T19","2017-08-31T22")
+if tsel == "":
+    datasel = ds_qvp.loc[{"z": slice(0, max_height)}]
+else:
+    datasel = ds_qvp.loc[{"time": tsel, "z": slice(0, max_height)}]
+
+templevels = [-100, 0]
+mom = "ZDR"
+
+ticks = radarmet.visdict14[mom]["ticks"]
+cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
+cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
+# norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
+cmap = "miub2"
+norm = utils.get_discrete_norm(ticks, cmap, extend="both")
+datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm, figsize=(7,3))
+# figcontour = ds_qvp["TEMP"].plot.contour(x="time", y="z", levels=templevels)
+# datasel["min_entropy"].compute().dropna("z", how="all").interpolate_na(dim="z").plot.contourf(x="time", levels=[0.8, 1], hatches=["", "XXX", ""], colors=[(1,1,1,0)], add_colorbar=False, extend="both")
+plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only the hour in the x-axis
+# datasel["height_ml_new_gia"].plot(c="black")
+# datasel["height_ml_bottom_new_gia"].plot(c="black")
+plt.gca().set_ylabel("height over sea level")
+
+try:
+    elevtitle = " "+str(np.round(ds_qvp["elevation"].values, 2))+"°"
+except:
+    elevtitle = " "+str(np.round(ds_qvp["elevation"].values, 2))+"°"
+
+plt.title(mom+elevtitle+". "+str(datasel.time.values[0]).split(".")[0])
+plt.show()
+plt.close()
+
+
 #%% OLD CODE FROM HERE
 #%% Classify stratiform/convective precip
 
