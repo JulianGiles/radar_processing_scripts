@@ -605,6 +605,16 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
 
     stratqvp.to_netcdf(realpep_path+"/upload/jgiles/stratiform_qvps/"+stratname+"/"+ll+".nc")
 
+#%% Reload QVPS
+reload_qvps = False
+ll = "pro"
+
+if reload_qvps:
+    print("Reloading filtered qvps")
+
+    qvps_strat_fil = xr.open_dataset(realpep_path+"/upload/jgiles/stratiform_qvps/stratiform/"+ll+".nc")
+    qvps_strat_relaxed_fil = xr.open_dataset(realpep_path+"/upload/jgiles/stratiform_qvps/stratiform_relaxed/"+ll+".nc")
+
 
 #%% CFTDs Plot
 
