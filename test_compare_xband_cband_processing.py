@@ -64,7 +64,7 @@ import warnings
 
 #%% Load Data
 
-path_xband = "/automount/radar-archiv/archiv/dkrz/output/2017-07/BoXPol_UniBonn_Radar_5min_level2_v20201127_Enigma4_11p0deg_20170701.nc"
+path_xband = "/automount/radar-archiv/archiv/dkrz/output/2017-07/BoXPol_UniBonn_Radar_5min_level2_v20201127_Enigma4_18p0deg_20170725.nc"
 path_cband = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/ess/vol5minng01/07/ras07-vol5minng01_sweeph5allm_any_07-20170725-ess-10410-hd5"
 path_cband = "/automount/realpep/upload/jgiles/dwd/2021/2021-07/2021-07-14/ess/vol5minng01/07/ras07-vol5minng01_sweeph5allm_any_07-20210714-ess-10410-hd5"
 
@@ -99,7 +99,7 @@ qvps = {}
 
 #%% RHOHV NC
 # For Xband it is better to write this to a file and reload because it takes a lot of memory
-temppath = "/automount/realpep/upload/jgiles/BoxPol/rhohv_nc/2017/2017-07/2017-07-25/11.0/rhohv_nc_2percent.nc"
+temppath = "/automount/realpep/upload/jgiles/BoxPol/rhohv_nc/2017/2017-07/2017-07-25/18.0/rhohv_nc_2percent.nc"
 
 for dn in data.keys():
     X_DBZH, X_PHI, X_RHO, X_ZDR, X_TH = utils.get_names(data[dn])
@@ -203,12 +203,14 @@ for dn in data.keys():
     clowres0 = False
     if dn=="cband":
         if data[dn].range.diff("range").mean() <750 :
-            phase_proc_params = utils.get_phase_proc_params("dmi")
+            phase_proc_params = utils.get_phase_proc_params("dwd-hres/vol5minng01")
         else:
             phase_proc_params = utils.get_phase_proc_params(path_cband) # get default phase processing parameters
             clowres0 = True
+    elif dn=="xband":
+        phase_proc_params = utils.get_phase_proc_params("dwd-hres/vol5minng01") # get default phase processing parameters
     else:
-        phase_proc_params = utils.get_phase_proc_params("dmi") # get default phase processing parameters
+        raise KeyError("Check radar phase processing parameters")
 
     X_DBZH, X_PHI, X_RHO, X_ZDR, X_TH = utils.get_names(data[dn])
 
@@ -314,7 +316,7 @@ for dn in data.keys():
         # calculate linear values for ZH and ZDR
         data[dn] = data[dn].assign({"DBZH_lin": wrl.trafo.idecibel(data[dn][X_DBZH]), "ZDR_lin": wrl.trafo.idecibel(data[dn][X_ZDR]) })
 
-        # calculate entropy
+        # calculate entropy (Here Tobi also filters out the KDP<0.01)
         Entropy = utils.calculate_pseudo_entropy(data[dn].where(data[dn][X_DBZH]>0), dim='azimuth', var_names=["DBZH_lin", "ZDR_lin", X_RHO, "KDP_ML_corrected"], n_lowest=30)
 
         # concate entropy for all variables and get the minimum value
@@ -394,7 +396,7 @@ for dn in data.keys():
 
     # Filter out non relevant values
     qvps_strat_fil[dn] = qvps_strat[dn].where((qvps_strat[dn][X_TH] > -10 )&
-                                      (qvps_strat[dn][X_KDP] > -0.1)&
+                                      (qvps_strat[dn][X_KDP] > -0.1)& # here Tobi filters > 0.01
                                       (qvps_strat[dn][X_KDP] < 3)&
                                       (qvps_strat[dn][X_RHO] > 0.7)&
                                       (qvps_strat[dn][X_ZDR] > -1) &
@@ -503,9 +505,187 @@ for dn in data.keys():
                                                                  }).compute()
 
 
+#%% Filters (conditions for stratiform) Retrievals PPI-based
+qvps_strat = {}
+qvps_strat_relaxed = {}
+qvps_strat_fil = {}
+qvps_strat_relaxed_fil = {}
+retrievals = {}
+
+for dn in data.keys():
+
+    start_time = time.time()
+    print("Filtering stratiform conditions...")
+
+    X_DBZH, X_PHI, X_RHO, X_ZDR, X_TH = utils.get_names(data[dn])
+    X_KDP = "KDP_ML_corrected"
+
+    if X_RHO+"_NC" in data[dn].data_vars:
+        X_RHO = X_RHO+"_NC"
+
+    if X_ZDR+"_OC" in data[dn].data_vars:
+        X_ZDR = X_ZDR+"_OC"
+
+    # Check that RHOHV_NC is actually better (less std) than RHOHV, otherwise just use RHOHV, on a per-day basis
+    std_margin = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_margin), otherwise use RHOHV
+    min_rho = 0.6 # min RHOHV value for filtering. Only do this test with the highest values to avoid wrong results
+
+    # if "_NC" in X_RHO:
+    #     # Check that the corrected RHOHV does not have higher STD than the original (1 + std_margin)
+    #     # if that is the case we take it that the correction did not work well so we won't use it
+    #     cond_rhohv = (
+    #                     qvps[dn][X_RHO].where(qvps[dn][X_RHO]>min_rho).resample({"time":"D"}).std(dim=("time", "z")) < \
+    #                     qvps[dn]["RHOHV"].where(qvps[dn]["RHOHV"]>min_rho).resample({"time":"D"}).std(dim=("time", "z"))*(1+std_margin)
+    #                     ).compute()
+
+    #     # create an xarray.Dataarray with the valid timesteps
+    #     valid_dates = cond_rhohv.where(cond_rhohv, drop=True).time.dt.date
+    #     valid_datetimes = [date.values in valid_dates for date in qvps[dn].time.dt.date]
+    #     valid_datetimes_xr = xr.DataArray(valid_datetimes, coords={"time": qvps[dn]["time"]})
+
+    #     # Redefine RHOHV_NC: keep it in the valid datetimes, put RHOHV in the rest
+    #     qvps[dn][X_RHO] = qvps[dn][X_RHO].where(valid_datetimes_xr, qvps[dn]["RHOHV"])
+
+
+    # Conditions to clean ML height values
+    max_change = 400 # set a maximum value of ML height change from one timestep to another (in m)
+    max_std = 200 # set a maximum value of ML std from one timestep to another (in m)
+    time_window = 5 # set timestep window for the std computation (centered)
+    min_period = 3 # set minimum number of valid ML values in the window (centered)
+
+    cond_ML_bottom_change = abs(data[dn]["height_ml_bottom_new_gia"].diff("time").compute())<max_change
+    cond_ML_bottom_std = data[dn]["height_ml_bottom_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
+    # cond_ML_bottom_minlen = data[dn]["height_ml_bottom_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
+
+    cond_ML_top_change = abs(data[dn]["height_ml_new_gia"].diff("time").compute())<max_change
+    cond_ML_top_std = data[dn]["height_ml_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
+    # cond_ML_top_minlen = data[dn]["height_ml_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
+
+    allcond = cond_ML_bottom_change * cond_ML_bottom_std * cond_ML_top_change * cond_ML_top_std
+
+    # Filter only fully stratiform pixels (min entropy >= 0.8 and ML detected)
+    qvps_strat[dn] = data[dn].where( (data[dn]["min_entropy"]>=0.8).compute() & allcond, drop=True)
+    # Relaxed alternative: Filter data with at least 50% of stratiform pixels (min entropy >= 0.8 and ML detected)
+    # qvps_strat_relaxed[dn] = data[dn].where( ( (data[dn]["min_entropy"]>=0.8).sum("range").compute() >= data[dn][X_DBZH].count("range").compute()/2 ) & allcond, drop=True)
+
+    # Filter out non relevant values
+    qvps_strat_fil[dn] = qvps_strat[dn].where((qvps_strat[dn][X_TH] > -10 )&
+                                      (qvps_strat[dn][X_KDP] > 0.01)&
+                                      (qvps_strat[dn][X_KDP] < 3)&
+                                      (qvps_strat[dn][X_RHO] > 0.7)&
+                                      (qvps_strat[dn][X_ZDR] > -1) &
+                                      (qvps_strat[dn][X_ZDR] < 3))
+
+    # qvps_strat_relaxed_fil[dn] = qvps_strat_relaxed[dn].where((qvps_strat_relaxed[dn][X_TH] > -10 )&
+    #                                   (qvps_strat_relaxed[dn][X_KDP] > -0.1)&
+    #                                   (qvps_strat_relaxed[dn][X_KDP] < 3)&
+    #                                   (qvps_strat_relaxed[dn][X_RHO] > 0.7)&
+    #                                   (qvps_strat_relaxed[dn][X_ZDR] > -1) &
+    #                                   (qvps_strat_relaxed[dn][X_ZDR] < 3))
+
+    # try:
+    #     qvps_strat_fil[dn] = qvps_strat_fil[dn].where(qvps_strat_fil[dn]["SNRHC"]>10)
+    #     # qvps_strat_relaxed_fil[dn] = qvps_strat_relaxed_fil[dn].where(qvps_strat_relaxed_fil[dn]["SNRHC"]>10)
+    # except KeyError:
+    #     qvps_strat_fil[dn] = qvps_strat_fil[dn].where(qvps_strat_fil[dn]["SNRH"]>10)
+    #     # qvps_strat_relaxed_fil[dn] = qvps_strat_relaxed_fil[dn].where(qvps_strat_relaxed_fil[dn]["SNRH"]>10)
+    # except:
+    #     print("Could not filter out low SNR")
+
+    total_time = time.time() - start_time
+    print(f"took {total_time/60:.2f} minutes.")
+
+    #### Calculate retreivals
+    # We do this for both qvps_strat_fil and relaxed qvps_strat_relaxed_fil
+    start_time = time.time()
+    print("Calculating microphysical retrievals...")
+
+    # to check the wavelength of each radar, in cm for DWD, in 1/100 cm for DMI ()
+    # filewl = ""
+    # xr.open_dataset(filewl, group="how") # DWD
+    # file1 = realpep_path+"/upload/jgiles/dmi_raw/acq/OLDDATA/uza/RADAR/2015/01/01/ANK/RAW/ANK150101000008.RAW6M00"
+    # xd.io.backends.iris.IrisRawFile(file1, loaddata=False).ingest_header["task_configuration"]["task_misc_info"]["wavelength"]
+
+    Lambda = 53.1 # radar wavelength in mm (pro: 53.138, ANK: 53.1, AFY: 53.3, GZT: 53.3, HTY: 53.3, SVS:53.3)
+
+    if dn == "xband":
+        Lambda = 32
+
+    # We will put the final retrievals in a dict
+    try: # check if exists, if not, create it
+        retrievals[dn]
+    except NameError:
+        retrievals[dn] = {}
+    except KeyError:
+        retrievals[dn] = {}
+
+    for stratname, stratqvp in [("stratiform", qvps_strat_fil[dn].copy())]:
+        print("   ... for "+stratname)
+
+        retrievals[dn][stratname] = {}
+
+        # LWC
+        lwc_zh_zdr = 10**(0.058*stratqvp[X_DBZH] - 0.118*stratqvp[X_ZDR] - 2.36) # Reimann et al 2021 eq 3.7 (adjusted for Germany)
+        lwc_zh_zdr2 = 1.38*10**(-3) *10**(0.1*stratqvp[X_DBZH] - 2.43*stratqvp[X_ZDR] + 1.12*stratqvp[X_ZDR]**2 - 0.176*stratqvp[X_ZDR]**3 ) # used in S band, Ryzhkov 2022 PROM presentation https://www2.meteo.uni-bonn.de/spp2115/lib/exe/fetch.php?media=internal:uploads:all_hands_schneeferner_july2022:ryzhkov.pdf
+        lwc_kdp = 10**(0.568*np.log10(stratqvp[X_KDP]) + 0.06) # Reimann et al 2021(adjusted for Germany)
+
+        # IWC (Collected from Blanke et al 2023)
+        iwc_zh_t = 10**(0.06 * stratqvp[X_DBZH] - 0.0197*stratqvp["TEMP"] - 1.7) # empirical from Hogan et al 2006 Table 2
+
+        iwc_zdr_zh_kdp = xr.where(stratqvp[X_ZDR]>=0.4, # Carlin et al 2021 eqs 4b and 5b
+                                  4*10**(-3)*( stratqvp[X_KDP]*Lambda/( 1-wrl.trafo.idecibel(stratqvp[X_ZDR])**-1 ) ),
+                                  0.033 * ( stratqvp[X_KDP]*Lambda )**0.67 * wrl.trafo.idecibel(stratqvp[X_DBZH])**0.33 )
+
+        # Dm (ice collected from Blanke et al 2023)
+        Dm_ice_zh = 1.055*wrl.trafo.idecibel(stratqvp[X_DBZH])**0.271 # Matrosov et al. (2019) Fig 10 (S band)
+        Dm_ice_zh_kdp = 0.67*( wrl.trafo.idecibel(stratqvp[X_DBZH])/(stratqvp[X_KDP]*Lambda) )**(1/3) # Ryzhkov and Zrnic (2019). Idk exactly where does the 0.67 approximation comes from, Blanke et al. 2023 eq 10 and Carlin et al 2021 eq 5a cite Bukovčić et al. (2018, 2020) but those two references do not show this formula.
+        Dm_ice_zdp_kdp = -0.1 + 2*( (wrl.trafo.idecibel(stratqvp[X_DBZH])*(1-wrl.trafo.idecibel(stratqvp[X_ZDR])**-1 ) ) / (stratqvp[X_KDP]*Lambda) )**(1/2) # Ryzhkov and Zrnic (2019). Zdp = Z(1-ZDR**-1) from Carlin et al 2021
+
+        Dm_rain_zdr = 0.3015*stratqvp[X_ZDR]**3 - 1.2087*stratqvp[X_ZDR]**2 + 1.9068*stratqvp[X_ZDR] + 0.5090 # (for rain but tuned for Germany X-band, JuYu Chen, Zdr in dB, Dm in mm)
+
+        D0_rain_zdr2 = 0.171*stratqvp[X_ZDR]**3 - 0.725*stratqvp[X_ZDR]**2 + 1.48*stratqvp[X_ZDR] + 0.717 # (D0 from Hu and Ryzhkov 2022, used in S band data but could work for C band) [mm]
+        D0_rain_zdr3 = xr.where(stratqvp[X_ZDR]<1.25, # D0 from Bringi et al 2009 (C-band) eq. 1 [mm]
+                                0.0203*stratqvp[X_ZDR]**4 - 0.1488*stratqvp[X_ZDR]**3 + 0.2209*stratqvp[X_ZDR]**2 + 0.5571*stratqvp[X_ZDR] + 0.801,
+                                0.0355*stratqvp[X_ZDR]**3 - 0.3021*stratqvp[X_ZDR]**2 + 1.0556*stratqvp[X_ZDR] + 0.6844
+                                )
+        mu = 0
+        Dm_rain_zdr2 = D0_rain_zdr2 * (4+mu)/(3.67+mu) # conversion from D0 to Dm according to eq 4 of Hu and Ryzhkov 2022.
+        Dm_rain_zdr3 = D0_rain_zdr3 * (4+mu)/(3.67+mu)
+
+        # log(Nt)
+        Nt_ice_zh_iwc = (3.39 + 2*np.log10(iwc_zh_t) - 0.1*stratqvp[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, [log(1/L)]
+        Nt_ice_zh_iwc2 = (3.69 + 2*np.log10(iwc_zh_t) - 0.1*stratqvp[X_DBZH]) # Carlin et al 2021 eq. 7 originally in [log(1/m3)], transformed units here to [log(1/L)] by subtracting 3
+        Nt_ice_zh_iwc_kdp = (3.39 + 2*np.log10(iwc_zdr_zh_kdp) - 0.1*stratqvp[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, [log(1/L)]
+        Nt_ice_zh_iwc2_kdp = (3.69 + 2*np.log10(iwc_zdr_zh_kdp) - 0.1*stratqvp[X_DBZH]) # Carlin et al 2021 eq. 7 originally in [log(1/m3)], transformed units here to [log(1/L)] by subtracting 3
+        Nt_rain_zh_zdr = ( -2.37 + 0.1*stratqvp[X_DBZH] - 2.89*stratqvp[X_ZDR] + 1.28*stratqvp[X_ZDR]**2 - 0.213*stratqvp[X_ZDR]**3 )# Hu and Ryzhkov 2022 eq. 3 [log(1/L)]
+
+        # Put everything together
+        retrievals[dn][stratname][dn] = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
+                                                                 "lwc_zh_zdr2":lwc_zh_zdr2,
+                                                                 "lwc_kdp": lwc_kdp,
+                                                                 "iwc_zh_t": iwc_zh_t,
+                                                                 "iwc_zdr_zh_kdp": iwc_zdr_zh_kdp,
+                                                                 "Dm_ice_zh": Dm_ice_zh,
+                                                                 "Dm_ice_zh_kdp": Dm_ice_zh_kdp,
+                                                                 "Dm_ice_zdp_kdp": Dm_ice_zdp_kdp,
+                                                                 "Dm_rain_zdr": Dm_rain_zdr,
+                                                                 "Dm_rain_zdr2": Dm_rain_zdr2,
+                                                                 "Dm_rain_zdr3": Dm_rain_zdr3,
+                                                                 "Nt_ice_zh_iwc": Nt_ice_zh_iwc,
+                                                                 "Nt_ice_zh_iwc2": Nt_ice_zh_iwc2,
+                                                                 "Nt_ice_zh_iwc_kdp": Nt_ice_zh_iwc_kdp,
+                                                                 "Nt_ice_zh_iwc2_kdp": Nt_ice_zh_iwc2_kdp,
+                                                                 "Nt_rain_zh_zdr": Nt_rain_zh_zdr,
+                                                                 })
+
+        retrievals[dn][stratname][dn] = utils.compute_qvp(xr.merge([stratqvp, retrievals[dn][stratname][dn]]), min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10,"SNRHC":10, "SQIH":0.5} ).compute()
+
+        loc = utils.find_loc(utils.locs, path_cband)
+        retrievals[dn][stratname][dn] = utils.attach_ERA5_TEMP(retrievals[dn][stratname][dn], path=loc.join(utils.era5_dir.split("loc")))
+
 #%% Plot QVPs
 
-dn = "cband"
+dn = "xband"
 ds_qvp = qvps[dn]
 
 max_height = 12000 # max height for the qvp plots
@@ -517,7 +697,7 @@ else:
     datasel = ds_qvp.loc[{"time": tsel, "z": slice(0, max_height)}]
 
 templevels = [-100, 0]
-mom = "KDP_ML_corrected"
+mom = "DBZH"
 
 ticks = radarmet.visdict14[mom]["ticks"]
 cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
@@ -527,7 +707,7 @@ cmap = "miub2"
 norm = utils.get_discrete_norm(ticks, cmap, extend="both")
 datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm, figsize=(7,3))
 figcontour = ds_qvp["TEMP"].plot.contour(x="time", y="z", levels=templevels)
-# datasel["min_entropy"].dropna("z", how="all").interpolate_na(dim="z").plot.contourf(x="time", levels=[0.8, 1], hatches=["", "XXX", ""], colors=[(1,1,1,0)], add_colorbar=False, extend="both")
+# datasel["min_entropy"].compute().dropna("z", how="all").interpolate_na(dim="z").plot.contourf(x="time", levels=[0.8, 1], hatches=["", "XXX", ""], colors=[(1,1,1,0)], add_colorbar=False, extend="both")
 plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only the hour in the x-axis
 datasel["height_ml_new_gia"].plot(c="black")
 datasel["height_ml_bottom_new_gia"].plot(c="black")
@@ -699,7 +879,7 @@ IWC = "iwc_zdr_zh_kdp" # iwc_zh_t or iwc_zdr_zh_kdp
 LWC = "lwc_kdp" # lwc_zh_zdr (adjusted for Germany) or lwc_zh_zdr2 (S-band) or lwc_kdp
 Dm_ice = "Dm_ice_zdp_kdp" # Dm_ice_zh, Dm_ice_zh_kdp, Dm_ice_zdp_kdp
 Dm_rain = "Dm_rain_zdr3" # Dm_rain_zdr, Dm_rain_zdr2 or Dm_rain_zdr3
-Nt_ice = "Nt_ice_zh_iwc" # Nt_ice_zh_iwc, Nt_ice_zh_iwc2, Nt_ice_zh_iwc_kdp, Nt_ice_zh_iwc2_kdp
+Nt_ice = "Nt_ice_zh_iwc2_kdp" # Nt_ice_zh_iwc, Nt_ice_zh_iwc2, Nt_ice_zh_iwc_kdp, Nt_ice_zh_iwc2_kdp
 Nt_rain = "Nt_rain_zh_zdr" # Nt_rain_zh_zdr
 
 vars_to_plot = {"IWC/LWC [g/m^{3}]": [-0.1, 0.82, 0.02], # [-0.1, 0.82, 0.02],
