@@ -2369,7 +2369,8 @@ ax[2,1].set_position([box6.x0, box6.y0 + box6.height * 0.9, box6.width* 1.15, bo
 '''
 #### Function to interpolate ERA5 to radar grid
 def era5_to_radar_volume(radar_volume, site=None, path=None, convert_to_C=True,
-                         variables=["temperature"], rename={"t":"TEMP"}, pre_interpolate_z=False):
+                         variables=["temperature"], rename={"t":"TEMP"}, k_n=1,
+                         pre_interpolate_z=False):
     """
     Function to interpolate ERA5 fields into the shape of radar_volume.
 
@@ -2391,6 +2392,9 @@ def era5_to_radar_volume(radar_volume, site=None, path=None, convert_to_C=True,
     rename : dict
         Dictionary to rename from dataset variable name to new names. Leave the
         dictionary empty for no renaming.
+    k_n : int
+        Number of neighbors to pass to the inverse_distance_weighting function.
+        k=1 means nearest neighbors method.
     pre_interpolate_z : bool
         If True, linearly interpolate the vertical coordinate of ERA5 to higher resolution
         before the regridding, for smoother results. Default is False.
@@ -2523,7 +2527,7 @@ def era5_to_radar_volume(radar_volume, site=None, path=None, convert_to_C=True,
             mesh.packing(src, data.isel(time=0).stack(stacked=['z', 'latitude', 'longitude']))
         else:
             mesh.packing(src, data.isel(time=0).stack(stacked=['lvl', 'latitude', 'longitude']))
-        data_interp, neighbors = mesh.inverse_distance_weighting(trg, within=False, k=9) # k=1 is like nearest neighbors
+        data_interp, neighbors = mesh.inverse_distance_weighting(trg, within=False, k=k_n) # k=1 is like nearest neighbors
         data_interp_reshape = data_interp.reshape(radar_volume["x"].shape)
         data_interp_reshape_xr = xr.DataArray(data_interp_reshape,
                                                 coords=radar_volume["x"].coords,
@@ -2570,7 +2574,7 @@ def era5_to_radar_volume(radar_volume, site=None, path=None, convert_to_C=True,
 #### Function to attach the interpolated ERA5 fields into a dataset
 def attach_ERA5_fields(radar_volume, site=None, path=None, convert_to_C=True,
                        variables=["temperature"], rename={"t":"TEMP"}, set_as_coords=False,
-                       pre_interpolate_z=False):
+                       k_n=1, pre_interpolate_z=False):
     """
     Function to interpolate and attach data from ERA5 into radar_volume.
 
@@ -2594,6 +2598,9 @@ def attach_ERA5_fields(radar_volume, site=None, path=None, convert_to_C=True,
         dictionary empty for no renaming.
     set_as_coords : bool
         If True, set the attach the ERA5 fields as coordinates instead of variables
+    k_n : int
+        Number of neighbors to pass to the inverse_distance_weighting function.
+        k=1 means nearest neighbors method.
     pre_interpolate_z : bool
         If True, linearly interpolate the vertical coordinate of ERA5 to higher resolution
         before the regridding, for smoother results. Default is False.
@@ -2605,7 +2612,7 @@ def attach_ERA5_fields(radar_volume, site=None, path=None, convert_to_C=True,
     """
 
     era5_vol = era5_to_radar_volume(radar_volume, site=site, path=path, convert_to_C=convert_to_C,
-                             variables=variables, rename=rename, pre_interpolate_z=pre_interpolate_z)
+                             variables=variables, rename=rename, k_n=k_n, pre_interpolate_z=pre_interpolate_z)
 
     radar_volume_era5 = xr.merge((radar_volume, era5_vol.interp({"time": radar_volume["time"]}, method="linear")))
     if set_as_coords:
