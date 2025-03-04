@@ -184,9 +184,10 @@ print(f"took {total_time/60:.2f} minutes.")
 start_time = time.time()
 print("Filtering stratiform conditions...")
 
-# Filter only stratiform events (min entropy >= 0.8) and ML detected
+min_entropy_thresh = 0.85
+# Filter only stratiform events (min entropy >= min_entropy_thresh) and ML detected
 # with ProgressBar():
-#     qvps_strat = qvps.where( (qvps["min_entropy"]>=0.8) & (qvps.height_ml_bottom_new_gia.notnull()), drop=True).compute()
+#     qvps_strat = qvps.where( (qvps["min_entropy"]>=min_entropy_thresh) & (qvps.height_ml_bottom_new_gia.notnull()), drop=True).compute()
 
 # Check that RHOHV_NC is actually better (less std) than RHOHV, otherwise just use RHOHV, on a per-day basis
 std_margin = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_margin), otherwise use RHOHV
@@ -225,10 +226,10 @@ cond_ML_top_std = qvps["height_ml_new_gia"].rolling(time=time_window, min_period
 
 allcond = cond_ML_bottom_change * cond_ML_bottom_std * cond_ML_top_change * cond_ML_top_std
 
-# Filter only fully stratiform pixels (min entropy >= 0.8 and ML detected)
-qvps_strat = qvps.where( (qvps["min_entropy"]>=0.8).compute() & allcond, drop=True)
-# Relaxed alternative: Filter qvps with at least 50% of stratiform pixels (min entropy >= 0.8 and ML detected)
-qvps_strat_relaxed = qvps.where( ( (qvps["min_entropy"]>=0.8).sum("z").compute() >= qvps[X_DBZH].count("z").compute()/2 ) & allcond, drop=True)
+# Filter only fully stratiform pixels (min entropy >= min_entropy_thresh and ML detected)
+qvps_strat = qvps.where( (qvps["min_entropy"]>=min_entropy_thresh).compute() & allcond, drop=True)
+# Relaxed alternative: Filter qvps with at least 50% of stratiform pixels (min entropy >= min_entropy_thresh and ML detected)
+qvps_strat_relaxed = qvps.where( ( (qvps["min_entropy"]>=min_entropy_thresh).sum("z").compute() >= qvps[X_DBZH].count("z").compute()/2 ) & allcond, drop=True)
 
 # Filter out non relevant values
 qvps_strat_fil = qvps_strat.where((qvps_strat[X_TH] > -10 )&
@@ -983,16 +984,16 @@ def plot_qvp(data, momname="DBZH", tloc=slice("2015-01-01", "2020-12-31"), plot_
             print("No ML in data")
     if plot_entropy:
         try:
-            data["min_entropy"].loc[{"time":tloc}].dropna("z", how="all").interpolate_na(dim="z").plot.contourf(x="time", levels=[0.8, 1], hatches=["", "X", ""], colors=[(1,1,1,0)], add_colorbar=False, extend="both")
+            data["min_entropy"].loc[{"time":tloc}].dropna("z", how="all").interpolate_na(dim="z").plot.contourf(x="time", levels=[min_entropy_thresh, 1], hatches=["", "X", ""], colors=[(1,1,1,0)], add_colorbar=False, extend="both")
         except:
             print("Plotting entropy failed")
     try:
         # select the times in the riming ds
         add_riming_tloc = add_riming.loc[{"time":tloc}]
         # add riming with hatches
-        add_riming_tloc.where(add_riming_tloc>0.9).where(add_riming_tloc.z>add_riming_tloc.height_ml_new_gia).dropna("z", how="all").plot.contourf(x="time", levels=[0.8,1.1], hatches=["","**", ""], colors=[(1,1,1,0)], add_colorbar=False, extend="both")
+        add_riming_tloc.where(add_riming_tloc>0.9).where(add_riming_tloc.z>add_riming_tloc.height_ml_new_gia).dropna("z", how="all").plot.contourf(x="time", levels=[min_entropy_thresh,1.1], hatches=["","**", ""], colors=[(1,1,1,0)], add_colorbar=False, extend="both")
         # add riming with color shade
-        add_riming_tloc.where(add_riming_tloc>0.9).where(add_riming_tloc.z>add_riming_tloc.height_ml_new_gia).dropna("z", how="all").plot.contourf(x="time", levels=[0.8,1.1], colors="gray", add_colorbar=False, alpha=0.9)
+        add_riming_tloc.where(add_riming_tloc>0.9).where(add_riming_tloc.z>add_riming_tloc.height_ml_new_gia).dropna("z", how="all").plot.contourf(x="time", levels=[min_entropy_thresh,1.1], colors="gray", add_colorbar=False, alpha=0.9)
     except:
         None
     plt.title(mom)
