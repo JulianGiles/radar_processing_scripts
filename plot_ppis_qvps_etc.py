@@ -83,7 +83,7 @@ how_mix_zdr_offset = "count" # how to choose between the different offsets
 min_height_key = "default" # default = 200
 min_range_key = "default" # default = 1000
 
-ff = "/automount/realpep/upload/jgiles/dwd/*/*/2020-10-14/pro/vol5minng01/07/*allmoms*"
+ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/pro/vol5minng01/07/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2019-07-17/ANK/*F/8.0/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-08-09/AFY/*/10.0/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-11-20/HTY/*/10.0/*allmoms*"
@@ -681,6 +681,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
 
 
 mom = "KDP_ML_corrected"
+min_entropy_thresh = 0.85
 
 ticks = radarmet.visdict14[mom]["ticks"]
 cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
@@ -689,7 +690,7 @@ cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(tic
 cmap = "miub2"
 norm = utils.get_discrete_norm(ticks, cmap, extend="both")
 datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm, figsize=(7,3))
-datasel["min_entropy"].dropna("z", how="all").interpolate_na(dim="z").plot.contourf(x="time", levels=[0.8, 1], hatches=["", "XXX", ""], colors=[(1,1,1,0)], add_colorbar=False, extend="both")
+datasel["min_entropy"].dropna("z", how="all").interpolate_na(dim="z").plot.contourf(x="time", levels=[min_entropy_thresh, 1], hatches=["", "XXX", ""], colors=[(1,1,1,0)], add_colorbar=False, extend="both")
 plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only the hour in the x-axis
 datasel["height_ml_new_gia"].plot(c="black")
 datasel["height_ml_bottom_new_gia"].plot(c="black")
@@ -722,6 +723,7 @@ plt.close()
 #%% TEST: Try different methods for stratiform classification
 # lets try only ZH first
 var_list = ["DBZH_lin", "DBZH"]
+min_entropy_thresh = 0.85
 
 # Tobi's entropy (pseudo entropy)
 entropy_zh_tobi = utils.calculate_pseudo_entropy(ds, var_names=var_list)
@@ -773,7 +775,7 @@ std_zh_over0_below80 = utils.calculate_std(ds.where(ds.DBZH>0).where(ds.DBZH<80)
 std_zh_over0_below80_propernorm = utils.calculate_std(ds.where(ds.DBZH>0).where(ds.DBZH<80), var_names=var_list, normlims=(0,80))
 
 # Plots
-def plot_qvp_strattest(stratres, vmin=0, vmax=1, ylim=(0,60000), title="", contourlevs=[0.8]):
+def plot_qvp_strattest(stratres, vmin=0, vmax=1, ylim=(0,60000), title="", contourlevs=[min_entropy_thresh]):
     stratres.plot(x="time", vmin=vmin, vmax=vmax, ylim=ylim)
     stratres.plot.contour(levels=contourlevs, x="time", colors=["gray"])
     plt.title(title)
@@ -1088,6 +1090,8 @@ hv.extension("matplotlib")
 
 max_height = 12000 # max height for the qvp plots (necessary because of random high points and because of dropna in the z dim)
 
+min_entropy_thresh = 0.85
+
 var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR',
                # 'TH','UPHIDP',  # not so relevant
 #               'UVRADH', 'UZDR',  'UWRADH', 'VRADH', 'SQIH', # not implemented yet in visdict14
@@ -1178,7 +1182,7 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
 
             quadmesh = (quadmesh * line1 * line2)
 
-        # Add shading for min_entropy when it's greater than 0.8
+        # Add shading for min_entropy when it's greater than min_entropy_thresh
         if show_min_entropy:
             min_entropy_values = selected_data.min_entropy.where(selected_data.min_entropy>=0).dropna("z", how="all").compute()
 
@@ -1188,7 +1192,7 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
                 width=500, height=250,
             ).opts(
                     cmap=['#ffffff00', "#B5B1B1", '#ffffff00'],
-                    color_levels=[0, 0.8,1, 1.1],
+                    color_levels=[0, min_entropy_thresh,1, 1.1],
                     clim=(0, 1.1),
                     alpha=0.8
                 )
@@ -1219,7 +1223,7 @@ selected_day_slider = pn.widgets.DiscreteSlider(name='Select Date', options=date
 
 show_ML_lines_toggle = pn.widgets.Toggle(name='Show ML Lines', value=True)
 
-show_min_entropy_toggle = pn.widgets.Toggle(name='Show Entropy over 0.8', value=True)
+show_min_entropy_toggle = pn.widgets.Toggle(name='Show Entropy over '+str(min_entropy_thresh), value=True)
 
 @pn.depends(selected_day_slider.param.value, show_ML_lines_toggle, show_min_entropy_toggle)
 # Define the function to update plots based on widget values
