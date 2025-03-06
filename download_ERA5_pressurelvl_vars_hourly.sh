@@ -26,10 +26,10 @@ end_year=2023
 months=(01 02 03 04 05 06 07 08 09 10 11 12)
 
 # bounding box (For whole of Germany: 46-57 N 4-17 E) (For whole of Turkey: 33-45 N 24-47)
-north=45
-south=33
-west=24
-east=47
+north=57
+south=46
+west=4
+east=17
 
 for variable in "${variables_array[@]}"
 do
@@ -51,7 +51,7 @@ do
     do
 
         if [ ! -e ${variable}_${lvl}_${iy}-${im}.nc ]; then
-            python ../ERA5_download_by_year_Juli.py ${iy} ${im} ${variable} ${lvl} ${north} ${south} ${west} ${east}
+            python ../ERA5_download_pressurelvl_by_year-month.py ${iy} ${im} ${variable} ${lvl} ${north} ${south} ${west} ${east}
         fi
         if [ -e ${variable}_${lvl}_${iy}-${im}.nc ]; then
             ntime=$(tsteps ${variable}_${lvl}_${iy}-${im}.nc)
