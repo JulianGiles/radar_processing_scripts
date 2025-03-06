@@ -5,8 +5,8 @@ Created on Mon Dec  2 15:48:08 2024
 
 @author: jgiles
 
-This script takes ICON+EMVORADO data and computes the ML detection algorithm and 
-entropy values for event classification, then generates QVPs including 
+This script takes ICON+EMVORADO data and computes the ML detection algorithm and
+entropy values for event classification, then generates QVPs including
 temperature profiles and saves to nc files. All data given by the specified
 path is loaded and processed at the same time.
 
@@ -86,7 +86,7 @@ window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian, rhohv_thresh_gia = pha
 def make_savedir(ff, replace=("/run/", "/run/qvps/")):
     """
     ff: filepath of the original file
-    replace: part of ff to replace to create the new path 
+    replace: part of ff to replace to create the new path
     """
     ff_parts = ff.split(replace[0])
     savepath = (replace[1]).join(ff_parts)
@@ -96,7 +96,7 @@ def make_savedir(ff, replace=("/run/", "/run/qvps/")):
     return savepath
 
 #%% Load data
-        
+
 # check for the file DONE.txt in the savepath before starting
 savepath = make_savedir(files[0][:-25]+".nc", replace=("/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/", "/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/qvps/"))
 if os.path.exists(os.path.dirname(savepath)+"/DONE.txt") and not overwrite:
@@ -111,9 +111,9 @@ for coord in ["latitude", "longitude", "altitude", "elevation"]:
         data.coords[coord] = data.coords[coord].mean()
 
 #%% Georeference
-swp = data.pipe(wrl.georef.georeference) 
+swp = data.pipe(wrl.georef.georeference)
 
-#%% Check variable names and add corrections and calibrations 
+#%% Check variable names and add corrections and calibrations
 
 # get PHIDP name
 for X_PHI in phidp_names:
@@ -150,61 +150,61 @@ ds_qvp_ra = utils.compute_qvp(ds, min_thresh={X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH
 if X_PHI in ds.data_vars:
     moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI: (0, 180)}
 
-    ds_qvp_ra = utils.melting_layer_qvp_X_new(ds_qvp_ra, moments=moments, dim="z", fmlh=0.3, 
+    ds_qvp_ra = utils.melting_layer_qvp_X_new(ds_qvp_ra, moments=moments, dim="z", fmlh=0.3,
              xwin=xwin0, ywin=ywin0, min_h=0, rhohv_thresh_gia=(0.99, 1), all_data=True, clowres=clowres0)
 
     #### Assign ML values to dataset
-    
+
     ds = ds.assign_coords({'height_ml': ds_qvp_ra.height_ml})
     ds = ds.assign_coords({'height_ml_bottom': ds_qvp_ra.height_ml_bottom})
     ds = ds.assign_coords({'height_ml_new_gia': ds_qvp_ra.height_ml_new_gia})
     ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp_ra.height_ml_bottom_new_gia})
-    
+
 #%% Attach ERA5 temperature profile
 loc = utils.find_loc_code(utils.locs_code, files[0])
 ds_qvp_ra = utils.attach_ERA5_TEMP(ds_qvp_ra, path=loc.join(era5_dir.split("loc")))
- 
+
 #%% Discard possible erroneous ML values
 if "height_ml_new_gia" in ds_qvp_ra:
     ## First, filter out ML heights that are too high (above selected isotherm)
     isotherm = -1 # isotherm for the upper limit of possible ML values
     z_isotherm = ds_qvp_ra.TEMP.isel(z=((ds_qvp_ra["TEMP"]-isotherm)**2).argmin("z").compute())["z"]
-    
+
     ds_qvp_ra.coords["height_ml_new_gia"] = ds_qvp_ra["height_ml_new_gia"].where(ds_qvp_ra["height_ml_new_gia"]<=z_isotherm.values).compute()
     ds_qvp_ra.coords["height_ml_bottom_new_gia"] = ds_qvp_ra["height_ml_bottom_new_gia"].where(ds_qvp_ra["height_ml_new_gia"]<=z_isotherm.values).compute()
-    
+
     # Then, check that ML top is over ML bottom
-    cond_top_over_bottom = ds_qvp_ra.coords["height_ml_new_gia"] > ds_qvp_ra.coords["height_ml_bottom_new_gia"] 
-    
+    cond_top_over_bottom = ds_qvp_ra.coords["height_ml_new_gia"] > ds_qvp_ra.coords["height_ml_bottom_new_gia"]
+
     # Assign final values
     ds_qvp_ra.coords["height_ml_new_gia"] = ds_qvp_ra["height_ml_new_gia"].where(cond_top_over_bottom).compute()
     ds_qvp_ra.coords["height_ml_bottom_new_gia"] = ds_qvp_ra["height_ml_bottom_new_gia"].where(cond_top_over_bottom).compute()
-    
+
     ds = ds.assign_coords({'height_ml_new_gia': ds_qvp_ra.height_ml_new_gia.where(cond_top_over_bottom)})
     ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp_ra.height_ml_bottom_new_gia.where(cond_top_over_bottom)})
-    
+
 #%% Classification of stratiform events based on entropy
-if X_PHI in ds.data_vars:    
-    
+if X_PHI in ds.data_vars:
+
     # calculate linear values for ZH and ZDR
     ds = ds.assign({"DBZH_lin": wrl.trafo.idecibel(ds[X_DBZH]), "ZDR_lin": wrl.trafo.idecibel(ds[X_ZDR]) })
-    
+
     # calculate entropy
     Entropy = utils.calculate_pseudo_entropy(ds.where(ds[X_DBZH]>0), var_names=["DBZH_lin", "ZDR_lin", X_RHO, "KDP"])
-    
-    # concate entropy for all variables and get the minimum value 
-    strati = xr.concat((Entropy["entropy_DBZH_lin"], Entropy["entropy_ZDR_lin"], Entropy["entropy_"+X_RHO], Entropy["entropy_KDP"]),"entropy")        
+
+    # concate entropy for all variables and get the minimum value
+    strati = xr.concat((Entropy["entropy_DBZH_lin"], Entropy["entropy_ZDR_lin"], Entropy["entropy_"+X_RHO], Entropy["entropy_KDP"]),"entropy")
     min_trst_strati = strati.min("entropy")
-    
+
     # assign to datasets
     ds["min_entropy"] = min_trst_strati
-    
+
     min_trst_strati_qvp = min_trst_strati.assign_coords({"z": ds["z"].median("azimuth")})
     min_trst_strati_qvp = min_trst_strati_qvp.swap_dims({"range":"z"}) # swap range dimension for height
     ds_qvp_ra = ds_qvp_ra.assign({"min_entropy": min_trst_strati_qvp})
-        
-                        
-#%% Save dataset      
+
+
+#%% Save dataset
     # we need to change the type of some arrays for this to work
     for att in ds_qvp_ra.attrs.keys():
         if type(ds_qvp_ra.attrs[att] is xr.DataArray):
