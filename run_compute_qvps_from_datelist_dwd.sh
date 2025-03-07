@@ -5,36 +5,32 @@
 # first I need to load a python environment with wradlib, numpy, datatree, sys, glob and tqdm
 
 # Set the directory to look for the files
-dir=/automount/realpep/upload/jgiles/dmi/
+dir=/automount/realpep/upload/jgiles/dwd/
 
 # Which location to process
-loc=HTY
+loc=pro
+date_file="/automount/realpep/upload/jgiles/dwd/pro_selected_dates.txt"
+
+# Read the dates from the file into an array
+mapfile -t valid_dates < "$date_file"
+
 
 max_attempts=5  # Maximum number of restart attempts
 max_execution_time=240  # Maximum execution time in seconds
 
 # Create a list of all files that include *allmoms* in their name
-files=$(find $dir -name "*allm*$loc*" -type f -not -path "*qvp*"  -not -path "*WIND*" -not -path "*SURVEILLANCE*" -not -path "*RHI1*" -not -path "*ppi*" | sort -u)
+files=$(find $dir -name "*allm*_07*$loc*" -type f -not -path "*qvp*"  -not -path "*WIND*" -not -path "*SURVEILLANCE*" -not -path "*RHI1*" -not -path "*ppi*" | sort -u)
 
 # Loop through each file in the list
 for file in $files; do
 
-    # Get the last folder of the file path (indicating elevation)
-    elev=$(basename "$(dirname "$file")")
+    # Extract date using $loc as a reference
+    path_before_loc=${file%/$loc*}  # Get everything before "/pro"
+    file_date=$(basename "$path_before_loc")  # Get the last part, which is the date
 
-    # Function to check if the number is between 10 and 15
-    is_between_7_and_15() {
-    local number_float=$1
+    # Check if the extracted date is in the list
+    if [[ " ${valid_dates[*]} " =~ " $file_date " ]]; then
 
-    # Use bc to convert the number string to float
-    local float_value=$(echo "scale=2; $number_float" | bc)
-
-    # Check if the float value is between 10 and 15 (inclusive)
-    (( $(bc <<< "$float_value >= 7.0 && $float_value <= 15.0") ))
-    }
-
-    # Check if the elevation is a valid float and within the desired range
-    if [[ $elev =~ ^[0-9]+(\.[0-9]+)?$ ]] && is_between_7_and_15 "$elev"; then
         attempt=1
         while [ $attempt -le $max_attempts ]; do
 
@@ -79,8 +75,6 @@ for file in $files; do
         if [ $attempt -gt $max_attempts ]; then
             echo "Max restart attempts reached, could not be completed: $file"
         fi
-
-
 
     fi
 done
