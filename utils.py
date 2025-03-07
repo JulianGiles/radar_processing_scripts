@@ -29,6 +29,7 @@ import pandas as pd
 import time
 import pyinterp
 from scipy.spatial import cKDTree
+import re
 
 #### Helper functions and definitions
 
@@ -621,6 +622,12 @@ def n_longest_consecutive(ds, dim='time'):
     """
     ds = ds.notnull().cumsum(dim=dim) - ds.notnull().cumsum(dim=dim).where(ds.isnull()).ffill(dim=dim).fillna(0)
     return ds.max(dim=dim)
+
+def give_array(start, stop, step):
+    n = int((stop - start) / step)  # n jump
+    num_points = n + 1
+    new_stop = start + n * step
+    return np.linspace(start, new_stop, num_points)
 
 #### Loading functions
 def load_dwd_preprocessed(filepath):
@@ -2367,6 +2374,7 @@ ax[2,1].set_position([box6.x0, box6.y0 + box6.height * 0.9, box6.width* 1.15, bo
 
 
 '''
+
 #### Function to interpolate ERA5 to radar grid
 def era5_to_radar_volume(radar_volume, site=None, path=None, convert_to_C=True,
                          variables=["temperature"], rename={"t":"TEMP"}, k_n=1,
@@ -2383,7 +2391,7 @@ def era5_to_radar_volume(radar_volume, site=None, path=None, convert_to_C=True,
         "/automount/ags/jgiles/ERA5/hourly/"
         Either site or path must be given.
     path : str, optional
-        Path to the folder where ERA5 temperature and geopotential data can be found.
+        Path to the folder where ERA5 data can be found.
         Either site or path must be given.
     convert_to_C : bool
         If True (default), convert ERA5 temperature from K to C.
@@ -2445,27 +2453,44 @@ def era5_to_radar_volume(radar_volume, site=None, path=None, convert_to_C=True,
     enddt = dt.datetime.fromordinal(enddt0.toordinal())
 
     # open ERA5 geopotental file
-    era5_g = xr.open_mfdataset(reversed(sorted(glob.glob(era5_dir+"geopotential/*"+str(startdt.year)+"*"),
-                                               key=lambda file_name: int(file_name.split("/")[-1].split('_')[1]))),
-                               concat_dim="lvl", combine="nested")
+    try:
+        era5_g = xr.open_mfdataset(reversed(sorted(glob.glob(era5_dir+"geopotential/*"+str(startdt.year)+"*"),
+                                                   key=lambda file_name: int(file_name.split("/")[-1].split('_')[1]))),
+                                   concat_dim="lvl", combine="nested")
+    except ValueError:
+        era5_g = xr.open_mfdataset(sorted(glob.glob(era5_dir+"geopotential/*"+str(startdt.year)+"*"))).rename(
+                        {"valid_time":"time", "pressure_level":"lvl"})
 
-    # compute z coord
+    # select the desired period and area and compute z coord
+    dtslice0 = startdt.strftime('%Y-%m-%d %H')
+    dtslice1 = enddt.strftime('%Y-%m-%d %H')
+    era5_g = era5_g.loc[{"time":slice(dtslice0, dtslice1),
+                         "longitude":slice(float(radar_volume.longitude)-1, float(radar_volume.longitude)+1),
+                         "latitude":slice(float(radar_volume.latitude)+1, float(radar_volume.latitude)-1)}]
+
     earth_r = wrl.georef.projection.get_earth_radius(radar_volume.latitude.values)
     gravity = 9.80665
     z_coord = (earth_r*(era5_g.z/gravity)/(earth_r - era5_g.z/gravity)).compute()
 
     era5_fields = {}
     for vv in variables:
-        era5_fields[vv] = xr.open_mfdataset(reversed(sorted(glob.glob(era5_dir+vv+"/*"+str(startdt.year)+"*"),
-                                                   key=lambda file_name: int(file_name.split("/")[-1].split('_')[1]))),
-                                   concat_dim="lvl", combine="nested")
-
-        era5_fields[vv].coords["z"] = z_coord
+        try:
+            era5_fields[vv] = xr.open_mfdataset(reversed(sorted(glob.glob(era5_dir+vv+"/*"+str(startdt.year)+"*"),
+                                                       key=lambda file_name: int(file_name.split("/")[-1].split('_')[1]))),
+                                       concat_dim="lvl", combine="nested")
+        except ValueError:
+            era5_fields[vv] = xr.open_mfdataset(sorted(glob.glob(era5_dir+vv+"/*"+str(startdt.year)+"*"))).rename(
+                        {"valid_time":"time", "pressure_level":"lvl"})
 
         # select time slice
-        dtslice0 = startdt.strftime('%Y-%m-%d %H')
-        dtslice1 = enddt.strftime('%Y-%m-%d %H')
-        era5_fields[vv] = era5_fields[vv].loc[{"time":slice(dtslice0, dtslice1)}]
+        era5_fields[vv] = era5_fields[vv].loc[{"time":slice(dtslice0, dtslice1),
+                         "longitude":slice(float(radar_volume.longitude)-1, float(radar_volume.longitude)+1),
+                         "latitude":slice(float(radar_volume.latitude)+1, float(radar_volume.latitude)-1)}]
+
+
+        # add z coord
+        era5_fields[vv].coords["z"] = z_coord
+
         if convert_to_C and vv == "temperature":
             # convert from K to C
             temp_attrs = era5_fields[vv]["t"].attrs
@@ -2475,9 +2500,18 @@ def era5_to_radar_volume(radar_volume, site=None, path=None, convert_to_C=True,
 
         if pre_interpolate_z:
             era5_fields[vv] = interp_to_ht_parallel(era5_fields[vv].rename({"z":"height"}),
-                                                    ht=np.arange(0,50000,50))\
+                                                    ht=np.arange(0,25000,100))\
                                                     .rename({"height":"z"})\
                 .transpose(*tuple(dd if dd != "lvl" else "z" for dd in era5_fields[vv].dims )).compute()
+
+            new_latitude = give_array(float(era5_fields[vv]["latitude"].min()),
+                                      float(era5_fields[vv]["latitude"].max()),
+                                      0.1)
+            new_longitude = give_array(float(era5_fields[vv]["longitude"].min()),
+                                      float(era5_fields[vv]["longitude"].max()),
+                                      0.1)
+
+            era5_fields[vv] = era5_fields[vv].interp({"latitude": new_latitude, "longitude": new_longitude})
 
     # create coordinates for the interpolation
     sitecoords = [float(radar_volume.longitude),
@@ -2491,8 +2525,12 @@ def era5_to_radar_volume(radar_volume, site=None, path=None, convert_to_C=True,
                                                     sitecoords,
                                                     )
 
-    lon_era5 = np.meshgrid(era5_g["longitude"], era5_g["latitude"])[0].flatten()
-    lat_era5 = np.meshgrid(era5_g["longitude"], era5_g["latitude"])[0].flatten()
+    if pre_interpolate_z:
+        lon_era5 = np.meshgrid(era5_fields[vv]["longitude"], era5_fields[vv]["latitude"])[0].flatten()
+        lat_era5 = np.meshgrid(era5_fields[vv]["longitude"], era5_fields[vv]["latitude"])[0].flatten()
+    else:
+        lon_era5 = np.meshgrid(era5_g["longitude"], era5_g["latitude"])[0].flatten()
+        lat_era5 = np.meshgrid(era5_g["longitude"], era5_g["latitude"])[0].flatten()
     # the vertical coordinates of ERA5 changes with time so we need to include
     # them in the function below and not here
 
@@ -2527,7 +2565,7 @@ def era5_to_radar_volume(radar_volume, site=None, path=None, convert_to_C=True,
             mesh.packing(src, data.isel(time=0).stack(stacked=['z', 'latitude', 'longitude']))
         else:
             mesh.packing(src, data.isel(time=0).stack(stacked=['lvl', 'latitude', 'longitude']))
-        data_interp, neighbors = mesh.inverse_distance_weighting(trg, within=False, k=k_n) # k=1 is like nearest neighbors
+        data_interp, neighbors = mesh.inverse_distance_weighting(trg, within=False, k=k_n, p=1) # k=1 is like nearest neighbors
         data_interp_reshape = data_interp.reshape(radar_volume["x"].shape)
         data_interp_reshape_xr = xr.DataArray(data_interp_reshape,
                                                 coords=radar_volume["x"].coords,
@@ -2587,7 +2625,7 @@ def attach_ERA5_fields(radar_volume, site=None, path=None, convert_to_C=True,
         "/automount/ags/jgiles/ERA5/hourly/"
         Either site or path must be given.
     path : str, optional
-        Path to the folder where ERA5 temperature and geopotential data can be found.
+        Path to the folder where ERA5 data can be found.
         Either site or path must be given.
     convert_to_C : bool
         If True (default), convert ERA5 temperature from K to C.
@@ -2787,8 +2825,8 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
             temperatures.attrs = temp_attrs
 
         # Interpolate to higher resolution
-        hmax = 50000.
-        ht = np.arange(0., hmax, 50)
+        hmax = 25000.
+        ht = np.arange(0., hmax, 100)
 
 
         interp_to_ht_partial = partial(interp_to_ht, ht=ht)
@@ -4705,7 +4743,7 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.08, betam
     temp_mlbot : float
         Value of the temperature level to use as ML bottom.
     temp_mltop : float
-        Value of the temperature level to use as ML bottom.
+        Value of the temperature level to use as ML top.
     z_mlbot : float
         Height value to use as ML bottom. This is only used where ML_bot and temp_mlbot are not valid.
     dz_ml : float
