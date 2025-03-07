@@ -119,7 +119,8 @@ phase_proc_params["dwd"]["vol5minng01"] = { # for the volume scan
     "fix_range": 750, # range from where to consider phi values (dwd data is bad in the first bin)
     "rng": 3000, # range for phidp offset correction, if None it is auto calculated based on window0
     "azmedian": True, # reduce the phidp offset by applying median along the azimuths?
-    "rhohv_thresh_gia": (0.97, 1) # rhohv thresholds for ML Giangrande refinement of KDP
+    "rhohv_thresh_gia": (0.97, 1), # rhohv thresholds for ML Giangrande refinement of KDP
+    "grad_thresh": 1 # additional filtering parameter for ML refinement (1=ignore)
 }
 phase_proc_params["dwd"]["90gradstarng01"] = { # for the vertical scan
             "window0": 17, # number of range bins for phidp smoothing (this one is quite important!)
@@ -129,7 +130,8 @@ phase_proc_params["dwd"]["90gradstarng01"] = { # for the vertical scan
             "fix_range": 750, # range from where to consider phi values (dwd data is bad in the first bin)
             "rng": 3000, # range for phidp offset correction, if None it is auto calculated based on window0
             "azmedian": True, # reduce the phidp offset by applying median along the azimuths?
-            "rhohv_thresh_gia": (0.97, 1) # rhohv thresholds for ML Giangrande refinement of KDP
+            "rhohv_thresh_gia": (0.97, 1), # rhohv thresholds for ML Giangrande refinement of KDP
+            "grad_thresh": 1 # additional filtering parameter for ML refinement (1=ignore)
         }
 phase_proc_params["dwd"]["pcpng01"] = phase_proc_params["dwd"]["90gradstarng01"] # for the precip scan
 
@@ -142,7 +144,8 @@ phase_proc_params["dwd-hres"]["vol5minng01"] = { # for the volume scan
     "fix_range": 500, # range from where to consider phi values (dwd data is bad in the first bin)
     "rng": 1000, # range for phidp offset correction, if None it is auto calculated based on window0
     "azmedian": True, # reduce the phidp offset by applying median along the azimuths?
-    "rhohv_thresh_gia": (0.97, 1) # rhohv thresholds for ML Giangrande refinement of KDP
+    "rhohv_thresh_gia": (0.97, 1), # rhohv thresholds for ML Giangrande refinement of KDP
+    "grad_thresh": 1 # additional filtering parameter for ML refinement (1=ignore)
 }
 phase_proc_params["dwd-hres"]["90gradstarng01"] = phase_proc_params["dwd-hres"]["vol5minng01"] # for the precip scan
 phase_proc_params["dwd-hres"]["90gradstarng10dft"] = phase_proc_params["dwd-hres"]["vol5minng01"] # for the precip scan
@@ -156,7 +159,8 @@ phase_proc_params["dmi"] = {
         "fix_range": 350,
         "rng": 1000, # range for phidp offset correction, if None it is auto calculated based on window0
         "azmedian": 10, # reduce the phidp offset by applying median along the azimuths?
-        "rhohv_thresh_gia": (0.99, 1) # rhohv thresholds for ML Giangrande refinement of KDP
+        "rhohv_thresh_gia": (0.99, 1), # rhohv thresholds for ML Giangrande refinement of KDP
+        "grad_thresh": 0.0001 # additional filtering parameter for ML refinement
 }
 
 # make a function to retreive only the phase_proc_params dictionary corresponding to the a data path (not very precise, tuned to my data naming)
