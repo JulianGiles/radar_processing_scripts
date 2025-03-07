@@ -23,6 +23,7 @@ import wradlib as wrl
 import sys
 import glob
 import xarray as xr
+import numpy as np
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -41,11 +42,11 @@ start_time = time.time()
 
 # path0 = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/" # For testing
 path0 = sys.argv[1] # read path from console
-overwrite = False # overwrite existing files?
+overwrite = True # overwrite existing files?
 
 abs_zdr_off_min_thresh = 0. # if ZDR_OC has more negative values than the original ZDR
 # and the absolute median offset is < abs_zdr_off_min_thresh, then undo the correction (set to 0 to avoid this step)
-zdr_offset_perts = True # offset correct zdr per timesteps? if False, correct with daily offset
+zdr_offset_perts = False # offset correct zdr per timesteps? if False, correct with daily offset
 mix_zdr_offsets = True # if True and zdr_offset_perts=False, try to
 # choose between daily LR-consistency and QVP offsets based on how_mix_zdr_offset.
 # If True and zdr_offset_perts=True, choose between all available timestep offsets
@@ -73,9 +74,9 @@ rhoncfile = utils.rhoncfile # pattern to select the appropriate file (careful wi
 if "hd5" in path0 or "h5" in path0:
     files=[path0]
 elif "dwd" in path0:
-    files = sorted(glob.glob(path0+"/*allmoms*hd5*"))
+    files = sorted(glob.glob(path0+"/*allm*hd5*"))
 elif "dmi" in path0:
-    files = sorted(glob.glob(path0+"/*allmoms*h5*"))
+    files = sorted(glob.glob(path0+"/*allm*h5*"))
 elif isinstance(path0, list):
     files = path0
 else:
@@ -111,15 +112,20 @@ if "HTY" in path0:
     min_range = min_rngs["HTY"]
 
 # ERA5 folder
+if "dwd" in path0:
+    cloc = "germany"
+if "dmi" in path0:
+    cloc = "turkey"
+
 if os.path.exists("/automount/ags/jgiles/ERA5/hourly/"):
     # then we are in local system
-    era5_dir = "/automount/ags/jgiles/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
+    era5_dir = "/automount/ags/jgiles/ERA5/hourly/"+cloc+"/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
 elif os.path.exists("/p/scratch/detectrea/giles1/ERA5/hourly/"):
     # then we are in JSC
-    era5_dir = "/p/scratch/detectrea/giles1/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
+    era5_dir = "/p/scratch/detectrea/giles1/ERA5/hourly/"+cloc+"/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
 elif os.path.exists("/p/largedata2/detectdata/projects/A04/ERA5/hourly/"):
     # then we are in JSC
-    era5_dir = "/p/largedata2/detectdata/projects/A04/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
+    era5_dir = "/p/largedata2/detectdata/projects/A04/ERA5/hourly/"+cloc+"/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
 
 
 # names of variables
@@ -145,7 +151,7 @@ def make_savedir(ff, name):
         sys.exit("Country code not found in path.")
 
     ff_parts = ff.split(country)
-    savepath = (country+"/qvps/"+name+"/").join(ff_parts)
+    savepath = (country+"/"+name+"/").join(ff_parts)
     savepathdir = os.path.dirname(savepath)
     if not os.path.exists(savepathdir):
         os.makedirs(savepathdir)
@@ -167,7 +173,7 @@ for ff in files:
         continue
 
     # check for the file DONE.txt in the savepath before starting
-    savepath = make_savedir(ff, "")
+    savepath = make_savedir(ff, "qvps")
     if os.path.exists(os.path.dirname(savepath)+"/DONE.txt") and not overwrite:
         continue
 
@@ -395,7 +401,7 @@ for ff in files:
     if X_PHI in ds.data_vars:
         # Set parameters according to data
         phase_proc_params = utils.get_phase_proc_params(ff) # get default phase processing parameters
-        window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian, rhohv_thresh_gia = phase_proc_params.values()
+        window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian, rhohv_thresh_gia, grad_thresh = phase_proc_params.values()
 
         ######### Processing PHIDP
         #### fix PHIDP
@@ -431,6 +437,20 @@ for ff in files:
     else:
         print(X_PHI+" not found in the data, skipping ML detection")
 
+#%% Attach ERA5 variables
+    era5_vars = ["temperature", "relative_humidity"]
+    era5_vars_rename = {"t":"TEMP", "r":"RH"}
+    ds = utils.attach_ERA5_fields(ds, path=era5_dir, convert_to_C=True,
+                           variables=era5_vars,
+                           rename=era5_vars_rename, set_as_coords=False,
+                           k_n=1, pre_interpolate_z=True)
+
+    # Save ERA5 ppis
+    for vv in era5_vars_rename.values():
+        ds[vv].encoding = {'zlib': True, 'complevel': 6}
+    era5_ppis_path = make_savedir(ff, "ppis_era5")
+    ds[[vv for vv in era5_vars_rename.values()]].to_netcdf(era5_ppis_path)
+
 #%% Compute QVP
     ## Only data with a cross-correlation coefficient ρHV above 0.7 are used to calculate their azimuthal median at all ranges (from Trömel et al 2019).
     ## Also added further filtering (TH>0, ZDR>-1)
@@ -446,7 +466,7 @@ for ff in files:
         elif country=="dmi":
             moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI: (-20, 180)}
 
-        ds_qvp_ra = utils.melting_layer_qvp_X_new(ds_qvp_ra2, moments=moments, dim="z", fmlh=0.3,
+        ds_qvp_ra = utils.melting_layer_qvp_X_new(ds_qvp_ra2, moments=moments, dim="z", fmlh=0.3, grad_thresh=grad_thresh,
                  xwin=xwin0, ywin=ywin0, min_h=min_height, rhohv_thresh_gia=rhohv_thresh_gia, all_data=True, clowres=clowres0)
 
         #### Assign ML values to dataset
@@ -456,14 +476,12 @@ for ff in files:
         ds = ds.assign_coords({'height_ml_new_gia': ds_qvp_ra.height_ml_new_gia})
         ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp_ra.height_ml_bottom_new_gia})
 
-#%% Attach ERA5 temperature profile
-    loc = utils.find_loc(utils.locs, ff)
-    ds_qvp_ra = utils.attach_ERA5_TEMP(ds_qvp_ra, path=loc.join(era5_dir.split("loc")))
-
 #%% Discard possible erroneous ML values
     if "height_ml_new_gia" in ds_qvp_ra:
         ## First, filter out ML heights that are too high (above selected isotherm)
         isotherm = -1 # isotherm for the upper limit of possible ML values
+        # we need to fill the nans of the TEMP qvp otherwise the argmin operation will fail
+        ds_qvp_ra["TEMP"] = ds_qvp_ra["TEMP"].fillna(ds["TEMP"].median("azimuth", keep_attrs=True).assign_coords({"z": ds["z"].median("azimuth", keep_attrs=True)}).swap_dims({"range":"z"}))
         z_isotherm = ds_qvp_ra.TEMP.isel(z=((ds_qvp_ra["TEMP"]-isotherm)**2).argmin("z").compute())["z"]
 
         ds_qvp_ra.coords["height_ml_new_gia"] = ds_qvp_ra["height_ml_new_gia"].where(ds_qvp_ra["height_ml_new_gia"]<=z_isotherm.values).compute()
@@ -503,7 +521,7 @@ for ff in files:
         ds = ds.assign({"DBZH_lin": wrl.trafo.idecibel(ds[X_DBZH]), "ZDR_lin": wrl.trafo.idecibel(ds[X_ZDR]) })
 
         # calculate entropy
-        Entropy = utils.calculate_pseudo_entropy(ds.where(ds[X_DBZH]>0), dim='azimuth', var_names=["DBZH_lin", "ZDR_lin", X_RHO, "KDP_ML_corrected"], n_lowest=30)
+        Entropy = utils.calculate_pseudo_entropy(ds.where(ds[X_DBZH]>0), dim='azimuth', var_names=["DBZH_lin", "ZDR_lin", X_RHO, "KDP_ML_corrected"], n_lowest=60) #!!! is 60 ok?
 
         # concate entropy for all variables and get the minimum value
         strati = xr.concat((Entropy.entropy_DBZH_lin, Entropy.entropy_ZDR_lin, Entropy["entropy_"+X_RHO], Entropy.entropy_KDP_ML_corrected),"entropy")
@@ -516,8 +534,80 @@ for ff in files:
         min_trst_strati_qvp = min_trst_strati_qvp.swap_dims({"range":"z"}) # swap range dimension for height
         ds_qvp_ra = ds_qvp_ra.assign({"min_entropy": min_trst_strati_qvp})
 
+#%% Calculate retrievals
+    if X_PHI in ds.data_vars:
+        print("Calculating retrievals...")
+        Lambda = 53.1 # radar wavelength in mm (pro: 53.138, ANK: 53.1, AFY: 53.3, GZT: 53.3, HTY: 53.3, SVS:53.3)
+        X_KDP = "KDP_ML_corrected"
 
-#%% Save dataset
+        # LWC
+        lwc_zh_zdr = 10**(0.058*ds[X_DBZH] - 0.118*ds[X_ZDR] - 2.36) # Reimann et al 2021 eq 3.7 (adjusted for Germany)
+        lwc_zh_zdr2 = 1.38*10**(-3) *10**(0.1*ds[X_DBZH] - 2.43*ds[X_ZDR] + 1.12*ds[X_ZDR]**2 - 0.176*ds[X_ZDR]**3 ) # used in S band, Ryzhkov 2022 PROM presentation https://www2.meteo.uni-bonn.de/spp2115/lib/exe/fetch.php?media=internal:uploads:all_hands_schneeferner_july2022:ryzhkov.pdf
+        lwc_kdp = 10**(0.568*np.log10(ds[X_KDP]) + 0.06) # Reimann et al 2021(adjusted for Germany)
+
+        # IWC (Collected from Blanke et al 2023)
+        iwc_zh_t = 10**(0.06 * ds[X_DBZH] - 0.0197*ds["TEMP"] - 1.7) # empirical from Hogan et al 2006 Table 2
+
+        iwc_zdr_zh_kdp = xr.where(ds[X_ZDR]>=0.4, # Carlin et al 2021 eqs 4b and 5b
+                                  4*10**(-3)*( ds[X_KDP]*Lambda/( 1-wrl.trafo.idecibel(ds[X_ZDR])**-1 ) ),
+                                  0.033 * ( ds[X_KDP]*Lambda )**0.67 * wrl.trafo.idecibel(ds[X_DBZH])**0.33 )
+
+        # Dm (ice collected from Blanke et al 2023)
+        Dm_ice_zh = 1.055*wrl.trafo.idecibel(ds[X_DBZH])**0.271 # Matrosov et al. (2019) Fig 10 (S band)
+        Dm_ice_zh_kdp = 0.67*( wrl.trafo.idecibel(ds[X_DBZH])/(ds[X_KDP]*Lambda) )**(1/3) # Ryzhkov and Zrnic (2019). Idk exactly where does the 0.67 approximation comes from, Blanke et al. 2023 eq 10 and Carlin et al 2021 eq 5a cite Bukovčić et al. (2018, 2020) but those two references do not show this formula.
+        Dm_ice_zdp_kdp = -0.1 + 2*( (wrl.trafo.idecibel(ds[X_DBZH])*(1-wrl.trafo.idecibel(ds[X_ZDR])**-1 ) ) / (ds[X_KDP]*Lambda) )**(1/2) # Ryzhkov and Zrnic (2019). Zdp = Z(1-ZDR**-1) from Carlin et al 2021
+
+        Dm_rain_zdr = 0.3015*ds[X_ZDR]**3 - 1.2087*ds[X_ZDR]**2 + 1.9068*ds[X_ZDR] + 0.5090 # (for rain but tuned for Germany X-band, JuYu Chen, Zdr in dB, Dm in mm)
+
+        D0_rain_zdr2 = 0.171*ds[X_ZDR]**3 - 0.725*ds[X_ZDR]**2 + 1.48*ds[X_ZDR] + 0.717 # (D0 from Hu and Ryzhkov 2022, used in S band data but could work for C band) [mm]
+        D0_rain_zdr3 = xr.where(ds[X_ZDR]<1.25, # D0 from Bringi et al 2009 (C-band) eq. 1 [mm]
+                                0.0203*ds[X_ZDR]**4 - 0.1488*ds[X_ZDR]**3 + 0.2209*ds[X_ZDR]**2 + 0.5571*ds[X_ZDR] + 0.801,
+                                0.0355*ds[X_ZDR]**3 - 0.3021*ds[X_ZDR]**2 + 1.0556*ds[X_ZDR] + 0.6844
+                                )
+        mu = 0
+        Dm_rain_zdr2 = D0_rain_zdr2 * (4+mu)/(3.67+mu) # conversion from D0 to Dm according to eq 4 of Hu and Ryzhkov 2022.
+        Dm_rain_zdr3 = D0_rain_zdr3 * (4+mu)/(3.67+mu)
+
+        # log(Nt)
+        Nt_ice_zh_iwc = (3.39 + 2*np.log10(iwc_zh_t) - 0.1*ds[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, [log(1/L)]
+        Nt_ice_zh_iwc2 = (3.69 + 2*np.log10(iwc_zh_t) - 0.1*ds[X_DBZH]) # Carlin et al 2021 eq. 7 originally in [log(1/m3)], transformed units here to [log(1/L)] by subtracting 3
+        Nt_ice_zh_iwc_kdp = (3.39 + 2*np.log10(iwc_zdr_zh_kdp) - 0.1*ds[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, [log(1/L)]
+        Nt_ice_zh_iwc2_kdp = (3.69 + 2*np.log10(iwc_zdr_zh_kdp) - 0.1*ds[X_DBZH]) # Carlin et al 2021 eq. 7 originally in [log(1/m3)], transformed units here to [log(1/L)] by subtracting 3
+        Nt_rain_zh_zdr = ( -2.37 + 0.1*ds[X_DBZH] - 2.89*ds[X_ZDR] + 1.28*ds[X_ZDR]**2 - 0.213*ds[X_ZDR]**3 )# Hu and Ryzhkov 2022 eq. 3 [log(1/L)]
+
+        # Put everything together
+        retrievals = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
+                                "lwc_zh_zdr2":lwc_zh_zdr2,
+                                "lwc_kdp": lwc_kdp,
+                                "iwc_zh_t": iwc_zh_t,
+                                "iwc_zdr_zh_kdp": iwc_zdr_zh_kdp,
+                                "Dm_ice_zh": Dm_ice_zh,
+                                "Dm_ice_zh_kdp": Dm_ice_zh_kdp,
+                                "Dm_ice_zdp_kdp": Dm_ice_zdp_kdp,
+                                "Dm_rain_zdr": Dm_rain_zdr,
+                                "Dm_rain_zdr2": Dm_rain_zdr2,
+                                "Dm_rain_zdr3": Dm_rain_zdr3,
+                                "Nt_ice_zh_iwc": Nt_ice_zh_iwc,
+                                "Nt_ice_zh_iwc2": Nt_ice_zh_iwc2,
+                                "Nt_ice_zh_iwc_kdp": Nt_ice_zh_iwc_kdp,
+                                "Nt_ice_zh_iwc2_kdp": Nt_ice_zh_iwc2_kdp,
+                                "Nt_rain_zh_zdr": Nt_rain_zh_zdr,
+                                })#.compute()
+
+        # Save retrievals
+        retrievals.encoding = {'zlib': True, 'complevel': 6}
+        for vv in retrievals.data_vars:
+            retrievals[vv].encoding = {'zlib': True, 'complevel': 6}
+        retrievals_path = make_savedir(ff, "ppis_retrievals")
+        retrievals.to_netcdf(retrievals_path)
+
+        # add retrievals to QVP
+        attach_vars = []
+        for vv in [X_RHO, X_TH, X_ZDR, "SNRH", "SQIH"]:
+            if vv in ds: attach_vars.append(vv)
+        ds_qvp_ra = ds_qvp_ra.assign( utils.compute_qvp(xr.merge([retrievals, ds[attach_vars]]), min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5})[[vv for vv in retrievals.data_vars]] )
+
+#%% Save qvp
     # save file
     ds_qvp_ra.to_netcdf(savepath)
 
