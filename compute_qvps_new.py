@@ -482,7 +482,7 @@ for ff in files:
         isotherm = -1 # isotherm for the upper limit of possible ML values
         # we need to fill the nans of the TEMP qvp otherwise the argmin operation will fail
         ds_qvp_ra["TEMP"] = ds_qvp_ra["TEMP"].fillna(ds["TEMP"].median("azimuth", keep_attrs=True).assign_coords({"z": ds["z"].median("azimuth", keep_attrs=True)}).swap_dims({"range":"z"}))
-        z_isotherm = ds_qvp_ra.TEMP.isel(z=((ds_qvp_ra["TEMP"]-isotherm)**2).argmin("z").compute())["z"]
+        z_isotherm = ds_qvp_ra.TEMP.isel(z=((ds_qvp_ra["TEMP"].fillna(100.)-isotherm)**2).argmin("z").compute())["z"]
 
         ds_qvp_ra.coords["height_ml_new_gia"] = ds_qvp_ra["height_ml_new_gia"].where(ds_qvp_ra["height_ml_new_gia"]<=z_isotherm.values).compute()
         ds_qvp_ra.coords["height_ml_bottom_new_gia"] = ds_qvp_ra["height_ml_bottom_new_gia"].where(ds_qvp_ra["height_ml_new_gia"]<=z_isotherm.values).compute()
