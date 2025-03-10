@@ -1023,7 +1023,7 @@ plt.title(mom+elevtitle+". "+str(datasel.time.values).split(".")[0])
 
 #%% Load QVPs
 # Load only events with ML detected (pre-condition for stratiform)
-ff_ML = "/data/polara/upload/jgiles/dwd/qvps/2015/*/*/pro/vol5minng01/07/ML_detected.txt"
+ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2015/*/*/pro/vol5minng01/07/ML_detected.txt"
 # ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2018/*/*/HTY/*/*/ML_detected.txt"
 ff_ML_glob = glob.glob(ff_ML)
 
@@ -1071,7 +1071,7 @@ cond_ML_top_std = ds_qvps["height_ml_new_gia"].rolling(time=time_window, min_per
 allcond = cond_ML_bottom_change * cond_ML_bottom_std * cond_ML_top_change * cond_ML_top_std
 
 # reduce to daily condition
-allcond_daily = allcond.resample(time="D").any().dropna("time")
+allcond_daily = allcond.resample(time="D").sum().dropna("time") > 0
 allcond_daily = allcond_daily.where(allcond_daily, drop=True)
 
 # Filter only events with clean ML (requeriment for stratiform) on a daily basis
@@ -2747,3 +2747,14 @@ elif plot_over_map:
 
 plt.title(mom+". "+str(datasel.time.values).split(".")[0])
 
+#%% Quickly check several daily QVPs
+ff = "/automount/realpep/upload/jgiles/dmi/qvps_old/2017/*/*/ANK/*/10.1/*.nc"
+ds_qvps = utils.load_qvps(ff, align_z=False, fix_TEMP=True, fillna=True)
+
+mm = "05"
+for dd in np.arange(1,32):
+    try:
+        ds_qvps.sel(time="2017-"+mm+"-"+str(dd).zfill(2)).dropna("z", how="all").DBZH.plot(x="time")
+        plt.show()
+    except:
+        None
