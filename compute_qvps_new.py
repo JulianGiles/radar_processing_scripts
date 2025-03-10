@@ -43,6 +43,7 @@ start_time = time.time()
 # path0 = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/" # For testing
 path0 = sys.argv[1] # read path from console
 overwrite = True # overwrite existing files?
+save_retrievals_ppi = False # Save PPIs of microphysical retrievals? (this is pretty slow and uses substantial storage)
 
 abs_zdr_off_min_thresh = 0. # if ZDR_OC has more negative values than the original ZDR
 # and the absolute median offset is < abs_zdr_off_min_thresh, then undo the correction (set to 0 to avoid this step)
@@ -598,8 +599,9 @@ for ff in files:
         retrievals.encoding = {'zlib': True, 'complevel': 6}
         for vv in retrievals.data_vars:
             retrievals[vv].encoding = {'zlib': True, 'complevel': 6}
-        retrievals_path = make_savedir(ff, "ppis_retrievals")
-        retrievals.to_netcdf(retrievals_path)
+        if save_retrievals_ppi:
+            retrievals_path = make_savedir(ff, "ppis_retrievals")
+            retrievals.to_netcdf(retrievals_path)
 
         # add retrievals to QVP
         attach_vars = []
