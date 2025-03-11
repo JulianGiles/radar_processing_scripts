@@ -27,7 +27,8 @@ import regionmask as rm
 from osgeo import osr
 import pandas as pd
 import time
-import pyinterp
+try: import pyinterp
+except: None
 from scipy.spatial import cKDTree
 import re
 
