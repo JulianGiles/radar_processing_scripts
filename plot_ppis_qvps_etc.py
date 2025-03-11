@@ -1077,8 +1077,8 @@ plt.title(mom+elevtitle+". "+str(datasel.time.values).split(".")[0])
 
 #%% Load QVPs
 # Load only events with ML detected (pre-condition for stratiform)
-ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2015/*/*/pro/vol5minng01/07/ML_detected.txt"
-# ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2018/*/*/GZT/*/*/ML_detected.txt"
+ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2020/*/*/pro/vol5minng01/07/ML_detected.txt"
+ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2020/*/*/SVS/*/*/ML_detected.txt"
 ff_ML_glob = glob.glob(ff_ML)
 
 if "dmi" in ff_ML:
@@ -1154,7 +1154,7 @@ var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR',
 
 
 vars_to_plot = ['DBZH', 'KDP_ML_corrected', 'KDP', 'ZDR_OC', 'RHOHV_NC',
-                'UPHIDP_OC', 'ZDR', 'RHOHV' ]
+                'PHIDP_OC', 'ZDR', 'RHOHV' ]
 
 # add missing units for PHIDP variables in turkish data (this was fixed on 28/12/23 but previous calculations have missing units)
 for vv in ds_qvps.data_vars:
@@ -1238,7 +1238,7 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
 
         # Add shading for min_entropy when it's greater than min_entropy_thresh
         if show_min_entropy:
-            min_entropy_values = selected_data.min_entropy.where(selected_data.min_entropy>=0).interpolate_na(dim="z").compute()
+            min_entropy_values = selected_data.min_entropy.where(selected_data.min_entropy>=0).chunk(dict(z=-1)).interpolate_na(dim="z").compute()
 
             min_entropy_shading = min_entropy_values.hvplot.quadmesh(
                 x='time', y='z',
@@ -1307,7 +1307,7 @@ layout = pn.Column(
 )
 
 
-layout.save("/user/jgiles/interactive_matplotlib.html", resources=INLINE, embed=True,
+layout.save("/user/jgiles/qvps_svs_2020_stratiform.html", resources=INLINE, embed=True,
             max_states=1000, max_opts=1000)
 
 
