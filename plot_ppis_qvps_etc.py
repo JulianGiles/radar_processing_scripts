@@ -70,8 +70,8 @@ warnings.filterwarnings('ignore')
 
 abs_zdr_off_min_thresh = 0. # if ZDR_OC has more negative values than the original ZDR
 # and the absolute median offset is < abs_zdr_off_min_thresh, then undo the correction (set to 0 to avoid this step)
-zdr_offset_perts = False # offset correct zdr per timesteps? if False, correct with daily offset
-mix_zdr_offsets = False # if True and zdr_offset_perts=False, try to
+zdr_offset_perts = True # offset correct zdr per timesteps? if False, correct with daily offset
+mix_zdr_offsets = True # if True and zdr_offset_perts=False, try to
 # choose between daily LR-consistency and QVP offsets based on how_mix_zdr_offset.
 # If True and zdr_offset_perts=True, choose between all available timestep offsets
 # based on how_mix_zdr_offset. If False, just use the offsets according to the priority they are passed on.
@@ -80,13 +80,10 @@ how_mix_zdr_offset = "count" # how to choose between the different offsets
 # in its calculation (there must be a variable ZDR_offset_datacount in the loaded offset).
 # "neg_overcorr" will choose the offset that generates less negative ZDR values.
 
-min_height_key = "default" # default = 200
-min_range_key = "default" # default = 1000
-
 ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/pro/vol5minng01/07/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2019-07-17/ANK/*F/8.0/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-08-09/AFY/*/10.0/*allmoms*"
-# ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-11-20/HTY/*/10.0/*allmoms*"
+ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-01-05/HTY/*/8.0/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2017-05-20/GZT/*/10.0/*allmoms*.nc"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-04-30/SVS/*/10.0/*allmoms*.nc"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-10-21/SVS/*/7.0/*allmoms*.nc"
@@ -94,33 +91,59 @@ ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/pro/vol5minng01/07/*al
 # ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-06-02/pro/90gradstarng01/00/*allmoms*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-10/2021-10-30/ess/90gradstarng01/00/*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-07/2021-07-24/ess/90gradstarng01/00/*"
-ds = utils.load_dwd_preprocessed(ff)
+# ds = utils.load_dwd_preprocessed(ff)
 # ds = utils.load_dwd_raw(ff)
-# ds = utils.load_dmi_preprocessed(ff)
+ds = utils.load_dmi_preprocessed(ff)
 # ds = utils.load_volume(sorted(glob.glob(ff)), func=utils.load_dmi_preprocessed)
 
 # check if we are dealing with several elevations
 isvolume = len(np.unique(ds.sweep_fixed_angle))>1
 if isvolume: print("More than one elevation loaded, some processing steps may be skipped or not work")
 
-if "dwd" in ff or "DWD" in ff:
+clowres0=False # this is for the ML detection algorithm
+min_hgts = utils.min_hgts
+min_rngs = utils.min_rngs
+min_hgt = min_hgts["default"] # minimum height above the radar to be considered
+min_range = min_rngs["default"] # minimum range from which to consider data (mostly for bad PHIDP filtering)
+if "dwd" in ff and "90grads" in ff:
+    # for the VP we need to set a higher min height because there are several bins of unrealistic values
+    min_hgt = min_hgts["90grads"]
+if "dwd" in ff and "vol5minng01" in ff:
+    clowres0=True
+# Set specifics for each turkish radar
+if "ANK" in ff:
+    min_hgt = min_hgts["ANK"]
+    min_range = min_rngs["ANK"]
+if "GZT" in ff:
+    min_hgt = min_hgts["GZT"]
+    min_range = min_rngs["GZT"]
+if "AFY" in ff:
+    min_range = min_rngs["AFY"]
+if "SVS" in ff:
+    min_range = min_rngs["SVS"]
+if "HTY" in ff:
+    min_range = min_rngs["HTY"]
+
+if "dwd" in ff:
     country="dwd"
-
-    if "vol5minng01" in ff:
-        clowres0=True # this is for the ML detection algorithm
-    else:
-        clowres0=False
-
-    # if "umd" in ff: # this is now done automatically with the loading functions
-    #     print("Flipping phase moments in UMD")
-    #     for vf in ["UPHIDP", "KDP"]: # Phase moments in UMD are flipped into the negatives
-    #         attrs = ds[vf].attrs.copy()
-    #         ds[vf] = ds[vf]*-1
-    #         ds[vf].attrs = attrs.copy()
-
 elif "dmi" in ff:
     country="dmi"
-    clowres0=False
+
+# ERA5 folder
+if "dwd" in ff:
+    cloc = "germany"
+if "dmi" in ff:
+    cloc = "turkey"
+
+if os.path.exists("/automount/ags/jgiles/ERA5/hourly/"):
+    # then we are in local system
+    era5_dir = "/automount/ags/jgiles/ERA5/hourly/"+cloc+"/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
+elif os.path.exists("/p/scratch/detectrea/giles1/ERA5/hourly/"):
+    # then we are in JSC
+    era5_dir = "/p/scratch/detectrea/giles1/ERA5/hourly/"+cloc+"/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
+elif os.path.exists("/p/largedata2/detectdata/projects/A04/ERA5/hourly/"):
+    # then we are in JSC
+    era5_dir = "/p/largedata2/detectdata/projects/A04/ERA5/hourly/"+cloc+"/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
 
 #### Georeference
 
@@ -128,11 +151,11 @@ ds = ds.pipe(wrl.georef.georeference)
 
 #### Define minimum height of usable data
 
-min_height = utils.min_hgts[min_height_key] + ds["altitude"].values
+min_height = min_hgt + ds["altitude"].values
 
 #### Define minimum range of usable data (mostly for bad PHIDP filtering)
 
-min_range = utils.min_rngs[min_range_key]
+# min_range = utils.min_rngs[min_range_key]
 
 #### Get variable names
 
@@ -341,7 +364,7 @@ if X_PHI in ds.data_vars:
 
     # for param_name in phase_proc_params[country].keys():
     #     globals()[param_name] = phase_proc_params[param_name]
-    window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian, rhohv_thresh_gia = phase_proc_params.values() # explicit alternative
+    window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian, rhohv_thresh_gia, grad_thresh = phase_proc_params.values() # explicit alternative
 
     # phidp may be already preprocessed (turkish case), then only offset-correct (no smoothing) and then vulpiani
     if "PHIDP" not in X_PHI: # This is now always skipped with this definition ("PHIDP" is in both X_PHI); i.e., we apply full processing to turkish data too
@@ -372,6 +395,21 @@ if X_PHI in ds.data_vars:
 else:
     print(X_PHI+" not found in the data, skipping ML detection")
 
+#### Attach ERA5 variables
+era5_vars = ["temperature", "relative_humidity"]
+era5_vars_rename = {"t":"TEMP", "r":"RH"}
+ds = utils.attach_ERA5_fields(ds, path=era5_dir, convert_to_C=True,
+                       variables=era5_vars,
+                       rename=era5_vars_rename, set_as_coords=False,
+                       k_n=1, pre_interpolate_z=True)
+
+# Save ERA5 ppis
+for vv in era5_vars_rename.values():
+    ds[vv].encoding = {'zlib': True, 'complevel': 6}
+# era5_ppis_path = make_savedir(ff, "ppis_era5")
+# ds[[vv for vv in era5_vars_rename.values()]].to_netcdf(era5_ppis_path)
+
+
 #### Compute QVP or RD-QVP
 
 if isvolume:
@@ -392,7 +430,7 @@ if X_PHI in ds.data_vars:
     moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI: (-20, 180)}
 
     # Calculate ML
-    ds_qvp = utils.melting_layer_qvp_X_new(ds_qvp, moments=moments, dim="z", fmlh=0.3,
+    ds_qvp = utils.melting_layer_qvp_X_new(ds_qvp, moments=moments, dim="z", fmlh=0.3, grad_thresh=grad_thresh,
              xwin=xwin0, ywin=ywin0, min_h=min_height, rhohv_thresh_gia=rhohv_thresh_gia, all_data=True, clowres=clowres0)
 
     # Assign ML values to dataset
@@ -403,16 +441,18 @@ if X_PHI in ds.data_vars:
     ds = ds.assign_coords({'height_ml_new_gia': ds_qvp.height_ml_new_gia})
     ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp.height_ml_bottom_new_gia})
 
-#### Attach ERA5 temperature profile
-loc = utils.find_loc(utils.locs, ff)
-ds_qvp = utils.attach_ERA5_TEMP(ds_qvp, path=loc.join(utils.era5_dir.split("loc")))
-ds = utils.attach_ERA5_TEMP(ds, path=loc.join(utils.era5_dir.split("loc")))
+# #### Attach ERA5 temperature profile
+# loc = utils.find_loc(utils.locs, ff)
+# ds_qvp = utils.attach_ERA5_TEMP(ds_qvp, path=loc.join(utils.era5_dir.split("loc")))
+# ds = utils.attach_ERA5_TEMP(ds, path=loc.join(utils.era5_dir.split("loc")))
 
 #### Discard possible erroneous ML values
 if "height_ml_new_gia" in ds_qvp:
     ## First, filter out ML heights that are too high (above selected isotherm)
     isotherm = -1 # isotherm for the upper limit of possible ML values
-    z_isotherm = ds_qvp.TEMP.isel(z=((ds_qvp["TEMP"]-isotherm)**2).argmin("z").compute())["z"]
+    # we need to fill the nans of the TEMP qvp otherwise the argmin operation will fail
+    ds_qvp["TEMP"] = ds_qvp["TEMP"].fillna(ds["TEMP"].median("azimuth", keep_attrs=True).assign_coords({"z": ds["z"].median("azimuth", keep_attrs=True)}).swap_dims({"range":"z"}))
+    z_isotherm = ds_qvp.TEMP.isel(z=((ds_qvp["TEMP"].fillna(100.)-isotherm)**2).argmin("z").compute())["z"]
 
     ds_qvp.coords["height_ml_new_gia"] = ds_qvp["height_ml_new_gia"].where(ds_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
     ds_qvp.coords["height_ml_bottom_new_gia"] = ds_qvp["height_ml_bottom_new_gia"].where(ds_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
@@ -451,7 +491,7 @@ if not isvolume:
         ds = ds.assign({"DBZH_lin": wrl.trafo.idecibel(ds[X_DBZH]), "ZDR_lin": wrl.trafo.idecibel(ds[X_ZDR]) })
 
         # calculate entropy
-        Entropy = utils.calculate_pseudo_entropy(ds.where(ds[X_DBZH]>0), dim='azimuth', var_names=["DBZH_lin", "ZDR_lin", X_RHO, "KDP_ML_corrected"], n_lowest=30)
+        Entropy = utils.calculate_pseudo_entropy(ds.where(ds[X_DBZH]>0), dim='azimuth', var_names=["DBZH_lin", "ZDR_lin", X_RHO, "KDP_ML_corrected"], n_lowest=60)
 
         # concate entropy for all variables and get the minimum value
         strati = xr.concat((Entropy.entropy_DBZH_lin, Entropy.entropy_ZDR_lin, Entropy["entropy_"+X_RHO], Entropy.entropy_KDP_ML_corrected),"entropy")
@@ -465,6 +505,8 @@ if not isvolume:
         ds_qvp = ds_qvp.assign({"min_entropy": min_trst_strati_qvp})
 else:
     print("Ignored: Atten corr, fix KDP in the ML and entropy calculation")
+
+#!!! Add calculate retrievals
 
 #%% Test: load original ZDR offsets from files
 import re
@@ -578,7 +620,7 @@ plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only
 
 #%% Plot simple PPI
 
-tsel = "2020-10-14T13:00"
+tsel = "2015-01-05T20:00"
 elevn = 6 # elevation index
 
 if isvolume: # if more than one elevation, we need to select the one we want
@@ -599,7 +641,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "KDP_ML_corrected"
+mom = "DBZH"
 xylims = 40000 # xlim and ylim (from -xylims to xylims)
 
 ticks = radarmet.visdict14[mom]["ticks"]
@@ -609,7 +651,9 @@ norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
 if mom!="VRADH": cmap = "miub2"
 
 plot_over_map = False
-plot_ML = True
+plot_ML = False
+plot_entropy =True
+min_entropy_thresh = 0.85
 
 crs=ccrs.Mercator(central_longitude=float(datasel["longitude"]))
 
@@ -633,6 +677,13 @@ if plot_ML:
                           cmap="black",
                           func="contour")
     # datasel["z"].wrl.vis.plot(fig=fig, cmap=cmap, norm=norm, crs=ccrs.Mercator(central_longitude=float(datasel["longitude"])))
+
+if plot_entropy:
+    cax = plt.gca()
+    datasel.assign({"min_entropy_ppi": datasel.min_entropy.broadcast_like(datasel.DBZH)}).min_entropy_ppi.plot.contourf(
+        ax=cax, x="x", y="y", add_colorbar=False,
+        colors=['#ffffff00', "#B5B1B1",], levels=[0, min_entropy_thresh,1],
+        extend="neither", alpha=1)
 
 if isvolume: elevtitle = " "+str(np.round(ds.isel({"sweep_fixed_angle":elevn}).sweep_fixed_angle.values, 2))+"°"
 else: elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
@@ -680,7 +731,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "KDP_ML_corrected"
+mom = "DBZH"
 min_entropy_thresh = 0.85
 
 ticks = radarmet.visdict14[mom]["ticks"]
@@ -690,7 +741,9 @@ cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(tic
 cmap = "miub2"
 norm = utils.get_discrete_norm(ticks, cmap, extend="both")
 datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm, figsize=(7,3))
-datasel["min_entropy"].dropna("z", how="all").interpolate_na(dim="z").plot.contourf(x="time", levels=[min_entropy_thresh, 1], hatches=["", "XXX", ""], colors=[(1,1,1,0)], add_colorbar=False, extend="both")
+datasel["min_entropy"].dropna("z", how="all").interpolate_na(dim="z").plot.contourf(
+    x="time", levels=[min_entropy_thresh, 1], hatches=["", "XXX", ""], colors=[(1,1,1,0)],
+    add_colorbar=False, extend="both")
 plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only the hour in the x-axis
 datasel["height_ml_new_gia"].plot(c="black")
 datasel["height_ml_bottom_new_gia"].plot(c="black")
@@ -1024,7 +1077,7 @@ plt.title(mom+elevtitle+". "+str(datasel.time.values).split(".")[0])
 #%% Load QVPs
 # Load only events with ML detected (pre-condition for stratiform)
 ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2015/*/*/pro/vol5minng01/07/ML_detected.txt"
-# ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2018/*/*/HTY/*/*/ML_detected.txt"
+ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2015/*/*/HTY/*/*/ML_detected.txt"
 ff_ML_glob = glob.glob(ff_ML)
 
 if "dmi" in ff_ML:
@@ -1100,7 +1153,7 @@ var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR',
 
 
 vars_to_plot = ['DBZH', 'KDP_ML_corrected', 'KDP', 'ZDR_OC', 'RHOHV_NC',
-                'UPHIDP_OC', 'ZDR', 'RHOHV' ]
+                'PHIDP_OC', 'ZDR', 'RHOHV' ]
 
 # add missing units for PHIDP variables in turkish data (this was fixed on 28/12/23 but previous calculations have missing units)
 for vv in ds_qvps.data_vars:
@@ -1184,7 +1237,7 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
 
         # Add shading for min_entropy when it's greater than min_entropy_thresh
         if show_min_entropy:
-            min_entropy_values = selected_data.min_entropy.where(selected_data.min_entropy>=0).dropna("z", how="all").compute()
+            min_entropy_values = selected_data.min_entropy.where(selected_data.min_entropy>=0).interpolate_na(dim="z").compute()
 
             min_entropy_shading = min_entropy_values.hvplot.quadmesh(
                 x='time', y='z',
@@ -1253,7 +1306,7 @@ layout = pn.Column(
 )
 
 
-layout.save("/user/jgiles/interactive_matplotlib.html", resources=INLINE, embed=True,
+layout.save("/user/jgiles/interactive_matplotlib_test.html", resources=INLINE, embed=True,
             max_states=1000, max_opts=1000)
 
 
