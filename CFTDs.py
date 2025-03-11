@@ -63,6 +63,9 @@ locs = ["pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs"]
 realpep_path = "/automount/realpep/"
 
 #%% Load QVPs for stratiform-case CFTDs
+
+calculate_retrievals = False # Calculate retrievals based on the QVPs?
+
 # This part should be run after having the QVPs computed (compute_qvps.py)
 start_time = time.time()
 print("Loading QVPs...")
@@ -74,7 +77,7 @@ path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol
 path_qvps = realpep_path+"/upload/jgiles/dwd/qvps/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
 # path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/2016/*/*/ANK/*/*/ML_detected.txt"
 # path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
-path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/*/*/*/SVS/*/*/ML_detected.txt"
+# path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/*/*/*/SVS/*/*/ML_detected.txt"
 # path_qvps = realpep_path+"/upload/jgiles/dmi/qvps_singlefile/ML_detected/ANK/*/12*/*allmoms*"
 # path_qvps = realpep_path+"/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*"
 # path_qvps = [realpep_path+"/upload/jgiles/dmi/qvps_monthly/*/*/ANK/*/12*/*allmoms*",
@@ -122,6 +125,10 @@ ff = [glob.glob(os.path.dirname(fp)+"/*allmoms*")[0] for fp in ff_glob ]
 alignz = False
 if "dwd" in path_qvps: alignz = True
 qvps = utils.load_qvps(ff, align_z=alignz, fix_TEMP=False, fillna=False)
+
+# Move TEMP to coordinate
+if "TEMP" not in qvps.coords:
+    qvps = qvps.set_coords("TEMP")
 
 
 # # Load daily data
@@ -259,86 +266,120 @@ total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
 
 #### Calculate retreivals
-# We do this for both qvps_strat_fil and relaxed qvps_strat_relaxed_fil
-start_time = time.time()
-print("Calculating microphysical retrievals...")
+if calculate_retrievals:
+    # We do this for both qvps_strat_fil and relaxed qvps_strat_relaxed_fil
+    start_time = time.time()
+    print("Calculating microphysical retrievals...")
 
-# to check the wavelength of each radar, in cm for DWD, in 1/100 cm for DMI ()
-# filewl = ""
-# xr.open_dataset(filewl, group="how") # DWD
-# file1 = realpep_path+"/upload/jgiles/dmi_raw/acq/OLDDATA/uza/RADAR/2015/01/01/ANK/RAW/ANK150101000008.RAW6M00"
-# xd.io.backends.iris.IrisRawFile(file1, loaddata=False).ingest_header["task_configuration"]["task_misc_info"]["wavelength"]
+    # to check the wavelength of each radar, in cm for DWD, in 1/100 cm for DMI ()
+    # filewl = ""
+    # xr.open_dataset(filewl, group="how") # DWD
+    # file1 = realpep_path+"/upload/jgiles/dmi_raw/acq/OLDDATA/uza/RADAR/2015/01/01/ANK/RAW/ANK150101000008.RAW6M00"
+    # xd.io.backends.iris.IrisRawFile(file1, loaddata=False).ingest_header["task_configuration"]["task_misc_info"]["wavelength"]
 
-Lambda = 53.1 # radar wavelength in mm (pro: 53.138, ANK: 53.1, AFY: 53.3, GZT: 53.3, HTY: 53.3, SVS:53.3)
+    Lambda = 53.1 # radar wavelength in mm (pro: 53.138, ANK: 53.1, AFY: 53.3, GZT: 53.3, HTY: 53.3, SVS:53.3)
 
-# We will put the final retrievals in a dict
-try: # check if exists, if not, create it
-    retrievals
-except NameError:
-    retrievals = {}
+    # We will put the final retrievals in a dict
+    try: # check if exists, if not, create it
+        retrievals
+    except NameError:
+        retrievals = {}
 
-for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
-    print("   ... for "+stratname)
+    for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
+        print("   ... for "+stratname)
 
-    retrievals[stratname] = {}
+        retrievals[stratname] = {}
 
-    # LWC
-    lwc_zh_zdr = 10**(0.058*stratqvp[X_DBZH] - 0.118*stratqvp[X_ZDR] - 2.36) # Reimann et al 2021 eq 3.7 (adjusted for Germany)
-    lwc_zh_zdr2 = 1.38*10**(-3) *10**(0.1*stratqvp[X_DBZH] - 2.43*stratqvp[X_ZDR] + 1.12*stratqvp[X_ZDR]**2 - 0.176*stratqvp[X_ZDR]**3 ) # used in S band, Ryzhkov 2022 PROM presentation https://www2.meteo.uni-bonn.de/spp2115/lib/exe/fetch.php?media=internal:uploads:all_hands_schneeferner_july2022:ryzhkov.pdf
-    lwc_kdp = 10**(0.568*np.log10(stratqvp[X_KDP]) + 0.06) # Reimann et al 2021(adjusted for Germany)
+        # LWC
+        lwc_zh_zdr = 10**(0.058*stratqvp[X_DBZH] - 0.118*stratqvp[X_ZDR] - 2.36) # Reimann et al 2021 eq 3.7 (adjusted for Germany)
+        lwc_zh_zdr2 = 1.38*10**(-3) *10**(0.1*stratqvp[X_DBZH] - 2.43*stratqvp[X_ZDR] + 1.12*stratqvp[X_ZDR]**2 - 0.176*stratqvp[X_ZDR]**3 ) # used in S band, Ryzhkov 2022 PROM presentation https://www2.meteo.uni-bonn.de/spp2115/lib/exe/fetch.php?media=internal:uploads:all_hands_schneeferner_july2022:ryzhkov.pdf
+        lwc_kdp = 10**(0.568*np.log10(stratqvp[X_KDP]) + 0.06) # Reimann et al 2021(adjusted for Germany)
 
-    # IWC (Collected from Blanke et al 2023)
-    iwc_zh_t = 10**(0.06 * stratqvp[X_DBZH] - 0.0197*stratqvp["TEMP"] - 1.7) # empirical from Hogan et al 2006 Table 2
+        # IWC (Collected from Blanke et al 2023)
+        iwc_zh_t = 10**(0.06 * stratqvp[X_DBZH] - 0.0197*stratqvp["TEMP"] - 1.7) # empirical from Hogan et al 2006 Table 2
 
-    iwc_zdr_zh_kdp = xr.where(stratqvp[X_ZDR]>=0.4, # Carlin et al 2021 eqs 4b and 5b
-                              4*10**(-3)*( stratqvp[X_KDP]*Lambda/( 1-wrl.trafo.idecibel(stratqvp[X_ZDR])**-1 ) ),
-                              0.033 * ( stratqvp[X_KDP]*Lambda )**0.67 * wrl.trafo.idecibel(stratqvp[X_DBZH])**0.33 )
+        iwc_zdr_zh_kdp = xr.where(stratqvp[X_ZDR]>=0.4, # Carlin et al 2021 eqs 4b and 5b
+                                  4*10**(-3)*( stratqvp[X_KDP]*Lambda/( 1-wrl.trafo.idecibel(stratqvp[X_ZDR])**-1 ) ),
+                                  0.033 * ( stratqvp[X_KDP]*Lambda )**0.67 * wrl.trafo.idecibel(stratqvp[X_DBZH])**0.33 )
 
-    # Dm (ice collected from Blanke et al 2023)
-    Dm_ice_zh = 1.055*wrl.trafo.idecibel(stratqvp[X_DBZH])**0.271 # Matrosov et al. (2019) Fig 10 (S band)
-    Dm_ice_zh_kdp = 0.67*( wrl.trafo.idecibel(stratqvp[X_DBZH])/(stratqvp[X_KDP]*Lambda) )**(1/3) # Ryzhkov and Zrnic (2019). Idk exactly where does the 0.67 approximation comes from, Blanke et al. 2023 eq 10 and Carlin et al 2021 eq 5a cite Bukovčić et al. (2018, 2020) but those two references do not show this formula.
-    Dm_ice_zdp_kdp = -0.1 + 2*( (wrl.trafo.idecibel(stratqvp[X_DBZH])*(1-wrl.trafo.idecibel(stratqvp[X_ZDR])**-1 ) ) / (stratqvp[X_KDP]*Lambda) )**(1/2) # Ryzhkov and Zrnic (2019). Zdp = Z(1-ZDR**-1) from Carlin et al 2021
+        # Dm (ice collected from Blanke et al 2023)
+        Dm_ice_zh = 1.055*wrl.trafo.idecibel(stratqvp[X_DBZH])**0.271 # Matrosov et al. (2019) Fig 10 (S band)
+        Dm_ice_zh_kdp = 0.67*( wrl.trafo.idecibel(stratqvp[X_DBZH])/(stratqvp[X_KDP]*Lambda) )**(1/3) # Ryzhkov and Zrnic (2019). Idk exactly where does the 0.67 approximation comes from, Blanke et al. 2023 eq 10 and Carlin et al 2021 eq 5a cite Bukovčić et al. (2018, 2020) but those two references do not show this formula.
+        Dm_ice_zdp_kdp = -0.1 + 2*( (wrl.trafo.idecibel(stratqvp[X_DBZH])*(1-wrl.trafo.idecibel(stratqvp[X_ZDR])**-1 ) ) / (stratqvp[X_KDP]*Lambda) )**(1/2) # Ryzhkov and Zrnic (2019). Zdp = Z(1-ZDR**-1) from Carlin et al 2021
 
-    Dm_rain_zdr = 0.3015*stratqvp[X_ZDR]**3 - 1.2087*stratqvp[X_ZDR]**2 + 1.9068*stratqvp[X_ZDR] + 0.5090 # (for rain but tuned for Germany X-band, JuYu Chen, Zdr in dB, Dm in mm)
+        Dm_rain_zdr = 0.3015*stratqvp[X_ZDR]**3 - 1.2087*stratqvp[X_ZDR]**2 + 1.9068*stratqvp[X_ZDR] + 0.5090 # (for rain but tuned for Germany X-band, JuYu Chen, Zdr in dB, Dm in mm)
 
-    D0_rain_zdr2 = 0.171*stratqvp[X_ZDR]**3 - 0.725*stratqvp[X_ZDR]**2 + 1.48*stratqvp[X_ZDR] + 0.717 # (D0 from Hu and Ryzhkov 2022, used in S band data but could work for C band) [mm]
-    D0_rain_zdr3 = xr.where(stratqvp[X_ZDR]<1.25, # D0 from Bringi et al 2009 (C-band) eq. 1 [mm]
-                            0.0203*stratqvp[X_ZDR]**4 - 0.1488*stratqvp[X_ZDR]**3 + 0.2209*stratqvp[X_ZDR]**2 + 0.5571*stratqvp[X_ZDR] + 0.801,
-                            0.0355*stratqvp[X_ZDR]**3 - 0.3021*stratqvp[X_ZDR]**2 + 1.0556*stratqvp[X_ZDR] + 0.6844
-                            )
-    mu = 0
-    Dm_rain_zdr2 = D0_rain_zdr2 * (4+mu)/(3.67+mu) # conversion from D0 to Dm according to eq 4 of Hu and Ryzhkov 2022.
-    Dm_rain_zdr3 = D0_rain_zdr3 * (4+mu)/(3.67+mu)
+        D0_rain_zdr2 = 0.171*stratqvp[X_ZDR]**3 - 0.725*stratqvp[X_ZDR]**2 + 1.48*stratqvp[X_ZDR] + 0.717 # (D0 from Hu and Ryzhkov 2022, used in S band data but could work for C band) [mm]
+        D0_rain_zdr3 = xr.where(stratqvp[X_ZDR]<1.25, # D0 from Bringi et al 2009 (C-band) eq. 1 [mm]
+                                0.0203*stratqvp[X_ZDR]**4 - 0.1488*stratqvp[X_ZDR]**3 + 0.2209*stratqvp[X_ZDR]**2 + 0.5571*stratqvp[X_ZDR] + 0.801,
+                                0.0355*stratqvp[X_ZDR]**3 - 0.3021*stratqvp[X_ZDR]**2 + 1.0556*stratqvp[X_ZDR] + 0.6844
+                                )
+        mu = 0
+        Dm_rain_zdr2 = D0_rain_zdr2 * (4+mu)/(3.67+mu) # conversion from D0 to Dm according to eq 4 of Hu and Ryzhkov 2022.
+        Dm_rain_zdr3 = D0_rain_zdr3 * (4+mu)/(3.67+mu)
 
-    # log(Nt)
-    Nt_ice_zh_iwc = (3.39 + 2*np.log10(iwc_zh_t) - 0.1*stratqvp[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, [log(1/L)]
-    Nt_ice_zh_iwc2 = (3.69 + 2*np.log10(iwc_zh_t) - 0.1*stratqvp[X_DBZH]) # Carlin et al 2021 eq. 7 originally in [log(1/m3)], transformed units here to [log(1/L)] by subtracting 3
-    Nt_ice_zh_iwc_kdp = (3.39 + 2*np.log10(iwc_zdr_zh_kdp) - 0.1*stratqvp[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, [log(1/L)]
-    Nt_ice_zh_iwc2_kdp = (3.69 + 2*np.log10(iwc_zdr_zh_kdp) - 0.1*stratqvp[X_DBZH]) # Carlin et al 2021 eq. 7 originally in [log(1/m3)], transformed units here to [log(1/L)] by subtracting 3
-    Nt_rain_zh_zdr = ( -2.37 + 0.1*stratqvp[X_DBZH] - 2.89*stratqvp[X_ZDR] + 1.28*stratqvp[X_ZDR]**2 - 0.213*stratqvp[X_ZDR]**3 )# Hu and Ryzhkov 2022 eq. 3 [log(1/L)]
+        # log(Nt)
+        Nt_ice_zh_iwc = (3.39 + 2*np.log10(iwc_zh_t) - 0.1*stratqvp[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, [log(1/L)]
+        Nt_ice_zh_iwc2 = (3.69 + 2*np.log10(iwc_zh_t) - 0.1*stratqvp[X_DBZH]) # Carlin et al 2021 eq. 7 originally in [log(1/m3)], transformed units here to [log(1/L)] by subtracting 3
+        Nt_ice_zh_iwc_kdp = (3.39 + 2*np.log10(iwc_zdr_zh_kdp) - 0.1*stratqvp[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, [log(1/L)]
+        Nt_ice_zh_iwc2_kdp = (3.69 + 2*np.log10(iwc_zdr_zh_kdp) - 0.1*stratqvp[X_DBZH]) # Carlin et al 2021 eq. 7 originally in [log(1/m3)], transformed units here to [log(1/L)] by subtracting 3
+        Nt_rain_zh_zdr = ( -2.37 + 0.1*stratqvp[X_DBZH] - 2.89*stratqvp[X_ZDR] + 1.28*stratqvp[X_ZDR]**2 - 0.213*stratqvp[X_ZDR]**3 )# Hu and Ryzhkov 2022 eq. 3 [log(1/L)]
 
-    # Put everything together
-    retrievals[stratname][find_loc(locs, ff[0])] = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
-                                                             "lwc_zh_zdr2":lwc_zh_zdr2,
-                                                             "lwc_kdp": lwc_kdp,
-                                                             "iwc_zh_t": iwc_zh_t,
-                                                             "iwc_zdr_zh_kdp": iwc_zdr_zh_kdp,
-                                                             "Dm_ice_zh": Dm_ice_zh,
-                                                             "Dm_ice_zh_kdp": Dm_ice_zh_kdp,
-                                                             "Dm_ice_zdp_kdp": Dm_ice_zdp_kdp,
-                                                             "Dm_rain_zdr": Dm_rain_zdr,
-                                                             "Dm_rain_zdr2": Dm_rain_zdr2,
-                                                             "Dm_rain_zdr3": Dm_rain_zdr3,
-                                                             "Nt_ice_zh_iwc": Nt_ice_zh_iwc,
-                                                             "Nt_ice_zh_iwc2": Nt_ice_zh_iwc2,
-                                                             "Nt_ice_zh_iwc_kdp": Nt_ice_zh_iwc_kdp,
-                                                             "Nt_ice_zh_iwc2_kdp": Nt_ice_zh_iwc2_kdp,
-                                                             "Nt_rain_zh_zdr": Nt_rain_zh_zdr,
-                                                             }).compute()
+        # Put everything together
+        retrievals[stratname][find_loc(locs, ff[0])] = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
+                                                                 "lwc_zh_zdr2":lwc_zh_zdr2,
+                                                                 "lwc_kdp": lwc_kdp,
+                                                                 "iwc_zh_t": iwc_zh_t,
+                                                                 "iwc_zdr_zh_kdp": iwc_zdr_zh_kdp,
+                                                                 "Dm_ice_zh": Dm_ice_zh,
+                                                                 "Dm_ice_zh_kdp": Dm_ice_zh_kdp,
+                                                                 "Dm_ice_zdp_kdp": Dm_ice_zdp_kdp,
+                                                                 "Dm_rain_zdr": Dm_rain_zdr,
+                                                                 "Dm_rain_zdr2": Dm_rain_zdr2,
+                                                                 "Dm_rain_zdr3": Dm_rain_zdr3,
+                                                                 "Nt_ice_zh_iwc": Nt_ice_zh_iwc,
+                                                                 "Nt_ice_zh_iwc2": Nt_ice_zh_iwc2,
+                                                                 "Nt_ice_zh_iwc_kdp": Nt_ice_zh_iwc_kdp,
+                                                                 "Nt_ice_zh_iwc2_kdp": Nt_ice_zh_iwc2_kdp,
+                                                                 "Nt_rain_zh_zdr": Nt_rain_zh_zdr,
+                                                                 }).compute()
 
-    # Save retrievals
-    for ll in retrievals[stratname].keys():
-        retrievals[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals/"+stratname+"/"+ll+".nc")
+        # Save retrievals
+        for ll in retrievals[stratname].keys():
+            retrievals[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals/"+stratname+"/"+ll+".nc")
+
+else:
+    # If not calculating retrievals, check if they are already in the QVP
+    try: # check if exists, if not, create it
+        retrievals
+    except NameError:
+        retrievals = {}
+
+    for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
+        retrievals[stratname] = {}
+        retrievals[stratname][find_loc(locs, ff[0])] = xr.Dataset({"lwc_zh_zdr": stratqvp["lwc_zh_zdr"],
+                                                                 "lwc_zh_zdr2": stratqvp["lwc_zh_zdr2"],
+                                                                 "lwc_kdp": stratqvp["lwc_kdp"],
+                                                                 "iwc_zh_t": stratqvp["iwc_zh_t"],
+                                                                 "iwc_zdr_zh_kdp": stratqvp["iwc_zdr_zh_kdp"],
+                                                                 "Dm_ice_zh": stratqvp["Dm_ice_zh"],
+                                                                 "Dm_ice_zh_kdp": stratqvp["Dm_ice_zh_kdp"],
+                                                                 "Dm_ice_zdp_kdp": stratqvp["Dm_ice_zdp_kdp"],
+                                                                 "Dm_rain_zdr": stratqvp["Dm_rain_zdr"],
+                                                                 "Dm_rain_zdr2": stratqvp["Dm_rain_zdr2"],
+                                                                 "Dm_rain_zdr3": stratqvp["Dm_rain_zdr3"],
+                                                                 "Nt_ice_zh_iwc": stratqvp["Nt_ice_zh_iwc"],
+                                                                 "Nt_ice_zh_iwc2": stratqvp["Nt_ice_zh_iwc2"],
+                                                                 "Nt_ice_zh_iwc_kdp": stratqvp["Nt_ice_zh_iwc_kdp"],
+                                                                 "Nt_ice_zh_iwc2_kdp": stratqvp["Nt_ice_zh_iwc2_kdp"],
+                                                                 "Nt_rain_zh_zdr": stratqvp["Nt_rain_zh_zdr"],
+                                                                 })
+
+        # Save retrievals
+        if not os.path.exists(realpep_path+"/upload/jgiles/radar_retrievals/"+stratname):
+            os.makedirs(realpep_path+"/upload/jgiles/radar_retrievals/"+stratname)
+        for ll in retrievals[stratname].keys():
+            retrievals[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals/"+stratname+"/"+ll+".nc")
 
 #### General statistics
 print("Calculating statistics ...")
@@ -474,6 +515,8 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
         }
 
     # Save stats
+    if not os.path.exists(realpep_path+"/upload/jgiles/radar_stats/"+stratname):
+        os.makedirs(realpep_path+"/upload/jgiles/radar_stats/"+stratname)
     for ll in stats[stratname].keys():
         for xx in stats[stratname][ll].keys():
             stats[stratname][ll][xx].to_netcdf(realpep_path+"/upload/jgiles/radar_stats/"+stratname+"/"+ll+"_"+xx+".nc")
@@ -751,7 +794,7 @@ if country=="dmi":
             savepath_seas = os.path.dirname(savepath+savename)
             if not os.path.exists(savepath_seas):
                 os.makedirs(savepath_seas)
-            fig.savefig(savepath+savename, bbox_inches="tight")
+            fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
             print("AUTO PLOT: saved "+savename)
 
 
@@ -823,7 +866,7 @@ if country=="dwd":
             savepath_seas = os.path.dirname(savepath+savename)
             if not os.path.exists(savepath_seas):
                 os.makedirs(savepath_seas)
-            fig.savefig(savepath+savename, bbox_inches="tight")
+            fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
             print("AUTO PLOT: saved "+savename)
 
 
@@ -954,7 +997,7 @@ for savename in savedict.keys():
         savepath_seas = os.path.dirname(savepath+savename)
         if not os.path.exists(savepath_seas):
             os.makedirs(savepath_seas)
-        fig.savefig(savepath+savename, bbox_inches="tight")
+        fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
         print("AUTO PLOT: saved "+savename)
 
 #%% Check particular dates
