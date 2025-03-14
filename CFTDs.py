@@ -1341,6 +1341,10 @@ for loc in locs_to_plot:
                                 time=stats[stratname][loc]["cloudtop"]['time'].dt.month.isin(selseas[1]))
             cloudtop_5dbz = stats[stratname][loc]["cloudtop_5dbz"].sel(\
                                 time=stats[stratname][loc]["cloudtop_5dbz"]['time'].dt.month.isin(selseas[1]))
+            cloudtop_temp = stats[stratname][loc]["cloudtop_TEMP"].sel(\
+                                time=stats[stratname][loc]["cloudtop_TEMP"]['time'].dt.month.isin(selseas[1]))
+            cloudtop_temp_5dbz = stats[stratname][loc]["cloudtop_TEMP_5dbz"].sel(\
+                                time=stats[stratname][loc]["cloudtop_TEMP_5dbz"]['time'].dt.month.isin(selseas[1]))
 
             #### Histograms: like Griffin et al 2020 https://doi.org/10.1175/JAMC-D-19-0128.1
             # plot histograms (2d hist) like Fig. 5
@@ -1844,7 +1848,7 @@ for loc in locs_to_plot:
                 # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
                 # plt.legend()
                 plt.xlabel(r"$\mathregular{ Z_{H} \ in \ rain \ [dBZ] }$")
-                plt.ylabel(r"$\mathregular{ \beta \ [dB/km]}$")
+                plt.ylabel(r"$\mathregular{ \beta \ [dBZ/km]}$")
                 # plt.text(12, -0.5, r"$\mathregular{logMLmeanKDP = -2.4 + 0.05\ MLmaxZH }$", fontsize="xx-small")
                 plt.grid()
                 fig = plt.gcf()
@@ -1868,7 +1872,7 @@ for loc in locs_to_plot:
                 # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
                 # plt.legend()
                 plt.xlabel(r"$\mathregular{ Z_{DR} \ in \ rain \ [dB] }$")
-                plt.ylabel(r"$\mathregular{ \beta \ [dB/km]}$")
+                plt.ylabel(r"$\mathregular{ \beta \ [dBZ/km]}$")
                 # plt.text(12, -0.5, r"$\mathregular{logMLmeanKDP = -2.4 + 0.05\ MLmaxZH }$", fontsize="xx-small")
                 plt.grid()
                 fig = plt.gcf()
@@ -1888,12 +1892,17 @@ for loc in locs_to_plot:
                 binsy = np.linspace(-15, 10, 26)
                 # logMLmeanKDPcurve = -2.4 + 0.05*binsx
 
+                # fit our own regression
+                idx = np.isfinite(cloudtop.values/1000) & np.isfinite(betaZH.values)
+                fit = np.polyfit(cloudtop.values[idx]/1000, betaZH.values[idx], 1)
+                beta_cloudtop_curve_fit = fit[1] + fit[0]*binsx
+
                 utils.hist_2d(cloudtop.compute()/1000, betaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
-                # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
+                plt.plot(binsx, beta_cloudtop_curve_fit, c="red", label="Fitted curve")
                 # plt.legend()
                 plt.xlabel(r"$\mathregular{ Cloud \ top \ height \ [km] }$")
-                plt.ylabel(r"$\mathregular{ \beta \ [dB/km]}$")
-                # plt.text(12, -0.5, r"$\mathregular{logMLmeanKDP = -2.4 + 0.05\ MLmaxZH }$", fontsize="xx-small")
+                plt.ylabel(r"$\mathregular{ \beta \ [dBZ/km]}$")
+                plt.text(9, -14, rf"$\mathregular{{betaZH = {fit[1]:+.2f} {fit[0]:+.2f}\ CloudTopHeight }}$", fontsize="x-small")
                 plt.grid()
                 fig = plt.gcf()
                 fig.savefig(savepath_seas+"/"+loc+"_betaZH_CloudTopHeight.png",
@@ -1913,12 +1922,17 @@ for loc in locs_to_plot:
                 binsy = np.linspace(-15, 10, 26)
                 # logMLmeanKDPcurve = -2.4 + 0.05*binsx
 
+                # fit our own regression
+                idx = np.isfinite(cloudtop_5dbz.values/1000) & np.isfinite(betaZH.values)
+                fit = np.polyfit(cloudtop_5dbz.values[idx]/1000, betaZH.values[idx], 1)
+                beta_cloudtop_curve_fit = fit[1] + fit[0]*binsx
+
                 utils.hist_2d(cloudtop_5dbz.compute()/1000, betaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
-                # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
+                plt.plot(binsx, beta_cloudtop_curve_fit, c="red", label="Fitted curve")
                 # plt.legend()
                 plt.xlabel(r"$\mathregular{ Cloud \ top \ height \ (5 dbZ) \ [km] }$")
-                plt.ylabel(r"$\mathregular{ \beta \ [dB/km]}$")
-                # plt.text(12, -0.5, r"$\mathregular{logMLmeanKDP = -2.4 + 0.05\ MLmaxZH }$", fontsize="xx-small")
+                plt.ylabel(r"$\mathregular{ \beta \ [dBZ/km]}$")
+                plt.text(9, -14, rf"$\mathregular{{betaZH = {fit[1]:+.2f} {fit[0]:+.2f}\ CloudTopHeight5dBZ }}$", fontsize="x-small")
                 plt.grid()
                 fig = plt.gcf()
                 fig.savefig(savepath_seas+"/"+loc+"_betaZH_CloudTopHeight5dBZ.png",
@@ -1929,6 +1943,66 @@ for loc in locs_to_plot:
                     print(" ... ... ... !!! not possible to plot cloudtop_5dbz vs betaZH due to insufficient data points !!! ")
                 else:
                     print(" ... ... ... !!! not possible to plot cloudtop_5dbz vs betaZH for unknown reason !!! ")
+
+            # Plot beta vs cloudtop height TEMP
+            try:
+                plt.close()
+                binsx = np.linspace(-40, -10, 31)
+                binsy = np.linspace(-15, 10, 26)
+                # logMLmeanKDPcurve = -2.4 + 0.05*binsx
+
+                # fit our own regression
+                idx = np.isfinite(cloudtop_temp.values) & np.isfinite(betaZH.values)
+                fit = np.polyfit(cloudtop_temp.values[idx], betaZH.values[idx], 1)
+                beta_cloudtop_curve_fit = fit[1] + fit[0]*binsx
+
+                utils.hist_2d(cloudtop_temp.compute(), betaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+                plt.plot(binsx, beta_cloudtop_curve_fit, c="red", label="Fitted curve")
+                # plt.legend()
+                plt.xlabel(r"$\mathregular{ Cloud \ top \ temperature \ [C] }$")
+                plt.ylabel(r"$\mathregular{ \beta \ [dBZ/km]}$")
+                plt.text(-25, -14, rf"$\mathregular{{betaZH = {fit[1]:+.2f} {fit[0]:+.2f}\ CloudTopTEMP }}$", fontsize="x-small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_betaZH_CloudTopTEMP.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( cloudtop_temp.compute().isnull() + betaZH.compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot cloudtop_temp vs betaZH due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot cloudtop_temp vs betaZH for unknown reason !!! ")
+
+
+            # Plot beta vs cloudtop height TEMP (5 dBZ)
+            try:
+                plt.close()
+                binsx = np.linspace(-40, -10, 31)
+                binsy = np.linspace(-15, 10, 26)
+                # logMLmeanKDPcurve = -2.4 + 0.05*binsx
+
+                # fit our own regression
+                idx = np.isfinite(cloudtop_temp_5dbz.values) & np.isfinite(betaZH.values)
+                fit = np.polyfit(cloudtop_temp_5dbz.values[idx], betaZH.values[idx], 1)
+                beta_cloudtop_curve_fit = fit[1] + fit[0]*binsx
+
+                utils.hist_2d(cloudtop_temp_5dbz.compute(), betaZH.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+                plt.plot(binsx, beta_cloudtop_curve_fit, c="red", label="Fitted curve")
+                # plt.legend()
+                plt.xlabel(r"$\mathregular{ Cloud \ top \ temperature \ (5 dbZ) \ [C] }$")
+                plt.ylabel(r"$\mathregular{ \beta \ [dBZ/km]}$")
+                plt.text(-25, -14, rf"$\mathregular{{betaZH = {fit[1]:+.2f} {fit[0]:+.2f}\ CloudTopTEMP5dBZ }}$", fontsize="x-small")
+                plt.grid()
+                fig = plt.gcf()
+                fig.savefig(savepath_seas+"/"+loc+"_betaZH_CloudTopTEMP5dBZ.png",
+                            bbox_inches="tight")
+                plt.close(fig)
+            except:
+                if ( cloudtop_temp.compute().isnull() + betaZH.compute().isnull() ).all():
+                    print(" ... ... ... !!! not possible to plot cloudtop_temp vs betaZH due to insufficient data points !!! ")
+                else:
+                    print(" ... ... ... !!! not possible to plot cloudtop_temp vs betaZH for unknown reason !!! ")
+
 
             # Plot beta vs ML depth
             try:
@@ -1941,7 +2015,7 @@ for loc in locs_to_plot:
                 # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
                 # plt.legend()
                 plt.xlabel(r"$\mathregular{ Depth \ of \ ML \ [km] }$")
-                plt.ylabel(r"$\mathregular{ \beta \ [dB/km]}$")
+                plt.ylabel(r"$\mathregular{ \beta \ [dBZ/km]}$")
                 # plt.text(12, -0.5, r"$\mathregular{logMLmeanKDP = -2.4 + 0.05\ MLmaxZH }$", fontsize="xx-small")
                 plt.grid()
                 fig = plt.gcf()
@@ -1965,7 +2039,7 @@ for loc in locs_to_plot:
                 # plt.plot(binsx, logMLmeanKDPcurve, c="black", label="Reference curve")
                 # plt.legend()
                 plt.xlabel(r"$\mathregular{ ML \ top \ height \ [km] }$")
-                plt.ylabel(r"$\mathregular{ \beta \ [dB/km]}$")
+                plt.ylabel(r"$\mathregular{ \beta \ [dBZ/km]}$")
                 # plt.text(12, -0.5, r"$\mathregular{logMLmeanKDP = -2.4 + 0.05\ MLmaxZH }$", fontsize="xx-small")
                 plt.grid()
                 fig = plt.gcf()
@@ -2164,8 +2238,8 @@ for selseas in selseaslist:
                     # Get densities data from the plot
                     densities = [ fig.data[2*i+1] for i in range(len(samples)) ]
 
-                    # calculate means
-                    means = [np.mean(sample) for sample in samples.values()]
+                    # calculate means or median
+                    means = [np.median(sample) for sample in samples.values()]
 
                     # Add a vertical line at the mean for each distribution
                     for i, mean in enumerate(means):
@@ -2221,7 +2295,7 @@ for selseas in selseaslist:
                     densities = [ fig.data[2*i+1] for i in range(len(samples)) ]
 
                     # calculate means
-                    means = [np.mean(sample) for sample in samples.values()]
+                    means = [np.median(sample) for sample in samples.values()]
 
                     # Add a vertical line at the mean for each distribution
                     for i, mean in enumerate(means):
@@ -2246,6 +2320,19 @@ for selseas in selseaslist:
             except:
                 print("!!! unable to plot "+stratname+" "+ss+" !!!")
 
+#%%% Custom plots
+
+# Plot beta seasonality
+stratname = "stratiform"
+
+for loc in locs:
+    count = stats[stratname][loc]['beta']['DBZH'].groupby("time.month").count()
+    stats[stratname][loc]['beta']['DBZH'].groupby("time.month").median().where(count>30).plot(label=loc.swapcase())
+plt.ylabel(r'$\beta$ [dBZ/km]')
+plt.xticks([1,2,3,4,5,6,7,8,9,10,11,12], labels=['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'])
+plt.grid(visible=True)
+plt.legend()
+plt.title(r'$\beta$ seasonality')
 
 #%% Checking PHIDP
 # get and plot a random selection of QVPs
