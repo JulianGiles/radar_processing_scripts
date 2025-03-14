@@ -75,7 +75,7 @@ path_qvps = realpep_path+"/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/*allm
 path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
 # Load only events with ML detected (pre-condition for stratiform)
 path_qvps = realpep_path+"/upload/jgiles/dwd/qvps/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
-# path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/2016/*/*/ANK/*/*/ML_detected.txt"
+# path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/20*/*/*/HTY/*/*/ML_detected.txt"
 # path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
 # path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/*/*/*/SVS/*/*/ML_detected.txt"
 # path_qvps = realpep_path+"/upload/jgiles/dmi/qvps_singlefile/ML_detected/ANK/*/12*/*allmoms*"
@@ -1271,7 +1271,7 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
     elif type(retrievals[stratname]) is not dict:
         retrievals[stratname] = {}
     print("Loading "+stratname+" retrievals ...")
-    for ll in ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']:
+    for ll in locs:
         try:
             retrievals[stratname][ll] = xr.open_dataset(realpep_path+"/upload/jgiles/radar_retrievals/"+stratname+"/"+ll+".nc")
             print(ll+" retrievals loaded")
@@ -1500,18 +1500,18 @@ for loc in locs_to_plot:
                 ZHsnowcurve = -3.86 + 1.08*binsx - 0.0071*binsx**2
 
                 # fit our own linear regression
-                idx = np.isfinite(MLmaxZH.values) & np.isfinite(ZHrain.values)
-                fit = np.polyfit(MLmaxZH.values[idx], ZHrain.values[idx], 2)
+                idx = np.isfinite(ZHsnow.values) & np.isfinite(ZHrain.values)
+                fit = np.polyfit(ZHsnow.values[idx], ZHrain.values[idx], 2)
                 ZHsnowcurve_fit = fit[2] + fit[1]*binsx + fit[0]*binsx**2
 
-                utils.hist_2d(MLmaxZH.compute(), ZHsnow.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
+                utils.hist_2d(ZHsnow.compute(), ZHrain.compute(), bins1=binsx, bins2=binsy, cmap="Blues")
                 plt.plot(binsx, ZHsnowcurve, c="black", label="Reference curve")
                 plt.plot(binsx, ZHsnowcurve_fit, c="red", label="Fitted curve")
                 plt.legend()
                 plt.xlabel(r"$\mathregular{Z_{H} \ in \ snow \ [dBZ]}$")
                 plt.ylabel(r"$\mathregular{Z_{H} \ in \ rain \ [dBZ]}$")
-                plt.text(-15, -15, r"$\mathregular{ZHsnow = -3.86 + 1.08\ MLmaxZH - 0.0071\ MLmaxZH^2 }$", fontsize="xx-small")
-                plt.text(-15, -17, rf"$\mathregular{{ZHsnow = {fit[2]:+.2f} {fit[1]:+.2f}\ MLmaxZH {fit[0]:+.3f}\ MLmaxZH^2 }}$", fontsize="xx-small", color="red")
+                plt.text(-15, -15, r"$\mathregular{ZHrain = -3.86 + 1.08\ ZHsnow - 0.0071\ ZHsnow^2 }$", fontsize="xx-small")
+                plt.text(-15, -17, rf"$\mathregular{{ZHrain = {fit[2]:+.2f} {fit[1]:+.2f}\ ZHsnow {fit[0]:+.3f}\ ZHsnow^2 }}$", fontsize="xx-small", color="red")
                 plt.grid()
                 fig = plt.gcf()
                 fig.savefig(savepath_seas+"/"+loc+"_ZHinRain_ZHinSnow.png",
