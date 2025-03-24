@@ -2812,3 +2812,25 @@ for dd in np.arange(1,32):
         plt.show()
     except:
         None
+
+#%% plot nice ppi on map
+import geoviews as gv
+figure_kwargs = dict(
+    width=650,
+    height=650,
+    xlim=(ds.x.min().values.item(), ds.x.max().values.item()),
+    ylim=(ds.y.min().values.item(), ds.y.max().values.item()),
+)
+
+tiles = gv.tile_sources.OSM.opts(
+    alpha=0.8,
+    **figure_kwargs,
+)
+
+comp = ds["DBZH"].where(ds["DBZH"]>0.1).hvplot(x="x", y="y", clim=(0, 15)).opts(
+    **figure_kwargs,
+)
+
+
+image = comp * tiles
+hv.save(image, "/user/jgiles/test.html")
