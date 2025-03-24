@@ -453,15 +453,15 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
     # Get the height value of the last not null value with a minimum of entropy 0.2 (this min entropy is to filter out random noise pixels)
     cloudtop = stratqvp[X_DBZH].where(stratqvp["z"] > (stratqvp["height_ml_new_gia"]) ) \
                         .where(stratqvp["min_entropy"] > 0.2 ) \
-                        .notnull().isel(z=slice(None,None,-1)).idxmax("z").rename("cloudtop")
+                        .isel(z=slice(None,None,-1)).idxmax("z").rename("cloudtop")
     # Get the height value of the last value > 5 dBZ
     cloudtop_5dbz = stratqvp[X_DBZH].where(stratqvp["z"] > (stratqvp["height_ml_new_gia"]) ) \
                         .where(stratqvp["min_entropy"] > 0.2).where(stratqvp[X_DBZH]>5) \
-                        .notnull().isel(z=slice(None,None,-1)).idxmax("z").rename("cloudtop 5 dBZ")
+                        .isel(z=slice(None,None,-1)).idxmax("z").rename("cloudtop 5 dBZ")
     # Get the height value of the last value > 10 dBZ
     cloudtop_10dbz = stratqvp[X_DBZH].where(stratqvp["z"] > (stratqvp["height_ml_new_gia"]) ) \
                         .where(stratqvp["min_entropy"] > 0.2).where(stratqvp[X_DBZH]>10) \
-                        .notnull().isel(z=slice(None,None,-1)).idxmax("z").rename("cloudtop 10 dBZ")
+                        .isel(z=slice(None,None,-1)).idxmax("z").rename("cloudtop 10 dBZ")
 
     # Temperature of the cloud top (3 methods)
     cloudtop_TEMP = stratqvp["TEMP"].sel({"z": cloudtop}, method="nearest")
@@ -2069,10 +2069,11 @@ beta_vars_ticks = {X_DBZH: np.linspace(-15, 10, int((10--15)/1)+1 ),
 
 ridge_vars = set(list(vars_ticks.keys())+list(beta_vars_ticks.keys()))
 
-bins = {"ML_thickness": np.arange(0,1200,50),
-        "ML_thickness_TEMP": np.arange(0, 5.25, 0.25),
+bins = {
+        "ML_thickness": np.arange(0,1200,50),
+        "ML_thickness_TEMP": np.arange(0, 8.5, 0.5),
         "ML_bottom": np.arange(0,4100,100),
-        "ML_bottom_TEMP": np.arange(0, 5.25, 0.25),
+        "ML_bottom_TEMP": np.arange(0, 9.5, 0.5),
         "values_snow": vars_ticks,
         "values_rain": vars_ticks,
         "values_DGL_mean": vars_ticks,
@@ -2090,9 +2091,9 @@ bins = {"ML_thickness": np.arange(0,1200,50),
         "cloudtop_10dbz": np.arange(2000,12250,250),
         "beta": beta_vars_ticks,
         "beta_belowML": beta_vars_ticks,
-        "cloudtop_TEMP": np.arange(-50,-1,1),
-        "cloudtop_TEMP_5dbz": np.arange(-50,-1,1),
-        "cloudtop_TEMP_10dbz": np.arange(-50,-1,1),
+        "cloudtop_TEMP": np.arange(-50,5,1),
+        "cloudtop_TEMP_5dbz": np.arange(-50,5,1),
+        "cloudtop_TEMP_10dbz": np.arange(-50,5,1),
         "deltaZH": np.arange(-5,21,1),
         "delta_z_ZHmaxML_RHOHVminML": np.arange(0,440, 40),
         }
@@ -2210,7 +2211,7 @@ for selseas in selseaslist:
                     if ss in ["values_DGL_min", "values_ML_min", "values_rain", "values_sfc"] and vv in ["KDP_ML_corrected"]: # filter out unrealistic zero values
                         samples = {loc: samples[loc][abs(samples[loc])>0.001] for loc in samples.keys()}
 
-                    samples = {loc: samples[loc] for loc in samples.keys() if len(samples[loc])>10} # filter out radars with less than 10 samples
+                    samples = {loc.swapcase(): samples[loc] for loc in samples.keys() if len(samples[loc])>10} # filter out radars with less than 10 samples
 
                     fig = ridgeplot.ridgeplot(samples=samples.values(),
                                             colorscale="viridis",
@@ -2225,7 +2226,7 @@ for selseas in selseaslist:
                     fig.update_layout(
                                     height=760,
                                     width=900,
-                                    font_size=16,
+                                    font_size=20,
                                     plot_bgcolor="white",
                                     showlegend=False,
                                     title=ss+" "+vv,
@@ -2266,7 +2267,17 @@ for selseas in selseaslist:
                     samples = {loc: stats[stratname][loc][ss].sel(\
                                 time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time").values\
                                for loc in order_fil}
-                    samples = {loc: samples[loc] for loc in samples.keys() if len(samples[loc])>10} # filter out radars with no samples
+
+                    if ss in ["cloudtop", "cloudtop_5dbz", "cloudtop_10dbz"]: # filter out erroneous cloudtop values #!!! this will be fixed now (19.03.25) and this extra filter will not be necessary after re running the stats calculations
+                        samples = {loc: samples[loc][samples[loc]<np.max(samples[loc])] for loc in samples.keys()}
+                    if ss in ["cloudtop_TEMP", "cloudtop_TEMP_5dbz", "cloudtop_TEMP_10dbz"]: # filter out erroneous cloudtop values #!!! this will be fixed now (19.03.25) and this extra filter will not be necessary after re running the stats calculations
+                        samples = {loc: stats[stratname][loc][ss].where(stats[stratname][loc]["".join(ss.split("_TEMP"))].sel(\
+                                    time=stats[stratname][loc]["".join(ss.split("_TEMP"))]['time'].dt.month.isin(selseas[1])) <
+                                                                            stats[stratname][loc]["".join(ss.split("_TEMP"))].max().values).dropna("time").values\
+                                   for loc in order_fil}
+                        # samples = {loc: samples[loc][samples_aux[loc]<np.max(samples_aux[loc])] for loc in samples.keys()}
+
+                    samples = {loc.swapcase(): samples[loc] for loc in samples.keys() if len(samples[loc])>10} # filter out radars with no samples
 
                     fig = ridgeplot.ridgeplot(samples=samples.values(),
                                             colorscale="viridis",
@@ -2281,7 +2292,7 @@ for selseas in selseaslist:
                     fig.update_layout(
                                     height=760,
                                     width=900,
-                                    font_size=16,
+                                    font_size=20,
                                     plot_bgcolor="white",
                                     showlegend=False,
                                     title=ss,
@@ -2322,17 +2333,460 @@ for selseas in selseaslist:
 
 #%%% Custom plots
 
-# Plot beta seasonality
+#%%%% Plot beta seasonality
 stratname = "stratiform"
 
-for loc in locs:
+
+colors = ["#4c72b0",  # Deep Blue
+            "#D73027",  # Bright Red
+              "#E66101",  # Reddish Orange
+              "#B2182B",  # Deep Crimson
+              "#67001F",  # Dark Burgundy
+              "#F46D43"]  # Warm Coral
+
+colors = ["#4c72b0",  # Deep Blue
+            "#000004",  # Basically black
+              "#5c126e",  # Purple
+              "#9b2964",  # Dark Magenta
+              "#e55c30",  # Orange
+              "#fbba1f"]  # Light Orange
+
+line_styles = ["--",  # Dashed
+               "-",  # Solid
+               "-",  # Solid
+               "-",  # Solid
+               "-",  # Solid
+               "-",  # Solid
+               "--",  # Dashed
+               "-.",  # Dash-dot
+               ":",  # Dotted
+               (0, (3, 5, 1, 5))]  # Custom: long dash, short gap, dot, short gap
+
+for il, loc in enumerate(locs):
     count = stats[stratname][loc]['beta']['DBZH'].groupby("time.month").count()
-    stats[stratname][loc]['beta']['DBZH'].groupby("time.month").median().where(count>30).plot(label=loc.swapcase())
+    stats[stratname][loc]['beta']['DBZH'].groupby("time.month").median().where(count>30).plot(
+        label=loc.swapcase(), c=colors[il], ls=line_styles[il], lw=2,alpha=0.8)
 plt.ylabel(r'$\beta$ [dBZ/km]')
 plt.xticks([1,2,3,4,5,6,7,8,9,10,11,12], labels=['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'])
 plt.grid(visible=True)
 plt.legend()
 plt.title(r'$\beta$ seasonality')
+
+#%%%% Plot riming frequency all radars in same plot
+
+locs_to_plot = locs #[find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
+# savepath = "/automount/agradar/jgiles/images/stats_histograms/"
+
+selseaslist = [
+            ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
+            # ("DJF", [12,1,2]),
+            # ("MAM", [3,4,5]),
+            # ("JJA", [6,7,8]),
+            # ("SON", [9,10,11]),
+           ] # ("nameofseas", [months included])
+
+riming_class_to_plot = [
+                        # 'riming_DR',
+                        # 'riming_UDR',
+                        # 'riming_ZDR_DBZH',
+                        'riming_ZDR_OC_DBZH',
+           ]
+
+colors = ["#4c72b0",  # Deep Blue
+            "#000004",  # Basically black
+              "#5c126e",  # Purple
+              "#9b2964",  # Dark Magenta
+              "#e55c30",  # Orange
+              "#fbba1f"]  # Light Orange
+
+line_styles = ["--",  # Dashed
+               "-",  # Solid
+               "-",  # Solid
+               "-",  # Solid
+               "-",  # Solid
+               "-",  # Solid
+               ]
+print("Plotting riming histograms ...")
+
+
+for stratname in ["stratiform", "stratiform_relaxed"]:
+    print(" ... ... "+stratname)
+    for vv in riming_class_to_plot:
+        for selseas in selseaslist:
+            print(" ... ... ... "+selseas[0])
+            # Plot the percentage against temperature
+            fig = plt.figure(figsize=(5, 4))
+
+            for iloc, loc in enumerate(locs_to_plot):
+                print(" ... "+loc)
+
+                to_plot = riming_classif[stratname][loc].chunk({"time":"auto"}).where(\
+                                                                   riming_classif[stratname][loc].z >= riming_classif[stratname][loc].height_ml_new_gia,
+                                                                drop=True)
+
+
+                # # Create savefolder
+                # savepath_seas = savepath+stratname+"/"+selseas[0]+"/"+loc+"/"
+                # if not os.path.exists(savepath_seas):
+                #     os.makedirs(savepath_seas)
+
+                to_plot_sel = to_plot.sel(\
+                                    time=to_plot['time'].dt.month.isin(selseas[1]))
+
+
+                try:
+
+                    # Create temperature bins (1-degree intervals)
+                    temp_bins = np.arange(-20, 1)
+
+                    # Create an empty list to store the values
+                    percentages = []
+                    count = []
+
+                    # Loop through each temperature bin
+                    for i in range(len(temp_bins) - 1):
+                        # Mask for the current temperature bin
+                        temp_mask = (to_plot_sel.TEMP >= temp_bins[i]) & (to_plot_sel.TEMP < temp_bins[i+1])
+
+                        # Get the data corresponding to the current temperature bin
+                        data_in_bin = to_plot_sel[vv].where(temp_mask.compute(), drop=True)
+
+                        # Calculate the percentage of 1s (ignoring NaNs)
+                        total_values = np.isfinite(data_in_bin).sum()  # Total number of finite values (non-nan)
+                        ones_count = (data_in_bin == 1).sum()          # Count of values equal to 1
+                        percentage = (ones_count / total_values) * 100 if total_values > 0 else np.nan
+
+                        # Append the percentage to the list
+                        percentages.append(percentage.values)
+
+                        # Append the total_values to the list
+                        count.append(total_values.values)
+
+                    plt.step(percentages, temp_bins[:-1], where="post",
+                             label=loc.swapcase(), c=colors[iloc], lw=2, ls=line_styles[iloc])
+
+                    # fig.savefig(savepath_seas+"/"+loc+"_"+vv+"_vsTEMP.png",
+                    #                 bbox_inches="tight")
+                    # plt.close(fig)
+
+
+                except:
+                    print("!!! Unable to plot "+vv+" !!!")
+
+            plt.xlabel('Percentage of rimed events [%]')
+            plt.ylabel('Temperature [°C]')
+            plt.title('Percentage of '+vv+" "+stratname+" "+selseas[0])
+            plt.xlim(0, 50)
+            plt.legend()
+            plt.gca().yaxis.set_inverted(True)
+            plt.grid(True)
+            plt.show()
+
+#%%%% Ridgeplot of of variables in rimed vs not rimed events
+
+
+savepath = "/automount/agradar/jgiles/images/stats_ridgeplots_riming/"
+
+vars_ticks = {X_DBZH: np.arange(0, 46, 1),
+                X_ZDR: np.arange(-0.5, 2.1, 0.1),
+                X_KDP: np.arange(-0.1, 0.52, 0.02),
+                X_RHO: np.arange(0.9, 1.004, 0.004)
+                }
+
+beta_vars_ticks = {X_DBZH: np.linspace(-15, 10, int((10--15)/1)+1 ),
+                X_ZDR: np.linspace(-0.5, 1, int((1--0.5)/0.1)+1 ),
+                X_KDP: np.linspace(-0.2, 0.2, int((0.2--0.2)/0.01)+1 ),
+                X_RHO: np.linspace(-0.05, 0.05, int((0.05--0.05)/0.001)+1 ),
+                } # the "_polyfit_coefficients" in the var names will be added below
+
+ridge_vars = set(list(vars_ticks.keys())+list(beta_vars_ticks.keys()))
+
+bins = {
+        "ML_thickness": np.arange(0,1200,50),
+        "ML_thickness_TEMP": np.arange(0, 8.5, 0.5),
+        "ML_bottom": np.arange(0,4100,100),
+        "ML_bottom_TEMP": np.arange(0, 9.5, 0.5),
+        "values_snow": vars_ticks,
+        "values_rain": vars_ticks,
+        "values_DGL_mean": vars_ticks,
+        "values_DGL_min": vars_ticks,
+        "values_DGL_max": vars_ticks,
+        "values_NZ_mean": vars_ticks,
+        "values_NZ_min": vars_ticks,
+        "values_NZ_max": vars_ticks,
+        "values_ML_mean": vars_ticks,
+        "values_ML_min": vars_ticks,
+        "values_ML_max": vars_ticks,
+        "values_sfc": vars_ticks,
+        "cloudtop": np.arange(2000,12250,250),
+        "cloudtop_5dbz": np.arange(2000,12250,250),
+        "cloudtop_10dbz": np.arange(2000,12250,250),
+        "beta": beta_vars_ticks,
+        "beta_belowML": beta_vars_ticks,
+        "cloudtop_TEMP": np.arange(-50,5,1),
+        "cloudtop_TEMP_5dbz": np.arange(-50,5,1),
+        "cloudtop_TEMP_10dbz": np.arange(-50,5,1),
+        "deltaZH": np.arange(-5,21,1),
+        "delta_z_ZHmaxML_RHOHVminML": np.arange(0,440, 40),
+        }
+
+# set a dictionary of bandwidths, this is important for the cases where the low resolution of the
+# data generates a histogram with only a few intervals with data. "normal_reference" is the default
+default_bandwidth_dict = {vv:"normal_reference" for vv in vars_ticks.keys()}
+default_bandwidth = "normal_reference"
+
+bandwidths = {"ML_thickness": 50,
+        "ML_thickness_TEMP": default_bandwidth,
+        "ML_bottom": default_bandwidth,
+        "ML_bottom_TEMP": default_bandwidth,
+        "values_snow": default_bandwidth_dict,
+        "values_rain": default_bandwidth_dict,
+        "values_DGL_mean": default_bandwidth_dict,
+        "values_DGL_min": default_bandwidth_dict,
+        "values_DGL_max": default_bandwidth_dict,
+        "values_NZ_mean": default_bandwidth_dict,
+        "values_NZ_min": default_bandwidth_dict,
+        "values_NZ_max": default_bandwidth_dict,
+        "values_ML_mean": default_bandwidth_dict,
+        "values_ML_min": default_bandwidth_dict,
+        "values_ML_max": default_bandwidth_dict,
+        "values_sfc": default_bandwidth_dict,
+        "cloudtop": default_bandwidth,
+        "cloudtop_5dbz": default_bandwidth,
+        "cloudtop_10dbz": default_bandwidth,
+        "beta": default_bandwidth_dict,
+        "beta_belowML": default_bandwidth_dict,
+        "cloudtop_TEMP": default_bandwidth,
+        "cloudtop_TEMP_5dbz": default_bandwidth,
+        "cloudtop_TEMP_10dbz": default_bandwidth,
+        "deltaZH": default_bandwidth,
+        "delta_z_ZHmaxML_RHOHVminML": default_bandwidth,
+        }
+# Particular changes
+bandwidths['values_sfc']['KDP_ML_corrected'] = 0.01
+bandwidths['values_sfc']['RHOHV_NC'] = 0.01
+bandwidths['values_snow']['RHOHV_NC'] = 0.01
+
+
+order = ['tur', 'umd', 'pro', 'afy', 'ank', 'gzt', 'hty', 'svs']
+# order = ['umd', 'pro', 'hty']
+
+selseaslist = [
+            ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
+            ("DJF", [12,1,2]),
+            ("MAM", [3,4,5]),
+            ("JJA", [6,7,8]),
+            ("SON", [9,10,11]),
+           ] # ("nameofseas", [months included])
+
+
+# Define a function to reorder the elements of the ridgeplot
+def reorder_tuple_elements(data, n):
+    # Extract the last n elements
+    last_n = data[-n:]
+
+    # Convert the tuple to a list to facilitate reordering
+    data_list = list(data[:-n])
+
+    # Insert each of the last n elements at the desired positions
+    for i in range(n):
+        target_position = i * 3 + 2
+        data_list.insert(target_position, last_n[i])
+
+    # Convert back to a tuple and return
+    return tuple(data_list)
+
+# Define a function to change the alpha value of an rgba string
+def change_rgba_alpha(original_color, new_alpha):
+    r, g, b, alpha = original_color.lstrip('rgba(').rstrip(')').split(',')
+    return f'rgba({r}, {g}, {b}, {new_alpha})'
+
+
+# Plot stats ridgeplots
+for selseas in selseaslist:
+    print(" ... ... "+selseas[0])
+    for stratname in ["stratiform", "stratiform_relaxed"]:
+
+        riming_class = "riming_ZDR_OC_DBZH"
+
+        print("plotting "+stratname+" stats...")
+
+        # Create savefolder
+        savepath_seas = savepath+stratname+"/"+riming_class+"/"+selseas[0]+"/"
+        if not os.path.exists(savepath_seas):
+            os.makedirs(savepath_seas)
+
+        order_fil = [ll for ll in order if ll in stats[stratname].keys()]
+
+        for ss in bins.keys():
+            print("...plotting "+ss)
+            try:
+                for vv in ridge_vars:
+
+                    # Get the samples for each radar and filter out the radars that have zero samples.
+                    riming_filter = { loc: riming_classif[stratname][loc].chunk({"time":"auto"}).where(\
+                                                                       riming_classif[stratname][loc].z >= riming_classif[stratname][loc].height_ml_new_gia,
+                                                                    ).where(\
+                                                                       riming_classif[stratname][loc].z <= riming_classif[stratname][loc].height_ml_new_gia + 2000,
+                                                                    ) for loc in order_fil}
+                    samples_wriming = {loc: stats[stratname][loc][ss][vv].where(riming_filter[loc][riming_class].sum("z")>0).sel(\
+                                time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time").values\
+                               for loc in order_fil}
+
+                    samples_woriming = {loc: stats[stratname][loc][ss][vv].where(riming_filter[loc][riming_class].sum("z")==0).sel(\
+                                time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time").values\
+                               for loc in order_fil}
+
+                    if ss in ["beta"] and vv in ["RHOHV_NC", "RHOHV"]: # filter out unrealistic zero beta values
+                        samples_wriming = {loc: samples_wriming[loc][abs(samples_wriming[loc])>0.0001] for loc in samples_wriming.keys()}
+                        samples_woriming = {loc: samples_woriming[loc][abs(samples_woriming[loc])>0.0001] for loc in samples_woriming.keys()}
+
+                    if ss in ["values_DGL_min", "values_ML_min", "values_rain", "values_sfc"] and vv in ["KDP_ML_corrected"]: # filter out unrealistic zero values
+                        samples_wriming = {loc: samples_wriming[loc][abs(samples_wriming[loc])>0.001] for loc in samples_wriming.keys()}
+                        samples_woriming = {loc: samples_woriming[loc][abs(samples_woriming[loc])>0.001] for loc in samples_woriming.keys()}
+
+                    samples = {loc.swapcase(): [ samples_wriming[loc], samples_woriming[loc] ] for loc in samples_wriming.keys() if ( len(samples_wriming[loc])>10 and len(samples_woriming[loc])>10 )} # filter out radars with no samples
+
+                    fig = ridgeplot.ridgeplot(samples=samples.values(),
+                                            colorscale="viridis",
+                                            # colormode="row-index",
+                                            colormode="trace-index-row-wise",
+                                            # colormode="trace-index",
+                                            coloralpha=0.65,
+                                            labels=samples.keys(),
+                                            linewidth=2,
+                                            spacing=5 / 9,
+                                            # kde_points=bins[ss],
+                                            bandwidth=bandwidths[ss][vv],
+                                            )
+                    fig.update_layout(
+                                    height=760,
+                                    width=900,
+                                    font_size=20,
+                                    plot_bgcolor="white",
+                                    showlegend=False,
+                                    title=ss,
+                                    xaxis_tickvals=bins[ss][vv],
+                    )
+
+                    # Add vertical zero line
+                    fig.add_vline(x=0, line_width=2, line_color="gray")
+
+                    # Get densities data from the plot
+                    densities = [ fig.data[2*i+1] for i in range(len(samples)*2) ]
+
+                    # calculate means
+                    means = []
+                    for sample0 in samples.values():
+                        for sample in sample0:
+                            means = np.append(means, np.median(sample) )
+
+                    # Add a vertical line at the mean for each distribution
+                    for i, mean in enumerate(means):
+                        # define the bottom and top of each distribution
+                        y_bot = np.array(densities[i]["y"]).min()
+                        y_top = np.array(densities[i]["y"])[(np.where(np.array(densities[i]["x"]) >= mean))][0]
+
+                        fig.add_scatter(
+                            mode="lines",
+                            x=[mean, mean],  # Vertical line at the mean
+                            y=[y_bot , y_top],  # Set y0 and y1 based on the vertical offset
+                            line=dict(color=change_rgba_alpha(densities[i]["fillcolor"], 1), width=2),
+                        )
+
+                    # We need to reorder the elements of the fig.data tuple so that
+                    # the mean lines go below each distribution.
+                    fig.data = reorder_tuple_elements(fig.data,len(means))
+
+                    fig.write_html(savepath_seas+"/"+ss+"_"+vv+".html")
+
+            except KeyError:
+                try:
+                    riming_filter = { loc: riming_classif[stratname][loc].chunk({"time":"auto"}).where(\
+                                                                       riming_classif[stratname][loc].z >= riming_classif[stratname][loc].height_ml_new_gia,
+                                                                    ).where(\
+                                                                       riming_classif[stratname][loc].z <= riming_classif[stratname][loc].height_ml_new_gia + 2000,
+                                                                    ) for loc in order_fil}
+                    samples_wriming = {loc: stats[stratname][loc][ss].where(riming_filter[loc][riming_class].sum("z")>0).sel(\
+                                time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time").values\
+                               for loc in order_fil}
+
+                    samples_woriming = {loc: stats[stratname][loc][ss].where(riming_filter[loc][riming_class].sum("z")==0).sel(\
+                                time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time").values\
+                               for loc in order_fil}
+
+                    if ss in ["cloudtop", "cloudtop_5dbz", "cloudtop_10dbz"]: # filter out erroneous cloudtop values #!!! this will be fixed now (19.03.25) and this extra filter will not be necessary after re running the stats calculations
+                        samples_wriming = {loc: samples_wriming[loc][samples_wriming[loc]<np.max(samples_wriming[loc])] for loc in samples_wriming.keys()}
+                        samples_woriming = {loc: samples_woriming[loc][samples_woriming[loc]<np.max(samples_woriming[loc])] for loc in samples_woriming.keys()}
+                    if ss in ["cloudtop_TEMP", "cloudtop_TEMP_5dbz", "cloudtop_TEMP_10dbz"]: # filter out erroneous cloudtop values #!!! this will be fixed now (19.03.25) and this extra filter will not be necessary after re running the stats calculations
+                        samples_wriming = {loc: stats[stratname][loc][ss].where(riming_filter[loc][riming_class].sum("z")>0).where(stats[stratname][loc]["".join(ss.split("_TEMP"))].sel(\
+                                    time=stats[stratname][loc]["".join(ss.split("_TEMP"))]['time'].dt.month.isin(selseas[1])) <
+                                                                            stats[stratname][loc]["".join(ss.split("_TEMP"))].max().values).dropna("time").values\
+                                   for loc in order_fil}
+                        samples_woriming = {loc: stats[stratname][loc][ss].where(riming_filter[loc][riming_class].sum("z")==0).where(stats[stratname][loc]["".join(ss.split("_TEMP"))].sel(\
+                                    time=stats[stratname][loc]["".join(ss.split("_TEMP"))]['time'].dt.month.isin(selseas[1])) <
+                                                                            stats[stratname][loc]["".join(ss.split("_TEMP"))].max().values).dropna("time").values\
+                                   for loc in order_fil}
+                        # samples = {loc: samples[loc][samples_aux[loc]<np.max(samples_aux[loc])] for loc in samples.keys()}
+
+                    samples = {loc.swapcase(): [ samples_wriming[loc], samples_woriming[loc] ] for loc in samples_wriming.keys() if ( len(samples_wriming[loc])>10 and len(samples_woriming[loc])>10 )} # filter out radars with no samples
+
+                    fig = ridgeplot.ridgeplot(samples=samples.values(),
+                                            colorscale="viridis",
+                                            # colormode="row-index",
+                                            colormode="trace-index-row-wise",
+                                            # colormode="trace-index",
+                                            coloralpha=0.65,
+                                            labels=samples.keys(),
+                                            linewidth=2,
+                                            spacing=5 / 9,
+                                            # kde_points=bins[ss],
+                                            bandwidth=bandwidths[ss],
+                                            )
+                    fig.update_layout(
+                                    height=760,
+                                    width=900,
+                                    font_size=20,
+                                    plot_bgcolor="white",
+                                    showlegend=False,
+                                    title=ss,
+                                    xaxis_tickvals=bins[ss],
+                    )
+
+                    # Add vertical zero line
+                    fig.add_vline(x=0, line_width=2, line_color="gray")
+
+                    # Get densities data from the plot
+                    densities = [ fig.data[2*i+1] for i in range(len(samples)*2) ]
+
+                    # calculate means
+                    means = []
+                    for sample0 in samples.values():
+                        for sample in sample0:
+                            means = np.append(means, np.median(sample) )
+
+                    # Add a vertical line at the mean for each distribution
+                    for i, mean in enumerate(means):
+                        # define the bottom and top of each distribution
+                        y_bot = np.array(densities[i]["y"]).min()
+                        y_top = np.array(densities[i]["y"])[(np.where(np.array(densities[i]["x"]) >= mean))][0]
+
+                        fig.add_scatter(
+                            mode="lines",
+                            x=[mean, mean],  # Vertical line at the mean
+                            y=[y_bot , y_top],  # Set y0 and y1 based on the vertical offset
+                            line=dict(color=change_rgba_alpha(densities[i]["fillcolor"], 1), width=2),
+                        )
+
+                    # We need to reorder the elements of the fig.data tuple so that
+                    # the mean lines go below each distribution.
+                    fig.data = reorder_tuple_elements(fig.data,len(means))
+
+                    fig.write_html(savepath_seas+"/"+ss+".html")
+                except:
+                    print("!!! unable to plot "+stratname+" "+ss+" !!!")
+            except:
+                print("!!! unable to plot "+stratname+" "+ss+" !!!")
 
 #%% Checking PHIDP
 # get and plot a random selection of QVPs
