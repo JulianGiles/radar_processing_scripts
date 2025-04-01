@@ -907,11 +907,11 @@ selseas = selseaslist[0]
 selmonths = selseas[1]
 
 # Select which retrievals to plot (only works if auto_plot=False)
-IWC = "iwc_zh_t" # iwc_zh_t or iwc_zdr_zh_kdp
-LWC = "lwc_zh_zdr" # lwc_zh_zdr (adjusted for Germany) or lwc_zh_zdr2 (S-band) or lwc_kdp
-Dm_ice = "Dm_ice_zh" # Dm_ice_zh, Dm_ice_zh_kdp, Dm_ice_zdp_kdp
+IWC = "iwc_zdr_zh_kdp" # iwc_zh_t or iwc_zdr_zh_kdp
+LWC = "lwc_kdp" # lwc_zh_zdr (adjusted for Germany) or lwc_zh_zdr2 (S-band) or lwc_kdp
+Dm_ice = "Dm_ice_zdp_kdp" # Dm_ice_zh, Dm_ice_zh_kdp, Dm_ice_zdp_kdp
 Dm_rain = "Dm_rain_zdr3" # Dm_rain_zdr, Dm_rain_zdr2 or Dm_rain_zdr3
-Nt_ice = "Nt_ice_zh_iwc" # Nt_ice_zh_iwc, Nt_ice_zh_iwc2, Nt_ice_zh_iwc_kdp, Nt_ice_zh_iwc2_kdp
+Nt_ice = "Nt_ice_zh_iwc2_kdp" # Nt_ice_zh_iwc, Nt_ice_zh_iwc2, Nt_ice_zh_iwc_kdp, Nt_ice_zh_iwc2_kdp
 Nt_rain = "Nt_rain_zh_zdr" # Nt_rain_zh_zdr
 
 vars_to_plot = {"IWC/LWC [g/m^{3}]": [-0.1, 0.82, 0.02], # [-0.1, 0.82, 0.02],
@@ -930,19 +930,19 @@ if auto_plot:
                     {selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys.png": [ytlimlist[0],
                                                            "iwc_zh_t", "lwc_zh_zdr",
                                                            "Dm_ice_zh", "Dm_rain_zdr3",
-                                                           "Nt_ice_zh_iwc", "Nt_rain_zh_zdr", selseas[1]],
+                                                           "Nt_ice_zh_iwc2", "Nt_rain_zh_zdr", selseas[1]],
                     selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys_extended.png": [ytlimlist[1],
                                                                 "iwc_zh_t", "lwc_zh_zdr",
                                                                 "Dm_ice_zh", "Dm_rain_zdr3",
-                                                                "Nt_ice_zh_iwc", "Nt_rain_zh_zdr", selseas[1]],
+                                                                "Nt_ice_zh_iwc2", "Nt_rain_zh_zdr", selseas[1]],
                     selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys_KDP.png": [ytlimlist[0],
                                                                "iwc_zdr_zh_kdp", "lwc_kdp",
-                                                               "Dm_ice_zh_kdp", "Dm_rain_zdr3",
-                                                               "Nt_ice_zh_iwc", "Nt_rain_zh_zdr", selseas[1]],
+                                                               "Dm_ice_zdp_kdp", "Dm_rain_zdr3",
+                                                               "Nt_ice_zh_iwc2_kdp", "Nt_rain_zh_zdr", selseas[1]],
                     selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys_KDP_extended.png": [ytlimlist[1],
                                                                "iwc_zdr_zh_kdp", "lwc_kdp",
                                                                "Dm_ice_zh_kdp", "Dm_rain_zdr3",
-                                                               "Nt_ice_zh_iwc", "Nt_rain_zh_zdr", selseas[1]],
+                                                               "Nt_ice_zh_iwc2_kdp", "Nt_rain_zh_zdr", selseas[1]],
                     }
                 )
 
@@ -2379,10 +2379,10 @@ locs_to_plot = locs #[find_loc(locs, ff[0])] # by default, plot only the histogr
 
 selseaslist = [
             ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
-            # ("DJF", [12,1,2]),
-            # ("MAM", [3,4,5]),
-            # ("JJA", [6,7,8]),
-            # ("SON", [9,10,11]),
+            ("DJF", [12,1,2]),
+            ("MAM", [3,4,5]),
+            ("JJA", [6,7,8]),
+            ("SON", [9,10,11]),
            ] # ("nameofseas", [months included])
 
 riming_class_to_plot = [
