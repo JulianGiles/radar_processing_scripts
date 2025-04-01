@@ -388,7 +388,8 @@ cond_ML_top_std = ds_qvps["height_ml_new_gia"].rolling(time=time_window, min_per
 allcond = cond_ML_bottom_change * cond_ML_bottom_std * cond_ML_top_change * cond_ML_top_std
 
 # reduce to daily condition
-allcond_daily = allcond.resample(time="D").any().dropna("time")
+# allcond_daily = allcond.resample(time="D").any().dropna("time")
+allcond_daily = allcond.resample(time="D").sum().dropna("time")
 allcond_daily = allcond_daily.where(allcond_daily, drop=True)
 
 # Filter only events with clean ML (requeriment for stratiform) on a daily basis
