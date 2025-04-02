@@ -64,7 +64,7 @@ realpep_path = "/automount/realpep/"
 
 #%% Load QVPs for stratiform-case CFTDs
 
-calculate_retrievals = False # Calculate retrievals based on the QVPs?
+calculate_retrievals = True # Calculate retrievals based on the QVPs?
 
 # This part should be run after having the QVPs computed (compute_qvps.py)
 start_time = time.time()
@@ -326,60 +326,59 @@ if calculate_retrievals:
         Nt_rain_zh_zdr = ( -2.37 + 0.1*stratqvp[X_DBZH] - 2.89*stratqvp[X_ZDR] + 1.28*stratqvp[X_ZDR]**2 - 0.213*stratqvp[X_ZDR]**3 )# Hu and Ryzhkov 2022 eq. 3 [log(1/L)]
 
         # Put everything together
-        retrievals[stratname][find_loc(locs, ff[0])] = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
-                                                                 "lwc_zh_zdr2":lwc_zh_zdr2,
-                                                                 "lwc_kdp": lwc_kdp,
-                                                                 "iwc_zh_t": iwc_zh_t,
-                                                                 "iwc_zdr_zh_kdp": iwc_zdr_zh_kdp,
-                                                                 "Dm_ice_zh": Dm_ice_zh,
-                                                                 "Dm_ice_zh_kdp": Dm_ice_zh_kdp,
-                                                                 "Dm_ice_zdp_kdp": Dm_ice_zdp_kdp,
-                                                                 "Dm_rain_zdr": Dm_rain_zdr,
-                                                                 "Dm_rain_zdr2": Dm_rain_zdr2,
-                                                                 "Dm_rain_zdr3": Dm_rain_zdr3,
-                                                                 "Nt_ice_zh_iwc": Nt_ice_zh_iwc,
-                                                                 "Nt_ice_zh_iwc2": Nt_ice_zh_iwc2,
-                                                                 "Nt_ice_zh_iwc_kdp": Nt_ice_zh_iwc_kdp,
-                                                                 "Nt_ice_zh_iwc2_kdp": Nt_ice_zh_iwc2_kdp,
-                                                                 "Nt_rain_zh_zdr": Nt_rain_zh_zdr,
+        retrievals[stratname][find_loc(locs, ff[0])] = xr.Dataset({"QVP_lwc_zh_zdr":lwc_zh_zdr,
+                                                                 "QVP_lwc_zh_zdr2":lwc_zh_zdr2,
+                                                                 "QVP_lwc_kdp": lwc_kdp,
+                                                                 "QVP_iwc_zh_t": iwc_zh_t,
+                                                                 "QVP_iwc_zdr_zh_kdp": iwc_zdr_zh_kdp,
+                                                                 "QVP_Dm_ice_zh": Dm_ice_zh,
+                                                                 "QVP_Dm_ice_zh_kdp": Dm_ice_zh_kdp,
+                                                                 "QVP_Dm_ice_zdp_kdp": Dm_ice_zdp_kdp,
+                                                                 "QVP_Dm_rain_zdr": Dm_rain_zdr,
+                                                                 "QVP_Dm_rain_zdr2": Dm_rain_zdr2,
+                                                                 "QVP_Dm_rain_zdr3": Dm_rain_zdr3,
+                                                                 "QVP_Nt_ice_zh_iwc": Nt_ice_zh_iwc,
+                                                                 "QVP_Nt_ice_zh_iwc2": Nt_ice_zh_iwc2,
+                                                                 "QVP_Nt_ice_zh_iwc_kdp": Nt_ice_zh_iwc_kdp,
+                                                                 "QVP_Nt_ice_zh_iwc2_kdp": Nt_ice_zh_iwc2_kdp,
+                                                                 "QVP_Nt_rain_zh_zdr": Nt_rain_zh_zdr,
                                                                  }).compute()
 
         # Save retrievals
         for ll in retrievals[stratname].keys():
-            retrievals[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals/"+stratname+"/"+ll+".nc")
+            retrievals[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased/"+stratname+"/"+ll+".nc")
 
-else:
-    # If not calculating retrievals, check if they are already in the QVP
-    try: # check if exists, if not, create it
-        retrievals
-    except NameError:
-        retrievals = {}
+# Check also if the retrievals are already in the QVP
+try: # check if exists, if not, create it
+    retrievals
+except NameError:
+    retrievals = {}
 
-    for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
-        retrievals[stratname] = {}
-        retrievals[stratname][find_loc(locs, ff[0])] = xr.Dataset({"lwc_zh_zdr": stratqvp["lwc_zh_zdr"],
-                                                                 "lwc_zh_zdr2": stratqvp["lwc_zh_zdr2"],
-                                                                 "lwc_kdp": stratqvp["lwc_kdp"],
-                                                                 "iwc_zh_t": stratqvp["iwc_zh_t"],
-                                                                 "iwc_zdr_zh_kdp": stratqvp["iwc_zdr_zh_kdp"],
-                                                                 "Dm_ice_zh": stratqvp["Dm_ice_zh"],
-                                                                 "Dm_ice_zh_kdp": stratqvp["Dm_ice_zh_kdp"],
-                                                                 "Dm_ice_zdp_kdp": stratqvp["Dm_ice_zdp_kdp"],
-                                                                 "Dm_rain_zdr": stratqvp["Dm_rain_zdr"],
-                                                                 "Dm_rain_zdr2": stratqvp["Dm_rain_zdr2"],
-                                                                 "Dm_rain_zdr3": stratqvp["Dm_rain_zdr3"],
-                                                                 "Nt_ice_zh_iwc": stratqvp["Nt_ice_zh_iwc"],
-                                                                 "Nt_ice_zh_iwc2": stratqvp["Nt_ice_zh_iwc2"],
-                                                                 "Nt_ice_zh_iwc_kdp": stratqvp["Nt_ice_zh_iwc_kdp"],
-                                                                 "Nt_ice_zh_iwc2_kdp": stratqvp["Nt_ice_zh_iwc2_kdp"],
-                                                                 "Nt_rain_zh_zdr": stratqvp["Nt_rain_zh_zdr"],
-                                                                 })
+for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
+    retrievals[stratname] = {}
+    retrievals[stratname][find_loc(locs, ff[0])] = xr.Dataset({"lwc_zh_zdr": stratqvp["lwc_zh_zdr"],
+                                                             "lwc_zh_zdr2": stratqvp["lwc_zh_zdr2"],
+                                                             "lwc_kdp": stratqvp["lwc_kdp"],
+                                                             "iwc_zh_t": stratqvp["iwc_zh_t"],
+                                                             "iwc_zdr_zh_kdp": stratqvp["iwc_zdr_zh_kdp"],
+                                                             "Dm_ice_zh": stratqvp["Dm_ice_zh"],
+                                                             "Dm_ice_zh_kdp": stratqvp["Dm_ice_zh_kdp"],
+                                                             "Dm_ice_zdp_kdp": stratqvp["Dm_ice_zdp_kdp"],
+                                                             "Dm_rain_zdr": stratqvp["Dm_rain_zdr"],
+                                                             "Dm_rain_zdr2": stratqvp["Dm_rain_zdr2"],
+                                                             "Dm_rain_zdr3": stratqvp["Dm_rain_zdr3"],
+                                                             "Nt_ice_zh_iwc": stratqvp["Nt_ice_zh_iwc"],
+                                                             "Nt_ice_zh_iwc2": stratqvp["Nt_ice_zh_iwc2"],
+                                                             "Nt_ice_zh_iwc_kdp": stratqvp["Nt_ice_zh_iwc_kdp"],
+                                                             "Nt_ice_zh_iwc2_kdp": stratqvp["Nt_ice_zh_iwc2_kdp"],
+                                                             "Nt_rain_zh_zdr": stratqvp["Nt_rain_zh_zdr"],
+                                                             })
 
-        # Save retrievals
-        if not os.path.exists(realpep_path+"/upload/jgiles/radar_retrievals/"+stratname):
-            os.makedirs(realpep_path+"/upload/jgiles/radar_retrievals/"+stratname)
-        for ll in retrievals[stratname].keys():
-            retrievals[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals/"+stratname+"/"+ll+".nc")
+    # Save retrievals
+    if not os.path.exists(realpep_path+"/upload/jgiles/radar_retrievals/"+stratname):
+        os.makedirs(realpep_path+"/upload/jgiles/radar_retrievals/"+stratname)
+    for ll in retrievals[stratname].keys():
+        retrievals[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals/"+stratname+"/"+ll+".nc")
 
 #### General statistics
 print("Calculating statistics ...")
@@ -526,18 +525,6 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
 # We do this for both qvps_strat_fil and relaxed qvps_strat_relaxed_fil
 print("Calculating riming ...")
 
-with open('/automount/agradar/jgiles/riming_model/gbm_model_23.10.2024.pkl', 'rb') as f:
-    riming_model = pickle.load(f)
-
-with open('/automount/agradar/jgiles/riming_model/gbm_zh_zdr_model_23.10.2024.pkl', 'rb') as f:
-    riming_model_zh_zdr = pickle.load(f)
-
-def calc_depolarization(da, zdr="ZDR_OC", rho="RHOHV_NC"):
-    return xr.apply_ufunc(wrl.dp.depolarization,
-                          da[zdr], da[rho].where(da[rho]<1),
-                        dask='parallelized',
-    )
-
 # We will put the final riming classification in a dict
 try: # check if exists, if not, create it
     riming_classif
@@ -546,91 +533,130 @@ except NameError:
 
 loc = find_loc(locs, ff[0])
 
-for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
-    print("   ... for "+stratname)
+# try to load the riming model. Will only work with older sklearn version (wradlib5 env)
+try:
+    with open('/automount/agradar/jgiles/riming_model/gbm_model_23.10.2024.pkl', 'rb') as f:
+        riming_model = pickle.load(f)
 
-    riming_classif[stratname] = {}
-    riming_classif[stratname][loc] = xr.Dataset()
+    with open('/automount/agradar/jgiles/riming_model/gbm_zh_zdr_model_23.10.2024.pkl', 'rb') as f:
+        riming_model_zh_zdr = pickle.load(f)
 
-    if "DR" not in stratqvp:
-        DR = calc_depolarization(stratqvp, X_ZDR, X_RHO)
-        assign = dict(DR = DR.assign_attrs(
-            {'long_name': 'Depolarization ratio based on '+X_ZDR+' and '+X_RHO,
-             'standard_name': 'depolarization_ratio',
-             'units': 'dB'}
-            ))
-        riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
+    def calc_depolarization(da, zdr="ZDR_OC", rho="RHOHV_NC"):
+        return xr.apply_ufunc(wrl.dp.depolarization,
+                              da[zdr], da[rho].where(da[rho]<1),
+                            dask='parallelized',
+        )
 
-    if "UDR" not in stratqvp:
-        UDR = calc_depolarization(stratqvp, "ZDR", "RHOHV")
-        assign = dict(UDR = UDR.assign_attrs(
-            {'long_name': 'Depolarization ratio based on ZDR and RHOHV',
-             'standard_name': 'depolarization_ratio',
-             'units': 'dB'}
-            ))
-        riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
 
-    # predict riming with the model
-    for XDR, XZDR, XZH in [("DR", X_ZDR, X_DBZH), ("UDR", "ZDR", "DBZH")]:
+    for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
+        print("   ... for "+stratname)
 
-        idx = np.isfinite(riming_classif[stratname][loc][XDR].values.flatten() + \
-                          stratqvp[XZDR].values.flatten() + \
+        riming_classif[stratname] = {}
+        riming_classif[stratname][loc] = xr.Dataset()
+
+        if "DR" not in stratqvp:
+            DR = calc_depolarization(stratqvp, X_ZDR, X_RHO)
+            assign = dict(DR = DR.assign_attrs(
+                {'long_name': 'Depolarization ratio based on '+X_ZDR+' and '+X_RHO,
+                 'standard_name': 'depolarization_ratio',
+                 'units': 'dB'}
+                ))
+            riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
+
+        if "UDR" not in stratqvp:
+            UDR = calc_depolarization(stratqvp, "ZDR", "RHOHV")
+            assign = dict(UDR = UDR.assign_attrs(
+                {'long_name': 'Depolarization ratio based on ZDR and RHOHV',
+                 'standard_name': 'depolarization_ratio',
+                 'units': 'dB'}
+                ))
+            riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
+
+        # predict riming with the model
+        for XDR, XZDR, XZH in [("DR", X_ZDR, X_DBZH), ("UDR", "ZDR", "DBZH")]:
+
+            idx = np.isfinite(riming_classif[stratname][loc][XDR].values.flatten() + \
+                              stratqvp[XZDR].values.flatten() + \
+                                  stratqvp[XZH].values.flatten())
+            X = np.concatenate((riming_classif[stratname][loc][XDR].values.flatten()[idx].reshape(-1, 1), \
+                                stratqvp[XZDR].values.flatten()[idx].reshape(-1, 1), \
+                                    stratqvp[XZH].values.flatten()[idx].reshape(-1, 1)), axis=1)
+
+            pred = riming_model.predict(X)
+
+            pred_riming = np.zeros_like(riming_classif[stratname][loc][XDR]).flatten() + np.nan
+            pred_riming[idx] = pred
+            pred_riming = xr.zeros_like(riming_classif[stratname][loc][XDR]) + pred_riming.reshape(riming_classif[stratname][loc][XDR].shape)
+
+            varname = "riming_"+XDR
+
+            pred_riming = pred_riming.assign_attrs({
+                'long_name': 'Riming prediction based on '+XDR+', '+XZDR+' and '+XZH+' with gradient boosting model',
+                 'standard_name': 'riming_prediction',
+                }).rename(varname)
+
+            assign = {varname: pred_riming.copy()}
+            riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
+
+            # save to file
+            if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname):
+                os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname)
+
+            pred_riming.to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+ll+"_"+varname+".nc")
+
+        # predict riming with the model that uses only zh and zdr
+        for XZDR, XZH in [(X_ZDR, X_DBZH), ("ZDR", "DBZH")]:
+
+            idx = np.isfinite(stratqvp[XZDR].values.flatten() + \
                               stratqvp[XZH].values.flatten())
-        X = np.concatenate((riming_classif[stratname][loc][XDR].values.flatten()[idx].reshape(-1, 1), \
-                            stratqvp[XZDR].values.flatten()[idx].reshape(-1, 1), \
+            X = np.concatenate((stratqvp[XZDR].values.flatten()[idx].reshape(-1, 1), \
                                 stratqvp[XZH].values.flatten()[idx].reshape(-1, 1)), axis=1)
 
-        pred = riming_model.predict(X)
+            pred = riming_model_zh_zdr.predict(X)
 
-        pred_riming = np.zeros_like(riming_classif[stratname][loc][XDR]).flatten() + np.nan
-        pred_riming[idx] = pred
-        pred_riming = xr.zeros_like(riming_classif[stratname][loc][XDR]) + pred_riming.reshape(riming_classif[stratname][loc][XDR].shape)
+            pred_riming = np.zeros_like(stratqvp[XZH]).flatten() + np.nan
+            pred_riming[idx] = pred
+            pred_riming = xr.zeros_like(stratqvp[XZH]) + pred_riming.reshape(stratqvp[XZH].shape)
 
-        varname = "riming_"+XDR
+            varname = "riming_"+XZDR+"_"+XZH
 
-        pred_riming = pred_riming.assign_attrs({
-            'long_name': 'Riming prediction based on '+XDR+', '+XZDR+' and '+XZH+' with gradient boosting model',
-             'standard_name': 'riming_prediction',
-            }).rename(varname)
+            pred_riming = pred_riming.assign_attrs({
+                'long_name': 'Riming prediction based on '+XZDR+' and '+XZH+' with gradient boosting model',
+                 'standard_name': 'riming_prediction',
+                }).rename(varname)
 
-        assign = {varname: pred_riming.copy()}
-        riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
+            assign = {varname: pred_riming.copy()}
+            riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
 
-        # save to file
-        if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname):
-            os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname)
+            # save to file
+            if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname):
+                os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname)
 
-        pred_riming.to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+ll+"_"+varname+".nc")
+            pred_riming.to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+ll+"_"+varname+".nc")
 
-    # predict riming with the model that uses only zh and zdr
-    for XZDR, XZH in [(X_ZDR, X_DBZH), ("ZDR", "DBZH")]:
-
-        idx = np.isfinite(stratqvp[XZDR].values.flatten() + \
-                          stratqvp[XZH].values.flatten())
-        X = np.concatenate((stratqvp[XZDR].values.flatten()[idx].reshape(-1, 1), \
-                            stratqvp[XZH].values.flatten()[idx].reshape(-1, 1)), axis=1)
-
-        pred = riming_model_zh_zdr.predict(X)
-
-        pred_riming = np.zeros_like(stratqvp[XZH]).flatten() + np.nan
-        pred_riming[idx] = pred
-        pred_riming = xr.zeros_like(stratqvp[XZH]) + pred_riming.reshape(stratqvp[XZH].shape)
-
-        varname = "riming_"+XZDR+"_"+XZH
-
-        pred_riming = pred_riming.assign_attrs({
-            'long_name': 'Riming prediction based on '+XZDR+' and '+XZH+' with gradient boosting model',
-             'standard_name': 'riming_prediction',
-            }).rename(varname)
-
-        assign = {varname: pred_riming.copy()}
-        riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
-
-        # save to file
-        if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname):
-            os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname)
-
-        pred_riming.to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+ll+"_"+varname+".nc")
+except ModuleNotFoundError:
+    print("... Loading the riming model failed, trying to reload pre-calculated riming ...")
+    for stratname in ["stratiform", "stratiform_relaxed"]:
+        if stratname not in riming_classif.keys():
+            riming_classif[stratname] = {}
+        elif type(riming_classif[stratname]) is not dict:
+            riming_classif[stratname] = {}
+        print("Loading "+stratname+" riming classification ...")
+        for ll in [loc]: # ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']:
+            if ll not in riming_classif[stratname].keys():
+                riming_classif[stratname][ll] = xr.Dataset()
+            elif type(riming_classif[stratname][ll]) is not xr.Dataset:
+                riming_classif[stratname][ll] = xr.Dataset()
+            for xx in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_ZDR_OC_DBZH',
+                       ]:
+                try:
+                    riming_classif[stratname][ll] = riming_classif[stratname][ll].assign( xr.open_dataset(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+ll+"_"+xx+".nc") )
+                    print(ll+" "+xx+" riming_classif loaded")
+                except:
+                    pass
+            # delete entry if empty
+            if not riming_classif[stratname][ll]:
+                del riming_classif[stratname][ll]
 
 # Assign
 qvps_strat_fil = qvps_strat_fil.assign( riming_classif['stratiform'][loc] )
