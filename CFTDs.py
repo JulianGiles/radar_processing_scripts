@@ -281,14 +281,14 @@ if calculate_retrievals:
 
     # We will put the final retrievals in a dict
     try: # check if exists, if not, create it
-        retrievals
+        retrievals_qvpbased
     except NameError:
-        retrievals = {}
+        retrievals_qvpbased = {}
 
     for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
         print("   ... for "+stratname)
 
-        retrievals[stratname] = {}
+        retrievals_qvpbased[stratname] = {}
 
         # LWC
         lwc_zh_zdr = 10**(0.058*stratqvp[X_DBZH] - 0.118*stratqvp[X_ZDR] - 2.36) # Reimann et al 2021 eq 3.7 (adjusted for Germany)
@@ -326,27 +326,27 @@ if calculate_retrievals:
         Nt_rain_zh_zdr = ( -2.37 + 0.1*stratqvp[X_DBZH] - 2.89*stratqvp[X_ZDR] + 1.28*stratqvp[X_ZDR]**2 - 0.213*stratqvp[X_ZDR]**3 )# Hu and Ryzhkov 2022 eq. 3 [log(1/L)]
 
         # Put everything together
-        retrievals[stratname][find_loc(locs, ff[0])] = xr.Dataset({"QVP_lwc_zh_zdr":lwc_zh_zdr,
-                                                                 "QVP_lwc_zh_zdr2":lwc_zh_zdr2,
-                                                                 "QVP_lwc_kdp": lwc_kdp,
-                                                                 "QVP_iwc_zh_t": iwc_zh_t,
-                                                                 "QVP_iwc_zdr_zh_kdp": iwc_zdr_zh_kdp,
-                                                                 "QVP_Dm_ice_zh": Dm_ice_zh,
-                                                                 "QVP_Dm_ice_zh_kdp": Dm_ice_zh_kdp,
-                                                                 "QVP_Dm_ice_zdp_kdp": Dm_ice_zdp_kdp,
-                                                                 "QVP_Dm_rain_zdr": Dm_rain_zdr,
-                                                                 "QVP_Dm_rain_zdr2": Dm_rain_zdr2,
-                                                                 "QVP_Dm_rain_zdr3": Dm_rain_zdr3,
-                                                                 "QVP_Nt_ice_zh_iwc": Nt_ice_zh_iwc,
-                                                                 "QVP_Nt_ice_zh_iwc2": Nt_ice_zh_iwc2,
-                                                                 "QVP_Nt_ice_zh_iwc_kdp": Nt_ice_zh_iwc_kdp,
-                                                                 "QVP_Nt_ice_zh_iwc2_kdp": Nt_ice_zh_iwc2_kdp,
-                                                                 "QVP_Nt_rain_zh_zdr": Nt_rain_zh_zdr,
+        retrievals_qvpbased[stratname][find_loc(locs, ff[0])] = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
+                                                                 "lwc_zh_zdr2":lwc_zh_zdr2,
+                                                                 "lwc_kdp": lwc_kdp,
+                                                                 "iwc_zh_t": iwc_zh_t,
+                                                                 "iwc_zdr_zh_kdp": iwc_zdr_zh_kdp,
+                                                                 "Dm_ice_zh": Dm_ice_zh,
+                                                                 "Dm_ice_zh_kdp": Dm_ice_zh_kdp,
+                                                                 "Dm_ice_zdp_kdp": Dm_ice_zdp_kdp,
+                                                                 "Dm_rain_zdr": Dm_rain_zdr,
+                                                                 "Dm_rain_zdr2": Dm_rain_zdr2,
+                                                                 "Dm_rain_zdr3": Dm_rain_zdr3,
+                                                                 "Nt_ice_zh_iwc": Nt_ice_zh_iwc,
+                                                                 "Nt_ice_zh_iwc2": Nt_ice_zh_iwc2,
+                                                                 "Nt_ice_zh_iwc_kdp": Nt_ice_zh_iwc_kdp,
+                                                                 "Nt_ice_zh_iwc2_kdp": Nt_ice_zh_iwc2_kdp,
+                                                                 "Nt_rain_zh_zdr": Nt_rain_zh_zdr,
                                                                  }).compute()
 
         # Save retrievals
-        for ll in retrievals[stratname].keys():
-            retrievals[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased/"+stratname+"/"+ll+".nc")
+        for ll in retrievals_qvpbased[stratname].keys():
+            retrievals_qvpbased[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased/"+stratname+"/"+ll+".nc")
 
 # Check also if the retrievals are already in the QVP
 try: # check if exists, if not, create it
@@ -478,7 +478,8 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
 
     #### Needle zone statistics
     # select values in the NZ
-    qvps_NZ = stratqvp.where(((stratqvp["TEMP"] >= -8)&(stratqvp["TEMP"] <= -1)).compute(), drop=True)
+    # qvps_NZ = stratqvp.where(((stratqvp["TEMP"] >= -8)&(stratqvp["TEMP"] <= -1)).compute(), drop=True).unify_chunks()
+    qvps_NZ = stratqvp.where(((stratqvp["TEMP"] >= -8)&(stratqvp["TEMP"] <= -1)).compute())
 
     values_NZ_max = qvps_NZ.max(dim="z")
     values_NZ_min = qvps_NZ.min(dim="z")
@@ -1290,6 +1291,8 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
 # load retrievals
 if 'retrievals' not in globals() and 'retrievals' not in locals():
     retrievals = {}
+if 'retrievals_qvpbased' not in globals() and 'retrievals_qvpbased' not in locals():
+    retrievals_qvpbased = {}
 
 for stratname in ["stratiform", "stratiform_relaxed"]:
     if stratname not in retrievals.keys():
@@ -1306,6 +1309,22 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
         # delete entry if empty
         if not retrievals[stratname][ll]:
             del retrievals[stratname][ll]
+
+for stratname in ["stratiform", "stratiform_relaxed"]:
+    if stratname not in retrievals_qvpbased.keys():
+        retrievals_qvpbased[stratname] = {}
+    elif type(retrievals_qvpbased[stratname]) is not dict:
+        retrievals_qvpbased[stratname] = {}
+    print("Loading "+stratname+" retrievals_qvpbased ...")
+    for ll in locs:
+        try:
+            retrievals_qvpbased[stratname][ll] = xr.open_dataset(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased/"+stratname+"/"+ll+".nc")
+            print(ll+" retrievals_qvpbased loaded")
+        except:
+            pass
+        # delete entry if empty
+        if not retrievals_qvpbased[stratname][ll]:
+            del retrievals_qvpbased[stratname][ll]
 
 #%%% 2d histograms
 locs_to_plot = locs # [find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
