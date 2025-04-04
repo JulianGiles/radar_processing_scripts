@@ -70,7 +70,7 @@ warnings.filterwarnings('ignore')
 
 abs_zdr_off_min_thresh = 0. # if ZDR_OC has more negative values than the original ZDR
 # and the absolute median offset is < abs_zdr_off_min_thresh, then undo the correction (set to 0 to avoid this step)
-zdr_offset_perts = True # offset correct zdr per timesteps? if False, correct with daily offset
+zdr_offset_perts = False # offset correct zdr per timesteps? if False, correct with daily offset
 mix_zdr_offsets = True # if True and zdr_offset_perts=False, try to
 # choose between daily LR-consistency and QVP offsets based on how_mix_zdr_offset.
 # If True and zdr_offset_perts=True, choose between all available timestep offsets
@@ -91,9 +91,10 @@ ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-01-05/HTY/*/8.0/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-06-02/pro/90gradstarng01/00/*allmoms*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-10/2021-10-30/ess/90gradstarng01/00/*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-07/2021-07-24/ess/90gradstarng01/00/*"
-# ds = utils.load_dwd_preprocessed(ff)
+ff = "/automount/realpep/upload/jgiles/dwd/2021/2021-07/2021-07-14/ess/vol5minng01/07/*allm*-hd5" # Ahr flood case
+ds = utils.load_dwd_preprocessed(ff)
 # ds = utils.load_dwd_raw(ff)
-ds = utils.load_dmi_preprocessed(ff)
+# ds = utils.load_dmi_preprocessed(ff)
 # ds = utils.load_volume(sorted(glob.glob(ff)), func=utils.load_dmi_preprocessed)
 
 # check if we are dealing with several elevations
@@ -109,7 +110,8 @@ if "dwd" in ff and "90grads" in ff:
     # for the VP we need to set a higher min height because there are several bins of unrealistic values
     min_hgt = min_hgts["90grads"]
 if "dwd" in ff and "vol5minng01" in ff:
-    clowres0=True
+    if ds.range.diff("range").median() > 750:
+        clowres0=True
 # Set specifics for each turkish radar
 if "ANK" in ff:
     min_hgt = min_hgts["ANK"]
@@ -742,7 +744,7 @@ cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(tic
 cmap = "miub2"
 norm = utils.get_discrete_norm(ticks, cmap, extend="both")
 datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm, figsize=(7,3))
-datasel["min_entropy"].dropna("z", how="all").interpolate_na(dim="z").plot.contourf(
+datasel["min_entropy"].compute().dropna("z", how="all").interpolate_na(dim="z").plot.contourf(
     x="time", levels=[min_entropy_thresh, 1], hatches=["", "XXX", ""], colors=[(1,1,1,0)],
     add_colorbar=False, extend="both")
 plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only the hour in the x-axis
@@ -769,7 +771,9 @@ plt.gca().set_ylabel("height over sea level")
 # ax3.set_title("")
 
 if isvolume: elevtitle = " RD-QVP"
-else: elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
+else:
+    try: elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
+    except: elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values, 2))+"°"
 plt.title(mom+elevtitle+". "+str(datasel.time.values[0]).split(".")[0])
 plt.show()
 plt.close()
