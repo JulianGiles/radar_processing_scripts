@@ -63,7 +63,6 @@ dbzh_names = ["DBZH"] # same but for DBZH
 rhohv_names = ["RHOHV_NC", "RHOHV"] # same but for RHOHV
 zdr_names = ["ZDR"]
 
-clowres0=False # this is for the ML detection algorithm
 min_hgts = utils.min_hgts
 min_rngs = utils.min_rngs
 min_hgt = min_hgts["default"] # minimum height above the radar to be considered
@@ -71,8 +70,6 @@ min_range = min_rngs["default"] # minimum range from which to consider data (mos
 if "dwd" in path0 and "90grads" in path0:
     # for the VP we need to set a higher min height because there are several bins of unrealistic values
     min_hgt = min_hgts["90grads"]
-if "dwd" in path0 and "vol5minng01" in path0:
-    clowres0=True
 # Set specifics for each turkish radar
 if "ANK" in path0:
     min_hgt = min_hgts["ANK"]
@@ -144,18 +141,27 @@ def make_savedir(ff, name):
         os.makedirs(savepathdir)
     return savepath
 
-
 # ERA5 folder
-if "jgiles" in files[0]:
+if "dwd" in path0:
+    cloc = "germany"
+if "dmi" in path0:
+    cloc = "turkey"
+
+if os.path.exists("/automount/ags/jgiles/ERA5/hourly/"):
     # then we are in local system
-    era5_dir = "/automount/ags/jgiles/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
-elif "giles1" in files[0]:
+    era5_dir = "/automount/ags/jgiles/ERA5/hourly/"+cloc+"/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
+elif os.path.exists("/p/scratch/detectrea/giles1/ERA5/hourly/"):
     # then we are in JSC
-    era5_dir = "/p/scratch/detectrea/giles1/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
+    era5_dir = "/p/scratch/detectrea/giles1/ERA5/hourly/"+cloc+"/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
+elif os.path.exists("/p/largedata2/detectdata/projects/A04/ERA5/hourly/"):
+    # then we are in JSC
+    era5_dir = "/p/largedata2/detectdata/projects/A04/ERA5/hourly/"+cloc+"/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
 
 #%% Load data
 
 for ff in files:
+    clowres0=False # this is for the ML detection algorithm
+
     separator = "any"
     if "allmoms" in ff: # allmoms naming is deprecated but old files remain
         separator = "allmoms"
@@ -197,16 +203,8 @@ for ff in files:
     else:
         raise NotImplementedError("Only DWD or DMI data supported at the moment")
 
-    # fix time dim and time in coords
-    # data = utils.fix_time_in_coords(data)
-
-    # # flip UPHIDP and KDP in UMD data
-    # if "umd" in ff:
-    #     print("Flipping phase moments in UMD")
-    #     for vf in ["UPHIDP", "KDP"]: # Phase moments in UMD are flipped into the negatives
-    #         attrs = data[vf].attrs.copy()
-    #         data[vf] = data[vf]*-1
-    #         data[vf].attrs = attrs.copy()
+    if data.range.diff("range").median() > 750:
+        clowres0=True
 
 #%% Load noise corrected RHOHV if available
     try:
@@ -222,10 +220,13 @@ for ff in files:
 
 #%% Load and attach temperature data (in case no ML is detected, and in case temperature comes from other source different than ERA5)
 
-    # find loc and assign TEMP data accordingly
-    loc = utils.find_loc(utils.locs, ff)
-
-    data = utils.attach_ERA5_TEMP(data, path=loc.join(era5_dir.split("loc")))
+    #### Attach ERA5 variables
+    era5_vars = ["temperature"]
+    era5_vars_rename = {"t":"TEMP"}
+    data = utils.attach_ERA5_fields(data, path=era5_dir, convert_to_C=True,
+                               variables=era5_vars,
+                               rename=era5_vars_rename, set_as_coords=False,
+                               k_n=1, pre_interpolate_z=True)
 
 #%% Calculate ZDR offset method 1, 2 or 3
     if 1 in calib_types or 2 in calib_types or 3 in calib_types:
@@ -272,23 +273,28 @@ for ff in files:
         if X_PHI in data.data_vars:
             # Set parameters according to data
             phase_proc_params = utils.get_phase_proc_params(ff) # get default phase processing parameters
-            window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian, rhohv_thresh_gia = phase_proc_params.values()
+            window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian, rhohv_thresh_gia, grad_thresh = phase_proc_params.values() # explicit alternative
 
             # phidp may be already preprocessed (turkish case), then only offset-correct (no smoothing) and then vulpiani
             if "PHIDP" not in X_PHI: # This is now always skipped with this definition ("PHIDP" is in both X_PHI); i.e., we apply full processing to turkish data too
                 # calculate phidp offset
-                data = utils.phidp_offset_correction(data, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
+                data_phiproc = utils.phidp_offset_correction(utils.apply_min_max_thresh(data, {"SNRH":10, "SNRHC":10, "SQIH":0.5}, {}, skipfullna=True),
+                                                     X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                                      dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
                                      rng_min=1000, rng=rng, azmedian=azmedian, tolerance=(0,5)) # shorter rng, rng_min for finer turkish data
 
-                phi_masked = data[X_PHI+"_OC"].where((data[X_RHO] >= 0.9) * (data[X_DBZH] >= 0.) * (data["range"]>min_range) )
+                phi_masked = data_phiproc[X_PHI+"_OC"].where((data[X_RHO] >= 0.9) * (data[X_DBZH] >= 0.) * (data["range"]>min_range) )
 
             else:
-                data = utils.phidp_processing(data, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
+                data_phiproc = utils.phidp_processing(utils.apply_min_max_thresh(data, {"SNRH":10, "SNRHC":10, "SQIH":0.5}, {}, skipfullna=True),
+                                              X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                                      dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
-                                     rng=rng, azmedian=azmedian, tolerance=(0,5))
+                                     rng=rng, azmedian=azmedian, tolerance=(0,5), clean_invalid=False, fillna=False)
 
-                phi_masked = data[X_PHI+"_OC_SMOOTH"].where((data[X_RHO] >= 0.9) * (data[X_DBZH] >= 0.) * (data["range"]>min_range) )
+                phi_masked = data_phiproc[X_PHI+"_OC_SMOOTH"].where((data[X_RHO] >= 0.9) * (data[X_DBZH] >= 0.) * (data["range"]>min_range) )
+
+            # assign new vars to data
+            data = data.assign(data_phiproc[[X_PHI+"_OC_SMOOTH", X_PHI+"_OFFSET", X_PHI+"_OC"]])
 
             # Assign phi_masked
             assign = { X_PHI+"_OC_MASKED": phi_masked.assign_attrs(data[X_PHI].attrs) }
@@ -303,14 +309,11 @@ for ff in files:
                                                    dim="z", xwin=xwin0, ywin=ywin0, moments=moments,
                                                    rhohv_thresh_gia=rhohv_thresh_gia, all_data=True, clowres=clowres0)
 
-                # attach temperature data again, then filter ML heights above -1 C
-                data_qvp = utils.attach_ERA5_TEMP(data_qvp, path=loc.join(era5_dir.split("loc")))
-
                 ## Discard possible erroneous ML values
                 if "height_ml_new_gia" in data_qvp:
                     ## First, filter out ML heights that are too high (above selected isotherm)
                     isotherm = -1 # isotherm for the upper limit of possible ML values
-                    z_isotherm = data_qvp.TEMP.isel(z=((data_qvp["TEMP"]-isotherm)**2).argmin("z").compute())["z"]
+                    z_isotherm = data_qvp.TEMP.isel(z=((data_qvp["TEMP"].fillna(100.)-isotherm)**2).argmin("z").compute())["z"]
 
                     data_qvp.coords["height_ml_new_gia"] = data_qvp["height_ml_new_gia"].where(data_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
                     data_qvp.coords["height_ml_bottom_new_gia"] = data_qvp["height_ml_bottom_new_gia"].where(data_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
@@ -329,6 +332,23 @@ for ff in files:
                 print("Calculating ML failed, skipping...")
         else:
             print(X_PHI+" not found in the data, skipping ML detection and below-ML offset")
+
+        # Apply universal filters and elevation dependency
+        # For ZDR calibration: SNR> 20-25 and attenuation should be insignificant (Ryzhkov and Zrnic p. 156)
+        # We consider PHIDP<5 to be insignificant attenuation
+        data = utils.apply_min_max_thresh(data, {"SNRH":20, "SNRHC":20, "SQIH":0.5},
+                                          {X_PHI+"_OC_MASKED": 5}, skipfullna=True)
+        try:
+            angle = float(data.elevation.mean())
+        except:
+            angle = float(data.sweep_fixed_angle.mean())
+        try:
+            if angle < 50:
+                data = utils.zdr_elev_corr(data, angle, zdr=[X_ZDR])
+                X_ZDR = X_ZDR+"_EC"
+        except:
+            pass
+
 
         if 1 in calib_types and calib_1:
             # We ask for at least 1 km of consecutive ZDR values in each VP to be included in the calculation
