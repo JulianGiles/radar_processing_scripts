@@ -11,6 +11,7 @@ Various utilities for processing weather radar data.
 import numpy as np
 import xarray as xr
 from scipy import ndimage
+from scipy.integrate import cumulative_trapezoid
 from functools import partial
 import os
 import datetime as dt
@@ -94,13 +95,13 @@ min_rngs = {
 # The idea is to use a script that will try to correct according to the first offset; if not available or nan it will
 # continue with the next one, and so on. Only the used offset will be outputted in the final file.
 # All items in zdrofffile will be tested in each zdroffdir to load the data.
-zdroffdir = ["/calibration/zdr/VP/", "/calibration/zdr/LR_consistency/", "/calibration/zdr/QVP/", "/calibration/zdr/falseQVP/"] # subfolder(s) where to find the zdr offset data
-zdrofffile = ["*zdr_offset_belowML_00*",  "*zdr_offset_below1C_00*", "*zdr_offset_below3C_00*", "*zdr_offset_wholecol_00*",
+zdroffdir = ["/calibration/zdr/VP/", "/calibration/zdr/LR_consistency/", "/calibration/zdr/QVP/",]# "/calibration/zdr/falseQVP/"] # subfolder(s) where to find the zdr offset data
+zdrofffile = ["*zdr_offset_belowML_00*",  "*zdr_offset_below1C_00*", "*zdr_offset_below3C_00*",# "*zdr_offset_wholecol_00*",
               "*zdr_offset_belowML_07*", "*zdr_offset_below1C_07*", "*zdr_offset_below3C_07*",
               "*zdr_offset_belowML-*", "*zdr_offset_below1C-*", "*zdr_offset_below3C-*"] # pattern to select the appropriate file (careful with the zdr_offset_belowML_timesteps)
 
 # like the previous one but for timestep-based correction
-zdrofffile_ts = ["*zdr_offset_belowML_timesteps_00*",  "*zdr_offset_below1C_timesteps_00*", "*zdr_offset_below3C_timesteps_00*", "*zdr_offset_wholecol_timesteps_00*",
+zdrofffile_ts = ["*zdr_offset_belowML_timesteps_00*",  "*zdr_offset_below1C_timesteps_00*", "*zdr_offset_below3C_timesteps_00*", #"*zdr_offset_wholecol_timesteps_00*",
               "*zdr_offset_belowML_timesteps_07*", "*zdr_offset_below1C_timesteps_07*", "*zdr_offset_below3C_timesteps_07*",
               "*zdr_offset_belowML_timesteps-*", "*zdr_offset_below1C_timesteps-*", "*zdr_offset_below3C_timesteps-*"] # pattern to select the appropriate file (careful with the zdr_offset_belowML_timesteps)
 
@@ -138,11 +139,11 @@ phase_proc_params["dwd"]["pcpng01"] = phase_proc_params["dwd"]["90gradstarng01"]
 
 phase_proc_params["dwd-hres"] = {}
 phase_proc_params["dwd-hres"]["vol5minng01"] = { # for the volume scan
-    "window0": 17, # number of range bins for phidp smoothing (this one is quite important!)
-    "winlen0": 21, # size of range window (bins) for the kdp-phidp calculations
+    "window0": 25, # number of range bins for phidp smoothing (this one is quite important!)
+    "winlen0": [9, 25], # size of range window (bins) for the kdp-phidp calculations
     "xwin0": 5, # window size (bins) for the time rolling median smoothing in ML detection
     "ywin0": 5, # window size (bins) for the height rolling mean smoothing in ML detection
-    "fix_range": 500, # range from where to consider phi values (dwd data is bad in the first bin)
+    "fix_range": 1500, # range from where to consider phi values (dwd data is bad in the first bins)
     "rng": 1000, # range for phidp offset correction, if None it is auto calculated based on window0
     "azmedian": True, # reduce the phidp offset by applying median along the azimuths?
     "rhohv_thresh_gia": (0.97, 1), # rhohv thresholds for ML Giangrande refinement of KDP
@@ -153,8 +154,8 @@ phase_proc_params["dwd-hres"]["90gradstarng10dft"] = phase_proc_params["dwd-hres
 phase_proc_params["dwd-hres"]["pcpng01"] = phase_proc_params["dwd-hres"]["vol5minng01"] # for the precip scan
 
 phase_proc_params["dmi"] = {
-        "window0": 17,
-        "winlen0": 21,
+        "window0": 25,
+        "winlen0": [9, 25],
         "xwin0": 5,
         "ywin0": 5,
         "fix_range": 350,
@@ -191,8 +192,10 @@ def get_phase_proc_params(path):
         dwd_key = "dwd"
         if "dwd-hres" in path or "DWD-hres" in path:
             dwd_key = "dwd-hres"
+        elif int(path.split("dwd")[1].split("/")[1]) >= 2021:
+            dwd_key = "dwd-hres"
         if "vol5minng01" in path:
-            if "/tur/" in path:
+            if "/tur/" in path or "/ess/" in path:
                 phase_proc_params_tur = phase_proc_params[dwd_key]["vol5minng01"].copy()
                 phase_proc_params_tur["azmedian"] = 5
                 return phase_proc_params_tur
@@ -634,6 +637,58 @@ def give_array(start, stop, step):
     new_stop = start + n * step
     return np.linspace(start, new_stop, num_points)
 
+def apply_min_thresh(ds, varname, minval):
+    """
+    Returns ds.where(ds[varname]>minval) if varname in ds.
+    If varname not in ds, returns ds and raises a warning.
+    """
+    if varname in ds.data_vars:
+        return ds.where(ds[varname]>minval)
+    else:
+        warnings.warn("apply_min_thresh: "+varname+" not present in ds, no threshold was applied")
+        return ds
+
+def apply_max_thresh(ds, varname, maxval):
+    """
+    Returns ds.where(ds[varname]<maxval) if varname in ds.
+    If varname not in ds, returns ds and raises a warning.
+    """
+    if varname in ds.data_vars:
+        return ds.where(ds[varname]<maxval)
+    else:
+        warnings.warn("apply_max_thresh: "+varname+" not present in ds, no threshold was applied")
+        return ds
+
+def apply_min_max_thresh(ds, minthreshs, maxthreshs, skipfullna=False):
+    """
+    Applies apply_min_thresh and apply_max_thresh based on all variable-value pairs.
+    If a variable not in ds it is ignored and raises a warning.
+
+    minthreshs: dict of variable names and threshold values for apply_min_thresh
+    maxthreshs: dict of variable names and threshold values for apply_max_thresh
+    skipfullna: skips a variable if all of its values are NaNs.
+    """
+    if not isinstance(minthreshs, dict):
+        raise TypeError("minthreshs must be a dict")
+    if not isinstance(maxthreshs, dict):
+        raise TypeError("maxthreshs must be a dict")
+
+    ds1 = ds.copy()
+    for vv in minthreshs.keys():
+        if skipfullna and vv in ds1:
+            if ds1[vv].notnull().any().compute():
+                ds1 = apply_min_thresh(ds1, vv, minthreshs[vv])
+        else:
+            ds1 = apply_min_thresh(ds1, vv, minthreshs[vv])
+    for vv in maxthreshs.keys():
+        if skipfullna and vv in ds1:
+            if ds1[vv].notnull().any().compute():
+                ds1 = apply_max_thresh(ds1, vv, maxthreshs[vv])
+        else:
+            ds1 = apply_max_thresh(ds1, vv, maxthreshs[vv])
+
+    return ds1
+
 #### Loading functions
 def load_dwd_preprocessed(filepath):
     """
@@ -924,21 +979,22 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
 
 #### Loading ZDR offsets and RHOHV noise corrected
 
-def load_ZDR_offset(ds, X_ZDR, zdr_off_path, zdr_off_name="ZDR_offset", zdr_oc_name="ZDR_OC", attach_all_vars=False):
+def load_ZDR_offset(ds, X_ZDR, zdr_off, zdr_off_name="ZDR_offset", zdr_oc_name="ZDR_OC", attach_all_vars=False):
     """
     Load ZDR offset and correct ZDR, then attach it as a new variable in ds. Optionally
     attach also all variables in the offset file (like the offset value and quality derived quantities).
 
     Parameter
     ---------
-    ds : xarray.Dataset or xarray.Dataarray
+    ds : xarray.Dataset
             Dataset with ZDR data.
     X_ZDR : str
             Name of the ZDR variable.
-    zdr_off_path : str
-            Location of the file or path with wildcards.
+    zdr_off_path : str or xr.Dataset
+            If str: location of the file or path with wildcards.
+            If xarray.Dataset: dataset with the ZDR offset variable included.
     zdr_off_name : str
-            Name of the ZDR variable in the offset data file.
+            Name of the ZDR offset variable in the offset data file.
     zdr_oc_name : str
             Name of the new offset-corrected ZDR variable in the output dataset.
     attach_all_vars : bool
@@ -951,7 +1007,12 @@ def load_ZDR_offset(ds, X_ZDR, zdr_off_path, zdr_off_name="ZDR_offset", zdr_oc_n
         Dataset with original data plus offset corrected ZDR
     """
 
-    zdr_offset = xr.open_mfdataset(zdr_off_path)
+    if isinstance(zdr_off, str):
+        zdr_offset = xr.open_mfdataset(zdr_off)
+    elif isinstance(zdr_off, xr.Dataset):
+        zdr_offset = zdr_off.copy()
+    else:
+        raise TypeError("load_ZDR_offset: zdr_off must be str or xarray.Dataset")
 
     # check that the offset have a valid value. Otherwise skip
     if zdr_offset[zdr_off_name].isnull().all():
@@ -959,14 +1020,411 @@ def load_ZDR_offset(ds, X_ZDR, zdr_off_path, zdr_off_name="ZDR_offset", zdr_oc_n
     else:
         # create ZDR_OC variable
         if len(zdr_offset[zdr_off_name].values) > 1:
-            ds = ds.assign({zdr_oc_name: ds[X_ZDR]-zdr_offset[zdr_off_name]})
+            ds = ds.assign({zdr_oc_name: ds[X_ZDR]-xr.align(ds, zdr_offset[zdr_off_name], join="override")[1]})
         else:
             ds = ds.assign({zdr_oc_name: ds[X_ZDR]-zdr_offset[zdr_off_name].values})
         ds[zdr_oc_name].attrs = ds[X_ZDR].attrs
 
         if attach_all_vars:
-            ds.assign(zdr_offset)
+            if len(zdr_offset[zdr_off_name].values) > 1:
+                ds = ds.assign(xr.align(ds, zdr_offset, join="override")[1])
+            else:
+                zdr_offset_ = zdr_offset.map(lambda x: xr.full_like(ds["time"], x.values.item(), dtype=x.dtype)).copy()
+                zdr_offset_ = zdr_offset_.assign_coords(ds.coords)
+                ds = ds.assign(zdr_offset_)
         return ds
+
+# We define a custom exception to stop the next nexted loops
+class StopLoops(Exception):
+    pass
+
+def get_ZDR_offset_files(file, split, offsetdir, offsetfile):
+    """
+    Look for the paths of the ZDR offset file associated with file.
+    Basically, gets the path:
+        glob.glob( file.split(split)[0] + split + offsetdir + \
+                      os.path.dirname(file.split(split)[1]) + "/" + offsetfile )[0]
+
+    Parameter
+    ---------
+    file : str
+        Path to the radar data file
+    split : str
+        String to separate file and reconstruct
+    offsetdir : str
+        Directory to the ZDR offset files
+    offsetfile : str
+        File name or wildcards used to get the ZDR offset file
+
+    Return
+    ---------
+    """
+    if "/VP/" in offsetdir and "/vol5minng01/" in file:
+        elevnr = file.split("/vol5minng01/")[-1][0:2]
+        file = edit_str(file, "/vol5minng01/"+elevnr, "/90gradstarng01/00")
+
+    offsetfilepath = file.split(split)[0] + split + offsetdir + \
+                                os.path.dirname(file.split(split)[1]) + "/" + offsetfile
+    offsetfilelist = glob.glob( offsetfilepath )
+
+    if len(offsetfilelist) == 0:
+        raise FileNotFoundError(offsetfile+" not found in "+os.path.dirname(offsetfilepath))
+    if len(offsetfilelist) == 1:
+        return offsetfilelist[0]
+    if len(offsetfilelist) > 1:
+        warnings.warn("get_ZDR_offset_files: more than one file match the given pattern, returning only the first file")
+        return offsetfilelist[0]
+
+
+def load_best_ZDR_offset(ds, X_ZDR, zdr_off_paths={}, daily_zdr_off_paths={},
+                         zdr_off_name="ZDR_offset", zdr_oc_name="ZDR_OC",
+                         attach_all_vars=False,
+                         daily_corr = True, variability_check = False, variability_thresh = 0.1,
+                         first_offset_method_abs_priority = True,
+                         mix_offset_variants = False, mix_daily_offset_variants = False,
+                         mix_zdr_offsets = False, how_mix_zdr_offset = "count",
+                         abs_zdr_off_min_thresh = 0.,
+                         X_RHO="RHOHV", min_height=200,
+                         propagate_forward = False, fill_with_daily_offset = True,
+                         ):
+    """
+    Load the best ZDR offset according to priority and certain conditions, then correct ZDR
+    and attach it as a new variable in ds. Optionally attach also all variables in the
+    offset file (like the offset value and quality derived quantities).
+
+    Parameter
+    ---------
+    ds : xarray.Dataset
+            Dataset with ZDR data.
+    X_ZDR : str
+            Name of the ZDR variable in ds.
+    zdr_off_paths : dict of list
+            Dictionary containing lists of paths to the ZDR offset files (one offset
+            per timestep). Each key-value pair should contain the paths to ZDR offset
+            files for a given ZDR offset correction method (more than one file means there
+            are diferent variations of the same method). They keys themselves are
+            not important but their order and the order inside each list are important
+            to set the priority.
+            Example: zdr_off_paths = {"VP": ["/path/to/VP/offset1/file.nc",
+                                             "/path/to/VP/offset2/file.nc"],
+                                      "QVP": ["/path/to/QVP/offset1/file.nc"]}
+    daily_zdr_off_paths : dict of list
+            Like zdr_off_paths but for daily offsets (one offset value per day).
+            Actually, there is no temporal restriction, only that one value must
+            be provided, so longer ds timeseries can also be provided. That said,
+            this is meant to be used with daily files. One of zdr_off_paths or
+            daily_zdr_off_paths must be provided.
+    zdr_off_name : str
+            Name of the ZDR offset variable in the offset data file.
+    zdr_oc_name : str
+            Name of the new offset-corrected ZDR variable in the output dataset.
+    attach_all_vars : bool
+            If True, attach all variables from the ZDR offset file in the output ds.
+            Default is False (attachs only the offset-corrected ZDR).
+    daily_corr : bool
+            If True, correct only with daily_zdr_off_paths.
+    variability_check : bool
+            If True and daily_corr is True, check the variability (std) of the
+            timestep-based offset and if it is lower than variability_thresh then
+            correct with the daily offset, otherwise correct with the timestep-based offset.
+    variability_thresh : float
+            Threshold value of timestep-based ZDR offset variability to use if
+            variability_check is True.
+    first_offset_method_abs_priority : bool
+            If True, give absolute priority to the offset from the first method in
+            zdr_off_paths or daily_zdr_off_paths. That means, if a valid offset
+            is found from the first method's files, then stop and return ZDR offset
+            corrected with that value.
+    mix_offset_variants : bool
+            If True, when correcting with timestep offsets, use the variants to fill
+            the NaN values according to priority (order in the dictionary).
+    mix_daily_offset_variants : bool
+            If True when correcting with daily offset, select the most appropriate offset
+            variant based on how_mix_zdr_offset.
+    mix_zdr_offsets : bool
+            If True:
+                When correcting with daily offset, select the most appropriate offset
+                    based on how_mix_zdr_offset (unless first_offset_class_abs_priority is True).
+                When correcting with timestep offsets, compare offset methods for
+                    each timestep and select the best one according to on how_mix_zdr_offset.
+                    The NaN values are filled with the next method's values.
+    how_mix_zdr_offset : str
+            How to choose between the different offsets if mix_daily_offset_variants is True
+            or mix_zdr_offsets is True. Possible values are "count" or "neg_overcorr".
+            "count" will choose the offset that has more data points in its calculation
+            (there must be a variable zdr_off_name+"_datacount" in the loaded offset.
+            "neg_overcorr" will choose the offset that generates less negative ZDR values.
+    abs_zdr_off_min_thresh : float
+            If abs_zdr_off_min_thresh > 0, check if offset corrected ZDR has more
+            negative values than the original ZDR and if the absolute median offset
+            is < abs_zdr_off_min_thresh, then undo the correction (set to 0 to avoid this step).
+    X_RHO : str
+            Name of the RHOHV variable in ds. Only relevant if how_mix_zdr_offset == "neg_overcorr"
+            or abs_zdr_off_min_thresh > 0, to evaluate only precipitation pixels.
+    min_height : float
+            Minimum value of height to be considered. Only relevant if how_mix_zdr_offset == "neg_overcorr"
+            or abs_zdr_off_min_thresh > 0, to evaluate only precipitation pixels.
+    propagate_forward : bool
+            If True and correcting with timestep offsets, fill the missing values
+            by propagating forward in time (ffill).
+    fill_with_daily_offset : bool
+            If True and correcting with timestep offsets, fill the missing values
+            with the daily offset (this is applied after propagate_forward).
+
+    Return
+    ------
+    ds : xarray.Dataset
+        Dataset with original data plus offset corrected ZDR
+
+    """
+
+    # Process daily correction first
+    if daily_corr or (daily_corr is False and fill_with_daily_offset):
+
+        # Load all daily offsets
+        daily_zdr_off = daily_zdr_off_paths.copy()
+
+        for zdroff in daily_zdr_off_paths.keys():
+            daily_zdr_off[zdroff] = []
+            for zdroffv in daily_zdr_off_paths[zdroff]:
+                try:
+                    daily_zdr_off[zdroff].append( xr.open_mfdataset(zdroffv) )
+                    try:
+                        _ = float(daily_zdr_off[zdroff][-1][zdr_off_name])
+                    except TypeError:
+                        raise TypeError("load_best_ZDR_offset: daily offset has more than one value: "+zdroffv)
+                except:
+                    warnings.warn("load_best_ZDR_offset: unable to load "+zdroffv)
+
+        dzdroff0 = {}
+
+        for zdroffn, zdroff in enumerate(daily_zdr_off.keys()):
+            ini = 0
+            for zdroff_ in daily_zdr_off[zdroff]:
+                # Load the first available offset
+                if ini == 0 and zdroff_[zdr_off_name].notnull().all():
+                    dzdroff0[zdroff] = zdroff_.copy()
+                    ini = 1
+                    if mix_daily_offset_variants:
+                        continue
+                    else:
+                        break
+
+                # If mixing zdr offsets variants, select the appropriate offset based on the
+                # selected condition
+                if ( mix_daily_offset_variants and ini > 0 and zdroff_[zdr_off_name].notnull().all() ) :
+
+                    # if zdroff not in dzdroff0:
+                    #     dzdroff0[zdroff] = zdroff_.copy()
+                    #     continue
+
+                    if how_mix_zdr_offset == "neg_overcorr":
+                        # calculate the count of negative values after each correction
+                        neg_count_ds_0 = ( load_ZDR_offset(ds, X_ZDR, dzdroff0[zdroff],
+                                                         zdr_off_name=zdr_off_name,
+                                                         zdr_oc_name=zdr_oc_name,
+                                                         attach_all_vars=False)[zdr_oc_name].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum().compute()
+
+                        neg_count_ds_ = ( load_ZDR_offset(ds, X_ZDR, zdroff_,
+                                                         zdr_off_name=zdr_off_name,
+                                                         zdr_oc_name=zdr_oc_name,
+                                                         attach_all_vars=False)[zdr_oc_name].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum().compute()
+
+                        if neg_count_ds_0 > neg_count_ds_:
+                            # continue with the correction with less negative values
+                            dzdroff0[zdroff] = zdroff_.copy()
+
+                    elif how_mix_zdr_offset == "count":
+                        if zdr_off_name+"_datacount" in dzdroff0[zdroff] and zdr_off_name+"_datacount" in zdroff_:
+                            # Choose the offset that has the most data points in its calculation
+                            if zdroff_[zdr_off_name+"_datacount"] > dzdroff0[zdroff][zdr_off_name+"_datacount"]:
+                                # continue with the correction with more data points
+                                dzdroff0[zdroff] = zdroff_.copy()
+                        else:
+                            print("how_mix_zdr_offset == 'count' not possible, "+zdr_off_name+"_datacount not present in all offset datasets.")
+
+            # If the first class should have absolute priority, then exit the loops
+            if first_offset_method_abs_priority and zdroffn==0 and ini > 0:
+                raise StopLoops
+
+            # If mix_zdr_offsets is False, break the loop
+            if mix_zdr_offsets is False and ini>0:
+                break
+
+        # If mix_zdr_offsets, compare between different offset methods
+        if mix_zdr_offsets and len(dzdroff0) > 1 :
+            for zdroffn, zdroff in enumerate(dzdroff0.keys()):
+                if zdroffn == 0:
+                    dfinal = dzdroff0[zdroff].copy()
+                    continue
+
+                if how_mix_zdr_offset == "neg_overcorr":
+                    # calculate the count of negative values after each correction
+                    neg_count_ds_0 = ( load_ZDR_offset(ds, X_ZDR, dfinal,
+                                                     zdr_off_name=zdr_off_name,
+                                                     zdr_oc_name=zdr_oc_name,
+                                                     attach_all_vars=False)[zdr_oc_name].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum().compute()
+
+                    neg_count_ds_ = ( load_ZDR_offset(ds, X_ZDR, dzdroff0[zdroff],
+                                                     zdr_off_name=zdr_off_name,
+                                                     zdr_oc_name=zdr_oc_name,
+                                                     attach_all_vars=False)[zdr_oc_name].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum().compute()
+
+                    if neg_count_ds_0.values > neg_count_ds_.values:
+                        # continue with the correction with less negative values
+                        dfinal = dzdroff0[zdroff].copy()
+
+                elif how_mix_zdr_offset == "count":
+                    if zdr_off_name+"_datacount" in dzdroff0[zdroff] and zdr_off_name+"_datacount" in dfinal:
+                        # Choose the offset that has the most data points in its calculation
+                        if dzdroff0[zdroff][zdr_off_name+"_datacount"].values > dfinal[zdr_off_name+"_datacount"].values:
+                            # continue with the correction with more data points
+                            dfinal = dzdroff0[zdroff].copy()
+                    else:
+                        print("how_mix_zdr_offset == 'count' not possible, "+zdr_off_name+"_datacount not present in all offset datasets.")
+        # Else, just load the first offset in order of priority
+        else:
+            for zdroffn, zdroff in enumerate(dzdroff0.keys()):
+                dfinal = dzdroff0[zdroff].copy()
+                break
+
+        if daily_corr:
+            # Check  if the final offset overcorrects more than the given threshold
+            if abs_zdr_off_min_thresh > 0. and variability_check is False:
+                # calculate the count of negative values before and after correction
+                neg_count_ds = (ds[X_ZDR].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum().compute()
+                neg_count_ds_oc = (load_ZDR_offset(ds, X_ZDR, dfinal,
+                                                 zdr_off_name=zdr_off_name,
+                                                 zdr_oc_name=zdr_oc_name,
+                                                 attach_all_vars=False)[zdr_oc_name].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum().compute()
+
+                if neg_count_ds_oc > neg_count_ds.values and dfinal[zdr_off_name] < abs_zdr_off_min_thresh:
+                    # if the correction introduces more negative values and
+                    # the offset is lower than abs_zdr_off_min_thresh, then do not correct
+                    ds[zdr_oc_name] = ds[X_ZDR]
+                    return ds
+            # Otherwise just return with the current offset
+            elif variability_check is False:
+                return load_ZDR_offset(ds, X_ZDR, dfinal,
+                                                 zdr_off_name=zdr_off_name,
+                                                 zdr_oc_name=zdr_oc_name,
+                                                 attach_all_vars=attach_all_vars)
+
+    # Process timestep correction
+    if variability_check or daily_corr is False:
+
+        # Load all timestep offsets
+        zdr_off = zdr_off_paths.copy()
+
+        for zdroff in zdr_off_paths.keys():
+            zdr_off[zdroff] = []
+            for zdroffv in zdr_off_paths[zdroff]:
+                try:
+                    zdr_off[zdroff].append( xr.open_mfdataset(zdroffv) )
+                except:
+                    warnings.warn("load_best_ZDR_offset: unable to load "+zdroffv)
+
+        zdroff0 = {}
+        # Get first valid offset series for each class and fill NaN with variants if mix_offset_variants is True
+        for zdroffn, zdroff in enumerate(zdr_off.keys()):
+            ini = 0
+            for zdroff_ in zdr_off[zdroff]:
+                # Load the first available offset
+                if ini == 0 and zdroff_[zdr_off_name].notnull().any():
+                    zdroff0[zdroff] = zdroff_.copy()
+                    ini = 1
+                    continue
+
+                # If mixing zdr offset variants, fill missing values with the different variants
+                if ini>0 and mix_offset_variants:
+                    zdroff0[zdroff] = zdroff0[zdroff].where(zdroff0[zdroff][zdr_off_name].notnull(), zdroff_.copy()).copy()
+
+            # If the first class should have absolute priority, then exit the loops
+            if ini>0 and first_offset_method_abs_priority and zdroffn==0:
+                break
+
+        # Get dimensions to reduce (other than time)
+        dims_wotime = [kk for kk in ds.dims if kk != "time"]
+
+        # If mix_zdr_offsets is True, merge offset methods based on the selected condition
+        ini = 0
+        for zdroffn, zdroff in enumerate(zdroff0.keys()):
+            if ini == 0:
+                final = zdroff0[zdroff].copy()
+                ini = 1
+                if mix_zdr_offsets is not True:
+                    # if not mixing offset methods, break here
+                    break
+            else:
+                if how_mix_zdr_offset == "neg_overcorr":
+                    # calculate the count of negative values after each correction
+                    neg_count_ds_final = ( load_ZDR_offset(ds, X_ZDR, final,
+                                                     zdr_off_name=zdr_off_name,
+                                                     zdr_oc_name=zdr_oc_name,
+                                                     attach_all_vars=False)[zdr_oc_name].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum(dims_wotime).compute()
+
+                    neg_count_ds_ = ( load_ZDR_offset(ds, X_ZDR, zdroff0[zdroff],
+                                                     zdr_off_name=zdr_off_name,
+                                                     zdr_oc_name=zdr_oc_name,
+                                                     attach_all_vars=False)[zdr_oc_name].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum(dims_wotime).compute()
+
+                    # Are there less negatives in the first correction than in the new one?
+                    neg_count_final_cond = neg_count_ds_final < neg_count_ds_.values
+                    # Retain first correction where the condition is True, otherwise use the new correction
+                    final = final.where(neg_count_final_cond, xr.align(final, zdroff0[zdroff], join="override")[1].copy()).copy()
+
+                elif how_mix_zdr_offset == "count":
+                    if zdr_off_name+"_datacount" in final and zdr_off_name+"_datacount" in zdroff0[zdroff]:
+                        # Choose the offset that has the most data points in its calculation
+                        final = final.where(final[zdr_off_name+"_datacount"] > zdroff0[zdroff][zdr_off_name+"_datacount"].values,
+                                            xr.align(final, zdroff0[zdroff], join="override")[1].copy()).copy()
+                    else:
+                        print("how_mix_zdr_offset == 'count' not possible, "+zdr_off_name+"_datacount not present in all offset datasets.")
+
+                # Finally, fill the last NaN values with the alternative-method offset
+                final = final.where(final[zdr_off_name].notnull(), xr.align(final, zdroff0[zdroff], join="override")[1].copy()).copy()
+
+        # Check if the final offset overcorrects more than the given threshold
+        if abs_zdr_off_min_thresh > 0.:
+            # calculate the count of negative values before and after correction
+            neg_count_ds = (ds[X_ZDR].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum(dims_wotime).compute()
+            neg_count_ds_oc = (load_ZDR_offset(ds, X_ZDR, final,
+                                             zdr_off_name=zdr_off_name,
+                                             zdr_oc_name=zdr_oc_name,
+                                             attach_all_vars=False)[zdr_oc_name].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum(dims_wotime).compute()
+            neg_count_final_cond = (neg_count_ds_oc > neg_count_ds) * (final[zdr_off_name] < abs_zdr_off_min_thresh)
+
+            # if the correction introduces more negative values and
+            # the offset is lower than abs_zdr_off_min_thresh, then do not correct
+            final = final.where(~neg_count_final_cond)
+
+        if propagate_forward:
+            final = final.ffill("time")
+        if fill_with_daily_offset:
+            # we need to expand the daily offset into the shape of the timestep offset
+            dfinal_ = dfinal.map(lambda x: xr.full_like(final[x.name], x.values.item()))
+            dfinal_ = dfinal_.assign_coords(final.coords)
+            final = final.fillna(dfinal_)
+
+        if variability_check and daily_corr:
+            if final[zdr_off_name].std("time") > variability_thresh:
+                return load_ZDR_offset(ds, X_ZDR, final,
+                                                 zdr_off_name=zdr_off_name,
+                                                 zdr_oc_name=zdr_oc_name,
+                                                 attach_all_vars=attach_all_vars)
+            else:
+                return load_ZDR_offset(ds, X_ZDR, dfinal,
+                                                 zdr_off_name=zdr_off_name,
+                                                 zdr_oc_name=zdr_oc_name,
+                                                 attach_all_vars=attach_all_vars)
+
+
+        else:
+            return load_ZDR_offset(ds, X_ZDR, final,
+                                             zdr_off_name=zdr_off_name,
+                                             zdr_oc_name=zdr_oc_name,
+                                             attach_all_vars=attach_all_vars)
+
 
 
 def load_corrected_RHOHV(ds, rho_nc_path, rho_nc_name="RHOHV_NC"):
@@ -1202,7 +1660,7 @@ def calculate_pseudo_entropy(ds, dim='azimuth', var_names=["zhlin", "zdrlin", "R
     This implementation differs from the original formulation in that the probabilities of
     each value are replaced by the values normalized by the sum of all values.
     Useful to estimate the homogenity from a sector PPi or the whole 360° PPi
-    for each timestep. Values over 0.8 are considered stratiform.
+    for each timestep. Values over 0.8 or 0.85 could be considered stratiform.
 
     The dataset should have zhlin and zdrlin which are the linear form of ZH and ZDR, i.e. only positive values
     (not in DB, use wradlib.trafo.idecibel to transform from DBZ to linear)
@@ -3881,6 +4339,96 @@ def kdp_phidp_vulpiani(ds, winlen, X_PHI=None, min_periods=2):
                   }
         return ds.assign(assign)
 
+#### KDP angle dependency correction
+def kdp_elevdep(kdp, angle):
+    """
+    For a given value of KDP at the given elevation angle, returns the estimated value at elevation angle 0.
+    """
+    return 2*kdp / (1 + np.cos(2*np.deg2rad(angle)))
+
+def kdp_elev_corr(ds, angle, kdp=["KDP"]):
+    """
+    Returns ds with elevation-angle corrected KDP variables. Uses the elevation-
+    dependency equation from Schneebeli et al. (2013) and approximates the correction
+    taking KDP=1 as reference.
+
+    ds : xarray Dataset
+        Dataset with KDP.
+    angle : float
+        Elevation angle of ds.
+    kdp : list of str
+        List with the name of KDP variables to correct. If a variable is not found,
+        returns without correction and raises a warning.
+
+    Returns
+    -------
+    ds : xarray Dataset
+        Same as ds with elevation-angle corrected KDP variables named like KDP_EC.
+
+    References
+    -------
+    Schneebeli, M., N. Dawes, M. Lehning, and A. Berne (2013) High-Resolution Vertical
+        Profiles of X-Band Polarimetric Radar Observables during Snowfall in the Swiss
+        Alps. J. Appl. Meteor. Climatol., 52, 378–394, https://doi.org/10.1175/JAMC-D-12-015.1.
+    """
+    ds1 = ds.copy()
+
+    corr_factor = kdp_elevdep(1, angle)
+
+    for kdpn in kdp:
+        if kdpn not in ds.data_vars:
+            warnings.warn("kdp_elev_corr: "+kdpn+" not present in ds, no correction was applied")
+        else:
+            ds1 = ds1.assign({kdpn+"_EC": (ds[kdpn]*corr_factor).assign_attrs(ds[kdpn].attrs)})
+
+    return ds1
+
+
+#### ZDR angle dependency correction
+def zdr_elevdep(zdr0, angle):
+    """
+    For a given value of ZDR at elevation angle 0, returns the estimated value at the given elevation angle.
+    """
+    return wrl.trafo.decibel(wrl.trafo.idecibel(zdr0)/((wrl.trafo.idecibel(zdr0)**0.5*np.sin(np.deg2rad(angle))**2 + np.cos(np.deg2rad(angle))**2)**2))
+
+def zdr_elev_corr(ds, angle, zdr=["ZDR"]):
+    """
+    Returns ds with elevation-angle corrected ZDR variables. Uses the elevation-
+    dependency equation from Rhyzkov et al. (2005) and approximates the correction
+    taking ZDR_0=1 as reference.
+
+    ds : xarray Dataset
+        Dataset with ZDR.
+    angle : float
+        Elevation angle of ds.
+    zdr : list of str
+        List with the name of ZDR variables to correct. If a variable is not found,
+        returns without correction and raises a warning.
+
+    Returns
+    -------
+    ds : xarray Dataset
+        Same as ds with elevation-angle corrected ZDR variables named like ZDR_EC.
+
+    References
+    -------
+    Ryzhkov, A. V., S. E. Giangrande, V. M. Melnikov, and T. J. Schuur, 2005:
+        Calibration Issues of Dual-Polarization Radar Measurements. J. Atmos.
+        Oceanic Technol., 22, 1138–1155, https://doi.org/10.1175/JTECH1772.1.
+
+    """
+    ds1 = ds.copy()
+
+    corr_factor = zdr_elevdep(1, angle)
+
+    for zdrn in zdr:
+        if zdrn not in ds.data_vars:
+            warnings.warn("zdr_elev_corr: "+zdrn+" not present in ds, no correction was applied")
+        else:
+            ds1 = ds1.assign({zdrn+"_EC": (ds[zdrn]/corr_factor).assign_attrs(ds[zdrn].attrs)})
+
+    return ds1
+
 #### Calibration of ZDR with light-rain consistency
 from matplotlib import pyplot as plt
 
@@ -3931,6 +4479,8 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
     Improved function for
     ZH-ZDR Consistency in light rain, for ZDR calibration
     Ryzhkov and Zrnic p.155-156
+
+    For ZDR calibration: SNR> 20-25 and attenuation should be insignificant (Ryzhkov and Zrnic p. 156)
 
     ds : xarray Dataset
         Dataset with ZDR, DBZH and RHOHV.
@@ -4199,7 +4749,6 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
     below the melting layer bottom (i.e. the rain region below the melting layer)
     or below the given temperature level are included in the method.
 
-
     Parameters
     ----------
     ds : xarray Dataset
@@ -4366,7 +4915,7 @@ def zdr_offset_detection_vps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="me
             {"long_name":"ZDR standard error of the mean from offset calculation",
              "standard_name":"ZDR_sem_from_offset_calculation"}
             )
-        zdr_offset_datacount = ds_zdr.where(ds_zdr_med_ready.notnull()).count(dim=dims_full_wotime).assign_attrs(
+        zdr_offset_datacount = ds_zdr.where(ds_zdr_med_ready.notnull().any(dims_wotime)).count(dim=dims_full_wotime).assign_attrs(
             {"long_name":"Count of values (bins) used for the ZDR offset calculation",
              "standard_name":"count_of_values_zdr_offset"}
             )
@@ -4444,6 +4993,8 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
     Calculate the offset on :math:`Z_{DR}` using QVPs, acoording to [1]_.  Only gates
     below the melting layer bottom (i.e. the rain region below the melting layer)
     or below the given temperature level are included in the method.
+
+    For ZDR calibration: SNR> 20-25 and attenuation should be insignificant (Ryzhkov and Zrnic p. 156)
 
     Parameters
     ----------
@@ -4547,21 +5098,26 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
     else:
         raise TypeError("mlbottom must be str, int or None")
 
-    # get ZDR data and filter values below ML and above min_h
-    ds_zdr = ds[zdr]
-    ds_zdr = ds_zdr.where(ml_bottom)
-    ds_zdr = ds_zdr.where(ds["z"]>min_h)
 
-    # Filter according to DBZH and RHOHV limits
-    ds_zdr = ds_zdr.where(ds[dbzh]>zhmin).where(ds[dbzh]<zhmax).where(ds[rhohv]>rhvmin)
-
-    # Azimuth median before computing?
+    # Azimuth median before computing (QVP-based)?
     if azmed:
-        if "azimuth" in ds_zdr.dims:
-            ds_zdr_med = ds_zdr.median("azimuth")
+        if "azimuth" in ds.dims:
+            ds_qvp = compute_qvp(ds.where(ml_bottom).where(ds["z"]>min_h),
+                                 min_thresh = {rhohv:0.7, dbzh:0})
+            ds_zdr_med = ds_qvp[zdr].where(ds_qvp[dbzh]>zhmin).where(ds_qvp[dbzh]<zhmax).where(ds_qvp[rhohv]>rhvmin)
+
+            # only for the count of valid values, we need this
+            ds_zdr = ds[zdr].where(ml_bottom).where(ds["z"]>min_h).where(ds[dbzh]>zhmin).where(ds[dbzh]<zhmax).where(ds[rhohv]>rhvmin)
         else:
             raise KeyError("azimuth not found in dataset dimensions")
     else:
+        # get ZDR data and filter values below ML and above min_h
+        ds_zdr = ds[zdr]
+        ds_zdr = ds_zdr.where(ml_bottom)
+        ds_zdr = ds_zdr.where(ds["z"]>min_h)
+
+        # Filter according to DBZH and RHOHV limits
+        ds_zdr = ds_zdr.where(ds[dbzh]>zhmin).where(ds[dbzh]<zhmax).where(ds[rhohv]>rhvmin)
         ds_zdr_med = ds_zdr
 
     if "time" in ds and timemode=="step":
@@ -4585,17 +5141,17 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
 
         # Calculate offset and others
         if mode=="median":
-            zdr_offset = ds_zdr_med_ready.median(dim=dims_wotime).assign_attrs(
+            zdr_offset = (ds_zdr_med_ready.median(dim=dims_wotime) - zdr_0).assign_attrs(
                 {"long_name":"ZDR offset from QVP method (median)",
                  "standard_name":"ZDR_offset_from_qvp",
                  "units": "dB"}
-                ) - zdr_0
+                )
         elif mode=="mean":
-            zdr_offset = ds_zdr_med_ready.mean(dim=dims_wotime).assign_attrs(
+            zdr_offset = (ds_zdr_med_ready.mean(dim=dims_wotime) - zdr_0).assign_attrs(
                 {"long_name":"ZDR offset from QVP method (mean)",
                  "standard_name":"ZDR_offset_from_qvp",
                  "units": "dB"}
-                ) - zdr_0
+                )
         else:
             raise KeyError("mode must be either 'median' or 'mean'")
 
@@ -4615,14 +5171,19 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
             {"long_name":"ZDR standard error of the mean from offset calculation",
              "standard_name":"ZDR_sem_from_offset_calculation"}
             )
-        zdr_offset_datacount = ds_zdr.where(ds_zdr_med_ready.notnull()).count(dim=dims_full_wotime).assign_attrs(
+        zdr_offset_datacount = ds_zdr.where(ds_zdr_med_ready.notnull().any(dims_wotime)).count(dim=dims_full_wotime).assign_attrs(
             {"long_name":"Count of values (bins) used for the ZDR offset calculation",
              "standard_name":"count_of_values_zdr_offset"}
             )
 
     else:
         # Filter according to the minimum number of bins limit
-        ds_zdr_med_ready = ds_zdr_med.where(n_longest_consecutive(ds_zdr_med, dim="range").compute() > minbins)
+        if "range" in ds_zdr_med.dims:
+            ds_zdr_med_ready = ds_zdr_med.where(n_longest_consecutive(ds_zdr_med, dim="range").compute() > minbins)
+        elif "z" in ds_zdr_med.dims:
+            ds_zdr_med_ready = ds_zdr_med.where(n_longest_consecutive(ds_zdr_med, dim="z").compute() > minbins)
+        else:
+            warnings.warn("zdr_offset_detection_qvps: Condition for minbins could not be checked, ignored (is range or z a dimension?)")
 
         # Calculate offset and others
         if mode=="median":
@@ -4744,7 +5305,7 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.08, betam
     temp : str
         Name of the variable with temperature information. A list of
         strings can be used to pass more than one name, but only the first valid name is used.
-        Temperature data is used to estimate the ML bottom only where ML_bot is not valid.
+        Temperature data is used to estimate the ML bottom/top only where ML_bot/ML_top are not valid.
     temp_mlbot : float
         Value of the temperature level to use as ML bottom.
     temp_mltop : float
@@ -4865,232 +5426,430 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.08, betam
         dbzh = [dbzh]
     for dbzhn in dbzh:
         if dbzhn in ds:
-            dbzh_corr = (alpha*ds_phidp_below).fillna(alphaml*ds_phidp_in).ffill(rdim)
+            dbzh_corr = (alpha*ds_phidp_below).fillna(alphaml*ds_phidp_in).ffill(rdim).fillna(0.)
             ds[dbzhn+"_AC"] = ds[dbzhn] + dbzh_corr
 
     if isinstance(zdr, str): # check zdr
         zdr = [zdr]
     for zdrn in zdr:
         if zdrn in ds:
-            zdr_corr = (beta*ds_phidp_below).fillna(betaml*ds_phidp_in).ffill(rdim)
+            zdr_corr = (beta*ds_phidp_below).fillna(betaml*ds_phidp_in).ffill(rdim).fillna(0.)
             ds[zdrn+"_AC"] = ds[zdrn] + zdr_corr
 
     return ds
 
+def attenuation_corr_zphi(swp0 , alpha = 0.08, beta = 0.02,
+                          X_DBZH="DBZH", X_ZDR="ZDR", X_PHI="UPHIDP_OC_MASKED"):
+    '''
+    ZPHI method for attenuation correction.
+
+    Parameters:
+        * swp0(xarray.Dataset): single sweep (PPI for a single timestep) of radar data,
+                                must contain DBZH, corrected smoothed and masked PHIDP,
+                                RHOHV noise corrected and optionally ZDR
+        * alpha(float): alpha value for X or C band, default value is for C band
+        * beta(float): beta value for X or C band, default value is for C band
+        * X_DBZH(str): name of reflectivity variable
+        * X_ZDR(str): name of differential reflectivity variable
+        * X_PHI(str): name of differential phase
+
+    Returns:
+    ds : xarray Dataset
+        Dataset with the original variables plus:
+        * ah_fast(numpy.array): Attenuation (horizontal)
+        * phical(numpy.array): PHIDP calculated from attenuation
+        * cphase(xarray.Dataset): Corrected PHIDP
+        * attenuation corrected DBZH
+        * attenuation corrected ZDR
+
+    ZH_corr = ZH + alpha*PHIDP
+    ZDR_corr = ZDR + beta*PHIDP
+
+    X band:
+    alpha = 0.28; beta = 0.05 #dB/deg
+
+    C band:
+    alpha = 0.08; beta = 0.02 #dB/deg
+
+    For BoXPol and JuXPol:
+    alpha = 0.25
+    '''
+
+    swp_msk = swp0.copy()
+    dr_m = swp0.range.diff('range').median()
+    dr_km = dr_m / 1000.
+
+    cphase = phase_zphi(swp_msk[X_PHI], rng=1000.)
+    #cphase.first.plot(label="first")
+    #cphase.last.plot(label="last")
+    dphi = cphase.last - cphase.first
+    dphi = dphi.where(dphi>=0).fillna(0)
+
+    alphax = alpha
+    betax = beta
+    bx = 0.78 # Average value representative of X or C band, see https://doi.org/10.1175/1520-0426(2000)017<0332:TRPAAT>2.0.CO;2
+    # need to expand alphax to dphi-shape
+    fdphi = 10 ** (0.1 * bx * alphax * dphi) - 1
+
+    zhraw = swp0[X_DBZH].where((swp0.range > cphase.start_range) & (swp0.range < cphase.stop_range))
+
+    zax = zhraw.pipe(wrl.trafo.idecibel).fillna(0)
+
+    za = zax ** bx
+
+    # set masked to zero for integration
+    za_zero = za.fillna(0)
+
+    iza_x = za_zero.copy( data= 0.46 * bx * cumulative_trapezoid(za_zero.values, axis=za_zero.dims.index("range"),
+                                             initial=0, dx=dr_km.values) )
+    iza = iza_x.max("range") - iza_x
+
+    # we need some np.newaxis voodoo here, to get the correct dimensions (this version is for an array of alphax)
+    #iza_fdphi = iza[np.newaxis, ...] / fdphi[..., np.newaxis]
+    #iza_first = np.array([iza_fdphi[:, ray, first[ray]]
+    #                      for ray in range(za.shape[0])])
+
+    iza_fdphi = iza / fdphi
+
+    iza_first = iza_fdphi.isel(range=cphase.first_idx.astype(int).compute())
+
+    ah_fast = ( za / (iza_first + iza) ).compute().fillna(0)
+
+    phical = ah_fast.copy( data= 2 * cumulative_trapezoid(ah_fast/alphax, axis=ah_fast.dims.index("range"),
+                                                          dx=dr_km.values, initial=0) )
+
+    # Assign variables and return
+
+    return swp_msk.assign({
+            "AH" : ah_fast.assign_attrs(
+                {"long_name":"Attenuation (horizontal) from ZPHI method",
+                 "standard_name":"AH"}),
+            "PHIDP_ZPHI" : phical.assign_attrs(
+                {"long_name":"PHIDP calculated from AH (ZPHI method)",
+                 "standard_name":"PHIDP_ZPHI"}),
+            X_DBZH+"_AC" : (swp0[X_DBZH]+alphax*phical).assign_attrs(
+                {"long_name":"Attenuation corrected reflectivity (ZPHI method)",
+                 "standard_name": X_DBZH+"_AC",
+                 "alpha": alphax}),
+            X_ZDR+"_AC" : (swp0[X_ZDR]+betax*phical).assign_attrs(
+                {"long_name":"Attenuation corrected differential reflectivity (ZPHI method)",
+                 "standard_name": X_ZDR+"_AC",
+                 "beta": betax}),
+        })
+
+
+def phase_zphi(phi, rng=1000.):
+    range_step = np.diff(phi.range)[0]
+    nprec = int(rng / range_step)
+    if nprec % 2:
+        nprec += 1
+
+    # create binary array
+    phib = xr.where(np.isnan(phi), 0, 1)
+
+    # take nprec range bins and calculate sum
+    phib_sum = phib.rolling(range=nprec, center=True).sum(skipna=True)
+
+    offset = nprec // 2 * phib_sum.range.diff("range")[0]
+    offset_idx = xr.ones_like(offset) * (nprec // 2)
+    start_range = (phib_sum.idxmax(dim="range") - offset).compute()
+    start_range_idx = phib_sum.argmax(dim="range") - offset_idx
+    stop_range = (phib_sum.sel(range=slice(None, None, -1)).idxmax(dim="range") - offset).compute()
+    stop_range_idx = len(phib_sum.range) - (phib_sum.sel(range=slice(None, None, -1)).argmax(dim="range") - offset_idx) - 2
+    # get phase values in specified range
+    first = phi.where((phi.range >= start_range) & (phi.range <= start_range + rng),
+                       drop=True).quantile(0.05, dim='range', skipna=True).broadcast_like(phib_sum).drop_vars(["quantile"])
+    last = phi.where((phi.range >= stop_range - rng) & (phi.range <= stop_range),
+                       drop=True).quantile(0.95, dim='range', skipna=True).broadcast_like(phib_sum).drop_vars(["quantile"])
+
+
+    # return xr.Dataset(dict(phib=phib_sum,
+    #                        offset=offset,
+    #                        offset_idx=offset_idx,
+    #                        start_range=start_range,
+    #                        stop_range=stop_range,
+    #                        first=first,
+    #                        first_idx=start_range_idx,
+    #                        last=last,
+    #                        last_idx=stop_range_idx,
+    #                       ))
+
+    return xr.merge([phib_sum.rename("phib"),
+                           offset.rename("offset"),
+                           offset_idx.rename("offset_idx"),
+                           start_range.rename("start_range"),
+                           stop_range.rename("stop_range"),
+                           first.rename("first"),
+                           start_range_idx.rename("first_idx"),
+                           last.rename("last"),
+                           stop_range_idx.rename("last_idx"),
+                          ])
+
+#### Microphysical retrievals
+
+def calc_microphys_retrievals(ds, Lambda = 53.1, mu=0.33,
+                              X_DBZH="DBZH", X_ZDR="ZDR", X_KDP="KDP", X_TEMP="TEMP",
+                              X_AH="AH", X_PHI="UPHIDP_OC_MASKED"):
+    """
+    Calculate microphysical retrievals based on a collection of formulas. See references below.
+    The retrievals are calculated for the whole range of values, the user is
+    responsible for checking the range of validity of each retrieval and filtering
+    accordingly.
+
+    Parameter
+    ---------
+    ds : xarray.Dataset
+        Dataset with all variables needed for retrievals calculation.
+
+    Keyword Arguments
+    -----------------
+    Lambda : float
+        Radar wavelength in mm. For C-band Lambda≈53.1.
+        Reference values: PRO: 53.138, ANK: 53.1, AFY: 53.3, GZT: 53.3, HTY: 53.3, SVS:53.3
+        However, not all retrievals are wavelength-adjusted, check references.
+    mu : float
+        Shape factor of the gamma size distribution, for D0 to Dm conversion using
+        Dm = (4 + µ) / (3.67 + µ) D0.
+        µ is typically between -1 and 1
+    X_DBZH : str
+        Name of the variable with DBZH data.
+    X_ZDR : str
+        Name of the variable with ZDR data.
+    X_KDP : str
+        Name of the variable with KDP data.
+    X_TEMP : str
+        Name of the variable with temperature data.
+    X_AH : str (optional)
+        Name of the variable with specific attenuation data.
+        Used for LWC (4) from Reimann et al 2021 eq 3.10
+    X_PHI : str (optional)
+        Name of the variable with differential phase.
+        Used for hybrid LWC from Reimann et al 2021
+
+    References
+    ----------
+    Ice water content:
+        1) iwc_zh_t_hogan2006 = 10 ** (0.06 X_DBZH - 0.0197 TEMP - 1.7) (Empirical from Hogan et al. 2006 Table 2)
+        2) iwc_zh_t_hogan2006_model = 10**(0.06 * ds[X_DBZH] - 0.0212*ds[X_TEMP] - 1.92) # model from Hogan et al 2006 eq 14
+        3) iwc_zh_t_hogan2006_combined = xr.where(ds[X_TEMP]<=-15, # combination of the two previous retrievals based on a temperature thresholds suggested by Blanke et al. 2023
+                                                   iwc_zh_t_hogan2006,
+                                                   iwc_zh_t_hogan2006_model)
+
+        4) iwc_zdr_zh_kdp_carlin2021 = xr.where(ds[X_ZDR]>=0.4,  (Carlin et al. 2021 eqs 4b and 5b)
+                                                4*10**(-3)*( ds[X_KDP]*Lambda/( 1-wrl.trafo.idecibel(ds[X_ZDR])**-1 ) ),
+                                                0.033 * ( ds[X_KDP]*Lambda )**0.67 * wrl.trafo.idecibel(ds[X_DBZH])**0.33 )
+
+    Liquid water content:
+        1) lwc_zh_zdr_reimann2021 = 10**(0.058*ds[X_DBZH] - 0.118*ds[X_ZDR] - 2.36) (Reimann et al. 2021 eq 3.7; adjusted for Germany)
+        2) lwc_zh_zdr_rhyzkov2022 = 1.38*10**(-3) *10**(0.1*ds[X_DBZH] - 2.43*ds[X_ZDR] + 1.12*ds[X_ZDR]**2 - 0.176*ds[X_ZDR]**3 ) # used in S band, Ryzhkov 2022 PROM presentation https://www2.meteo.uni-bonn.de/spp2115/lib/exe/fetch.php?media=internal:uploads:all_hands_schneeferner_july2022:ryzhkov.pdf
+        3) lwc_kdp_reimann2021 = 10**(0.568*np.log10(ds[X_KDP]) + 0.06) # Reimann et al 2021 eq 3.13 (adjusted for Germany)
+        4) lwc_ah_reimann2021 = 10**(-0.1415*np.log10(ds[X_AH])**2 + 0.209*np.log10(ds[X_AH]) + 0.46) # Reimann et al 2021 eq 3.10 (adjusted for Germany)
+        5) lwc_hybrid_reimann2021 =
+                        lwc_zh_zdr_reimann2021 for ΔPHIDP < 5 degrees,
+                        lwc_ah_reimann2021 for ΔPHIDP > 5 degrees and Z < 45 dBZ, and
+                        lwc_hybrid_reimann2021 for ΔPHIDP > 5 degrees and Z > 45 dBZ .
+
+
+    Mean volume diameter in ice:
+        1) Dm_ice_zh_matrosov2019 = 1.055*wrl.trafo.idecibel(ds[X_DBZH])**0.271 # Matrosov et al. (2019) Fig 10 (S band)
+        2) Dm_ice_zh_kdp_carlin2021 = 0.67*( wrl.trafo.idecibel(ds[X_DBZH])/(ds[X_KDP]*Lambda) )**(1/3) # Ryzhkov and Zrnic (2019) eq 11.45. Idk exactly where does the 0.67 approximation comes from, Blanke et al. 2023 eq 10 and Carlin et al 2021 eq 5a cite Bukovčić et al. (2018, 2020) but those two references do not show this formula.
+        3) Dm_ice_zdp_kdp_carlin2021 = -0.1 + 2*( (wrl.trafo.idecibel(ds[X_DBZH])*(1-wrl.trafo.idecibel(ds[X_ZDR])**-1 ) ) / (ds[X_KDP]*Lambda) )**(1/2) # Ryzhkov and Zrnic (2019). Zdp = Z(1-ZDR**-1) from Carlin et al 2021
+        4) Dm_hybrid_blanke2023 = xr.where(ds[X_TEMP]<=-15, # combination of 1) and 2) retrievals based on a temperature thresholds suggested by Blanke et al. 2023
+                                                   Dm_ice_zdp_kdp_carlin2021,
+                                                   Dm_ice_zh_matrosov2019)
+
+    Mean volume diameter in liquid (D0 is automatically converted to Dm):
+        1) Dm_rain_zdr = 0.3015*ds[X_ZDR]**3 - 1.2087*ds[X_ZDR]**2 + 1.9068*ds[X_ZDR] + 0.5090 # (for rain but tuned for Germany X-band, JuYu Chen (reference missing), Zdr in dB, Dm in mm)
+        2) D0_rain_zdr_hu2022 = 0.171*ds[X_ZDR]**3 - 0.725*ds[X_ZDR]**2 + 1.48*ds[X_ZDR] + 0.717 # (D0 from Hu and Ryzhkov 2022 eq 2, used in S band data but could work for C band) [mm]
+        3) D0_rain_zdr_bringi2009 = xr.where(ds[X_ZDR]<1.25, # D0 from Bringi et al 2009 (C-band) eq. 1 [mm]
+                                    0.0203*ds[X_ZDR]**4 - 0.1488*ds[X_ZDR]**3 + 0.2209*ds[X_ZDR]**2 + 0.5571*ds[X_ZDR] + 0.801,
+                                    0.0355*ds[X_ZDR]**3 - 0.3021*ds[X_ZDR]**2 + 1.0556*ds[X_ZDR] + 0.6844
+                                    ).where(ds[X_ZDR]>=-0.5)
+
+    Number concentration of particles in ice (in log units [log(1/L)]):
+        1) Nt_ice_iwc_zh_t_hu2022 = (3.39 + 2*np.log10(iwc_zh_t_hogan2006) - 0.1*ds[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, [log(1/L)] using IWC from Hogan et al. 2006
+        2) Nt_ice_iwc_zh_t_carlin2021 = (3.69 + 2*np.log10(iwc_zh_t_hogan2006) - 0.1*ds[X_DBZH]) # Carlin et al 2021 eq. 7 using IWC from Hogan et al. 2006; originally in [log(1/m3)], transformed units here to [log(1/L)] by subtracting 3
+        3) Nt_ice_iwc_zh_t_combined_hu2022 = (3.39 + 2*np.log10(iwc_zh_t_hogan2006_combined) - 0.1*ds[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, [log(1/L)] using combined IWC from Hogan et al. 2006
+        4) Nt_ice_iwc_zh_t_combined_carlin2021 = (3.69 + 2*np.log10(iwc_zh_t_hogan2006_combined) - 0.1*ds[X_DBZH]) # Carlin et al 2021 eq. 7 using combined IWC from Hogan et al. 2006; originally in [log(1/m3)], transformed units here to [log(1/L)] by subtracting 3
+        5) Nt_ice_iwc_zdr_zh_kdp_hu2022 = (3.39 + 2*np.log10(iwc_zdr_zh_kdp_carlin2021) - 0.1*ds[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, [log(1/L)] using IWC from Carlin et al. 2021
+        6) Nt_ice_iwc_zdr_zh_kdp_carlin2021 = (3.69 + 2*np.log10(iwc_zdr_zh_kdp_carlin2021) - 0.1*ds[X_DBZH]) # Carlin et al 2021 eq. 7 using IWC from Carlin et al. 2021; originally in [log(1/m3)], transformed units here to [log(1/L)] by subtracting 3
+
+    Number concentration of particles in liquid (in log units [log(1/L)]):
+        1) Nt_rain_zh_zdr_rhyzkov2020 = ( -2.37 + 0.1*ds[X_DBZH] - 2.89*ds[X_ZDR] + 1.28*ds[X_ZDR]**2 - 0.213*ds[X_ZDR]**3 )# Ryzhkov et al. 2020 eq. 11 [log(1/L)] (I assume this is for Sband)
+
+    Blanke et al. 2023: https://doi.org/10.5194/amt-16-2089-2023
+    Bringi et al. 2009: https://doi.org/10.1175/2009JTECHA1258.1
+    Carlin et al. 2021: https://doi.org/10.1175/JAMC-D-21-0038.1
+    Hogan et al. 2006: https://doi.org/10.1175/JAM2340.1
+    Hu and Rhyzkov 2022: https://doi.org/10.1029/2021JD035498
+    Matrosov et al. 2019: https://cscenter.co.jp/icrm2019/program/data/abstracts/Session11A-02_2.pdf
+    Reimann et al. 2021: http://dx.doi.org/10.1127/metz/2021/1072
+    Ryzhkov 2022: https://www2.meteo.uni-bonn.de/spp2115/lib/exe/fetch.php?media=internal:uploads:all_hands_schneeferner_july2022:ryzhkov.pdf
+    Ryzhkov and Zrnic 2019: https://link.springer.com/book/10.1007/978-3-030-05093-1
+    Rhyzkov et al. 2020: https://doi.org/10.3390/atmos11040362
+    """
+
+    # LWC
+    lwc_zh_zdr_reimann2021 = 10**(0.058*ds[X_DBZH] - 0.118*ds[X_ZDR] - 2.36) # Reimann et al 2021 eq 3.7 (adjusted for Germany)
+    lwc_zh_zdr_rhyzkov2022 = 1.38*10**(-3) *10**(0.1*ds[X_DBZH] - 2.43*ds[X_ZDR] + 1.12*ds[X_ZDR]**2 - 0.176*ds[X_ZDR]**3 ) # used in S band, Ryzhkov 2022 PROM presentation https://www2.meteo.uni-bonn.de/spp2115/lib/exe/fetch.php?media=internal:uploads:all_hands_schneeferner_july2022:ryzhkov.pdf
+    lwc_kdp_reimann2021 = 10**(0.568*np.log10(ds[X_KDP]) + 0.06) # Reimann et al 2021 eq 3.13 (adjusted for Germany)
+    if X_AH in ds.data_vars:
+        lwc_ah_reimann2021 = 10**(-0.1415*np.log10(ds[X_AH])**2 + 0.209*np.log10(ds[X_AH]) + 0.46) # Reimann et al 2021 eq 3.10 (adjusted for Germany)
+    if X_PHI in ds.data_vars and X_AH in ds.data_vars:
+        lwc_hybrid_reimann2021 = xr.where(ds[X_PHI]<=5,
+                                          lwc_zh_zdr_reimann2021,
+                                          lwc_ah_reimann2021).where(
+                                              ds[X_DBZH]<=45, other=lwc_kdp_reimann2021)
+
+    # IWC (Collected from Blanke et al 2023)
+    iwc_zh_t_hogan2006 = 10**(0.06 * ds[X_DBZH] - 0.0197*ds[X_TEMP] - 1.7) # empirical from Hogan et al 2006 Table 2
+    iwc_zh_t_hogan2006_model = 10**(0.06 * ds[X_DBZH] - 0.0212*ds[X_TEMP] - 1.92) # model from Hogan et al 2006 eq 14
+    iwc_zh_t_hogan2006_combined = xr.where(ds[X_TEMP]<=-15, # combination of the two previous retrievals based on a temperature thresholds suggested by Blanke et al. 2023
+                                           iwc_zh_t_hogan2006,
+                                           iwc_zh_t_hogan2006_model)
+
+    iwc_zdr_zh_kdp_carlin2021 = xr.where(ds[X_ZDR]>=0.4, # Carlin et al 2021 eqs 4b and 5b
+                                         4*10**(-3)*( ds[X_KDP]*Lambda/( 1-wrl.trafo.idecibel(ds[X_ZDR])**-1 ) ),
+                                         0.033 * ( ds[X_KDP]*Lambda )**0.67 * wrl.trafo.idecibel(ds[X_DBZH])**0.33 )
+
+    # Dm (ice collected from Blanke et al 2023)
+    Dm_ice_zh_matrosov2019 = 1.055*wrl.trafo.idecibel(ds[X_DBZH])**0.271 # Matrosov et al. (2019) Fig 10 (S band)
+    Dm_ice_zh_kdp_carlin2021 = 0.67*( wrl.trafo.idecibel(ds[X_DBZH])/(ds[X_KDP]*Lambda) )**(1/3) # Ryzhkov and Zrnic (2019) eq 11.45. Idk exactly where does the 0.67 approximation comes from, Blanke et al. 2023 eq 10 and Carlin et al 2021 eq 5a cite Bukovčić et al. (2018, 2020) but those two references do not show this formula.
+    Dm_ice_zdp_kdp_carlin2021 = -0.1 + 2*( (wrl.trafo.idecibel(ds[X_DBZH])*(1-wrl.trafo.idecibel(ds[X_ZDR])**-1 ) ) / (ds[X_KDP]*Lambda) )**(1/2) # Ryzhkov and Zrnic (2019). Zdp = Z(1-ZDR**-1) from Carlin et al 2021
+    Dm_hybrid_blanke2023 = xr.where(ds[X_TEMP]<=-15, # combination of 1) and 2) retrievals based on a temperature thresholds suggested by Blanke et al. 2023
+                                               Dm_ice_zdp_kdp_carlin2021,
+                                               Dm_ice_zh_matrosov2019)
+
+    Dm_rain_zdr_chen = 0.3015*ds[X_ZDR]**3 - 1.2087*ds[X_ZDR]**2 + 1.9068*ds[X_ZDR] + 0.5090 # (for rain but tuned for Germany X-band, JuYu Chen, Zdr in dB, Dm in mm)
+
+    D0_rain_zdr_hu2022 = 0.171*ds[X_ZDR]**3 - 0.725*ds[X_ZDR]**2 + 1.48*ds[X_ZDR] + 0.717 # (D0 from Hu and Ryzhkov 2022 eq 2, used in S band data but could work for C band) [mm]
+    D0_rain_zdr_bringi2009 = xr.where(ds[X_ZDR]<1.25, # D0 from Bringi et al 2009 (C-band) eq. 1 [mm]
+                            0.0203*ds[X_ZDR]**4 - 0.1488*ds[X_ZDR]**3 + 0.2209*ds[X_ZDR]**2 + 0.5571*ds[X_ZDR] + 0.801,
+                            0.0355*ds[X_ZDR]**3 - 0.3021*ds[X_ZDR]**2 + 1.0556*ds[X_ZDR] + 0.6844
+                            ).where(ds[X_ZDR]>=-0.5)
+    Dm_rain_zdr_hu2022 = D0_rain_zdr_hu2022 * (4+mu)/(3.67+mu) # conversion from D0 to Dm according to eq 4 of Hu and Ryzhkov 2022.
+    Dm_rain_zdr_bringi2009 = D0_rain_zdr_bringi2009 * (4+mu)/(3.67+mu)
+
+    # log(Nt)
+    Nt_ice_iwc_zh_t_hu2022 = (3.39 + 2*np.log10(iwc_zh_t_hogan2006) - 0.1*ds[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, [log(1/L)] using IWC from Hogan et al. 2006
+    Nt_ice_iwc_zh_t_carlin2021 = (3.69 + 2*np.log10(iwc_zh_t_hogan2006) - 0.1*ds[X_DBZH]) # Carlin et al 2021 eq. 7 using IWC from Hogan et al. 2006; originally in [log(1/m3)], transformed units here to [log(1/L)] by subtracting 3
+
+    Nt_ice_iwc_zh_t_combined_hu2022 = (3.39 + 2*np.log10(iwc_zh_t_hogan2006_combined) - 0.1*ds[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, [log(1/L)] using combined IWC from Hogan et al. 2006
+    Nt_ice_iwc_zh_t_combined_carlin2021 = (3.69 + 2*np.log10(iwc_zh_t_hogan2006_combined) - 0.1*ds[X_DBZH]) # Carlin et al 2021 eq. 7 using combined IWC from Hogan et al. 2006; originally in [log(1/m3)], transformed units here to [log(1/L)] by subtracting 3
+
+    Nt_ice_iwc_zdr_zh_kdp_hu2022 = (3.39 + 2*np.log10(iwc_zdr_zh_kdp_carlin2021) - 0.1*ds[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, [log(1/L)] using IWC from Carlin et al. 2021
+    Nt_ice_iwc_zdr_zh_kdp_carlin2021 = (3.69 + 2*np.log10(iwc_zdr_zh_kdp_carlin2021) - 0.1*ds[X_DBZH]) # Carlin et al 2021 eq. 7 using IWC from Carlin et al. 2021; originally in [log(1/m3)], transformed units here to [log(1/L)] by subtracting 3
+
+    Nt_rain_zh_zdr_rhyzkov2020 = ( -2.37 + 0.1*ds[X_DBZH] - 2.89*ds[X_ZDR] + 1.28*ds[X_ZDR]**2 - 0.213*ds[X_ZDR]**3 )# Ryzhkov et al. 2020 eq. 11 [log(1/L)] (I assume this is for Sband)
+
+    # Put everything together
+    retrievals = xr.Dataset({"lwc_zh_zdr_reimann2021":lwc_zh_zdr_reimann2021.assign_attrs(
+                                name="liquid water content",
+                                units="g/m³",
+                                description="LWC from Reimann et al. 2021 eq 3.7 (http://dx.doi.org/10.1127/metz/2021/1072)"),
+                            "lwc_zh_zdr_rhyzkov2022":lwc_zh_zdr_rhyzkov2022.assign_attrs(
+                                name="liquid water content",
+                                units="g/m³",
+                                description="LWC from Ryzhkov 2022 PROM presentation (https://www2.meteo.uni-bonn.de/spp2115/lib/exe/fetch.php?media=internal:uploads:all_hands_schneeferner_july2022:ryzhkov.pdf)"),
+                            "lwc_kdp_reimann2021": lwc_kdp_reimann2021.assign_attrs(
+                                name="liquid water content",
+                                units="g/m³",
+                                description="LWC from Reimann et al. 2021 eq 3.13 (http://dx.doi.org/10.1127/metz/2021/1072)"),
+                            "iwc_zh_t_hogan2006": iwc_zh_t_hogan2006.assign_attrs(
+                                name="ice water content",
+                                units="g/m³",
+                                description="Empirical IWC from Hogan et al. 2006 Table 2 (https://doi.org/10.1175/JAM2340.1)"),
+                            "iwc_zh_t_hogan2006_model": iwc_zh_t_hogan2006_model.assign_attrs(
+                                name="ice water content",
+                                units="g/m³",
+                                description="Model IWC from Hogan et al. 2006 eq 14 (https://doi.org/10.1175/JAM2340.1)"),
+                            "iwc_zh_t_hogan2006_combined": iwc_zh_t_hogan2006_combined.assign_attrs(
+                                name="ice water content",
+                                units="g/m³",
+                                description="Combined IWC from Hogan et al. 2006 as suggested by Blanke et al 2023 (https://doi.org/10.1175/JAM2340.1, https://doi.org/10.5194/amt-16-2089-2023)"),
+                            "iwc_zdr_zh_kdp_carlin2021": iwc_zdr_zh_kdp_carlin2021.assign_attrs(
+                                name="ice water content",
+                                units="g/m³",
+                                description="IWC from Carlin et al. 2021 eqs 4b and 5b (https://doi.org/10.1175/JAMC-D-21-0038.1)"),
+                            "Dm_ice_zh_matrosov2019": Dm_ice_zh_matrosov2019.assign_attrs(
+                                name="mean volume diameter in ice",
+                                units="mm",
+                                description="Dm from Matrosov et al. 2019 (https://cscenter.co.jp/icrm2019/program/data/abstracts/Session11A-02_2.pdf)"),
+                            "Dm_ice_zh_kdp_carlin2021": Dm_ice_zh_kdp_carlin2021.assign_attrs(
+                                name="mean volume diameter in ice",
+                                units="mm",
+                                description="Dm from Carlin et al. 2021 eq 5a (https://doi.org/10.1175/JAMC-D-21-0038.1)"),
+                            "Dm_ice_zdp_kdp_carlin2021": Dm_ice_zdp_kdp_carlin2021.assign_attrs(
+                                name="mean volume diameter in ice",
+                                units="mm",
+                                description="Dm from Carlin et al. 2021 eq 4a (https://doi.org/10.1175/JAMC-D-21-0038.1)"),
+                            "Dm_hybrid_blanke2023": Dm_hybrid_blanke2023.assign_attrs(
+                                name="mean volume diameter in ice",
+                                units="mm",
+                                description="Hybrid Dm from Matrosov et al. 2019 and Carlin et al. 2021 as suggested by Blanke et al 2023 (https://doi.org/10.5194/amt-16-2089-2023)"),
+                            "Dm_rain_zdr_chen": Dm_rain_zdr_chen.assign_attrs(
+                                name="mean volume diameter in liquid",
+                                units="mm",
+                                description="Dm from JuYu Chen (reference missing)"),
+                            "Dm_rain_zdr_hu2022": Dm_rain_zdr_hu2022.assign_attrs(
+                                name="mean volume diameter in liquid",
+                                units="mm",
+                                description="Dm from Hu and Ryzhkov 2022 eq 2 (https://doi.org/10.1029/2021JD035498)"),
+                            "Dm_rain_zdr_bringi2009": Dm_rain_zdr_bringi2009.assign_attrs(
+                                name="mean volume diameter in liquid",
+                                units="mm",
+                                description="Dm from Bringi et al 2009 (C-band) eq. 1 [mm] (https://doi.org/10.1175/2009JTECHA1258.1)"),
+                            "Nt_ice_iwc_zh_t_hu2022": Nt_ice_iwc_zh_t_hu2022.assign_attrs(
+                                name="Number concentration of frozen particles",
+                                units="log(1/L)",
+                                description="Nt from Hu and Ryzhkov 2022 eq. 10 (https://doi.org/10.1029/2021JD035498) using IWC from Hogan et al. 2006 (https://doi.org/10.1175/JAM2340.1)"),
+                            "Nt_ice_iwc_zh_t_carlin2021": Nt_ice_iwc_zh_t_carlin2021.assign_attrs(
+                                name="Number concentration of frozen particles",
+                                units="log(1/L)",
+                                description="Nt from from Carlin et al. 2021 eq 7 (https://doi.org/10.1175/JAMC-D-21-0038.1) using IWC from Hogan et al. 2006 (https://doi.org/10.1175/JAM2340.1)"),
+                            "Nt_ice_iwc_zh_t_combined_hu2022": Nt_ice_iwc_zh_t_combined_hu2022.assign_attrs(
+                                name="Number concentration of frozen particles",
+                                units="log(1/L)",
+                                description="Nt from Hu and Ryzhkov 2022 eq. 10 (https://doi.org/10.1029/2021JD035498) using combined IWC from Hogan et al. 2006 (https://doi.org/10.1175/JAM2340.1)"),
+                            "Nt_ice_iwc_zh_t_combined_carlin2021": Nt_ice_iwc_zh_t_combined_carlin2021.assign_attrs(
+                                name="Number concentration of frozen particles",
+                                units="log(1/L)",
+                                description="Nt from from Carlin et al. 2021 eq 7 (https://doi.org/10.1175/JAMC-D-21-0038.1) using combined IWC from Hogan et al. 2006 (https://doi.org/10.1175/JAM2340.1)"),
+                            "Nt_ice_iwc_zdr_zh_kdp_hu2022": Nt_ice_iwc_zdr_zh_kdp_hu2022.assign_attrs(
+                                name="Number concentration of frozen particles",
+                                units="log(1/L)",
+                                description="Nt from Hu and Ryzhkov 2022 eq. 10 (https://doi.org/10.1029/2021JD035498) using IWC from Carlin et al. 2021 (https://doi.org/10.1175/JAMC-D-21-0038.1)"),
+                            "Nt_ice_iwc_zdr_zh_kdp_carlin2021": Nt_ice_iwc_zdr_zh_kdp_carlin2021.assign_attrs(
+                                name="Number concentration of frozen particles",
+                                units="log(1/L)",
+                                description="Nt from from Carlin et al. 2021 eq 7 (https://doi.org/10.1175/JAMC-D-21-0038.1) using IWC from Carlin et al. 2021 (https://doi.org/10.1175/JAMC-D-21-0038.1)"),
+                            "Nt_rain_zh_zdr_rhyzkov2020": Nt_rain_zh_zdr_rhyzkov2020.assign_attrs(
+                                name="Number concentration of liquid particles",
+                                units="log(1/L)",
+                                description="Nt from from Rhyzkov et al. 2020 eq 11(https://doi.org/10.3390/atmos11040362)"),
+                            })
+
+    if X_AH in ds.data_vars:
+        retrievals = retrievals.assign({"lwc_ah_reimann2021": lwc_ah_reimann2021.assign_attrs(
+                                name="liquid water content",
+                                units="g/m³",
+                                description="LWC from Reimann et al. 2021 eq 3.10 (http://dx.doi.org/10.1127/metz/2021/1072)"),
+            })
+    if X_PHI in ds.data_vars and X_AH in ds.data_vars:
+        retrievals = retrievals.assign({"lwc_hybrid_reimann2021": lwc_hybrid_reimann2021.assign_attrs(
+                                name="liquid water content",
+                                units="g/m³",
+                                description="Hybrid LWC from Reimann et al. 2021 (http://dx.doi.org/10.1127/metz/2021/1072)"),
+            })
+
+    return retrievals
 
 #### Full variables correction, melting layer detection, KDP derivation, entropy calculation and QVP derivation for a PPI
 
 """
 ## Example usage of the full pipeline
 
-## Load the data into an xarray dataset (ds)
-
-ff = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/*allmoms*"
-ds = utils.load_dwd_preprocessed(ff)
-
-if "dwd" in ff:
-    country="dwd"
-    clowres0=True # this is for the ML detection algorithm
-elif "dmi" in ff:
-    country="dmi"
-    clowres0=False
-
-## Georeference
-
-ds = ds.pipe(wrl.georef.georeference)
-
-## Define minimum height
-
-min_height = utils.min_hgts["default"] + ds["altitude"].values
-
-## Get variable names
-
-X_DBZH, X_PHI, X_RHO, X_ZDR, X_TH = utils.get_names(ds)
-
-## Load ZDR offset
-
-# We define a custom exception to stop the next nexted loops as soon as a file is loaded
-class FileFound(Exception):
-    pass
-
-# Define the offset paths and file names or take them from the default
-
-zdroffdir = utils.zdroffdir
-zdrofffile = utils.zdrofffile
-
-# Load the offsets
-
-try:
-    for zdrod in zdroffdir:
-        for zdrof in zdrofffile:
-            try:
-                zdroffsetpath = os.path.dirname(utils.edit_str(ff, country, country+zdrod))
-                if "/VP/" in zdrod and "/vol5minng01/" in ff:
-                    elevnr = ff.split("/vol5minng01/")[-1][0:2]
-                    zdroffsetpath = utils.edit_str(zdroffsetpath, "/vol5minng01/"+elevnr, "/90gradstarng01/00")
-
-                ds = utils.load_ZDR_offset(ds, X_ZDR, zdroffsetpath+"/"+zdrof)
-
-                # Change the default ZDR name to the corrected one
-                X_ZDR = X_ZDR+"_OC"
-
-                # raise the custom exception to stop the loops
-                raise FileFound
-
-            except OSError:
-                pass
-
-    # If no ZDR offset was loaded, print a message
-    print("No zdr offset to load: "+zdroffsetpath+"/"+zdrof)
-except FileFound:
-    pass
-
-
-## Load noise corrected RHOHV
-
-# Define the rhohv corrected paths and file names or take them from the default
-
-rhoncdir = utils.rhoncdir
-rhoncfile = utils.rhoncfile
-
-
-try:
-    rhoncpath = os.path.dirname(utils.edit_str(ff, country, country+rhoncdir))
-
-    ds = utils.load_corrected_RHOHV(ds, rhoncpath+"/"+rhoncfile)
-
-    # Check that the corrected RHOHV does not have much higher STD than the original (50% more)
-    # if that is the case we take it that the correction did not work well so we won't use it
-    if not (ds[X_RHO].std()*1.5 < ds["RHOHV_NC"].std()).compute():
-        # Change the default RHOHV name to the corrected one
-        X_RHO = X_RHO+"_NC"
-
-except OSError:
-    print("No noise corrected rhohv to load: "+rhoncpath+"/"+rhoncfile)
-
-
-## Phase processing
-
-interpolation_method_ML = "linear" # for interpolating PHIDP in the ML
-
-
-phase_pross_params = {
-                        "dwd": {
-                            "window0": 7, # number of range bins for phidp smoothing (this one is quite important!)
-                            "winlen0": 7, # size of range window (bins) for the kdp-phidp calculations
-                            "xwin0": 9, # window size (bins) for the time rolling median smoothing in ML detection
-                            "ywin0": 1, # window size (bins) for the height rolling mean smoothing in ML detection
-                            "fix_range": 750, # range from where to consider phi values (dwd data is bad in the first bin)
-                        },
-                        "dmi": {
-                            "window0": 17,
-                            "winlen0": 21,
-                            "xwin0": 5,
-                            "ywin0": 5,
-                            "fix_range": 200,
-                        },
-}
-
-# Check that PHIDP is in data, otherwise skip ML detection
-if X_PHI in ds.data_vars:
-    # Set parameters according to data
-
-    for param_name in phase_pross_params[country].keys():
-        globals()[param_name] = phase_pross_params[country][param_name]
-    # window0, winlen0, xwin0, ywin0, fix_range = phase_pross_params[country].values() # explicit alternative
-
-    # phidp may be already preprocessed (turkish case), then proceed directly to masking and then vulpiani
-    if "UPHIDP" not in X_PHI:
-        # mask
-        phi_masked = ds[X_PHI].where((ds[X_RHO] >= 0.95) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )
-
-        # rename X_PHI as offset corrected
-        ds = ds.rename({X_PHI: X_PHI+"_OC"})
-
-    else:
-        ds = utils.phidp_processing(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
-                             dbzhmin=0., min_height=0, window=window0, fix_range=fix_range)
-
-        phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.95) & (ds[X_DBZH] >= 0.) & (ds["z"]>min_height) )
-
-    # Assign phi_masked
-    assign = { X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs) }
-    ds = ds.assign(assign)
-
-    # derive KDP from PHIDP (Vulpiani)
-
-    ds = utils.kdp_phidp_vulpiani(ds, winlen0, X_PHI+"_OC_MASKED", min_periods=winlen0/2)
-
-    X_PHI = X_PHI+"_OC" # continue using offset corrected PHI
-
-else:
-    print(X_PHI+" not found in the data, skipping ML detection")
-
-## Compute QVP
-
-ds_qvp = utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1} )
-
-## Detect melting layer
-
-if X_PHI in ds.data_vars:
-    # Define thresholds
-    moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI: (-20, 180)}
-
-    # Calculate ML
-    ds_qvp = utils.melting_layer_qvp_X_new(ds_qvp, moments=moments,
-             dim="z", xwin=xwin0, ywin=ywin0, min_h=min_height, all_data=True, clowres=clowres0)
-
-    # Assign ML values to dataset
-
-    ds = ds.assign_coords({'height_ml': ds_qvp.height_ml})
-    ds = ds.assign_coords({'height_ml_bottom': ds_qvp.height_ml_bottom})
-
-    ds = ds.assign_coords({'height_ml_new_gia': ds_qvp.height_ml_new_gia})
-    ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp.height_ml_bottom_new_gia})
-
-## Attach ERA5 temperature profile
-loc = utils.find_loc(utils.locs, ff)
-ds_qvp = utils.attach_ERA5_TEMP(ds_qvp, path=loc.join(utils.era5_dir.split("loc")))
-ds = utils.attach_ERA5_TEMP(ds, path=loc.join(utils.era5_dir.split("loc")))
-
-## Discard possible erroneous ML values
-if "height_ml_new_gia" in ds_qvp:
-    isotherm = -1 # isotherm for the upper limit of possible ML values
-    z_isotherm = ds_qvp.TEMP.isel(z=((ds_qvp["TEMP"]-isotherm)**2).argmin("z").compute())["z"]
-
-    ds_qvp.coords["height_ml_new_gia"] = ds_qvp["height_ml_new_gia"].where(ds_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
-    ds_qvp.coords["height_ml_bottom_new_gia"] = ds_qvp["height_ml_bottom_new_gia"].where(ds_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
-
-    ds = ds.assign_coords({'height_ml_new_gia': ds_qvp.height_ml_new_gia})
-    ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp.height_ml_bottom_new_gia})
-
-## Fix KDP in the ML using PHIDP:
-if X_PHI in ds.data_vars:
-    ds = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen=winlen0)
-
-    ds_qvp = ds_qvp.assign({"KDP_ML_corrected": utils.compute_qvp(ds)["KDP_ML_corrected"]})
-
-## Classification of stratiform events based on entropy
-if X_PHI in ds.data_vars:
-
-    # calculate linear values for ZH and ZDR
-    ds = ds.assign({"DBZH_lin": wrl.trafo.idecibel(ds[X_DBZH]), "ZDR_lin": wrl.trafo.idecibel(ds[X_ZDR]) })
-
-    # calculate entropy
-    Entropy = utils.Entropy_timesteps_over_azimuth_different_vars_schneller(ds, zhlin="DBZH_lin", zdrlin="ZDR_lin", rhohvnc=X_RHO, kdp="KDP_ML_corrected")
-
-    # concate entropy for all variables and get the minimum value
-    strati = xr.concat((Entropy.entropy_zdrlin, Entropy.entropy_Z, Entropy.entropy_RHOHV, Entropy.entropy_KDP),"entropy")
-    min_trst_strati = strati.min("entropy")
-
-    # assign to datasets
-    ds["min_entropy"] = min_trst_strati
-
-    min_trst_strati_qvp = min_trst_strati.assign_coords({"z": ds["z"].median("azimuth")})
-    min_trst_strati_qvp = min_trst_strati_qvp.swap_dims({"range":"z"}) # swap range dimension for height
-    ds_qvp = ds_qvp.assign({"min_entropy": min_trst_strati_qvp})
-
-
+For an example of the full workflow see plot_ppis_qvps_etc.py
 """
 
 #### Plotting helping functions
