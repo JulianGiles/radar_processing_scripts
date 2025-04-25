@@ -217,6 +217,8 @@ for ff in files:
 
     except OSError:
         print("No noise corrected rhohv to load: "+rhoncpath+"/"+rhoncfile)
+    except ValueError:
+        print("ValueError with corrected RHOHV: "+rhoncpath+"/"+rhoncfile)
 
 #%% Load and attach temperature data (in case no ML is detected, and in case temperature comes from other source different than ERA5)
 
@@ -472,8 +474,10 @@ for ff in files:
             zdr_offset.to_netcdf(filename)
 
         if 3 in calib_types and calib_3:
-            # We ask for at least 1 km of consecutive ZDR values in each VP to be included in the calculation
+            # We ask for at least 3 km of consecutive ZDR values in each QVP to be included in the calculation
             minbins = int(1000 / data["range"].diff("range").median())
+            if minbins < 3: # for the case of coarse 1km data
+                minbins = 3
 
             #### Calculate per timestep and full timespan (daily for dwd and dmi concat files)
             for timemode in ["step", "all"]:
