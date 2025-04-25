@@ -4394,7 +4394,7 @@ def zdr_elevdep(zdr0, angle):
 def zdr_elev_corr(ds, angle, zdr=["ZDR"]):
     """
     Returns ds with elevation-angle corrected ZDR variables. Uses the elevation-
-    dependency equation from Rhyzkov et al. (2005) and approximates the correction
+    dependency equation 28 from Rhyzkov et al. (2005) and approximates the correction
     taking ZDR_0=1 as reference.
 
     ds : xarray Dataset
@@ -5103,7 +5103,7 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
     if azmed:
         if "azimuth" in ds.dims:
             ds_qvp = compute_qvp(ds.where(ml_bottom).where(ds["z"]>min_h),
-                                 min_thresh = {rhohv:0.7, dbzh:0})
+                                 min_thresh = {rhohv:0.7, dbzh:0, "SNRH":10,"SNRHC":10, "SQIH":0.5})
             ds_zdr_med = ds_qvp[zdr].where(ds_qvp[dbzh]>zhmin).where(ds_qvp[dbzh]<zhmax).where(ds_qvp[rhohv]>rhvmin)
 
             # only for the count of valid values, we need this
