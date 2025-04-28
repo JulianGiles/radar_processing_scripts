@@ -508,6 +508,8 @@ def fix_flipped_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, rang
     nprec = int(rng / range_step)
     if not nprec % 2:
         nprec += 1
+    if nprec > 50: # set a maximum (important for i.e. vertical scans)
+        nprec = 50
 
     for phi in phidp_names:
         if phi in ds.data_vars:
@@ -4349,7 +4351,7 @@ def kdp_elevdep(kdp, angle):
 def kdp_elev_corr(ds, angle, kdp=["KDP"]):
     """
     Returns ds with elevation-angle corrected KDP variables. Uses the elevation-
-    dependency equation from Schneebeli et al. (2013) and approximates the correction
+    dependency equation (9) from Schneebeli et al. (2013) and approximates the correction
     taking KDP=1 as reference.
 
     ds : xarray Dataset
