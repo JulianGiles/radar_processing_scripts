@@ -56,7 +56,7 @@ start_time = time.time()
 #%% Set paths and options
 path0 = sys.argv[1]
 calib_type = int(sys.argv[2]) # Like the numbers from the description above. Can be a multiple digit integer for simultaneous calculations
-overwrite = True # overwrite existing files?
+overwrite = False # overwrite existing files?
 
 phidp_names = ["UPHIDP", "PHIDP"] # names to look for the PHIDP variable, in order of preference
 dbzh_names = ["DBZH"] # same but for DBZH
@@ -247,14 +247,20 @@ for ff in files:
         for X_RHO in rhohv_names:
             if X_RHO in data.data_vars:
                 if "_NC" in X_RHO:
-                    # Check that the corrected RHOHV does not have higher STD than the original (1 + std_margin)
-                    # if that is the case we take it that the correction did not work well so we won't use it
-                    std_margin = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_margin), otherwise use RHOHV
-                    min_rho = 0.6 # min RHOHV value for filtering. Only do this test with the highest values to avoid wrong results
+                    # Check that the corrected RHOHV does not have a lot more of low values
+                    # if that is the case we take it that the correction did not work.
+                    min_rho = 0.7 # min RHOHV value for filtering
+                    count_tolerance = 0.5 # 50% tolerance
 
-                    if ( data["RHOHV"].where(data["RHOHV"]>min_rho).std()*(1+std_margin) < data[X_RHO].where(data[X_RHO]>min_rho).std() ).compute():
-                        # Change the default RHOHV name to the corrected one
-                        X_RHO = "RHOHV"
+                    if ( data["RHOHV"].where(data["RHOHV"]<min_rho * (data["z"]>min_height)).count()*(1+count_tolerance) < data[X_RHO].where(data[X_RHO]<min_rho * (data["z"]>min_height)).count() ).compute():
+
+                        # Check that the corrected RHOHV does not have higher STD than the original (1 + std_margin)
+                        # if that is the case we take it that the correction did not work well so we won't use it
+                        std_margin = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_margin), otherwise use RHOHV
+
+                        if ( data["RHOHV"].where(data["RHOHV"]>min_rho * (data["z"]>min_height)).std()*(1+std_margin) < data[X_RHO].where(data[X_RHO]>min_rho * (data["z"]>min_height)).std() ).compute():
+                            # Change the default RHOHV name to the corrected one
+                            X_RHO = "RHOHV"
 
                 break
 
@@ -285,7 +291,7 @@ for ff in files:
                                      dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
                                      rng_min=1000, rng=rng, azmedian=azmedian, tolerance=(0,5)) # shorter rng, rng_min for finer turkish data
 
-                phi_masked = data_phiproc[X_PHI+"_OC"].where((data[X_RHO] >= 0.9) * (data[X_DBZH] >= 0.) * (data["range"]>min_range) )
+                phi_masked = data_phiproc[X_PHI+"_OC"].where((data[X_RHO] >= 0.8) * (data[X_DBZH] >= 0.) * (data["range"]>min_range) )
 
             else:
                 data_phiproc = utils.phidp_processing(utils.apply_min_max_thresh(data, {"SNRH":10, "SNRHC":10, "SQIH":0.5}, {}, skipfullna=True),
@@ -293,7 +299,7 @@ for ff in files:
                                      dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
                                      rng=rng, azmedian=azmedian, tolerance=(0,5), clean_invalid=False, fillna=False)
 
-                phi_masked = data_phiproc[X_PHI+"_OC_SMOOTH"].where((data[X_RHO] >= 0.9) * (data[X_DBZH] >= 0.) * (data["range"]>min_range) )
+                phi_masked = data_phiproc[X_PHI+"_OC_SMOOTH"].where((data[X_RHO] >= 0.8) * (data[X_DBZH] >= 0.) * (data["range"]>min_range) )
 
             # assign new vars to data
             data = data.assign(data_phiproc[[X_PHI+"_OC_SMOOTH", X_PHI+"_OFFSET", X_PHI+"_OC"]])
