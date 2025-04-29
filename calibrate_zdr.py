@@ -63,6 +63,10 @@ dbzh_names = ["DBZH"] # same but for DBZH
 rhohv_names = ["RHOHV_NC", "RHOHV"] # same but for RHOHV
 zdr_names = ["ZDR"]
 
+# PHIDP processing / KDP calc parameters
+window0max = 25 # max value for window0 (only applied if window0 is given in meters)
+winlen0max = [9, 25] # max value for winlen0 (only applied if winlen0 is given in meters)
+
 min_hgts = utils.min_hgts
 min_rngs = utils.min_rngs
 min_hgt = min_hgts["default"] # minimum height above the radar to be considered
@@ -280,8 +284,29 @@ for ff in files:
         # Check that PHIDP is in data and process PHIDP, otherwise skip ML detection
         if X_PHI in data.data_vars:
             # Set parameters according to data
-            phase_proc_params = utils.get_phase_proc_params(ff) # get default phase processing parameters
+            phase_proc_params = utils.get_phase_proc_params(ff).copy() # get default phase processing parameters
             window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian, rhohv_thresh_gia, grad_thresh = phase_proc_params.values() # explicit alternative
+
+            # Check if window0 and winlen0 are in m or in number of gates and apply max threshold
+            rangeres = float(data.range.diff("range").mean().compute())
+            if window0 > 500:
+                window0 = int(round(window0/rangeres))
+                if not window0%2>0: window0 = window0 + 1
+                window0 = min(window0max, window0)
+            if isinstance(winlen0, list):
+                if winlen0[0] > 500:
+                    wl0 = int(round(winlen0[0]/rangeres))
+                    if not wl0%2>0: wl0 = wl0 + 1
+                    winlen0[0] = max(winlen0max[0], wl0)
+                if winlen0[1] > 500:
+                    wl0 = int(round(winlen0[1]/rangeres))
+                    if not wl0%2>0: wl0 = wl0 + 1
+                    winlen0[1] = min(winlen0max[1], wl0)
+            else:
+                if winlen0 > 500:
+                    winlen0 = int(round(winlen0/rangeres))
+                    if not winlen0%2>0: winlen0 = winlen0 + 1
+                    winlen0 = min(winlen0max, winlen0)
 
             # phidp may be already preprocessed (turkish case), then only offset-correct (no smoothing) and then vulpiani
             if "PHIDP" not in X_PHI: # This is now always skipped with this definition ("PHIDP" is in both X_PHI); i.e., we apply full processing to turkish data too
