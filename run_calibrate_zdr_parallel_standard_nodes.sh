@@ -13,24 +13,29 @@
 #SBATCH --cpus-per-task=6
 #SBATCH --ntasks-per-node=8
 #SBATCH --time=20:00:00
-#SBATCH --job-name=svs_calib_zdr_lr
-#SBATCH --output=calibrate_zdr_lr_svs.out
-#SBATCH --error=calibrate_zdr_lr_svs.err
-#SBATCH --open-mode=append
+#SBATCH --job-name=calib_zdr_umd
+#SBATCH --output=calib_zdr_umd.out
+#SBATCH --error=calib_zdr_umd.err
+#SBATCH --open-mode=truncate
 #SBATCH --partition=batch
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK}
 
+# Set the directory with the code (this will be the working dir)
+codedir=/p/scratch/detectrea/giles1/radar_processing_scripts/
+cd $codedir
+
 # Set the directory to look for the files
-dir=/p/scratch/detectrea/giles1/radar_data/dmi/
+dir=/p/scratch/detectrea/giles1/radar_data/dwd/
 
 # Set the type of calibration method
-calibtype=2
+calibtype=23
 
 # set a name for the counter file (counting how many job steps running at the same time
-counterfile=$dir/count_svs.txt
+counterfile=$dir/count_umd.txt
 
 # Create a list of all files that include *allmoms* in their name
-files=$(find $dir -name "*allmoms*SVS*" -type f -not -path "*qvp*" -not -path "*WIND*" -not -path "*SURVEILLANCE*" -not -path "*RHI1*")
+files=$(find $dir -name "*vol5minng01*allm*07*umd*" -type f -not -path "*qvp*" -not -path "*WIND*" -not -path "*SURVEILLANCE*" -not -path "*RHI1*") # "*vol5minng01*allm*07*pro*" # "*90gradstarng01*allm*00*pro*" # "*allm*HTY*"
+# If processing birdbath scans, set the min elevation allowed to 0 in the code below
 
 count=0
 echo $count > $counterfile
@@ -41,14 +46,14 @@ for file in $files; do
     # Get the last folder of the file path (indicating elevation)
     elev=$(basename "$(dirname "$file")")
 
-    # Function to check if the number is between 10 and 15
+    # Function to check if the number is between 7 and 15
     is_between_7_and_15() {
     local number_float=$1
 
     # Use bc to convert the number string to float
     local float_value=$(echo "scale=2; $number_float" | bc)
 
-    # Check if the float value is between 10 and 15 (inclusive)
+    # Check if the float value is between 7 and 15 (inclusive)
     (( $(bc <<< "$float_value >= 7.0 && $float_value <= 15.0") ))
     }
 
@@ -59,7 +64,7 @@ for file in $files; do
         echo $count > $counterfile
         ((startcount++))
         # Pass the file path to the python script
-        { timeout 10m srun -c 6 --account=detectrea -n 1 --exact --threads-per-core=1  python $dir/calibrate_zdr.py $file $calibtype; count=$(<$counterfile); ((count--)) ; echo $count > $counterfile; } &
+        { timeout 20m srun -c 6 --account=detectrea -n 1 --exact --threads-per-core=1  python $codedir/calibrate_zdr.py $file $calibtype; count=$(<$counterfile); ((count--)) ; echo $count > $counterfile; } &
 
         if [ "$startcount" -le 30 ]; then
             sleep 5
