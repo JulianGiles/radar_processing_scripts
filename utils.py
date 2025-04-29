@@ -154,8 +154,8 @@ phase_proc_params["dwd-hres"]["90gradstarng10dft"] = phase_proc_params["dwd-hres
 phase_proc_params["dwd-hres"]["pcpng01"] = phase_proc_params["dwd-hres"]["vol5minng01"] # for the precip scan
 
 phase_proc_params["dmi"] = {
-        "window0": 25,
-        "winlen0": [9, 25],
+        "window0": 7000,
+        "winlen0": [2500, 7000],
         "xwin0": 5,
         "ywin0": 5,
         "fix_range": 350,
