@@ -87,8 +87,9 @@ path_qvps = realpep_path+"/upload/jgiles/dwd/qvps/20*/*/*/pro/vol5minng01/07/ML_
 #### Set variable names
 X_DBZH = "DBZH"
 X_RHO = "RHOHV_NC" # if RHOHV_NC is set here, it is then checked agains the original RHOHV in the next cell
-X_ZDR = "ZDR_OC"
-X_KDP = "KDP_ML_corrected"
+X_ZDR = "ZDR_EC_OC_AC"
+X_KDP = "KDP_ML_corrected_EC"
+X_PHI = "UPHIDP_OC_MASKED"
 
 if "dwd" in path_qvps:
     country="dwd"
@@ -198,15 +199,21 @@ min_entropy_thresh = 0.85
 
 # Check that RHOHV_NC is actually better (less std) than RHOHV, otherwise just use RHOHV, on a per-day basis
 std_margin = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_margin), otherwise use RHOHV
-min_rho = 0.6 # min RHOHV value for filtering. Only do this test with the highest values to avoid wrong results
+min_rho = 0.7 # min RHOHV value for filtering. Only do this test with the highest values to avoid wrong results
+count_tolerance = 0.5 # 50% tolerance, for checking if there are substantially more lower values in RHOHV_NC
 
 if "_NC" in X_RHO:
     # Check that the corrected RHOHV does not have higher STD than the original (1 + std_margin)
     # if that is the case we take it that the correction did not work well so we won't use it
-    cond_rhohv = (
+    cond_rhohv1 = (
                     qvps[X_RHO].where(qvps[X_RHO]>min_rho).resample({"time":"D"}).std(dim=("time", "z")) < \
                     qvps["RHOHV"].where(qvps["RHOHV"]>min_rho).resample({"time":"D"}).std(dim=("time", "z"))*(1+std_margin)
                     ).compute()
+
+    cond_rhohv2 = ( qvps[X_RHO].where(qvps[X_RHO]<min_rho ).resample({"time":"D"}).count() < \
+                   qvps["RHOHV"].where(qvps["RHOHV"]<min_rho ).resample({"time":"D"}).count()*(1+count_tolerance) ).compute()
+
+    cond_rhohv = cond_rhohv1 * cond_rhohv2
 
     # create an xarray.Dataarray with the valid timesteps
     valid_dates = cond_rhohv.where(cond_rhohv, drop=True).time.dt.date
@@ -215,7 +222,6 @@ if "_NC" in X_RHO:
 
     # Redefine RHOHV_NC: keep it in the valid datetimes, put RHOHV in the rest
     qvps[X_RHO] = qvps[X_RHO].where(valid_datetimes_xr, qvps["RHOHV"])
-
 
 # Conditions to clean ML height values
 max_change = 400 # set a maximum value of ML height change from one timestep to another (in m)
@@ -288,61 +294,9 @@ if calculate_retrievals:
     for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
         print("   ... for "+stratname)
 
-        retrievals_qvpbased[stratname] = {}
-
-        # LWC
-        lwc_zh_zdr = 10**(0.058*stratqvp[X_DBZH] - 0.118*stratqvp[X_ZDR] - 2.36) # Reimann et al 2021 eq 3.7 (adjusted for Germany)
-        lwc_zh_zdr2 = 1.38*10**(-3) *10**(0.1*stratqvp[X_DBZH] - 2.43*stratqvp[X_ZDR] + 1.12*stratqvp[X_ZDR]**2 - 0.176*stratqvp[X_ZDR]**3 ) # used in S band, Ryzhkov 2022 PROM presentation https://www2.meteo.uni-bonn.de/spp2115/lib/exe/fetch.php?media=internal:uploads:all_hands_schneeferner_july2022:ryzhkov.pdf
-        lwc_kdp = 10**(0.568*np.log10(stratqvp[X_KDP]) + 0.06) # Reimann et al 2021(adjusted for Germany)
-
-        # IWC (Collected from Blanke et al 2023)
-        iwc_zh_t = 10**(0.06 * stratqvp[X_DBZH] - 0.0197*stratqvp["TEMP"] - 1.7) # empirical from Hogan et al 2006 Table 2
-
-        iwc_zdr_zh_kdp = xr.where(stratqvp[X_ZDR]>=0.4, # Carlin et al 2021 eqs 4b and 5b
-                                  4*10**(-3)*( stratqvp[X_KDP]*Lambda/( 1-wrl.trafo.idecibel(stratqvp[X_ZDR])**-1 ) ),
-                                  0.033 * ( stratqvp[X_KDP]*Lambda )**0.67 * wrl.trafo.idecibel(stratqvp[X_DBZH])**0.33 )
-
-        # Dm (ice collected from Blanke et al 2023)
-        Dm_ice_zh = 1.055*wrl.trafo.idecibel(stratqvp[X_DBZH])**0.271 # Matrosov et al. (2019) Fig 10 (S band)
-        Dm_ice_zh_kdp = 0.67*( wrl.trafo.idecibel(stratqvp[X_DBZH])/(stratqvp[X_KDP]*Lambda) )**(1/3) # Ryzhkov and Zrnic (2019). Idk exactly where does the 0.67 approximation comes from, Blanke et al. 2023 eq 10 and Carlin et al 2021 eq 5a cite Bukovčić et al. (2018, 2020) but those two references do not show this formula.
-        Dm_ice_zdp_kdp = -0.1 + 2*( (wrl.trafo.idecibel(stratqvp[X_DBZH])*(1-wrl.trafo.idecibel(stratqvp[X_ZDR])**-1 ) ) / (stratqvp[X_KDP]*Lambda) )**(1/2) # Ryzhkov and Zrnic (2019). Zdp = Z(1-ZDR**-1) from Carlin et al 2021
-
-        Dm_rain_zdr = 0.3015*stratqvp[X_ZDR]**3 - 1.2087*stratqvp[X_ZDR]**2 + 1.9068*stratqvp[X_ZDR] + 0.5090 # (for rain but tuned for Germany X-band, JuYu Chen, Zdr in dB, Dm in mm)
-
-        D0_rain_zdr2 = 0.171*stratqvp[X_ZDR]**3 - 0.725*stratqvp[X_ZDR]**2 + 1.48*stratqvp[X_ZDR] + 0.717 # (D0 from Hu and Ryzhkov 2022, used in S band data but could work for C band) [mm]
-        D0_rain_zdr3 = xr.where(stratqvp[X_ZDR]<1.25, # D0 from Bringi et al 2009 (C-band) eq. 1 [mm]
-                                0.0203*stratqvp[X_ZDR]**4 - 0.1488*stratqvp[X_ZDR]**3 + 0.2209*stratqvp[X_ZDR]**2 + 0.5571*stratqvp[X_ZDR] + 0.801,
-                                0.0355*stratqvp[X_ZDR]**3 - 0.3021*stratqvp[X_ZDR]**2 + 1.0556*stratqvp[X_ZDR] + 0.6844
-                                )
-        mu = 0
-        Dm_rain_zdr2 = D0_rain_zdr2 * (4+mu)/(3.67+mu) # conversion from D0 to Dm according to eq 4 of Hu and Ryzhkov 2022.
-        Dm_rain_zdr3 = D0_rain_zdr3 * (4+mu)/(3.67+mu)
-
-        # log(Nt)
-        Nt_ice_zh_iwc = (3.39 + 2*np.log10(iwc_zh_t) - 0.1*stratqvp[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, [log(1/L)]
-        Nt_ice_zh_iwc2 = (3.69 + 2*np.log10(iwc_zh_t) - 0.1*stratqvp[X_DBZH]) # Carlin et al 2021 eq. 7 originally in [log(1/m3)], transformed units here to [log(1/L)] by subtracting 3
-        Nt_ice_zh_iwc_kdp = (3.39 + 2*np.log10(iwc_zdr_zh_kdp) - 0.1*stratqvp[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, [log(1/L)]
-        Nt_ice_zh_iwc2_kdp = (3.69 + 2*np.log10(iwc_zdr_zh_kdp) - 0.1*stratqvp[X_DBZH]) # Carlin et al 2021 eq. 7 originally in [log(1/m3)], transformed units here to [log(1/L)] by subtracting 3
-        Nt_rain_zh_zdr = ( -2.37 + 0.1*stratqvp[X_DBZH] - 2.89*stratqvp[X_ZDR] + 1.28*stratqvp[X_ZDR]**2 - 0.213*stratqvp[X_ZDR]**3 )# Hu and Ryzhkov 2022 eq. 3 [log(1/L)]
-
-        # Put everything together
-        retrievals_qvpbased[stratname][find_loc(locs, ff[0])] = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
-                                                                 "lwc_zh_zdr2":lwc_zh_zdr2,
-                                                                 "lwc_kdp": lwc_kdp,
-                                                                 "iwc_zh_t": iwc_zh_t,
-                                                                 "iwc_zdr_zh_kdp": iwc_zdr_zh_kdp,
-                                                                 "Dm_ice_zh": Dm_ice_zh,
-                                                                 "Dm_ice_zh_kdp": Dm_ice_zh_kdp,
-                                                                 "Dm_ice_zdp_kdp": Dm_ice_zdp_kdp,
-                                                                 "Dm_rain_zdr": Dm_rain_zdr,
-                                                                 "Dm_rain_zdr2": Dm_rain_zdr2,
-                                                                 "Dm_rain_zdr3": Dm_rain_zdr3,
-                                                                 "Nt_ice_zh_iwc": Nt_ice_zh_iwc,
-                                                                 "Nt_ice_zh_iwc2": Nt_ice_zh_iwc2,
-                                                                 "Nt_ice_zh_iwc_kdp": Nt_ice_zh_iwc_kdp,
-                                                                 "Nt_ice_zh_iwc2_kdp": Nt_ice_zh_iwc2_kdp,
-                                                                 "Nt_rain_zh_zdr": Nt_rain_zh_zdr,
-                                                                 }).compute()
+        retrievals_qvpbased[stratname] = utils.calc_microphys_retrievals(stratqvp, Lambda = Lambda, mu=0.33,
+                                      X_DBZH=X_DBZH, X_ZDR=X_ZDR, X_KDP=X_KDP, X_TEMP="TEMP",
+                                      X_PHI=X_PHI )
 
         # Save retrievals
         for ll in retrievals_qvpbased[stratname].keys():
@@ -969,9 +923,6 @@ vars_to_plot = {"IWC/LWC [g/m^{3}]": [-0.1, 0.82, 0.02], # [-0.1, 0.82, 0.02],
                 }
 
 savedict = {"custom": None} # placeholder for the for loop below, not important
-
-savepath
-ds_to_plot
 
 for sn, savepath in enumerate(savepath_list):
     ds_to_plot = ds_to_plot_list[sn]

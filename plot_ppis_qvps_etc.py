@@ -60,26 +60,39 @@ os.environ['WRADLIB_DATA'] = '/home/jgiles/wradlib-data-main'
 os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = "eyJ0eXAiOiJKV1QiLCJvcmlnaW4iOiJFYXJ0aGRhdGEgTG9naW4iLCJzaWciOiJlZGxqd3RwdWJrZXlfb3BzIiwiYWxnIjoiUlMyNTYifQ.eyJ0eXBlIjoiVXNlciIsInVpZCI6ImpnaWxlcyIsImV4cCI6MTcwMzMzMjE5NywiaWF0IjoxNjk4MTQ4MTk3LCJpc3MiOiJFYXJ0aGRhdGEgTG9naW4ifQ.6DB5JJ9vdC7Vvwvaa7_mb_HbpVAh05Gz26dzdateN10C5lAd2X4a1_zClx7KkTpyoeVZSzkGSgtcd5Azc_btG0am4r2aJDGv4Zp4Vg55G4mcZMp-aTR7D520InQLMvqFacVO5wwmvfNWzMT4TyLGcXwPuX58s1oaFR5gRL9T30pXN9nEs-1aJg4LUl553PfdOvvom3q-JKXFtSTE2nLyEQOzWW36COl1aHwq6Wh4ykn4aq6ppTVAIeHdgkjtnQtxbhd9trm16fSbX9HIgG7n-drnz_v-WMeFuycMHa-zLDKnd3U3oZW6XAUq2akw2ddu6ChwoTZ4Ix2di7fudioo9Q"
 
 import warnings
-warnings.filterwarnings('ignore')
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # To be able to plot again in the Spyder panel, run this: %matplotlib inline
 
 #%% Load and process data
 
-#### Load the data into an xarray dataset (ds)
+#### Define parameters and load the data into an xarray dataset (ds)
 
+# ZDR offset loading parameters
 abs_zdr_off_min_thresh = 0. # if ZDR_OC has more negative values than the original ZDR
 # and the absolute median offset is < abs_zdr_off_min_thresh, then undo the correction (set to 0 to avoid this step)
-zdr_offset_perts = False # offset correct zdr per timesteps? if False, correct with daily offset
-mix_zdr_offsets = True # if True and zdr_offset_perts=False, try to
-# choose between daily LR-consistency and QVP offsets based on how_mix_zdr_offset.
-# If True and zdr_offset_perts=True, choose between all available timestep offsets
-# based on how_mix_zdr_offset. If False, just use the offsets according to the priority they are passed on.
+daily_corr = True # correct ZDR with daily offset? if False, correct with timestep offsets
+variability_check = True # Check the variability of the timestep offsets to decide between daily or timestep offsets?
+variability_thresh = 0.1 # Threshold value of timestep-based ZDR offsets variability to use if variability_check is True.
+first_offset_method_abs_priority = False # If True, give absolute priority to the offset from the first method if valid
+mix_offset_variants = True # Use timestep-offsets variants to fill NaNs?
+mix_daily_offset_variants = False # select the most appropriate offset variant based on how_mix_zdr_offset
+mix_zdr_offsets = True # Select the most appropriate daily offset or timestep offset based on how_mix_zdr_offset
 how_mix_zdr_offset = "count" # how to choose between the different offsets
 # if mix_zdr_offsets = True. "count" will choose the offset that has more data points
 # in its calculation (there must be a variable ZDR_offset_datacount in the loaded offset).
 # "neg_overcorr" will choose the offset that generates less negative ZDR values.
+abs_zdr_off_min_thresh = 0. # If abs_zdr_off_min_thresh > 0, check if offset corrected ZDR has more
+# negative values than the original ZDR and if the absolute median offset
+# is < abs_zdr_off_min_thresh, then undo the correction (set to 0 to avoid this step).
+propagate_forward = False # Propagate timestep offsets forward to fill NaNs?
+fill_with_daily_offset = True # Fill timestep NaN offsets with daily offset?
 
+# PHIDP processing / KDP calc parameters
+window0max = 25 # max value for window0 (only applied if window0 is given in meters)
+winlen0max = [9, 25] # max value for winlen0 (only applied if winlen0 is given in meters)
+
+# Data file
 ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/pro/vol5minng01/07/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2019-07-17/ANK/*F/8.0/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-08-09/AFY/*/10.0/*allmoms*"
@@ -92,6 +105,10 @@ ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-01-05/HTY/*/8.0/*allmoms*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-10/2021-10-30/ess/90gradstarng01/00/*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-07/2021-07-24/ess/90gradstarng01/00/*"
 ff = "/automount/realpep/upload/jgiles/dwd/2021/2021-07/2021-07-14/ess/vol5minng01/07/*allm*-hd5" # Ahr flood case
+
+ff = glob.glob(ff)[0]
+print("Loading "+ff)
+
 ds = utils.load_dwd_preprocessed(ff)
 # ds = utils.load_dwd_raw(ff)
 # ds = utils.load_dmi_preprocessed(ff)
@@ -177,14 +194,20 @@ if not isvolume:
 
         ds = utils.load_corrected_RHOHV(ds, rhoncpath+"/"+rhoncfile)
 
-        # Check that the corrected RHOHV does not have higher STD than the original (1 + std_margin)
-        # if that is the case we take it that the correction did not work well so we won't use it
-        std_margin = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_margin), otherwise use RHOHV
-        min_rho = 0.6 # min RHOHV value for filtering. Only do this test with the highest values to avoid wrong results
+        # Check that the corrected RHOHV does not have a lot more of low values
+        # if that is the case we take it that the correction did not work.
+        min_rho = 0.7 # min RHOHV value for filtering
+        count_tolerance = 0.5 # 50% tolerance
 
-        if ( ds["RHOHV_NC"].where(ds["RHOHV_NC"]>min_rho * (ds["z"]>min_height)).std() < ds[X_RHO].where(ds[X_RHO]>min_rho * (ds["z"]>min_height)).std()*(1+std_margin) ).compute():
-            # Change the default RHOHV name to the corrected one
-            X_RHO = "RHOHV_NC"
+        if ( ds["RHOHV_NC"].where(ds["RHOHV_NC"]<min_rho * (ds["z"]>min_height)).count() < ds[X_RHO].where(ds[X_RHO]<min_rho * (ds["z"]>min_height)).count()*(1+count_tolerance) ).compute():
+
+            # Check that the corrected RHOHV does not have higher STD than the original (1 + std_margin)
+            # if that is the case we take it that the correction did not work well so we won't use it
+            std_margin = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_margin), otherwise use RHOHV
+
+            if ( ds["RHOHV_NC"].where(ds["RHOHV_NC"]>min_rho * (ds["z"]>min_height)).std() < ds[X_RHO].where(ds[X_RHO]>min_rho * (ds["z"]>min_height)).std()*(1+std_margin) ).compute():
+                # Change the default RHOHV name to the corrected one
+                X_RHO = "RHOHV_NC"
 
 
     except OSError:
@@ -195,162 +218,68 @@ if not isvolume:
 else:
     print("Skipped Loading noise corrected RHOHV")
 
-#### Load ZDR offset
-
-# We define a custom exception to stop the next nexted loops as soon as a file is loaded
-class FileFound(Exception):
+#### Correct ZDR-elevation dependency
+try:
+    angle = float(ds.elevation.mean())
+except:
+    angle = float(ds.sweep_fixed_angle.mean())
+try:
+    ds = utils.zdr_elev_corr(ds, angle, zdr=[X_ZDR])
+    X_ZDR = X_ZDR+"_EC"
+except:
     pass
 
-# Define the offset paths and file names or take them from the default
+#### Load ZDR offset
 
+# Build dictionary of offset filepaths
 zdroffdir = utils.zdroffdir
 zdrofffile = utils.zdrofffile
+zdrofffile_ts = utils.zdrofffile_ts
 
-if zdr_offset_perts:
-    zdrofffile = utils.zdrofffile_ts
-    zdr_oc_dict = {}
+daily_zdr_off_paths = {}
+for offsetdir in zdroffdir:
+    daily_zdr_off_paths[offsetdir] = []
+    for offsetfile in zdrofffile:
+        try:
+            daily_zdr_off_paths[offsetdir].append(
+                utils.get_ZDR_offset_files(ff, country, offsetdir, offsetfile))
+        except FileNotFoundError:
+            pass
+
+zdr_off_paths = {}
+for offsetdir in zdroffdir:
+    zdr_off_paths[offsetdir] = []
+    for offsetfile in zdrofffile_ts:
+        try:
+            zdr_off_paths[offsetdir].append(
+                utils.get_ZDR_offset_files(ff, country, offsetdir, offsetfile))
+        except FileNotFoundError:
+            pass
 
 # Load the offsets
 
 if not isvolume:
     try:
         print("Loading ZDR offsets")
-        for zdrod in zdroffdir:
-            for zdrof in zdrofffile:
-                try:
-                    zdroffsetpath = os.path.dirname(utils.edit_str(ff, country, country+zdrod))
-                    if "/VP/" in zdrod and "/vol5minng01/" in ff:
-                        elevnr = ff.split("/vol5minng01/")[-1][0:2]
-                        zdroffsetpath = utils.edit_str(zdroffsetpath, "/vol5minng01/"+elevnr, "/90gradstarng01/00")
-
-                    if zdr_offset_perts:
-                        # if timestep-based offsets, we collect all of them and deal with them later
-                        if zdrod not in zdr_oc_dict.keys():
-                            zdr_oc_dict[zdrod] = []
-                        zdr_oc_dict[zdrod].append(utils.load_ZDR_offset(ds, X_ZDR, zdroffsetpath+"/"+zdrof, zdr_oc_name=X_ZDR+"_OC", attach_all_vars=True))
-                        continue
-                    else:
-                        ds = utils.load_ZDR_offset(ds, X_ZDR, zdroffsetpath+"/"+zdrof, zdr_oc_name=X_ZDR+"_OC", attach_all_vars=True)
-
-                    # if the offset comes from LR ZH-ZDR consistency, check it against
-                    # the QVP method (if available) and choose the best one based on how_mix_zdr_offset
-                    if "LR_consistency" in zdrod and mix_zdr_offsets:
-                        for zdrof2 in zdrofffile:
-                            try:
-                                zdrod2 = [pp for pp in zdroffdir if "QVP" in pp][0]
-                                zdroffsetpath_qvp = os.path.dirname(utils.edit_str(ff, country, country+zdrod2))
-                                ds_qvpoc = utils.load_ZDR_offset(ds, X_ZDR, zdroffsetpath_qvp+"/"+zdrof2, zdr_oc_name=X_ZDR+"_OC", attach_all_vars=True)
-
-                                if how_mix_zdr_offset == "neg_overcorr":
-                                    # calculate the count of negative values after each correction
-                                    neg_count_ds_lroc = (ds[X_ZDR+"_OC"].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum().compute()
-                                    neg_count_ds_qvpoc = (ds_qvpoc[X_ZDR+"_OC"].where((ds_qvpoc[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum().compute()
-
-                                    if neg_count_ds_lroc > neg_count_ds_qvpoc:
-                                        # continue with the correction with less negative values
-                                        print("Changing daily ZDR offset from LR_consistency to QVP")
-                                        ds = ds_qvpoc
-
-                                elif how_mix_zdr_offset == "count":
-                                    if "ZDR_offset_datacount" in ds and "ZDR_offset_datacount" in ds_qvpoc:
-                                        # Choose the offset that has the most data points in its calculation
-                                        if ds_qvpoc["ZDR_offset_datacount"] > ds["ZDR_offset_datacount"]:
-                                            # continue with the correction with more data points
-                                            print("Changing daily ZDR offset from LR_consistency to QVP")
-                                            ds = ds_qvpoc
-                                    else:
-                                        print("how_mix_zdr_offset == 'count' not possible, ZDR_offset_datacount not present in all offset datasets.")
-
-                                break
-                            except (OSError, ValueError):
-                                pass
-
-                    # calculate the count of negative values before and after correction
-                    neg_count_ds = (ds[X_ZDR].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum().compute()
-                    neg_count_ds_oc = (ds[X_ZDR+"_OC"].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum().compute()
-
-                    if neg_count_ds_oc > neg_count_ds and abs((ds[X_ZDR] - ds[X_ZDR+"_OC"]).compute().median()) < abs_zdr_off_min_thresh:
-                        # if the correction introduces more negative values and the offset is lower than abs_zdr_off_min_thresh, then do not correct
-                        ds[X_ZDR+"_OC"] = ds[X_ZDR]
-
-                    # Change the default ZDR name to the corrected one
-                    X_ZDR = X_ZDR+"_OC"
-
-                    # raise the custom exception to stop the loops
-                    raise FileFound
-
-                except (OSError, ValueError):
-                    pass
-
-        if zdr_offset_perts:
-            # Clean zdr_oc_dict of empty entries
-            zdr_oc_dict = {key: value for key, value in zdr_oc_dict.items() if value}
-
-            # Deal with all the timestep-based offsets
-            final_zdr_oc_list = []
-            if len(zdr_oc_dict) == 0:
-                # No ZDR timestep-based offsets were loaded, print a message
-                print("No timestep-based zdr offsets to load")
-            else:
-                for zdrod in zdroffdir:
-                    # For the offset from each method, we merge all variants (below ML,
-                    # below 1C, etc) to have as many values as possible. In the end we have
-                    # a list of final xarray dataarrays for each entry of zdroffdir.
-                    if zdrod in zdr_oc_dict.keys():
-                        if len(zdr_oc_dict[zdrod]) == 0:
-                            del(zdr_oc_dict[zdrod])
-                        elif len(zdr_oc_dict[zdrod]) == 1:
-                            # zdr_oc_dict[zdrod] = zdr_oc_dict[zdrod][0]
-                            final_zdr_oc_list.append(zdr_oc_dict[zdrod][0])
-                        else:
-                            zdr_oc_aux = zdr_oc_dict[zdrod][0].copy()
-                            for zdr_oc_auxn in zdr_oc_dict[zdrod][1:]:
-                                zdr_oc_aux = zdr_oc_aux.where(zdr_oc_aux[X_ZDR+"_OC"].notnull(), zdr_oc_auxn).copy()
-                            final_zdr_oc_list.append(zdr_oc_aux.copy())
-
-                # we get the first correction based on priority
-                final_zdr_oc = final_zdr_oc_list[0].copy()
-
-                # now we pick, for each timestep, the best offset correction depending on the priority,
-                # data quality and/or possible overcorrections
-                if len(final_zdr_oc_list) > 1 and mix_zdr_offsets:
-                    print("Merging valid ZDR offsets (timestep mode)")
-                    if how_mix_zdr_offset == "neg_overcorr":
-                        for final_zdr_ocn in final_zdr_oc_list[1:]:
-                            # calculate the count of negative values for each correction
-                            neg_count_final_zdr_oc = (final_zdr_oc.where((ds[X_RHO]>0.99) * (final_zdr_oc["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
-                            neg_count_final_zdr_ocn = (final_zdr_ocn.where((ds[X_RHO]>0.99) * (final_zdr_ocn["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
-                            # Are there less negatives in the first correction than the new one?
-                            neg_count_final_cond = neg_count_final_zdr_oc < neg_count_final_zdr_ocn
-                            # Retain first ZDR_OC where the condition is True, otherwise use the new ZDR_OC
-                            final_zdr_oc = final_zdr_oc.where(neg_count_final_cond, final_zdr_ocn).copy()
-
-                    elif how_mix_zdr_offset == "count":
-                        for final_zdr_ocn in final_zdr_oc_list[1:]:
-                            if "ZDR_offset_datacount" in final_zdr_oc and "ZDR_offset_datacount" in final_zdr_ocn:
-                                # Choose the offset that has the most data points in its calculation
-                                final_zdr_oc = final_zdr_oc.where(final_zdr_oc["ZDR_offset_datacount"] > final_zdr_ocn["ZDR_offset_datacount"], final_zdr_ocn).copy()
-
-                    else:
-                        print("how_mix_zdr_offset = "+how_mix_zdr_offset+" is not a valid option, no mixing of offsets was done")
-
-                # Get only ZDR from now on
-                final_zdr_oc = final_zdr_oc[X_ZDR+"_OC"]
-
-                # Compare each timestep to the original ZDR, if the offsets overcorrect and the offset is < abs_zdr_off_min_thresh, discard correction
-                neg_count_final_zdr_oc = (final_zdr_oc.where((ds[X_RHO]>0.99) * (final_zdr_oc["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
-                neg_count_final_zdr = (ds[X_ZDR].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
-                neg_count_final_cond = (neg_count_final_zdr_oc > neg_count_final_zdr) * (abs((ds[X_ZDR] - final_zdr_oc).compute().median(("range", "azimuth"))) < abs_zdr_off_min_thresh)
-
-                # Set the final ZDR_OC and change the default ZDR name to the corrected one
-                ds[X_ZDR+"_OC"] = final_zdr_oc.where(~neg_count_final_cond, ds[X_ZDR]).where(final_zdr_oc.notnull(), ds[X_ZDR])
-                X_ZDR = X_ZDR+"_OC"
-
-        else:
-            # If no ZDR offset was loaded, print a message
-            print("No zdr offset to load: "+zdroffsetpath+"/"+zdrof)
-    except FileFound:
-        pass
+        ds = utils.load_best_ZDR_offset(ds, X_ZDR,
+                                        zdr_off_paths=zdr_off_paths,
+                                        daily_zdr_off_paths=daily_zdr_off_paths,
+                                 zdr_off_name="ZDR_offset", zdr_oc_name=X_ZDR+"_OC",
+                                 attach_all_vars=True,
+                                 daily_corr = daily_corr, variability_check = variability_check,
+                                 variability_thresh = variability_thresh,
+                                 first_offset_method_abs_priority = first_offset_method_abs_priority,
+                                 mix_offset_variants = mix_offset_variants,
+                                 mix_daily_offset_variants = mix_daily_offset_variants,
+                                 mix_zdr_offsets = mix_zdr_offsets, how_mix_zdr_offset = how_mix_zdr_offset,
+                                 abs_zdr_off_min_thresh = abs_zdr_off_min_thresh,
+                                 X_RHO=X_RHO, min_height=min_height,
+                                 propagate_forward = propagate_forward,
+                                 fill_with_daily_offset = fill_with_daily_offset,
+                                 )
+        X_ZDR = X_ZDR+"_OC"
+    except:
+        print("Loading ZDR offsets failed")
 else:
     print("Skipped Loading ZDR offsets")
 
@@ -358,7 +287,7 @@ else:
 
 interpolation_method_ML = "linear" # for interpolating PHIDP in the ML
 
-phase_proc_params = utils.get_phase_proc_params(ff) # get default phase processing parameters
+phase_proc_params = utils.get_phase_proc_params(ff).copy() # get default phase processing parameters
 
 # Check that PHIDP is in data, otherwise skip ML detection
 if X_PHI in ds.data_vars:
@@ -368,29 +297,63 @@ if X_PHI in ds.data_vars:
     #     globals()[param_name] = phase_proc_params[param_name]
     window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian, rhohv_thresh_gia, grad_thresh = phase_proc_params.values() # explicit alternative
 
+    # Check if window0 and winlen0 are in m or in number of gates and apply max threshold
+    rangeres = float(ds.range.diff("range").mean().compute())
+    if window0 > 500:
+        window0 = int(round(window0/rangeres))
+        if not window0%2>0: window0 = window0 + 1
+        window0 = min(window0max, window0)
+    if isinstance(winlen0, list):
+        if winlen0[0] > 500:
+            wl0 = int(round(winlen0[0]/rangeres))
+            if not wl0%2>0: wl0 = wl0 + 1
+            winlen0[0] = max(winlen0max[0], wl0)
+        if winlen0[1] > 500:
+            wl0 = int(round(winlen0[1]/rangeres))
+            if not wl0%2>0: wl0 = wl0 + 1
+            winlen0[1] = min(winlen0max[1], wl0)
+    else:
+        if winlen0 > 500:
+            winlen0 = int(round(winlen0/rangeres))
+            if not winlen0%2>0: winlen0 = winlen0 + 1
+            winlen0 = min(winlen0max, winlen0)
+
     # phidp may be already preprocessed (turkish case), then only offset-correct (no smoothing) and then vulpiani
     if "PHIDP" not in X_PHI: # This is now always skipped with this definition ("PHIDP" is in both X_PHI); i.e., we apply full processing to turkish data too
         # calculate phidp offset
-        ds = utils.phidp_offset_correction(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
+        ds_phiproc = utils.phidp_offset_correction(utils.apply_min_max_thresh(ds, {"SNRH":10, "SNRHC":10, "SQIH":0.5}, {}, skipfullna=True),
+                                           X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                              dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
                              rng_min=1000, rng=rng, azmedian=azmedian, tolerance=(0,5)) # shorter rng, rng_min for finer turkish data
 
-        phi_masked = ds[X_PHI+"_OC"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["range"]>min_range) )
+        phi_masked = ds_phiproc[X_PHI+"_OC"].where((ds[X_RHO] >= 0.8) * (ds[X_DBZH] >= 0.) * (ds["range"]>min_range) )
 
     else:
-        ds = utils.phidp_processing(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
+        ds_phiproc = utils.phidp_processing(utils.apply_min_max_thresh(ds, {"SNRH":10, "SNRHC":10, "SQIH":0.5}, {}, skipfullna=True),
+                                    X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                              dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
                              rng=rng, azmedian=azmedian, tolerance=(0,5), clean_invalid=False, fillna=False)
 
-        phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["range"]>min_range) )
+        phi_masked = ds_phiproc[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.8) * (ds[X_DBZH] >= 0.) * (ds["range"]>min_range) )
+
+    # Assign new vars to ds
+    ds = ds.assign(ds_phiproc[[X_PHI+"_OC_SMOOTH", X_PHI+"_OFFSET", X_PHI+"_OC"]])
 
     # Assign phi_masked
     assign = { X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs) }
     ds = ds.assign(assign)
 
     # derive KDP from PHIDP (Vulpiani)
-
-    ds = utils.kdp_phidp_vulpiani(ds, winlen0, X_PHI+"_OC_MASKED", min_periods=winlen0//2+1)
+    if isinstance(winlen0, list):
+        # if winlen0 is a list, use the first value (small window) for strong rain (SR, DBZH>40) and
+        # use the second value (large window) for light rain (LR, DBZH<=40)
+        ds_kdpSR = utils.kdp_phidp_vulpiani(ds, winlen0[0], X_PHI+"_OC_MASKED", min_periods=max(3, int((winlen0[0] - 1) / 4)))[["KDP_CONV", "PHI_CONV"]]
+        ds_kdpLR = utils.kdp_phidp_vulpiani(ds, winlen0[1], X_PHI+"_OC_MASKED", min_periods=max(3, int((winlen0[1] - 1) / 4)))[["KDP_CONV", "PHI_CONV"]]
+        ds_kdp = xr.where(ds[X_DBZH]>40,
+                          ds_kdpSR, ds_kdpLR)
+        ds = ds.assign(ds_kdp)
+    else:
+        ds = utils.kdp_phidp_vulpiani(ds, winlen0, X_PHI+"_OC_MASKED", min_periods=max(3, int((winlen0 - 1) / 4)))
 
     X_PHI = X_PHI+"_OC" # continue using offset corrected PHI
 
@@ -448,6 +411,9 @@ if X_PHI in ds.data_vars:
 # ds_qvp = utils.attach_ERA5_TEMP(ds_qvp, path=loc.join(utils.era5_dir.split("loc")))
 # ds = utils.attach_ERA5_TEMP(ds, path=loc.join(utils.era5_dir.split("loc")))
 
+# rechunk to avoid problems
+ds = ds.chunk({"time":10, "azimuth":-1, "range":-1})
+
 #### Discard possible erroneous ML values
 if "height_ml_new_gia" in ds_qvp:
     ## First, filter out ML heights that are too high (above selected isotherm)
@@ -473,30 +439,59 @@ if not isvolume:
     #### Attenuation correction (NOT PROVED THAT IT WORKS NICELY ABOVE THE ML)
     if X_PHI in ds.data_vars:
         ds = utils.attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.16, betaml = 0.022,
-                                           dbzh="DBZH", zdr=["ZDR_OC", "ZDR"], phidp=["UPHIDP_OC", "PHIDP_OC"],
+                                           dbzh="DBZH", zdr=["ZDR", "ZDR_OC", "ZDR_EC_OC"],
+                                           phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
                                            ML_bot = "height_ml_bottom_new_gia", ML_top = "height_ml_new_gia",
                                            temp = "TEMP", temp_mlbot = 3, temp_mltop = 0, z_mlbot = 2000, dz_ml = 500,
                                            interpolate_deltabump = True )
 
-        ds_qvp = ds_qvp.assign( utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5})[[vv for vv in ds if "_AC" in vv]] )
+        ds_qvp = ds_qvp.assign( utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10,"SNRHC":10, "SQIH":0.5})[[vv for vv in ds if "_AC" in vv]] )
+        X_DBZH = X_DBZH+"_AC"
+        X_ZDR = X_ZDR+"_AC"
 
     #### Fix KDP in the ML using PHIDP:
     if X_PHI in ds.data_vars:
-        ds = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen=winlen0, min_periods=winlen0//2+1)
+        # derive KDP from PHIDP (Vulpiani)
+        if isinstance(winlen0, list):
+            # if winlen0 is a list, use the first value (small window) for strong rain (SR, DBZH>40) and
+            # use the second value (large window) for light rain (LR, DBZH<=40)
+            ds_kdpSR_mlcorr = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen0[0], min_periods=max(3, int((winlen0[0] - 1) / 4)))[["KDP_ML_corrected"]]
+            ds_kdpLR_mlcorr = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen0[1], min_periods=max(3, int((winlen0[1] - 1) / 4)))[["KDP_ML_corrected"]]
+            ds_kdp_mlcorr = xr.where(ds[X_DBZH]>40,
+                              ds_kdpSR_mlcorr, ds_kdpLR_mlcorr)
+            ds = ds.assign(ds_kdp_mlcorr)
+        else:
+            ds = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen=winlen0, min_periods=max(3, int((winlen0 - 1) / 4)))
 
-        ds_qvp = ds_qvp.assign({"KDP_ML_corrected": utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5})["KDP_ML_corrected"]})
+        # Mask KDP_ML_correction with PHIDP_OC_MASKED
+        ds["KDP_ML_corrected"] = ds["KDP_ML_corrected"].where(ds[X_PHI+"_MASKED"].notnull())
+
+        ds_qvp = ds_qvp.assign({"KDP_ML_corrected": utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10,"SNRHC":10, "SQIH":0.5})["KDP_ML_corrected"]})
+
+    #### Correct KDP elevation dependency
+    try:
+        angle = float(ds.elevation.mean())
+    except:
+        angle = float(ds.sweep_fixed_angle.mean())
+    try:
+        ds = utils.kdp_elev_corr(ds, angle, kdp=["KDP_CONV", "KDP_ML_corrected"])
+        ds_qvp = utils.kdp_elev_corr(ds_qvp, angle, kdp=["KDP_CONV", "KDP_ML_corrected"])
+        X_KDP = "KDP_ML_corrected_EC"
+    except:
+        pass
 
     #### Classification of stratiform events based on entropy
     if X_PHI in ds.data_vars:
 
         # calculate linear values for ZH and ZDR
-        ds = ds.assign({"DBZH_lin": wrl.trafo.idecibel(ds[X_DBZH]), "ZDR_lin": wrl.trafo.idecibel(ds[X_ZDR]) })
+        ds = ds.assign({X_DBZH+"_lin": wrl.trafo.idecibel(ds[X_DBZH]), X_ZDR+"_lin": wrl.trafo.idecibel(ds[X_ZDR]) })
 
         # calculate entropy
-        Entropy = utils.calculate_pseudo_entropy(ds.where(ds[X_DBZH]>0), dim='azimuth', var_names=["DBZH_lin", "ZDR_lin", X_RHO, "KDP_ML_corrected"], n_lowest=60)
+        Entropy = utils.calculate_pseudo_entropy(utils.apply_min_max_thresh(ds, {X_DBZH:0, "SNRH":10, "SNRHC":10,"SQIH":0.5}, {}),
+                                                 dim='azimuth', var_names=[X_DBZH+"_lin", X_ZDR+"_lin", X_RHO, "KDP_ML_corrected_EC"], n_lowest=60)
 
         # concate entropy for all variables and get the minimum value
-        strati = xr.concat((Entropy.entropy_DBZH_lin, Entropy.entropy_ZDR_lin, Entropy["entropy_"+X_RHO], Entropy.entropy_KDP_ML_corrected),"entropy")
+        strati = xr.concat((Entropy["entropy_"+X_DBZH+"_lin"], Entropy["entropy_"+X_ZDR+"_lin"], Entropy["entropy_"+X_RHO], Entropy["entropy_"+"KDP_ML_corrected_EC"]),"entropy")
         min_trst_strati = strati.min("entropy")
 
         # assign to datasets
@@ -508,8 +503,22 @@ if not isvolume:
 else:
     print("Ignored: Atten corr, fix KDP in the ML and entropy calculation")
 
-#!!! Add calculate retrievals
+# Calculate attenuation with the ZPHI method, only used for one of the retrievals
+ds_zphi = utils.attenuation_corr_zphi(ds , alpha = 0.08, beta = 0.02,
+                          X_DBZH="DBZH", X_ZDR=["_".join(X_ZDR.split("_")[:-1]) if "_AC" in X_ZDR else X_ZDR][0],
+                          X_PHI=X_PHI+"_MASKED")
 
+ds_qvp = ds_qvp.assign( utils.compute_qvp(ds_zphi, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10,"SNRHC":10, "SQIH":0.5})[["AH"]] )
+
+# filter out values close to the ground
+ds_qvp = ds_qvp.where(ds_qvp["z"]>min_height)
+
+#### Calculate retrievals
+
+retrievals_qvp = utils.calc_microphys_retrievals(ds_qvp, Lambda = 53.1, mu=0.33,
+                              X_DBZH=X_DBZH, X_ZDR=X_ZDR, X_KDP="KDP_ML_corrected_EC", X_TEMP="TEMP",
+                              X_PHI=X_PHI+"_MASKED"
+                              )
 #%% Test: load original ZDR offsets from files
 import re
 
@@ -550,7 +559,7 @@ zdrcal = create_zdrcal_dataset("HTY")
 
 
 
-#%% Small test (ZDR OC after atten correction)
+#%% TEST: ZDR OC after atten correction
 # LR consistency correction after atten corr
 zdr_offset_lr_belowML_step = utils.zhzdr_lr_consistency(ds, zdr="ZDR_AC", dbzh="DBZH_AC", rhohv=X_RHO, min_h=min_height, timemode="step")
 zdr_offset_lr_below1c_step = utils.zhzdr_lr_consistency(ds, zdr="ZDR_AC", dbzh="DBZH_AC", rhohv=X_RHO, mlbottom=1, min_h=min_height, timemode="step")
@@ -620,6 +629,41 @@ plt.title("ZDR offset differences before-after atten corr")
 plt.grid()
 plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only the hour in the x-axis
 
+#%% TEST: try the ZPHI method for atten correction and KDP calculation
+ds_zphi = utils.attenuation_corr_zphi(ds , alpha = 0.08, beta = 0.02,
+                          X_DBZH="DBZH", X_ZDR="ZDR_OC", X_PHI="UPHIDP_OC_MASKED")
+
+# Select a timestep to plot
+tsel = "2021-07-14T03"
+datasel = ds_zphi.sel({"time": tsel}, method="nearest")
+
+# Plot attenuation
+im = datasel.AH.wrl.vis.plot(cmap="turbo", levels=np.arange(0, 0.5, 0.025))
+
+# Plot PHIDP from ZPHI
+im = datasel.PHIDP_ZPHI.wrl.vis.plot(cmap="turbo", vmin=0, vmax=50)
+
+# Plot UPHIDP_OC
+im = datasel.UPHIDP_OC.wrl.vis.plot(cmap="turbo", vmin=0, vmax=50)
+
+# Plot UPHIDP_OC_MASKED
+im = datasel.UPHIDP_OC_MASKED.wrl.vis.plot(cmap="turbo", vmin=0, vmax=50)
+
+# Plot DBZH
+im = datasel.DBZH.wrl.vis.plot(cmap="turbo", vmin=0, vmax=50)
+
+# Plot DBZH_AC
+im = datasel.DBZH_AC.wrl.vis.plot(cmap="turbo", vmin=0, vmax=50)
+
+# Plot KDP_ML_corrected
+im = datasel.KDP_ML_corrected.wrl.vis.plot(cmap="turbo", vmin=0, vmax=1)
+
+# Plot KDP from AH
+im = (datasel.AH/0.08).wrl.vis.plot(cmap="turbo", vmin=0, vmax=1)
+
+# add AH to ds_qvp
+ds_qvp = ds_qvp.assign( utils.compute_qvp(ds_zphi, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5})[["AH"]] )
+
 #%% Plot simple PPI
 
 tsel = "2015-01-05T20:00"
@@ -646,7 +690,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
 mom = "DBZH"
 xylims = 40000 # xlim and ylim (from -xylims to xylims)
 
-ticks = radarmet.visdict14[mom]["ticks"]
+ticks = radarmet.visdict14[mom.split("_")[0]]["ticks"]
 cmap0 = mpl.colormaps.get_cmap("RdBu_r")
 cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
 norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
@@ -734,10 +778,10 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "DBZH"
+mom = "KDP_ML_corrected"
 min_entropy_thresh = 0.85
 
-ticks = radarmet.visdict14[mom]["ticks"]
+ticks = radarmet.visdict14[mom.split("_")[0]]["ticks"]
 cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
 cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
 # norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
@@ -777,6 +821,281 @@ else:
 plt.title(mom+elevtitle+". "+str(datasel.time.values[0]).split(".")[0])
 plt.show()
 plt.close()
+
+#%% Plot CFTDs
+#%%% Filters (conditions for stratiform)
+print("Filtering stratiform conditions...")
+
+X_KDP = "KDP_ML_corrected_EC"
+min_entropy_thresh = 0.85
+
+# Check that RHOHV_NC is actually better (less std) than RHOHV, otherwise just use RHOHV, on a per-day basis
+std_margin = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_margin), otherwise use RHOHV
+min_rho = 0.7 # min RHOHV value for filtering. Only do this test with the highest values to avoid wrong results
+count_tolerance = 0.5 # 50% tolerance, for checking if there are substantially more lower values in RHOHV_NC
+
+if "_NC" in X_RHO:
+    # Check that the corrected RHOHV does not have higher STD than the original (1 + std_margin)
+    # if that is the case we take it that the correction did not work well so we won't use it
+    cond_rhohv1 = (
+                    ds_qvp[X_RHO].where(ds_qvp[X_RHO]>min_rho).resample({"time":"D"}).std(dim=("time", "z")) < \
+                    ds_qvp["RHOHV"].where(ds_qvp["RHOHV"]>min_rho).resample({"time":"D"}).std(dim=("time", "z"))*(1+std_margin)
+                    ).compute()
+
+    cond_rhohv2 = ( ds_qvp[X_RHO].where(ds_qvp[X_RHO]<min_rho ).resample({"time":"D"}).count() < \
+                   ds_qvp["RHOHV"].where(ds_qvp["RHOHV"]<min_rho ).resample({"time":"D"}).count()*(1+count_tolerance) ).compute()
+
+    cond_rhohv = cond_rhohv1 * cond_rhohv2
+
+    # create an xarray.Dataarray with the valid timesteps
+    valid_dates = cond_rhohv.where(cond_rhohv, drop=True).time.dt.date
+    valid_datetimes = [date.values in valid_dates for date in ds_qvp.time.dt.date]
+    valid_datetimes_xr = xr.DataArray(valid_datetimes, coords={"time": ds_qvp["time"]})
+
+    # Redefine RHOHV_NC: keep it in the valid datetimes, put RHOHV in the rest
+    ds_qvp[X_RHO] = ds_qvp[X_RHO].where(valid_datetimes_xr, ds_qvp["RHOHV"])
+
+
+# Conditions to clean ML height values
+max_change = 400 # set a maximum value of ML height change from one timestep to another (in m)
+max_std = 200 # set a maximum value of ML std from one timestep to another (in m)
+time_window = 5 # set timestep window for the std computation (centered)
+min_period = 3 # set minimum number of valid ML values in the window (centered)
+
+cond_ML_bottom_change = abs(ds_qvp["height_ml_bottom_new_gia"].diff("time").compute())<max_change
+cond_ML_bottom_std = ds_qvp["height_ml_bottom_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
+# cond_ML_bottom_minlen = ds_qvp["height_ml_bottom_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
+
+cond_ML_top_change = abs(ds_qvp["height_ml_new_gia"].diff("time").compute())<max_change
+cond_ML_top_std = ds_qvp["height_ml_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
+# cond_ML_top_minlen = ds_qvp["height_ml_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
+
+allcond = cond_ML_bottom_change * cond_ML_bottom_std * cond_ML_top_change * cond_ML_top_std
+
+# Filter only fully stratiform pixels (min entropy >= min_entropy_thresh and ML detected)
+ds_qvp_strat = ds_qvp.where( (ds_qvp["min_entropy"]>=min_entropy_thresh).compute() & allcond, drop=True)
+# Relaxed alternative: Filter ds_qvp with at least 50% of stratiform pixels (min entropy >= min_entropy_thresh and ML detected)
+ds_qvp_strat_relaxed = ds_qvp.where( ( (ds_qvp["min_entropy"]>=min_entropy_thresh).sum("z").compute() >= ds_qvp[X_DBZH].count("z").compute()/2 ) & allcond, drop=True)
+
+# Filter out non relevant values
+ds_qvp_strat_fil = ds_qvp_strat.where((ds_qvp_strat[X_TH] > -10 )&
+                                  (ds_qvp_strat[X_KDP] > -0.1)&
+                                  (ds_qvp_strat[X_KDP] < 3)&
+                                  (ds_qvp_strat[X_RHO] > 0.7)&
+                                  (ds_qvp_strat[X_ZDR] > -1) &
+                                  (ds_qvp_strat[X_ZDR] < 3))
+
+ds_qvp_strat_relaxed_fil = ds_qvp_strat_relaxed.where((ds_qvp_strat_relaxed[X_TH] > -10 )&
+                                  (ds_qvp_strat_relaxed[X_KDP] > -0.1)&
+                                  (ds_qvp_strat_relaxed[X_KDP] < 3)&
+                                  (ds_qvp_strat_relaxed[X_RHO] > 0.7)&
+                                  (ds_qvp_strat_relaxed[X_ZDR] > -1) &
+                                  (ds_qvp_strat_relaxed[X_ZDR] < 3))
+
+try:
+    ds_qvp_strat_fil = ds_qvp_strat_fil.where(ds_qvp_strat_fil["SNRHC"]>10)
+    ds_qvp_strat_relaxed_fil = ds_qvp_strat_relaxed_fil.where(ds_qvp_strat_relaxed_fil["SNRHC"]>10)
+except KeyError:
+    ds_qvp_strat_fil = ds_qvp_strat_fil.where(ds_qvp_strat_fil["SNRH"]>10)
+    ds_qvp_strat_relaxed_fil = ds_qvp_strat_relaxed_fil.where(ds_qvp_strat_relaxed_fil["SNRH"]>10)
+except:
+    print("Could not filter out low SNR")
+
+#%%% CFTDs plot
+
+# Which to plot, ds_qvp_strat_fil or ds_qvp_strat_relaxed_fil
+ds_to_plot = ds_qvp_strat_fil.copy()
+
+# Variables to plot
+DBZH_plot = X_DBZH
+ZDR_plot = X_ZDR
+KDP_plot = X_KDP
+RHO_plot = X_RHO
+
+# adjustment from K to C (disabled now because I know that all qvps have ERA5 data)
+adjtemp = 0
+# if (qvps_strat_fil["TEMP"]>100).any(): #if there is any temp value over 100, we assume the units are Kelvin
+#     print("at least one TEMP value > 100 found, assuming TEMP is in K and transforming to C")
+#     adjtemp = -273.15 # adjustment parameter from K to C
+
+# top temp limit
+ytlim=-20
+
+# Temp bins
+tb=1# degress C
+
+# Min counts per Temp layer
+mincounts=0
+
+#Colorbar limits and step
+cblim=[0,10]
+colsteps=10
+
+cmaphist="Oranges"
+
+# Plot horizontally
+# DMI
+# Native worst-resolution of the data (for 1-byte moments)
+# DBZH: 0.5 dB
+# ZDR: 0.0625 dB
+# KDP: complicated. From 0.013 at KDP approaching zero to 7.42 at extreme KDP. KDP min absolute value is 0.25 and max abs is 150 (both positive and negative)
+# RHOHV: scales with a square root (finer towards RHOHV=1), so from 0.00278 at RHOHV=0.7 to 0.002 resolution at RHOHV=1
+# PHIDP: 0.708661 deg
+if country=="dmi":
+
+    vars_to_plot = {DBZH_plot: [0, 45.5, 0.5],
+                    ZDR_plot: [-0.505, 2.05, 0.1],
+                    KDP_plot:  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
+                    RHO_plot: [0.9, 1.002, 0.002]}
+
+    fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+    for nn, vv in enumerate(vars_to_plot.keys()):
+        so=False
+        binsx2=None
+        rd=10 # arbitrarily large decimal position to round to (so it is actually not rounded)
+        if "DBZH" in vv:
+            so=True
+            binsx2 = [0, 46, 1]
+            rd = 1 # decimal position to round to
+        if "ZDR" in vv:
+            so=True
+            binsx2 = [-0.5, 2.1, 0.1]
+            rd=1
+        if "KDP" in vv:
+            so=True #True
+            binsx2 = [-0.1, 0.52, 0.02]
+            rd=2
+        if "RHOHV" in vv:
+            so = True
+            binsx2 = [0.9, 1.005, 0.005]
+            rd=3
+
+        #!!! For some reason SVS now requires rechunking here
+        utils.hist2d(ax[nn], ds_to_plot[vv].chunk({"time":-1}).round(rd),
+                     ds_to_plot["TEMP"]+adjtemp,
+                     whole_x_range=True,
+                     binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                     cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
+                     fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                     cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
+        ax[nn].set_ylim(15,ytlim)
+        ax[nn].set_xlabel(vv, fontsize=10)
+
+        ax[nn].tick_params(labelsize=15) #change font size of ticks
+        plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+
+    ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+
+
+# DWD
+# plot CFTDs moments
+if country=="dwd":
+
+    vars_to_plot = {DBZH_plot: [0, 46, 1],
+                    ZDR_plot: [-0.5, 2.1, 0.1],
+                    KDP_plot: [-0.1, 0.52, 0.02],
+                    RHO_plot: [0.9, 1.004, 0.004]}
+
+    fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+    for nn, vv in enumerate(vars_to_plot.keys()):
+        so=False
+        binsx2=None
+        adj=1
+        if "RHOHV" in vv:
+            so = True
+            binsx2 = [0.9, 1.005, 0.005]
+        if "KDP" in vv:
+            adj=1
+        utils.hist2d(ax[nn], ds_to_plot[vv]*adj,
+                     ds_to_plot["TEMP"]+adjtemp,
+                     whole_x_range=True,
+                     binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                     cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
+                     fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                     cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
+        ax[nn].set_ylim(15,ytlim)
+        ax[nn].set_xlabel(vv, fontsize=10)
+
+        ax[nn].tick_params(labelsize=15) #change font size of ticks
+        plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+
+    ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+
+
+#%%% CFTDs retrievals Plot
+# We assume that everything above ML is frozen and everything below is liquid
+
+ds_to_plot = retrievals_qvp.where(ds_qvp_strat_fil.DBZH).compute().assign_coords(ds_qvp_strat_fil[["TEMP"]])
+
+ds_to_plot["iwc_hybrid"] = xr.where(ds_qvp_strat_fil[X_KDP]>0.1,
+                                    ds_to_plot["iwc_zdr_zh_kdp_carlin2021"],
+                                    ds_to_plot["iwc_zh_t_hogan2006_combined"]) # this one can be adjusted
+
+ds_to_plot["Nt_hybrid_carlin2021"] = xr.where(ds_qvp_strat_fil[X_KDP]>0.1,
+                                    ds_to_plot["Nt_ice_iwc_zdr_zh_kdp_carlin2021"],
+                                    ds_to_plot["Nt_ice_iwc_zh_t_carlin2021"]) # this one can be adjusted
+
+# adjustment from K to C (disabled now because I know that all qvps have ERA5 data)
+adjtemp = 0
+# if (qvps_strat_fil["TEMP"]>100).any(): #if there is any temp value over 100, we assume the units are Kelvin
+#     print("at least one TEMP value > 100 found, assuming TEMP is in K and transforming to C")
+#     adjtemp = -273.15 # adjustment parameter from K to C
+
+# top temp limit (only works if auto_plot=False)
+ytlim=-20
+
+# Select which retrievals to plot
+IWC = "iwc_hybrid" # iwc_zh_t_hogan2006, iwc_zh_t_hogan2006_model, iwc_zh_t_hogan2006_combined, iwc_zdr_zh_kdp_carlin2021
+LWC = "lwc_hybrid_reimann2021" # lwc_zh_zdr_reimann2021, lwc_zh_zdr_rhyzkov2022, lwc_ah_reimann2021, lwc_kdp_reimann2021, lwc_hybrid_reimann2021
+Dm_ice = "Dm_ice_zdp_kdp_carlin2021" # Dm_ice_zh_matrosov2019, Dm_ice_zh_kdp_carlin2021, Dm_ice_zdp_kdp_carlin2021, Dm_hybrid_blanke2023
+Dm_rain = "Dm_rain_zdr_bringi2009" # Dm_rain_zdr_chen, Dm_rain_zdr_hu2022 or Dm_rain_zdr_bringi2009
+Nt_ice = "Nt_hybrid_carlin2021" # Nt_ice_iwc_zh_t_hu2022, Nt_ice_iwc_zh_t_carlin2021, Nt_ice_iwc_zh_t_combined_hu2022, Nt_ice_iwc_zh_t_combined_carlin2021, Nt_ice_iwc_zdr_zh_kdp_hu2022, Nt_ice_iwc_zdr_zh_kdp_carlin2021
+Nt_rain = "Nt_rain_zh_zdr_rhyzkov2020" # Nt_rain_zh_zdr_rhyzkov2020
+
+vars_to_plot = {"IWC/LWC [g/m^{3}]": [-0.1, 0.82, 0.02], # [-0.1, 0.82, 0.02],
+                "Dm [mm]": [0, 4.1, 0.1], # [0, 3.1, 0.1],
+                "Nt [log10(1/L)]": [-2, 2.1, 0.1], # [-2, 2.1, 0.1],
+                }
+
+
+
+retreivals_merged = xr.Dataset({
+                                "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].z > ds_to_plot.height_ml_new_gia,
+                                                                  ds_to_plot[LWC].where(ds_to_plot[LWC].z < ds_to_plot.height_ml_bottom_new_gia ) ),
+                                "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].z > ds_to_plot.height_ml_new_gia,
+                                                                  ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ),
+                                "Nt [log10(1/L)]": (ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].z > ds_to_plot.height_ml_new_gia,
+                                                                  ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ) ),
+    })
+
+fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15,5), width_ratios=(1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+for nn, vv in enumerate(vars_to_plot.keys()):
+    so=False
+    binsx2=None
+    adj=1
+    if "RHOHV" in vv:
+        so = True
+        binsx2 = [0.9, 1.005, 0.005]
+    if "KDP" in vv:
+        adj=1
+    #!!! For some reason SVS now requires rechunking here
+    utils.hist2d(ax[nn], retreivals_merged[vv].chunk({"time":-1})*adj,
+                 retreivals_merged["TEMP"]+adjtemp,
+                 whole_x_range=True,
+                 binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                 cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
+                 fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                 cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
+    ax[nn].set_ylim(15,ytlim)
+    ax[nn].set_xlabel(vv, fontsize=10)
+
+    ax[nn].tick_params(labelsize=15) #change font size of ticks
+    plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+
+ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
 
 #%% TEST: Try different methods for stratiform classification
 # lets try only ZH first

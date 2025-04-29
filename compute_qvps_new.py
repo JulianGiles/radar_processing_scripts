@@ -26,7 +26,7 @@ import xarray as xr
 import numpy as np
 
 import warnings
-warnings.filterwarnings('ignore')
+warnings.filterwarnings('ignore', category=RuntimeWarning)
 
 try:
     from Scripts.python.radar_processing_scripts import utils
@@ -42,30 +42,41 @@ start_time = time.time()
 
 # path0 = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/" # For testing
 path0 = sys.argv[1] # read path from console
-overwrite = True # overwrite existing files?
+overwrite = False # overwrite existing files?
 save_retrievals_ppi = False # Save PPIs of microphysical retrievals? (this is pretty slow and uses substantial storage)
 
+# ZDR offset loading parameters
 abs_zdr_off_min_thresh = 0. # if ZDR_OC has more negative values than the original ZDR
 # and the absolute median offset is < abs_zdr_off_min_thresh, then undo the correction (set to 0 to avoid this step)
-zdr_offset_perts = False # offset correct zdr per timesteps? if False, correct with daily offset
-mix_zdr_offsets = True # if True and zdr_offset_perts=False, try to
-# choose between daily LR-consistency and QVP offsets based on how_mix_zdr_offset.
-# If True and zdr_offset_perts=True, choose between all available timestep offsets
-# based on how_mix_zdr_offset. If False, just use the offsets according to the priority they are passed on.
+daily_corr = True # correct ZDR with daily offset? if False, correct with timestep offsets
+variability_check = True # Check the variability of the timestep offsets to decide between daily or timestep offsets?
+variability_thresh = 0.1 # Threshold value of timestep-based ZDR offsets variability to use if variability_check is True.
+first_offset_method_abs_priority = False # If True, give absolute priority to the offset from the first method if valid
+mix_offset_variants = True # Use timestep-offsets variants to fill NaNs?
+mix_daily_offset_variants = False # select the most appropriate offset variant based on how_mix_zdr_offset
+mix_zdr_offsets = True # Select the most appropriate daily offset or timestep offset based on how_mix_zdr_offset
 how_mix_zdr_offset = "count" # how to choose between the different offsets
 # if mix_zdr_offsets = True. "count" will choose the offset that has more data points
 # in its calculation (there must be a variable ZDR_offset_datacount in the loaded offset).
 # "neg_overcorr" will choose the offset that generates less negative ZDR values.
+abs_zdr_off_min_thresh = 0. # If abs_zdr_off_min_thresh > 0, check if offset corrected ZDR has more
+# negative values than the original ZDR and if the absolute median offset
+# is < abs_zdr_off_min_thresh, then undo the correction (set to 0 to avoid this step).
+propagate_forward = False # Propagate timestep offsets forward to fill NaNs?
+fill_with_daily_offset = True # Fill timestep NaN offsets with daily offset?
+
+# PHIDP processing / KDP calc parameters
+window0max = 25 # max value for window0 (only applied if window0 is given in meters)
+winlen0max = [9, 25] # max value for winlen0 (only applied if winlen0 is given in meters)
 
 # Set the possible ZDR calibrations locations to include (in order of priority)
 # The script will try to correct according to the first offset; if not available or nan it will
 # continue with the next one, and so on. Only the used offset will be outputted in the final file.
 # All items in zdrofffile will be tested in each zdroffdir to load the data.
+# Build dictionary of offset filepaths
 zdroffdir = utils.zdroffdir
 zdrofffile = utils.zdrofffile
-if zdr_offset_perts:
-    zdrofffile = utils.zdrofffile_ts
-    zdr_oc_dict = {} # this dictionary is used later when loading all timestep-based offsets
+zdrofffile_ts = utils.zdrofffile_ts
 
 # set the RHOHV correction location
 rhoncdir = utils.rhoncdir  # subfolder where to find the noise corrected rhohv data
@@ -96,9 +107,6 @@ min_range = min_rngs["default"] # minimum range from which to consider data (mos
 if "dwd" in path0 and "90grads" in path0:
     # for the VP we need to set a higher min height because there are several bins of unrealistic values
     min_hgt = min_hgts["90grads"]
-if "dwd" in path0 and "vol5minng01" in path0:
-    clowres0=True
-# Set specifics for each turkish radar
 if "ANK" in path0:
     min_hgt = min_hgts["ANK"]
     min_range = min_rngs["ANK"]
@@ -226,19 +234,29 @@ for ff in files:
         if X_TH in swp.data_vars:
             break
 
+    if "dwd" in path0 and "vol5minng01" in path0:
+        if swp.range.diff("range").median() > 750:
+            clowres0=True # for the ML correction algorithm
+
 #%% Load noise corrected RHOHV if available
     try:
         rhoncpath = os.path.dirname(utils.edit_str(ff, country, country+rhoncdir))
         swp = utils.load_corrected_RHOHV(swp, rhoncpath+"/"+rhoncfile)
 
-        # Check that the corrected RHOHV does not have higher STD than the original (1 + std_margin)
-        # if that is the case we take it that the correction did not work well so we won't use it
-        std_margin = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_margin), otherwise use RHOHV
-        min_rho = 0.6 # min RHOHV value for filtering. Only do this test with the highest values to avoid wrong results
+        # Check that the corrected RHOHV does not have a lot more of low values
+        # if that is the case we take it that the correction did not work.
+        min_rho = 0.7 # min RHOHV value for filtering
+        count_tolerance = 0.5 # 50% tolerance
 
-        if ( swp["RHOHV_NC"].where(swp["RHOHV_NC"]>min_rho * (swp["z"]>min_height)).std() < swp[X_RHO].where(swp[X_RHO]>min_rho * (swp["z"]>min_height)).std()*(1+std_margin) ).compute():
-            # Change the default RHOHV name to the corrected one
-            X_RHO = "RHOHV_NC"
+        if ( swp["RHOHV_NC"].where(swp["RHOHV_NC"]<min_rho * (swp["z"]>min_height)).count() < swp[X_RHO].where(swp[X_RHO]<min_rho * (swp["z"]>min_height)).count()*(1+count_tolerance) ).compute():
+
+            # Check that the corrected RHOHV does not have higher STD than the original (1 + std_margin)
+            # if that is the case we take it that the correction did not work well so we won't use it
+            std_margin = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_margin), otherwise use RHOHV
+
+            if ( swp["RHOHV_NC"].where(swp["RHOHV_NC"]>min_rho * (swp["z"]>min_height)).std() < swp[X_RHO].where(swp[X_RHO]>min_rho * (swp["z"]>min_height)).std()*(1+std_margin) ).compute():
+                # Change the default RHOHV name to the corrected one
+                X_RHO = "RHOHV_NC"
 
     except OSError:
         print("No noise corrected rhohv to load: "+rhoncpath+"/"+rhoncfile)
@@ -246,151 +264,60 @@ for ff in files:
     except ValueError:
         print("ValueError with corrected rhohv: "+rhoncpath+"/"+rhoncfile)
 
-#%% Load ZDR offset if available
-
-    # We define a custom exception to stop the next nexted loops as soon as a file is loaded
-    class FileFound(Exception):
+#%% Correct ZDR-elevation dependency
+    try:
+        angle = float(swp.elevation.mean())
+    except:
+        angle = float(swp.sweep_fixed_angle.mean())
+    try:
+        swp = utils.zdr_elev_corr(swp, angle, zdr=[X_ZDR])
+        X_ZDR = X_ZDR+"_EC"
+    except:
         pass
+
+#%% Load ZDR offset if available
+    daily_zdr_off_paths = {}
+    for offsetdir in zdroffdir:
+        daily_zdr_off_paths[offsetdir] = []
+        for offsetfile in zdrofffile:
+            try:
+                daily_zdr_off_paths[offsetdir].append(
+                    utils.get_ZDR_offset_files(ff, country, offsetdir, offsetfile))
+            except FileNotFoundError:
+                pass
+
+    zdr_off_paths = {}
+    for offsetdir in zdroffdir:
+        zdr_off_paths[offsetdir] = []
+        for offsetfile in zdrofffile_ts:
+            try:
+                zdr_off_paths[offsetdir].append(
+                    utils.get_ZDR_offset_files(ff, country, offsetdir, offsetfile))
+            except FileNotFoundError:
+                pass
 
     # Load the offsets
+
     try:
-        # print("Loading ZDR offsets")
-        for zdrod in zdroffdir:
-            for zdrof in zdrofffile:
-                try:
-                    zdroffsetpath = os.path.dirname(utils.edit_str(ff, country, country+zdrod))
-                    if "/VP/" in zdrod and "/vol5minng01/" in ff:
-                        elevnr = ff.split("/vol5minng01/")[-1][0:2]
-                        zdroffsetpath = utils.edit_str(zdroffsetpath, "/vol5minng01/"+elevnr, "/90gradstarng01/00")
-
-                    if zdr_offset_perts:
-                        # if timestep-based offsets, we collect all of them and deal with them later
-                        if zdrod not in zdr_oc_dict.keys():
-                            zdr_oc_dict[zdrod] = []
-                        zdr_oc_dict[zdrod].append(utils.load_ZDR_offset(swp, X_ZDR, zdroffsetpath+"/"+zdrof, zdr_oc_name=X_ZDR+"_OC", attach_all_vars=True))
-                        continue
-                    else:
-                        swp = utils.load_ZDR_offset(swp, X_ZDR, zdroffsetpath+"/"+zdrof, zdr_oc_name=X_ZDR+"_OC", attach_all_vars=True)
-
-                    # if the offset comes from LR ZH-ZDR consistency, check it against
-                    # the QVP method (if available) and choose the best one based on how_mix_zdr_offset
-                    if "LR_consistency" in zdrod and mix_zdr_offsets:
-                        for zdrof2 in zdrofffile:
-                            try:
-                                zdrod2 = [pp for pp in zdroffdir if "QVP" in pp][0]
-                                zdroffsetpath_qvp = os.path.dirname(utils.edit_str(ff, country, country+zdrod2))
-                                swp_qvpoc = utils.load_ZDR_offset(swp, X_ZDR, zdroffsetpath_qvp+"/"+zdrof2, zdr_oc_name=X_ZDR+"_OC", attach_all_vars=True)
-
-                                if how_mix_zdr_offset == "neg_overcorr":
-                                    # calculate the count of negative values after each correction
-                                    neg_count_swp_lroc = (swp[X_ZDR+"_OC"].where((swp[X_RHO]>0.99) * (swp["z"]>min_height)) < 0).sum().compute()
-                                    neg_count_swp_qvpoc = (swp_qvpoc[X_ZDR+"_OC"].where((swp_qvpoc[X_RHO]>0.99) * (swp["z"]>min_height)) < 0).sum().compute()
-
-                                    if neg_count_swp_lroc > neg_count_swp_qvpoc:
-                                        # continue with the correction with less negative values
-                                        print("Changing daily ZDR offset from LR_consistency to QVP")
-                                        swp = swp_qvpoc
-
-                                elif how_mix_zdr_offset == "count":
-                                    if "ZDR_offset_datacount" in swp and "ZDR_offset_datacount" in swp_qvpoc:
-                                        # Choose the offset that has the most data points in its calculation
-                                        if swp_qvpoc["ZDR_offset_datacount"] > swp["ZDR_offset_datacount"]:
-                                            # continue with the correction with more data points
-                                            print("Changing daily ZDR offset from LR_consistency to QVP")
-                                            swp = swp_qvpoc
-                                    else:
-                                        print("how_mix_zdr_offset == 'count' not possible, ZDR_offset_datacount not present in all offset datasets.")
-
-
-                                break
-                            except (OSError, ValueError):
-                                pass
-
-                    # calculate the count of negative values before and after correction
-                    neg_count_swp = (swp[X_ZDR].where((swp[X_RHO]>0.99) * (swp["z"]>min_height)) < 0).sum().compute()
-                    neg_count_swp_oc = (swp[X_ZDR+"_OC"].where((swp[X_RHO]>0.99) * (swp["z"]>min_height)) < 0).sum().compute()
-
-                    if neg_count_swp_oc > neg_count_swp and abs((swp[X_ZDR] - swp[X_ZDR+"_OC"]).compute().median()) < abs_zdr_off_min_thresh:
-                        # if the correction introduces more negative values and the offset is lower than abs_zdr_off_min_thresh, then do not correct
-                        swp[X_ZDR+"_OC"] = swp[X_ZDR]
-
-                    # Change the default ZDR name to the corrected one
-                    X_ZDR = X_ZDR+"_OC"
-
-                    # raise the custom exception to stop the loops
-                    raise FileFound
-
-                except (OSError, ValueError):
-                    pass
-
-        if zdr_offset_perts:
-            # Clean zdr_oc_dict of empty entries
-            zdr_oc_dict = {key: value for key, value in zdr_oc_dict.items() if value}
-
-            # Deal with all the timestep-based offsets
-            final_zdr_oc_list = []
-            if len(zdr_oc_dict) == 0:
-                # No ZDR timestep-based offsets were loaded, print a message
-                print("No timestep-based zdr offsets to load")
-            else:
-                for zdrod in zdroffdir:
-                    # For the offset from each method, we merge all variants (below ML,
-                    # below 1C, etc) to have as many values as possible. In the end we have
-                    # a list of final xarray dataarrays for each entry of zdroffdir.
-                    if zdrod in zdr_oc_dict.keys():
-                        if len(zdr_oc_dict[zdrod]) == 0:
-                            del(zdr_oc_dict[zdrod])
-                        elif len(zdr_oc_dict[zdrod]) == 1:
-                            # zdr_oc_dict[zdrod] = zdr_oc_dict[zdrod][0]
-                            final_zdr_oc_list.append(zdr_oc_dict[zdrod][0])
-                        else:
-                            zdr_oc_aux = zdr_oc_dict[zdrod][0].copy()
-                            for zdr_oc_auxn in zdr_oc_dict[zdrod][1:]:
-                                zdr_oc_aux = zdr_oc_aux.where(zdr_oc_aux[X_ZDR+"_OC"].notnull(), zdr_oc_auxn).copy()
-                            final_zdr_oc_list.append(zdr_oc_aux.copy())
-
-                # we get the first correction based on priority
-                final_zdr_oc = final_zdr_oc_list[0].copy()
-
-                # now we pick, for each timestep, the best offset correction depending on the priority,
-                # data quality and/or possible overcorrections
-                if len(final_zdr_oc_list) > 1 and mix_zdr_offsets:
-                    # print("Merging valid ZDR offsets (timestep mode)")
-                    if how_mix_zdr_offset == "neg_overcorr":
-                        for final_zdr_ocn in final_zdr_oc_list[1:]:
-                            # calculate the count of negative values for each correction
-                            neg_count_final_zdr_oc = (final_zdr_oc.where((swp[X_RHO]>0.99) * (final_zdr_oc["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
-                            neg_count_final_zdr_ocn = (final_zdr_ocn.where((swp[X_RHO]>0.99) * (final_zdr_ocn["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
-                            # Are there less negatives in the first correction than the new one?
-                            neg_count_final_cond = neg_count_final_zdr_oc < neg_count_final_zdr_ocn
-                            # Retain first ZDR_OC where the condition is True, otherwise use the new ZDR_OC
-                            final_zdr_oc = final_zdr_oc.where(neg_count_final_cond, final_zdr_ocn).copy()
-                    elif how_mix_zdr_offset == "count":
-                        for final_zdr_ocn in final_zdr_oc_list[1:]:
-                            if "ZDR_offset_datacount" in final_zdr_oc and "ZDR_offset_datacount" in final_zdr_ocn:
-                                # Choose the offset that has the most data points in its calculation
-                                final_zdr_oc = final_zdr_oc.where(final_zdr_oc["ZDR_offset_datacount"] > final_zdr_ocn["ZDR_offset_datacount"], final_zdr_ocn).copy()
-
-                    else:
-                        print("how_mix_zdr_offset = "+how_mix_zdr_offset+" is not a valid option, no mixing of offsets was done")
-
-                # Get only ZDR from now on
-                final_zdr_oc = final_zdr_oc[X_ZDR+"_OC"]
-
-                # Compare each timestep to the original ZDR, if the offsets overcorrect and the offset is < abs_zdr_off_min_thresh, discard correction
-                neg_count_final_zdr_oc = (final_zdr_oc.where((swp[X_RHO]>0.99) * (final_zdr_oc["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
-                neg_count_final_zdr = (swp[X_ZDR].where((swp[X_RHO]>0.99) * (swp["z"]>min_height)) < 0).sum(("range", "azimuth")).compute()
-                neg_count_final_cond = (neg_count_final_zdr_oc > neg_count_final_zdr) * (abs((swp[X_ZDR] - final_zdr_oc).compute().median(("range", "azimuth"))) < abs_zdr_off_min_thresh)
-
-                # Set the final ZDR_OC and change the default ZDR name to the corrected one
-                swp[X_ZDR+"_OC"] = final_zdr_oc.where(~neg_count_final_cond, swp[X_ZDR]).where(final_zdr_oc.notnull(), swp[X_ZDR])
-                X_ZDR = X_ZDR+"_OC"
-
-        else:
-            # If no ZDR offset was loaded, print a message
-            print("No zdr offset to load: "+zdroffsetpath+"/"+zdrof)
-    except FileFound:
-        pass
+        swp = utils.load_best_ZDR_offset(swp, X_ZDR,
+                                        zdr_off_paths=zdr_off_paths,
+                                        daily_zdr_off_paths=daily_zdr_off_paths,
+                                 zdr_off_name="ZDR_offset", zdr_oc_name=X_ZDR+"_OC",
+                                 attach_all_vars=True,
+                                 daily_corr = daily_corr, variability_check = variability_check,
+                                 variability_thresh = variability_thresh,
+                                 first_offset_method_abs_priority = first_offset_method_abs_priority,
+                                 mix_offset_variants = mix_offset_variants,
+                                 mix_daily_offset_variants = mix_daily_offset_variants,
+                                 mix_zdr_offsets = mix_zdr_offsets, how_mix_zdr_offset = how_mix_zdr_offset,
+                                 abs_zdr_off_min_thresh = abs_zdr_off_min_thresh,
+                                 X_RHO=X_RHO, min_height=min_height,
+                                 propagate_forward = propagate_forward,
+                                 fill_with_daily_offset = fill_with_daily_offset,
+                                 )
+        X_ZDR = X_ZDR+"_OC"
+    except:
+        print("Loading ZDR offsets failed")
 
 
 #%% Correct PHIDP
@@ -401,8 +328,29 @@ for ff in files:
     # Check that PHIDP is in data, otherwise skip ML detection
     if X_PHI in ds.data_vars:
         # Set parameters according to data
-        phase_proc_params = utils.get_phase_proc_params(ff) # get default phase processing parameters
+        phase_proc_params = utils.get_phase_proc_params(ff).copy() # get default phase processing parameters
         window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian, rhohv_thresh_gia, grad_thresh = phase_proc_params.values()
+
+        # Check if window0 and winlen0 are in m or in number of gates and apply max threshold
+        rangeres = float(ds.range.diff("range").mean().compute())
+        if window0 > 500:
+            window0 = int(round(window0/rangeres))
+            if not window0%2>0: window0 = window0 + 1
+            window0 = min(window0max, window0)
+        if isinstance(winlen0, list):
+            if winlen0[0] > 500:
+                wl0 = int(round(winlen0[0]/rangeres))
+                if not wl0%2>0: wl0 = wl0 + 1
+                winlen0[0] = max(winlen0max[0], wl0)
+            if winlen0[1] > 500:
+                wl0 = int(round(winlen0[1]/rangeres))
+                if not wl0%2>0: wl0 = wl0 + 1
+                winlen0[1] = min(winlen0max[1], wl0)
+        else:
+            if winlen0 > 500:
+                winlen0 = int(round(winlen0/rangeres))
+                if not winlen0%2>0: winlen0 = winlen0 + 1
+                winlen0 = min(winlen0max, winlen0)
 
         ######### Processing PHIDP
         #### fix PHIDP
@@ -410,19 +358,24 @@ for ff in files:
         # phidp may be already preprocessed (turkish case), then only offset-correct (no smoothing) and then vulpiani
         if "PHIDP" not in X_PHI: # This is now always skipped with this definition ("PHIDP" is in both X_PHI); i.e., we apply full processing to turkish data too
             # calculate phidp offset
-            ds = utils.phidp_offset_correction(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
+            ds_phiproc = utils.phidp_offset_correction(utils.apply_min_max_thresh(ds, {"SNRH":10, "SNRHC":10, "SQIH":0.5}, {}, skipfullna=True),
+                                               X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                                  dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
                                  rng_min=1000, rng=rng, azmedian=azmedian, tolerance=(0,5)) # shorter rng, rng_min for finer turkish data
 
-            phi_masked = ds[X_PHI+"_OC"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["range"]>min_range) )
+            phi_masked = ds_phiproc[X_PHI+"_OC"].where((ds[X_RHO] >= 0.8) * (ds[X_DBZH] >= 0.) * (ds["range"]>min_range) )
 
         else:
             # process phidp (offset and smoothing)
-            ds = utils.phidp_processing(ds, X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
+            ds_phiproc = utils.phidp_processing(utils.apply_min_max_thresh(ds, {"SNRH":10, "SNRHC":10, "SQIH":0.5}, {}, skipfullna=True),
+                                        X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                                  dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
                                  rng=rng, azmedian=azmedian, tolerance=(0,5))
 
-            phi_masked = ds[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.9) * (ds[X_DBZH] >= 0.) * (ds["range"]>min_range) )
+            phi_masked = ds_phiproc[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.8) * (ds[X_DBZH] >= 0.) * (ds["range"]>min_range) )
+
+        # Assign new vars to ds
+        ds = ds.assign(ds_phiproc[[X_PHI+"_OC_SMOOTH", X_PHI+"_OFFSET", X_PHI+"_OC"]])
 
         # Assign phi_masked
         assign = { X_PHI+"_OC_MASKED": phi_masked.assign_attrs(ds[X_PHI].attrs) }
@@ -431,7 +384,16 @@ for ff in files:
 
         # derive KDP from PHIDP (Vulpiani)
 
-        ds = utils.kdp_phidp_vulpiani(ds, winlen0, X_PHI+"_OC_MASKED", min_periods=winlen0//2+1)
+        if isinstance(winlen0, list):
+            # if winlen0 is a list, use the first value (small window) for strong rain (SR, DBZH>40) and
+            # use the second value (large window) for light rain (LR, DBZH<=40)
+            ds_kdpSR = utils.kdp_phidp_vulpiani(ds, winlen0[0], X_PHI+"_OC_MASKED", min_periods=max(3, int((winlen0[0] - 1) / 4)))[["KDP_CONV", "PHI_CONV"]]
+            ds_kdpLR = utils.kdp_phidp_vulpiani(ds, winlen0[1], X_PHI+"_OC_MASKED", min_periods=max(3, int((winlen0[1] - 1) / 4)))[["KDP_CONV", "PHI_CONV"]]
+            ds_kdp = xr.where(ds[X_DBZH]>40,
+                              ds_kdpSR, ds_kdpLR)
+            ds = ds.assign(ds_kdp)
+        else:
+            ds = utils.kdp_phidp_vulpiani(ds, winlen0, X_PHI+"_OC_MASKED", min_periods=max(3, int((winlen0 - 1) / 4)))
 
         X_PHI = X_PHI+"_OC" # continue using offset corrected PHI
 
@@ -477,6 +439,9 @@ for ff in files:
         ds = ds.assign_coords({'height_ml_new_gia': ds_qvp_ra.height_ml_new_gia})
         ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp_ra.height_ml_bottom_new_gia})
 
+    # rechunk to avoid problems
+    ds = ds.chunk({"time":10, "azimuth":-1, "range":-1})
+
 #%% Discard possible erroneous ML values
     if "height_ml_new_gia" in ds_qvp_ra:
         ## First, filter out ML heights that are too high (above selected isotherm)
@@ -501,31 +466,61 @@ for ff in files:
 #%% Attenuation correction (NOT PROVED THAT IT WORKS NICELY ABOVE THE ML)
     if X_PHI in ds.data_vars:
         ds = utils.attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.16, betaml = 0.022,
-                                           dbzh=X_DBZH, zdr=["ZDR_OC", "ZDR"], phidp=[X_PHI],
+                                           dbzh=X_DBZH, zdr=["ZDR", "ZDR_OC", "ZDR_EC_OC"],
+                                           phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
                                            ML_bot = "height_ml_bottom_new_gia", ML_top = "height_ml_new_gia",
                                            temp = "TEMP", temp_mlbot = 3, temp_mltop = 0, z_mlbot = 2000, dz_ml = 500,
                                            interpolate_deltabump = True )
 
-        ds_qvp_ra = ds_qvp_ra.assign( utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5})[[vv for vv in ds if "_AC" in vv]] )
+        ds_qvp_ra = ds_qvp_ra.assign( utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10,"SNRHC":10, "SQIH":0.5})[[vv for vv in ds if "_AC" in vv]] )
+        X_DBZH = X_DBZH+"_AC"
+        X_ZDR = X_ZDR+"_AC"
 
 #%% Fix KDP in the ML using PHIDP:
     if X_PHI in ds.data_vars:
 
-        ds = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen=winlen0, min_periods=winlen0//2+1)
+        # derive KDP from PHIDP (Vulpiani)
+        if isinstance(winlen0, list):
+            # if winlen0 is a list, use the first value (small window) for strong rain (SR, DBZH>40) and
+            # use the second value (large window) for light rain (LR, DBZH<=40)
+            ds_kdpSR_mlcorr = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen0[0], min_periods=max(3, int((winlen0[0] - 1) / 4)))[["KDP_ML_corrected"]]
+            ds_kdpLR_mlcorr = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen0[1], min_periods=max(3, int((winlen0[1] - 1) / 4)))[["KDP_ML_corrected"]]
+            ds_kdp_mlcorr = xr.where(ds[X_DBZH]>40,
+                              ds_kdpSR_mlcorr, ds_kdpLR_mlcorr)
+            ds = ds.assign(ds_kdp_mlcorr)
+        else:
+            ds = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen=winlen0, min_periods=max(3, int((winlen0 - 1) / 4)))
 
-        ds_qvp_ra = ds_qvp_ra.assign({"KDP_ML_corrected": utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5})["KDP_ML_corrected"]})
+        # Mask KDP_ML_correction with PHIDP_OC_MASKED
+        ds["KDP_ML_corrected"] = ds["KDP_ML_corrected"].where(ds[X_PHI+"_MASKED"].notnull())
+
+        ds_qvp_ra = ds_qvp_ra.assign({"KDP_ML_corrected": utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10,"SNRHC":10, "SQIH":0.5})["KDP_ML_corrected"]})
+
+        # Correct KDP elevation dependency
+        try:
+            angle = float(ds.elevation.mean())
+        except:
+            angle = float(ds.sweep_fixed_angle.mean())
+        try:
+            ds = utils.kdp_elev_corr(ds, angle, kdp=["KDP_CONV", "KDP_ML_corrected"])
+            ds_qvp_ra = utils.kdp_elev_corr(ds_qvp_ra, angle, kdp=["KDP_CONV", "KDP_ML_corrected"])
+            X_KDP = "KDP_ML_corrected_EC"
+        except:
+            pass
 
 #%% Classification of stratiform events based on entropy
     if X_PHI in ds.data_vars:
 
         # calculate linear values for ZH and ZDR
-        ds = ds.assign({"DBZH_lin": wrl.trafo.idecibel(ds[X_DBZH]), "ZDR_lin": wrl.trafo.idecibel(ds[X_ZDR]) })
+        ds = ds.assign({X_DBZH+"_lin": wrl.trafo.idecibel(ds[X_DBZH]), X_ZDR+"_lin": wrl.trafo.idecibel(ds[X_ZDR]) })
 
         # calculate entropy
-        Entropy = utils.calculate_pseudo_entropy(ds.where(ds[X_DBZH]>0), dim='azimuth', var_names=["DBZH_lin", "ZDR_lin", X_RHO, "KDP_ML_corrected"], n_lowest=60) #!!! is 60 ok?
+        Entropy = utils.calculate_pseudo_entropy(utils.apply_min_max_thresh(ds, {X_DBZH:0, "SNRH":10, "SNRHC":10,"SQIH":0.5}, {}),
+                                                 dim='azimuth', var_names=[X_DBZH+"_lin", X_ZDR+"_lin", X_RHO, "KDP_ML_corrected_EC"], n_lowest=60)
 
         # concate entropy for all variables and get the minimum value
-        strati = xr.concat((Entropy.entropy_DBZH_lin, Entropy.entropy_ZDR_lin, Entropy["entropy_"+X_RHO], Entropy.entropy_KDP_ML_corrected),"entropy")
+        strati = xr.concat((Entropy["entropy_"+X_DBZH+"_lin"], Entropy["entropy_"+X_ZDR+"_lin"],
+                            Entropy["entropy_"+X_RHO], Entropy["entropy_"+"KDP_ML_corrected_EC"]),"entropy")
         min_trst_strati = strati.min("entropy")
 
         # assign to datasets
@@ -537,63 +532,22 @@ for ff in files:
 
 #%% Calculate retrievals
     if X_PHI in ds.data_vars:
+        # Calculate attenuation with the ZPHI method, only used for one of the retrievals
+        ds_zphi = utils.attenuation_corr_zphi(ds , alpha = 0.08, beta = 0.02,
+                                  X_DBZH="DBZH", X_ZDR=["_".join(X_ZDR.split("_")[:-1]) if "_AC" in X_ZDR else X_ZDR][0],
+                                  X_PHI=X_PHI+"_MASKED")
+
+        ds_qvp_ra = ds_qvp_ra.assign( utils.compute_qvp(ds_zphi, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10,"SNRHC":10, "SQIH":0.5})[["AH"]] )
+
+        # filter out values close to the ground
+        ds_qvp_ra = ds_qvp_ra.where(ds_qvp_ra["z"]>min_height)
+
         print("Calculating retrievals...")
-        Lambda = 53.1 # radar wavelength in mm (pro: 53.138, ANK: 53.1, AFY: 53.3, GZT: 53.3, HTY: 53.3, SVS:53.3)
-        X_KDP = "KDP_ML_corrected"
 
-        # LWC
-        lwc_zh_zdr = 10**(0.058*ds[X_DBZH] - 0.118*ds[X_ZDR] - 2.36) # Reimann et al 2021 eq 3.7 (adjusted for Germany)
-        lwc_zh_zdr2 = 1.38*10**(-3) *10**(0.1*ds[X_DBZH] - 2.43*ds[X_ZDR] + 1.12*ds[X_ZDR]**2 - 0.176*ds[X_ZDR]**3 ) # used in S band, Ryzhkov 2022 PROM presentation https://www2.meteo.uni-bonn.de/spp2115/lib/exe/fetch.php?media=internal:uploads:all_hands_schneeferner_july2022:ryzhkov.pdf
-        lwc_kdp = 10**(0.568*np.log10(ds[X_KDP]) + 0.06) # Reimann et al 2021(adjusted for Germany)
-
-        # IWC (Collected from Blanke et al 2023)
-        iwc_zh_t = 10**(0.06 * ds[X_DBZH] - 0.0197*ds["TEMP"] - 1.7) # empirical from Hogan et al 2006 Table 2
-
-        iwc_zdr_zh_kdp = xr.where(ds[X_ZDR]>=0.4, # Carlin et al 2021 eqs 4b and 5b
-                                  4*10**(-3)*( ds[X_KDP]*Lambda/( 1-wrl.trafo.idecibel(ds[X_ZDR])**-1 ) ),
-                                  0.033 * ( ds[X_KDP]*Lambda )**0.67 * wrl.trafo.idecibel(ds[X_DBZH])**0.33 )
-
-        # Dm (ice collected from Blanke et al 2023)
-        Dm_ice_zh = 1.055*wrl.trafo.idecibel(ds[X_DBZH])**0.271 # Matrosov et al. (2019) Fig 10 (S band)
-        Dm_ice_zh_kdp = 0.67*( wrl.trafo.idecibel(ds[X_DBZH])/(ds[X_KDP]*Lambda) )**(1/3) # Ryzhkov and Zrnic (2019). Idk exactly where does the 0.67 approximation comes from, Blanke et al. 2023 eq 10 and Carlin et al 2021 eq 5a cite Bukovčić et al. (2018, 2020) but those two references do not show this formula.
-        Dm_ice_zdp_kdp = -0.1 + 2*( (wrl.trafo.idecibel(ds[X_DBZH])*(1-wrl.trafo.idecibel(ds[X_ZDR])**-1 ) ) / (ds[X_KDP]*Lambda) )**(1/2) # Ryzhkov and Zrnic (2019). Zdp = Z(1-ZDR**-1) from Carlin et al 2021
-
-        Dm_rain_zdr = 0.3015*ds[X_ZDR]**3 - 1.2087*ds[X_ZDR]**2 + 1.9068*ds[X_ZDR] + 0.5090 # (for rain but tuned for Germany X-band, JuYu Chen, Zdr in dB, Dm in mm)
-
-        D0_rain_zdr2 = 0.171*ds[X_ZDR]**3 - 0.725*ds[X_ZDR]**2 + 1.48*ds[X_ZDR] + 0.717 # (D0 from Hu and Ryzhkov 2022, used in S band data but could work for C band) [mm]
-        D0_rain_zdr3 = xr.where(ds[X_ZDR]<1.25, # D0 from Bringi et al 2009 (C-band) eq. 1 [mm]
-                                0.0203*ds[X_ZDR]**4 - 0.1488*ds[X_ZDR]**3 + 0.2209*ds[X_ZDR]**2 + 0.5571*ds[X_ZDR] + 0.801,
-                                0.0355*ds[X_ZDR]**3 - 0.3021*ds[X_ZDR]**2 + 1.0556*ds[X_ZDR] + 0.6844
-                                )
-        mu = 0
-        Dm_rain_zdr2 = D0_rain_zdr2 * (4+mu)/(3.67+mu) # conversion from D0 to Dm according to eq 4 of Hu and Ryzhkov 2022.
-        Dm_rain_zdr3 = D0_rain_zdr3 * (4+mu)/(3.67+mu)
-
-        # log(Nt)
-        Nt_ice_zh_iwc = (3.39 + 2*np.log10(iwc_zh_t) - 0.1*ds[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, [log(1/L)]
-        Nt_ice_zh_iwc2 = (3.69 + 2*np.log10(iwc_zh_t) - 0.1*ds[X_DBZH]) # Carlin et al 2021 eq. 7 originally in [log(1/m3)], transformed units here to [log(1/L)] by subtracting 3
-        Nt_ice_zh_iwc_kdp = (3.39 + 2*np.log10(iwc_zdr_zh_kdp) - 0.1*ds[X_DBZH]) # (Hu and Ryzhkov 2022 eq. 10, [log(1/L)]
-        Nt_ice_zh_iwc2_kdp = (3.69 + 2*np.log10(iwc_zdr_zh_kdp) - 0.1*ds[X_DBZH]) # Carlin et al 2021 eq. 7 originally in [log(1/m3)], transformed units here to [log(1/L)] by subtracting 3
-        Nt_rain_zh_zdr = ( -2.37 + 0.1*ds[X_DBZH] - 2.89*ds[X_ZDR] + 1.28*ds[X_ZDR]**2 - 0.213*ds[X_ZDR]**3 )# Hu and Ryzhkov 2022 eq. 3 [log(1/L)]
-
-        # Put everything together
-        retrievals = xr.Dataset({"lwc_zh_zdr":lwc_zh_zdr,
-                                "lwc_zh_zdr2":lwc_zh_zdr2,
-                                "lwc_kdp": lwc_kdp,
-                                "iwc_zh_t": iwc_zh_t,
-                                "iwc_zdr_zh_kdp": iwc_zdr_zh_kdp,
-                                "Dm_ice_zh": Dm_ice_zh,
-                                "Dm_ice_zh_kdp": Dm_ice_zh_kdp,
-                                "Dm_ice_zdp_kdp": Dm_ice_zdp_kdp,
-                                "Dm_rain_zdr": Dm_rain_zdr,
-                                "Dm_rain_zdr2": Dm_rain_zdr2,
-                                "Dm_rain_zdr3": Dm_rain_zdr3,
-                                "Nt_ice_zh_iwc": Nt_ice_zh_iwc,
-                                "Nt_ice_zh_iwc2": Nt_ice_zh_iwc2,
-                                "Nt_ice_zh_iwc_kdp": Nt_ice_zh_iwc_kdp,
-                                "Nt_ice_zh_iwc2_kdp": Nt_ice_zh_iwc2_kdp,
-                                "Nt_rain_zh_zdr": Nt_rain_zh_zdr,
-                                })#.compute()
+        retrievals = utils.calc_microphys_retrievals(ds, Lambda = 53.1, mu=0.33,
+                                      X_DBZH=X_DBZH, X_ZDR=X_ZDR, X_KDP="KDP_ML_corrected_EC", X_TEMP="TEMP",
+                                      X_PHI=X_PHI+"_MASKED"
+                                      ) #!!! filter out -inf inf values
 
         # Save retrievals
         retrievals.encoding = {'zlib': True, 'complevel': 6}
@@ -605,9 +559,9 @@ for ff in files:
 
         # add retrievals to QVP
         attach_vars = []
-        for vv in [X_RHO, X_TH, X_ZDR, "SNRH", "SQIH"]:
+        for vv in [X_RHO, X_TH, X_ZDR, "SNRH", "SNRHC", "SQIH"]:
             if vv in ds: attach_vars.append(vv)
-        ds_qvp_ra = ds_qvp_ra.assign( utils.compute_qvp(xr.merge([retrievals, ds[attach_vars]]), min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5})[[vv for vv in retrievals.data_vars]] )
+        ds_qvp_ra = ds_qvp_ra.assign( utils.compute_qvp(xr.merge([retrievals, ds[attach_vars]]), min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SNRHC":10, "SQIH":0.5})[[vv for vv in retrievals.data_vars]] )
 
 #%% Save qvp
     # save file
