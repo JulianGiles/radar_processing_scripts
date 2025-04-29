@@ -3950,7 +3950,9 @@ def phidp_processing_old(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohv
     return ds.assign(assign)
 
 def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
-                     dbzhmin=-20., min_height=0, window=7, window2 = None, gauss_rng=5, gauss_az=3, fix_range=500., rng=None, rng_min=3000.,
+                     dbzhmin=-20., min_height=0, window=7, window2 = None,
+                     gaussian_smoothing=True, gauss_rng=5, gauss_az=3,
+                     fix_range=500., rng=None, rng_min=3000.,
                      fillna=False, clean_invalid=False, azmedian=False, tolerance=(0,0)):
     r"""
     Calculate basic PHIDP processing including thresholding, smoothing and
@@ -3976,6 +3978,8 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
         Number of range bins for PHIDP rolling median (median filter).
     window2 : int
         Number of azimuth bins for PHIDP rolling median (median filter).
+    gaussian_smoothing : bool
+        If True, perform additional gaussian smoothing after median smoothing.
     gauss_rng : int
         Number of range bins for PHIDP Gaussian smoothing.
     gauss_az : int
@@ -4015,11 +4019,14 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
     phi_median = ds[X_PHI].where((ds[X_RHO]>=rhohvmin) & (ds[X_DBZH]>=dbzhmin) & (ds["z"]>min_height) & (ds["range"]>fix_range) ).pipe(xr_rolling, window, window2=window2, method='median', min_periods=window//2+1, skipna=True)
 
     # Apply additional smoothing
-    gkern = gauss_kernel(gauss_az, gauss_rng)
-    smooth_partial = partial(smooth_data, kernel=gkern)
-    phiclean = xr.apply_ufunc(smooth_partial, phi_median.compute(),
-                              input_core_dims=[["azimuth","range"]], output_core_dims=[["azimuth","range"]],
-                              vectorize=True)
+    if gaussian_smoothing:
+        gkern = gauss_kernel(gauss_az, gauss_rng)
+        smooth_partial = partial(smooth_data, kernel=gkern)
+        phiclean = xr.apply_ufunc(smooth_partial, phi_median.compute(),
+                                  input_core_dims=[["azimuth","range"]], output_core_dims=[["azimuth","range"]],
+                                  vectorize=True)
+    else:
+        phiclean = phi_median
 
     # Calculate range for offset calculation if rng is None
     if rng is None:
