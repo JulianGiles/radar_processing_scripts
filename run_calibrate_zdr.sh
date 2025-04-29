@@ -8,13 +8,13 @@ dir=/automount/realpep/upload/jgiles/dmi/
 loc=HTY
 
 # Set the type of calibration method
-calibtype=3
+calibtype=23
 
 max_attempts=5  # Maximum number of restart attempts
-max_execution_time=700  # Maximum execution time in seconds
+max_execution_time=1200  # Maximum execution time in seconds
 
 # Create a list of all files that include *allmoms* in their name
-files=$(find $dir -name "*allmoms*$loc*" -type f -not -path "*qvp*"  -not -path "*WIND*" -not -path "*SURVEILLANCE*" -not -path "*RHI1*")
+files=$(find $dir -name "*VOL_B*allmoms*10.0*$loc*" -type f -not -path "*qvp*" -not -path "*ppis*"  -not -path "*WIND*" -not -path "*SURVEILLANCE*" -not -path "*RHI1*")
 
 # Loop through each file in the list
 for file in $files; do
