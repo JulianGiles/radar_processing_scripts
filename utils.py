@@ -96,7 +96,7 @@ min_rngs = {
 # continue with the next one, and so on. Only the used offset will be outputted in the final file.
 # All items in zdrofffile will be tested in each zdroffdir to load the data.
 zdroffdir = ["/calibration/zdr/VP/", "/calibration/zdr/LR_consistency/", "/calibration/zdr/QVP/",]# "/calibration/zdr/falseQVP/"] # subfolder(s) where to find the zdr offset data
-zdrofffile = ["*zdr_offset_belowML_00*",  "*zdr_offset_below1C_00*", "*zdr_offset_below3C_00*",# "*zdr_offset_wholecol_00*",
+zdrofffile = ["*zdr_offset_belowML_00*",  "*zdr_offset_below1C_00*", "*zdr_offset_below3C_00*", "*zdr_offset_wholecol_00*",
               "*zdr_offset_belowML_07*", "*zdr_offset_below1C_07*", "*zdr_offset_below3C_07*",
               "*zdr_offset_belowML-*", "*zdr_offset_below1C-*", "*zdr_offset_below3C-*"] # pattern to select the appropriate file (careful with the zdr_offset_belowML_timesteps)
 
@@ -1022,14 +1022,16 @@ def load_ZDR_offset(ds, X_ZDR, zdr_off, zdr_off_name="ZDR_offset", zdr_oc_name="
     else:
         # create ZDR_OC variable
         if len(zdr_offset[zdr_off_name].values) > 1:
-            ds = ds.assign({zdr_oc_name: ds[X_ZDR]-xr.align(ds, zdr_offset[zdr_off_name], join="override")[1]})
+            ds = ds.assign({zdr_oc_name: ds[X_ZDR]-
+                            zdr_offset[zdr_off_name].sel(time=ds["time"], method="nearest")
+                            })
         else:
             ds = ds.assign({zdr_oc_name: ds[X_ZDR]-zdr_offset[zdr_off_name].values})
         ds[zdr_oc_name].attrs = ds[X_ZDR].attrs
 
         if attach_all_vars:
             if len(zdr_offset[zdr_off_name].values) > 1:
-                ds = ds.assign(xr.align(ds, zdr_offset, join="override")[1])
+                ds = ds.assign(zdr_offset.sel(time=ds["time"], method="nearest"))
             else:
                 zdr_offset_ = zdr_offset.map(lambda x: xr.full_like(ds["time"], x.values.item(), dtype=x.dtype)).copy()
                 zdr_offset_ = zdr_offset_.assign_coords(ds.coords)
@@ -1085,6 +1087,7 @@ def load_best_ZDR_offset(ds, X_ZDR, zdr_off_paths={}, daily_zdr_off_paths={},
                          first_offset_method_abs_priority = True,
                          mix_offset_variants = False, mix_daily_offset_variants = False,
                          mix_zdr_offsets = False, how_mix_zdr_offset = "count",
+                         t_tolerance = 10,
                          abs_zdr_off_min_thresh = 0.,
                          X_RHO="RHOHV", min_height=200,
                          propagate_forward = False, fill_with_daily_offset = True,
@@ -1156,6 +1159,8 @@ def load_best_ZDR_offset(ds, X_ZDR, zdr_off_paths={}, daily_zdr_off_paths={},
             "count" will choose the offset that has more data points in its calculation
             (there must be a variable zdr_off_name+"_datacount" in the loaded offset.
             "neg_overcorr" will choose the offset that generates less negative ZDR values.
+    t_tolerance : float
+            Time difference tolerance in minutes to align timestep-based offsets with ds.
     abs_zdr_off_min_thresh : float
             If abs_zdr_off_min_thresh > 0, check if offset corrected ZDR has more
             negative values than the original ZDR and if the absolute median offset
@@ -1179,6 +1184,7 @@ def load_best_ZDR_offset(ds, X_ZDR, zdr_off_paths={}, daily_zdr_off_paths={},
         Dataset with original data plus offset corrected ZDR
 
     """
+    t_tolerance = t_tolerance*60E9 # change the time tolerance to nanoseconds
 
     # Process daily correction first
     if daily_corr or (daily_corr is False and fill_with_daily_offset):
@@ -1204,13 +1210,14 @@ def load_best_ZDR_offset(ds, X_ZDR, zdr_off_paths={}, daily_zdr_off_paths={},
             ini = 0
             for zdroff_ in daily_zdr_off[zdroff]:
                 # Load the first available offset
-                if ini == 0 and zdroff_[zdr_off_name].notnull().all():
+                if ini == 0 :
                     dzdroff0[zdroff] = zdroff_.copy()
-                    ini = 1
-                    if mix_daily_offset_variants:
-                        continue
-                    else:
-                        break
+                    if dzdroff0[zdroff][zdr_off_name].notnull().all():
+                        ini = 1
+                        if mix_daily_offset_variants:
+                            continue
+                        else:
+                            break
 
                 # If mixing zdr offsets variants, select the appropriate offset based on the
                 # selected condition
@@ -1232,14 +1239,14 @@ def load_best_ZDR_offset(ds, X_ZDR, zdr_off_paths={}, daily_zdr_off_paths={},
                                                          zdr_oc_name=zdr_oc_name,
                                                          attach_all_vars=False)[zdr_oc_name].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum().compute()
 
-                        if neg_count_ds_0 > neg_count_ds_:
+                        if neg_count_ds_0.values > neg_count_ds_.values:
                             # continue with the correction with less negative values
                             dzdroff0[zdroff] = zdroff_.copy()
 
                     elif how_mix_zdr_offset == "count":
                         if zdr_off_name+"_datacount" in dzdroff0[zdroff] and zdr_off_name+"_datacount" in zdroff_:
                             # Choose the offset that has the most data points in its calculation
-                            if zdroff_[zdr_off_name+"_datacount"] > dzdroff0[zdroff][zdr_off_name+"_datacount"]:
+                            if zdroff_[zdr_off_name+"_datacount"].values > dzdroff0[zdroff][zdr_off_name+"_datacount"].values:
                                 # continue with the correction with more data points
                                 dzdroff0[zdroff] = zdroff_.copy()
                         else:
@@ -1322,7 +1329,7 @@ def load_best_ZDR_offset(ds, X_ZDR, zdr_off_paths={}, daily_zdr_off_paths={},
             zdr_off[zdroff] = []
             for zdroffv in zdr_off_paths[zdroff]:
                 try:
-                    zdr_off[zdroff].append( xr.open_mfdataset(zdroffv) )
+                    zdr_off[zdroff].append( xr.open_mfdataset(zdroffv).sel(time=ds.time, method="nearest", tolerance=t_tolerance).assign_coords(time=ds.time) )
                 except:
                     warnings.warn("load_best_ZDR_offset: unable to load "+zdroffv)
 
@@ -1332,10 +1339,11 @@ def load_best_ZDR_offset(ds, X_ZDR, zdr_off_paths={}, daily_zdr_off_paths={},
             ini = 0
             for zdroff_ in zdr_off[zdroff]:
                 # Load the first available offset
-                if ini == 0 and zdroff_[zdr_off_name].notnull().any():
+                if ini == 0 :
                     zdroff0[zdroff] = zdroff_.copy()
-                    ini = 1
-                    continue
+                    if zdroff0[zdroff][zdr_off_name].notnull().any():
+                        ini = 1
+                        continue
 
                 # If mixing zdr offset variants, fill missing values with the different variants
                 if ini>0 and mix_offset_variants:
@@ -1371,20 +1379,20 @@ def load_best_ZDR_offset(ds, X_ZDR, zdr_off_paths={}, daily_zdr_off_paths={},
                                                      attach_all_vars=False)[zdr_oc_name].where((ds[X_RHO]>0.99) * (ds["z"]>min_height)) < 0).sum(dims_wotime).compute()
 
                     # Are there less negatives in the first correction than in the new one?
-                    neg_count_final_cond = neg_count_ds_final < neg_count_ds_.values
+                    neg_count_final_cond = neg_count_ds_final < neg_count_ds_
                     # Retain first correction where the condition is True, otherwise use the new correction
-                    final = final.where(neg_count_final_cond, xr.align(final, zdroff0[zdroff], join="override")[1].copy()).copy()
+                    final = final.where(neg_count_final_cond, zdroff0[zdroff].copy()).copy()
 
                 elif how_mix_zdr_offset == "count":
                     if zdr_off_name+"_datacount" in final and zdr_off_name+"_datacount" in zdroff0[zdroff]:
                         # Choose the offset that has the most data points in its calculation
-                        final = final.where(final[zdr_off_name+"_datacount"] > zdroff0[zdroff][zdr_off_name+"_datacount"].values,
-                                            xr.align(final, zdroff0[zdroff], join="override")[1].copy()).copy()
+                        final = final.where(final[zdr_off_name+"_datacount"] > zdroff0[zdroff][zdr_off_name+"_datacount"],
+                                            zdroff0[zdroff]).copy()
                     else:
                         print("how_mix_zdr_offset == 'count' not possible, "+zdr_off_name+"_datacount not present in all offset datasets.")
 
                 # Finally, fill the last NaN values with the alternative-method offset
-                final = final.where(final[zdr_off_name].notnull(), xr.align(final, zdroff0[zdroff], join="override")[1].copy()).copy()
+                final = final.where(final[zdr_off_name].notnull(), zdroff0[zdroff]).copy()
 
         # Check if the final offset overcorrects more than the given threshold
         if abs_zdr_off_min_thresh > 0.:
