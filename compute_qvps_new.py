@@ -310,6 +310,7 @@ for ff in files:
                                  mix_offset_variants = mix_offset_variants,
                                  mix_daily_offset_variants = mix_daily_offset_variants,
                                  mix_zdr_offsets = mix_zdr_offsets, how_mix_zdr_offset = how_mix_zdr_offset,
+                                 t_tolerance = 10,
                                  abs_zdr_off_min_thresh = abs_zdr_off_min_thresh,
                                  X_RHO=X_RHO, min_height=min_height,
                                  propagate_forward = propagate_forward,
@@ -466,7 +467,7 @@ for ff in files:
 #%% Attenuation correction (NOT PROVED THAT IT WORKS NICELY ABOVE THE ML)
     if X_PHI in ds.data_vars:
         ds = utils.attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.16, betaml = 0.022,
-                                           dbzh=X_DBZH, zdr=["ZDR", "ZDR_OC", "ZDR_EC_OC"],
+                                           dbzh=X_DBZH, zdr=["ZDR", "ZDR_EC", "ZDR_OC", "ZDR_EC_OC"],
                                            phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
                                            ML_bot = "height_ml_bottom_new_gia", ML_top = "height_ml_new_gia",
                                            temp = "TEMP", temp_mlbot = 3, temp_mltop = 0, z_mlbot = 2000, dz_ml = 500,
