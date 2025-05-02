@@ -20,6 +20,10 @@
 #SBATCH --partition=batch
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK}
 
+# Set the directory with the code (this will be the working dir)
+codedir=/p/scratch/detectrea/giles1/radar_processing_scripts/
+cd $codedir
+
 # Set the directory to look for the files
 dir=/p/scratch/detectrea/giles1/radar_data/dmi/
 
@@ -69,7 +73,7 @@ for file in $files; do
             echo $count > $counterfile
             ((startcount++))
             # Pass the file path to the python script
-            { srun -c 12 --account=detectrea -n 1 --exact --threads-per-core=1 --time 10 python $dir/compute_qvps_new.py $file; count=$(<$counterfile); ((count--)) ; echo $count > $counterfile; } &
+            { srun -c 12 --account=detectrea -n 1 --exact --threads-per-core=1 --time 10 python $codedir/compute_qvps_new.py $file; count=$(<$counterfile); ((count--)) ; echo $count > $counterfile; } &
 
             if [ "$startcount" -le 30 ]; then
                 sleep 5

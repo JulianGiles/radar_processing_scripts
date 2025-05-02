@@ -10,15 +10,19 @@
 
 #SBATCH --account=detectrea
 #SBATCH --nodes=4
-#SBATCH --cpus-per-task=6
-#SBATCH --ntasks-per-node=8
-#SBATCH --time=24:00:00
+#SBATCH --cpus-per-task=12
+#SBATCH --ntasks-per-node=4
+#SBATCH --time=12:00:00
 #SBATCH --job-name=compute_qvps_pro
 #SBATCH --output=compute_qvps_pro.out
 #SBATCH --error=compute_qvps_pro.err
-#SBATCH --open-mode=append
-#SBATCH --partition=mem192
+#SBATCH --open-mode=truncate
+#SBATCH --partition=batch
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK}
+
+# Set the directory with the code (this will be the working dir)
+codedir=/p/scratch/detectrea/giles1/radar_processing_scripts/
+cd $codedir
 
 # Set the directory to look for the files
 dir=/p/scratch/detectrea/giles1/radar_data/dwd/
@@ -27,7 +31,7 @@ dir=/p/scratch/detectrea/giles1/radar_data/dwd/
 counterfile=$dir/count_pro.txt
 
 # Create a list of all files that include *allmoms* in their name
-files=$(find $dir -name "*vol5minng01*allmoms_07*pro*" -type f -not -path "*qvp*")
+files=$(find $dir -name "*vol5minng01*allmoms_07*pro*" -type f -not -path "*qvp*"  -not -path "*ppi*")
 
 count=0
 echo $count > $counterfile
@@ -40,7 +44,7 @@ for file in $files; do
     echo $count > $counterfile
     ((startcount++))
     # Pass the file path to the python script
-    { srun -c 6 --account=detectrea -n 1 --exact --threads-per-core=1  python $dir/compute_qvps_new.py $file; count=$(<$counterfile); ((count--)) ; echo $count > $counterfile; } &
+    { srun -c 12 --account=detectrea -n 1 --exact --threads-per-core=1 --time 10 python $codedir/compute_qvps_new.py $file; count=$(<$counterfile); ((count--)) ; echo $count > $counterfile; } &
 
     if [ "$startcount" -le 30 ]; then
         sleep 5
