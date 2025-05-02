@@ -5444,14 +5444,14 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.08, betam
     for dbzhn in dbzh:
         if dbzhn in ds:
             dbzh_corr = (alpha*ds_phidp_below).fillna(alphaml*ds_phidp_in).ffill(rdim).fillna(0.)
-            ds[dbzhn+"_AC"] = ds[dbzhn] + dbzh_corr
+            ds[dbzhn+"_AC"] = (ds[dbzhn] + dbzh_corr).assign_attrs(ds[dbzhn].attrs)
 
     if isinstance(zdr, str): # check zdr
         zdr = [zdr]
     for zdrn in zdr:
         if zdrn in ds:
             zdr_corr = (beta*ds_phidp_below).fillna(betaml*ds_phidp_in).ffill(rdim).fillna(0.)
-            ds[zdrn+"_AC"] = ds[zdrn] + zdr_corr
+            ds[zdrn+"_AC"] = (ds[zdrn] + zdr_corr).assign_attrs(ds[zdrn].attrs)
 
     return ds
 
