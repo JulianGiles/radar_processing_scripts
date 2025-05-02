@@ -1401,8 +1401,8 @@ plt.title(mom+elevtitle+". "+str(datasel.time.values).split(".")[0])
 
 #%% Load QVPs
 # Load only events with ML detected (pre-condition for stratiform)
-ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2020/*/*/pro/vol5minng01/07/ML_detected.txt"
-ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2020/*/*/SVS/*/*/ML_detected.txt"
+ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2015/*/*/pro/vol5minng01/07/ML_detected.txt"
+# ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2020/*/*/SVS/*/*/ML_detected.txt"
 ff_ML_glob = glob.glob(ff_ML)
 
 if "dmi" in ff_ML:
@@ -1477,14 +1477,16 @@ var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR',
                 'KDP', 'RHOHV_NC', 'UPHIDP_OC']
 
 
-vars_to_plot = ['DBZH', 'KDP_ML_corrected', 'KDP', 'ZDR_OC', 'RHOHV_NC',
-                'PHIDP_OC', 'ZDR', 'RHOHV' ]
+vars_to_plot = ['DBZH_AC', 'KDP_ML_corrected_EC', 'KDP', 'ZDR_EC_OC_AC', 'RHOHV_NC',
+                'UPHIDP_OC', 'ZDR_EC_OC', 'RHOHV', "DBZH", "ZDR_EC"]
 
 # add missing units for PHIDP variables in turkish data (this was fixed on 28/12/23 but previous calculations have missing units)
 for vv in ds_qvps.data_vars:
     if "PHIDP" in vv:
         if "units" not in ds_qvps[vv].attrs:
             ds_qvps[vv].attrs["units"] = "degrees"
+    elif vv in vars_to_plot and "units" not in ds_qvps[vv].attrs:
+        ds_qvps[vv].attrs["units"] = ds_qvps[vv.split("_")[0]].attrs["units"]
 
 visdict14 = radarmet.visdict14
 
@@ -1524,11 +1526,13 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
         norm = utils.get_discrete_norm(ticks, cmap_extend)
 
         subtitle = var
-        if var == "ZDR_OC":
+        if "ZDR" in var and "_OC" in var:
             # for the plot of ZDR_OC, put the value of the offset in the subtitle if it is daily
-            if np.unique((selected_data["ZDR"]-selected_data["ZDR_OC"]).compute().median("z")).std() < 0.01:
+            if (selected_data[var.split("_OC")[0]] - \
+                          selected_data[var.split("_OC")[0]+"_OC"]).compute().median("z").std() < 0.01:
                 # if the std of the unique values of ZDR - ZDR_OC is < 0.1 we assume it is a daily offset
-                subtitle = var+" (Offset: "+str(np.round((selected_data["ZDR"]-selected_data["ZDR_OC"]).compute().median().values,3))+")"
+                subtitle = var+" (Offset: "+str(np.round((selected_data[var.split("_OC")[0]] - \
+                                selected_data[var.split("_OC")[0]+"_OC"]).compute().median().values,3))+")"
             else:
                 subtitle = var+" (Offset: variable per timestep)"
         if var == "DBZH": # add elevation angle to DBZH panel
@@ -1580,9 +1584,10 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
         plots.append(quadmesh)
 
     nplots = len(plots)
-    gridplot = pn.Column(pn.Row(*plots[:round(nplots/3)]),
-                         pn.Row(*plots[round(nplots/3):round(nplots/3)*2]),
-                         pn.Row(*plots[round(nplots/3)*2:]),
+    gridplot = pn.Column(pn.Row(*plots[:3]),
+                         pn.Row(*plots[3:6]),
+                         pn.Row(*plots[6:9]),
+                         pn.Row(*plots[9:])
                          )
     return gridplot
     # return pn.Row(*plots)
@@ -1631,7 +1636,7 @@ layout = pn.Column(
 )
 
 
-layout.save("/user/jgiles/qvps_svs_2020_stratiform.html", resources=INLINE, embed=True,
+layout.save("/user/jgiles/qvps_pro_2015_stratiform.html", resources=INLINE, embed=True,
             max_states=1000, max_opts=1000)
 
 
