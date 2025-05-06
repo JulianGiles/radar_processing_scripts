@@ -293,7 +293,7 @@ if calculate_retrievals:
 
     for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
         print("   ... for "+stratname)
-
+        retrievals_qvpbased[stratname] = {}
         retrievals_qvpbased[stratname][find_loc(locs, ff[0])] = utils.calc_microphys_retrievals(stratqvp, Lambda = Lambda, mu=0.33,
                                       X_DBZH=X_DBZH, X_ZDR=X_ZDR, X_KDP=X_KDP, X_TEMP="TEMP",
                                       X_PHI=X_PHI )
