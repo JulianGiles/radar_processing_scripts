@@ -85,7 +85,7 @@ path_qvps = realpep_path+"/upload/jgiles/dwd/qvps/20*/*/*/pro/vol5minng01/07/ML_
 
 
 #### Set variable names
-X_DBZH = "DBZH"
+X_DBZH = "DBZH_AC"
 X_RHO = "RHOHV_NC" # if RHOHV_NC is set here, it is then checked agains the original RHOHV in the next cell
 X_ZDR = "ZDR_EC_OC_AC"
 X_KDP = "KDP_ML_corrected_EC"
@@ -294,7 +294,7 @@ if calculate_retrievals:
     for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
         print("   ... for "+stratname)
 
-        retrievals_qvpbased[stratname] = utils.calc_microphys_retrievals(stratqvp, Lambda = Lambda, mu=0.33,
+        retrievals_qvpbased[stratname][find_loc(locs, ff[0])] = utils.calc_microphys_retrievals(stratqvp, Lambda = Lambda, mu=0.33,
                                       X_DBZH=X_DBZH, X_ZDR=X_ZDR, X_KDP=X_KDP, X_TEMP="TEMP",
                                       X_PHI=X_PHI )
 
@@ -309,24 +309,33 @@ except NameError:
     retrievals = {}
 
 for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
+    retrievals_namelist = [
+        "lwc_zh_zdr_reimann2021",
+        "lwc_zh_zdr_rhyzkov2022",
+        "lwc_kdp_reimann2021",
+        "lwc_ah_reimann2021",
+        "lwc_hybrid_reimann2021"
+        "iwc_zh_t_hogan2006",
+        "iwc_zh_t_hogan2006_model",
+        "iwc_zh_t_hogan2006_combined",
+        "iwc_zdr_zh_kdp_carlin2021",
+        "Dm_ice_zh_matrosov2019",
+        "Dm_ice_zh_kdp_carlin2021",
+        "Dm_ice_zdp_kdp_carlin2021",
+        "Dm_hybrid_blanke2023",
+        "Dm_rain_zdr_chen",
+        "Dm_rain_zdr_hu2022",
+        "Dm_rain_zdr_bringi2009",
+        "Nt_ice_iwc_zh_t_hu2022",
+        "Nt_ice_iwc_zh_t_carlin2021",
+        "Nt_ice_iwc_zh_t_combined_hu2022",
+        "Nt_ice_iwc_zh_t_combined_carlin2021",
+        "Nt_ice_iwc_zdr_zh_kdp_hu2022",
+        "Nt_ice_iwc_zdr_zh_kdp_carlin2021",
+        "Nt_rain_zh_zdr_rhyzkov2020",
+        ]
     retrievals[stratname] = {}
-    retrievals[stratname][find_loc(locs, ff[0])] = xr.Dataset({"lwc_zh_zdr": stratqvp["lwc_zh_zdr"],
-                                                             "lwc_zh_zdr2": stratqvp["lwc_zh_zdr2"],
-                                                             "lwc_kdp": stratqvp["lwc_kdp"],
-                                                             "iwc_zh_t": stratqvp["iwc_zh_t"],
-                                                             "iwc_zdr_zh_kdp": stratqvp["iwc_zdr_zh_kdp"],
-                                                             "Dm_ice_zh": stratqvp["Dm_ice_zh"],
-                                                             "Dm_ice_zh_kdp": stratqvp["Dm_ice_zh_kdp"],
-                                                             "Dm_ice_zdp_kdp": stratqvp["Dm_ice_zdp_kdp"],
-                                                             "Dm_rain_zdr": stratqvp["Dm_rain_zdr"],
-                                                             "Dm_rain_zdr2": stratqvp["Dm_rain_zdr2"],
-                                                             "Dm_rain_zdr3": stratqvp["Dm_rain_zdr3"],
-                                                             "Nt_ice_zh_iwc": stratqvp["Nt_ice_zh_iwc"],
-                                                             "Nt_ice_zh_iwc2": stratqvp["Nt_ice_zh_iwc2"],
-                                                             "Nt_ice_zh_iwc_kdp": stratqvp["Nt_ice_zh_iwc_kdp"],
-                                                             "Nt_ice_zh_iwc2_kdp": stratqvp["Nt_ice_zh_iwc2_kdp"],
-                                                             "Nt_rain_zh_zdr": stratqvp["Nt_rain_zh_zdr"],
-                                                             })
+    retrievals[stratname][find_loc(locs, ff[0])] = xr.Dataset({key: stratqvp[key] for key in retrievals_namelist if key in stratqvp.data_vars})
 
     # Save retrievals
     if not os.path.exists(realpep_path+"/upload/jgiles/radar_retrievals/"+stratname):
@@ -558,7 +567,7 @@ try:
             if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname):
                 os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname)
 
-            pred_riming.to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+ll+"_"+varname+".nc")
+            pred_riming.to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+loc+"_"+varname+".nc")
 
         # predict riming with the model that uses only zh and zdr
         for XZDR, XZH in [(X_ZDR, X_DBZH), ("ZDR", "DBZH")]:
@@ -588,7 +597,7 @@ try:
             if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname):
                 os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname)
 
-            pred_riming.to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+ll+"_"+varname+".nc")
+            pred_riming.to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+loc+"_"+varname+".nc")
 
 except ModuleNotFoundError:
     print("... Loading the riming model failed, trying to reload pre-calculated riming ...")
@@ -603,7 +612,7 @@ except ModuleNotFoundError:
                 riming_classif[stratname][ll] = xr.Dataset()
             elif type(riming_classif[stratname][ll]) is not xr.Dataset:
                 riming_classif[stratname][ll] = xr.Dataset()
-            for xx in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_ZDR_OC_DBZH',
+            for xx in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_'+X_ZDR+'_'+X_DBZH,
                        ]:
                 try:
                     riming_classif[stratname][ll] = riming_classif[stratname][ll].assign( xr.open_dataset(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+ll+"_"+xx+".nc") )
