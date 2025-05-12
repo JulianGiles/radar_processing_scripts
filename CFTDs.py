@@ -75,7 +75,7 @@ path_qvps = realpep_path+"/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/*allm
 path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
 # Load only events with ML detected (pre-condition for stratiform)
 path_qvps = realpep_path+"/upload/jgiles/dwd/qvps/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
-# path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/20*/*/*/HTY/*/*/ML_detected.txt"
+# path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/20*/*/*/GZT/*/*/ML_detected.txt"
 # path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
 # path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/*/*/*/SVS/*/*/ML_detected.txt"
 # path_qvps = realpep_path+"/upload/jgiles/dmi/qvps_singlefile/ML_detected/ANK/*/12*/*allmoms*"
@@ -203,7 +203,7 @@ min_rho = 0.7 # min RHOHV value for filtering. Only do this test with the highes
 mean_tolerance = 0.02 # 2% tolerance, for checking if RHOHV_NC is actually larger than RHOHV (overall higher values)
 
 if "_NC" in X_RHO:
-    # Check that the corrected RHOHV does not have higher STD than the original (1 + std_margin)
+    # Check that the corrected RHOHV does not have higher STD than the original (1 + std_tolerance)
     # if that is the case we take it that the correction did not work well so we won't use it
     cond_rhohv1 = (
                     qvps[X_RHO].where(qvps[X_RHO]>min_rho).resample({"time":"D"}).std(dim=("time", "z")) < \

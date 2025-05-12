@@ -254,16 +254,18 @@ for ff in files:
                     # Check that the corrected RHOHV does not have a lot more of low values
                     # if that is the case we take it that the correction did not work.
                     min_rho = 0.7 # min RHOHV value for filtering
-                    count_tolerance = 0.5 # 50% tolerance
+                    mean_tolerance = 0.02 # 2% tolerance, for checking if RHOHV_NC is actually larger than RHOHV (overall higher values)
 
-                    if ( data["RHOHV"].where(data["RHOHV"]<min_rho * (data["z"]>min_height)).count()*(1+count_tolerance) < data[X_RHO].where(data[X_RHO]<min_rho * (data["z"]>min_height)).count() ).compute():
-
-                        # Check that the corrected RHOHV does not have higher STD than the original (1 + std_margin)
+                    if ( data["RHOHV"].where(data["z"]>min_height).mean()*(1-mean_tolerance) > data[X_RHO].where(data["z"]>min_height).mean() ).compute():
+                        # Change the default RHOHV name
+                        X_RHO = "RHOHV"
+                    else:
+                        # Check that the corrected RHOHV does not have higher STD than the original (1 + std_tolerance)
                         # if that is the case we take it that the correction did not work well so we won't use it
-                        std_margin = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_margin), otherwise use RHOHV
+                        std_tolerance = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_tolerance), otherwise use RHOHV
 
-                        if ( data["RHOHV"].where(data["RHOHV"]>min_rho * (data["z"]>min_height)).std()*(1+std_margin) < data[X_RHO].where(data[X_RHO]>min_rho * (data["z"]>min_height)).std() ).compute():
-                            # Change the default RHOHV name to the corrected one
+                        if ( data["RHOHV"].where(data["RHOHV"]>min_rho * (data["z"]>min_height)).std()*(1+std_tolerance) < data[X_RHO].where(data[X_RHO]>min_rho * (data["z"]>min_height)).std() ).compute():
+                            # Change the default RHOHV name
                             X_RHO = "RHOHV"
 
                 break

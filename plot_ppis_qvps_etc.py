@@ -201,7 +201,7 @@ if not isvolume:
 
         if ( ds["RHOHV_NC"].where(ds["z"]>min_height).mean() > ds[X_RHO].where(ds["z"]>min_height).mean()*(1-mean_tolerance) ).compute():
 
-            # Check that the corrected RHOHV does not have higher STD than the original (1 + std_margin)
+            # Check that the corrected RHOHV does not have higher STD than the original (1 + std_tolerance)
             # if that is the case we take it that the correction did not work well so we won't use it
             std_tolerance = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_tolerance), otherwise use RHOHV
 
