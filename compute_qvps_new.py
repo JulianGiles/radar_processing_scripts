@@ -246,15 +246,15 @@ for ff in files:
         # Check that the corrected RHOHV does not have a lot more of low values
         # if that is the case we take it that the correction did not work.
         min_rho = 0.7 # min RHOHV value for filtering
-        count_tolerance = 0.5 # 50% tolerance
+        mean_tolerance = 0.02 # 2% tolerance, for checking if RHOHV_NC is actually larger than RHOHV (overall higher values)
 
-        if ( swp["RHOHV_NC"].where(swp["RHOHV_NC"]<min_rho * (swp["z"]>min_height)).count() < swp[X_RHO].where(swp[X_RHO]<min_rho * (swp["z"]>min_height)).count()*(1+count_tolerance) ).compute():
+        if ( swp["RHOHV_NC"].where(swp["z"]>min_height).mean() > swp[X_RHO].where(swp["z"]>min_height).mean()*(1-mean_tolerance) ).compute():
 
             # Check that the corrected RHOHV does not have higher STD than the original (1 + std_margin)
             # if that is the case we take it that the correction did not work well so we won't use it
-            std_margin = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_margin), otherwise use RHOHV
+            std_tolerance = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_tolerance), otherwise use RHOHV
 
-            if ( swp["RHOHV_NC"].where(swp["RHOHV_NC"]>min_rho * (swp["z"]>min_height)).std() < swp[X_RHO].where(swp[X_RHO]>min_rho * (swp["z"]>min_height)).std()*(1+std_margin) ).compute():
+            if ( swp["RHOHV_NC"].where(swp["RHOHV_NC"]>min_rho * (swp["z"]>min_height)).std() < swp[X_RHO].where(swp[X_RHO]>min_rho * (swp["z"]>min_height)).std()*(1+std_tolerance) ).compute():
                 # Change the default RHOHV name to the corrected one
                 X_RHO = "RHOHV_NC"
 
@@ -545,7 +545,7 @@ for ff in files:
 
         print("Calculating retrievals...")
 
-        retrievals = utils.calc_microphys_retrievals(ds, Lambda = 53.1, mu=0.33,
+        retrievals = utils.calc_microphys_retrievals(ds_zphi, Lambda = 53.1, mu=0.33,
                                       X_DBZH=X_DBZH, X_ZDR=X_ZDR, X_KDP="KDP_ML_corrected_EC", X_TEMP="TEMP",
                                       X_PHI=X_PHI+"_MASKED"
                                       ) #!!! filter out -inf inf values
@@ -561,8 +561,8 @@ for ff in files:
         # add retrievals to QVP
         attach_vars = []
         for vv in [X_RHO, X_TH, X_ZDR, "SNRH", "SNRHC", "SQIH"]:
-            if vv in ds: attach_vars.append(vv)
-        ds_qvp_ra = ds_qvp_ra.assign( utils.compute_qvp(xr.merge([retrievals, ds[attach_vars]]), min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SNRHC":10, "SQIH":0.5})[[vv for vv in retrievals.data_vars]] )
+            if vv in ds_zphi: attach_vars.append(vv)
+        ds_qvp_ra = ds_qvp_ra.assign( utils.compute_qvp(xr.merge([retrievals, ds_zphi[attach_vars]]), min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SNRHC":10, "SQIH":0.5})[[vv for vv in retrievals.data_vars]] )
 
 #%% Save qvp
     # save file

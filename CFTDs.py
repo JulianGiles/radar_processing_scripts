@@ -198,20 +198,22 @@ min_entropy_thresh = 0.85
 #     qvps_strat = qvps.where( (qvps["min_entropy"]>=min_entropy_thresh) & (qvps.height_ml_bottom_new_gia.notnull()), drop=True).compute()
 
 # Check that RHOHV_NC is actually better (less std) than RHOHV, otherwise just use RHOHV, on a per-day basis
-std_margin = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_margin), otherwise use RHOHV
+std_tolerance = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_tolerance), otherwise use RHOHV
 min_rho = 0.7 # min RHOHV value for filtering. Only do this test with the highest values to avoid wrong results
-count_tolerance = 0.5 # 50% tolerance, for checking if there are substantially more lower values in RHOHV_NC
+mean_tolerance = 0.02 # 2% tolerance, for checking if RHOHV_NC is actually larger than RHOHV (overall higher values)
 
 if "_NC" in X_RHO:
     # Check that the corrected RHOHV does not have higher STD than the original (1 + std_margin)
     # if that is the case we take it that the correction did not work well so we won't use it
     cond_rhohv1 = (
                     qvps[X_RHO].where(qvps[X_RHO]>min_rho).resample({"time":"D"}).std(dim=("time", "z")) < \
-                    qvps["RHOHV"].where(qvps["RHOHV"]>min_rho).resample({"time":"D"}).std(dim=("time", "z"))*(1+std_margin)
+                    qvps["RHOHV"].where(qvps["RHOHV"]>min_rho).resample({"time":"D"}).std(dim=("time", "z"))*(1+std_tolerance)
                     ).compute()
 
-    cond_rhohv2 = ( qvps[X_RHO].where(qvps[X_RHO]<min_rho ).resample({"time":"D"}).count() < \
-                   qvps["RHOHV"].where(qvps["RHOHV"]<min_rho ).resample({"time":"D"}).count()*(1+count_tolerance) ).compute()
+    # Check that the corrected RHOHV have overall higher mean than the original (1 - mean_tolerance)
+    # if that is the case we take it that the correction did not work well so we won't use it
+    cond_rhohv2 = ( qvps[X_RHO].resample({"time":"D"}).mean(dim=("time", "z")) > \
+                   qvps["RHOHV"].resample({"time":"D"}).mean(dim=("time", "z"))*(1-mean_tolerance) ).compute()
 
     cond_rhohv = cond_rhohv1 * cond_rhohv2
 
@@ -708,16 +710,16 @@ savedict = {"custom": None} # placeholder for the for loop below, not important
 # PHIDP: 0.708661 deg
 if country=="dmi":
 
-    vars_to_plot = {"DBZH": [0, 45.5, 0.5],
-                    "ZDR_OC": [-0.505, 2.05, 0.1],
-                    "KDP_ML_corrected":  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
-                    "RHOHV_NC": [0.9, 1.002, 0.002]}
+    vars_to_plot = {X_DBZH: [0, 45.5, 0.5],
+                    X_ZDR: [-0.505, 2.05, 0.1],
+                    X_KDP:  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
+                    "RHOHV": [0.9, 1.002, 0.002]}
 
     if auto_plot:
-        vtp = [{"DBZH": [0, 45.5, 0.5],
-                        "ZDR_OC": [-0.505, 2.05, 0.1],
-                        "KDP_ML_corrected":  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
-                        "RHOHV_NC": [0.9, 1.002, 0.002]},
+        vtp = [{X_DBZH: [0, 45.5, 0.5],
+                        X_ZDR: [-0.505, 2.05, 0.1],
+                        X_KDP:  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
+                        X_RHO: [0.9, 1.002, 0.002]},
                {"DBZH": [0, 45.5, 0.5],
                                "ZDR": [-0.505, 2.05, 0.1],
                                "KDP_CONV":  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
@@ -796,16 +798,16 @@ if country=="dmi":
 # plot CFTDs moments
 if country=="dwd":
 
-    vars_to_plot = {"DBZH": [0, 46, 1],
-                    "ZDR_OC": [-0.5, 2.1, 0.1],
-                    "KDP_ML_corrected": [-0.1, 0.52, 0.02],
-                    "RHOHV_NC": [0.9, 1.004, 0.004]}
+    vars_to_plot = {X_DBZH: [0, 46, 1],
+                    X_ZDR: [-0.5, 2.1, 0.1],
+                    X_KDP: [-0.1, 0.52, 0.02],
+                    X_RHO: [0.9, 1.004, 0.004]}
 
     if auto_plot:
-        vtp = [{"DBZH": [0, 46, 1],
-                        "ZDR_OC": [-0.5, 2.1, 0.1],
-                        "KDP_ML_corrected":  [-0.1, 0.52, 0.02],
-                        "RHOHV_NC": [0.9, 1.004, 0.004]},
+        vtp = [{X_DBZH: [0, 46, 1],
+                        X_ZDR: [-0.5, 2.1, 0.1],
+                        X_KDP:  [-0.1, 0.52, 0.02],
+                        X_RHO: [0.9, 1.004, 0.004]},
                {"DBZH": [0, 46, 1],
                                "ZDR": [-0.5, 2.1, 0.1],
                                "KDP_CONV":  [-0.1, 0.52, 0.02],
@@ -919,12 +921,12 @@ selseas = selseaslist[0]
 selmonths = selseas[1]
 
 # Select which retrievals to plot (only works if auto_plot=False)
-IWC = "iwc_zdr_zh_kdp" # iwc_zh_t or iwc_zdr_zh_kdp
-LWC = "lwc_kdp" # lwc_zh_zdr (adjusted for Germany) or lwc_zh_zdr2 (S-band) or lwc_kdp
-Dm_ice = "Dm_ice_zdp_kdp" # Dm_ice_zh, Dm_ice_zh_kdp, Dm_ice_zdp_kdp
-Dm_rain = "Dm_rain_zdr3" # Dm_rain_zdr, Dm_rain_zdr2 or Dm_rain_zdr3
-Nt_ice = "Nt_ice_zh_iwc2_kdp" # Nt_ice_zh_iwc, Nt_ice_zh_iwc2, Nt_ice_zh_iwc_kdp, Nt_ice_zh_iwc2_kdp
-Nt_rain = "Nt_rain_zh_zdr" # Nt_rain_zh_zdr
+IWC = "iwc_zdr_zh_kdp_carlin2021" # iwc_zh_t_hogan2006, iwc_zh_t_hogan2006_model, iwc_zh_t_hogan2006_combined, iwc_zdr_zh_kdp_carlin2021
+LWC = "lwc_hybrid_reimann2021" # lwc_zh_zdr_reimann2021, lwc_zh_zdr_rhyzkov2022, lwc_kdp_reimann2021, lwc_ah_reimann2021, lwc_hybrid_reimann2021
+Dm_ice = "Dm_ice_zdp_kdp_carlin2021" # Dm_ice_zh_matrosov2019, Dm_ice_zh_kdp_carlin2021, Dm_ice_zdp_kdp_carlin2021, Dm_hybrid_blanke2023
+Dm_rain = "Dm_rain_zdr_bringi2009" # Dm_rain_zdr_chen, Dm_rain_zdr_hu2022, Dm_rain_zdr_bringi2009
+Nt_ice = "Nt_ice_iwc_zdr_zh_kdp_carlin2021" # Nt_ice_iwc_zh_t_hu2022, Nt_ice_iwc_zh_t_carlin2021, Nt_ice_iwc_zh_t_combined_hu2022, Nt_ice_iwc_zh_t_combined_carlin2021, Nt_ice_iwc_zdr_zh_kdp_hu2022, Nt_ice_iwc_zdr_zh_kdp_carlin2021
+Nt_rain = "Nt_rain_zh_zdr_rhyzkov2020" # Nt_rain_zh_zdr_rhyzkov2020
 
 vars_to_plot = {"IWC/LWC [g/m^{3}]": [-0.1, 0.82, 0.02], # [-0.1, 0.82, 0.02],
                 "Dm [mm]": [0, 4.1, 0.1], # [0, 3.1, 0.1],
@@ -943,21 +945,21 @@ for sn, savepath in enumerate(savepath_list):
         for selseas in selseaslist:
             savedict.update(
                         {selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys.png": [ytlimlist[0],
-                                                               "iwc_zh_t", "lwc_zh_zdr",
-                                                               "Dm_ice_zh", "Dm_rain_zdr3",
-                                                               "Nt_ice_zh_iwc2", "Nt_rain_zh_zdr", selseas[1]],
+                                    "iwc_zh_t_hogan2006_model", "lwc_zh_zdr_reimann2021",
+                                    "Dm_ice_zh_matrosov2019", "Dm_rain_zdr_bringi2009",
+                                    "Nt_ice_iwc_zh_t_carlin2021", "Nt_rain_zh_zdr_rhyzkov2020", selseas[1]],
                         selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys_extended.png": [ytlimlist[1],
-                                                                    "iwc_zh_t", "lwc_zh_zdr",
-                                                                    "Dm_ice_zh", "Dm_rain_zdr3",
-                                                                    "Nt_ice_zh_iwc2", "Nt_rain_zh_zdr", selseas[1]],
+                                    "iwc_zh_t_hogan2006_model", "lwc_zh_zdr_reimann2021",
+                                    "Dm_ice_zh_matrosov2019", "Dm_rain_zdr_bringi2009",
+                                    "Nt_ice_iwc_zh_t_carlin2021", "Nt_rain_zh_zdr_rhyzkov2020", selseas[1]],
                         selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys_KDP.png": [ytlimlist[0],
-                                                                   "iwc_zdr_zh_kdp", "lwc_kdp",
-                                                                   "Dm_ice_zdp_kdp", "Dm_rain_zdr3",
-                                                                   "Nt_ice_zh_iwc2_kdp", "Nt_rain_zh_zdr", selseas[1]],
+                                    "iwc_zdr_zh_kdp_carlin2021", "lwc_hybrid_reimann2021",
+                                    "Dm_ice_zdp_kdp_carlin2021", "Dm_rain_zdr_bringi2009",
+                                    "Nt_ice_iwc_zdr_zh_kdp_carlin2021", "Nt_rain_zh_zdr_rhyzkov2020", selseas[1]],
                         selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys_KDP_extended.png": [ytlimlist[1],
-                                                                   "iwc_zdr_zh_kdp", "lwc_kdp",
-                                                                   "Dm_ice_zh_kdp", "Dm_rain_zdr3",
-                                                                   "Nt_ice_zh_iwc2_kdp", "Nt_rain_zh_zdr", selseas[1]],
+                                    "iwc_zdr_zh_kdp_carlin2021", "lwc_hybrid_reimann2021",
+                                    "Dm_ice_zdp_kdp_carlin2021", "Dm_rain_zdr_bringi2009",
+                                    "Nt_ice_iwc_zdr_zh_kdp_carlin2021", "Nt_rain_zh_zdr_rhyzkov2020", selseas[1]],
                         }
                     )
 
@@ -972,14 +974,18 @@ for sn, savepath in enumerate(savepath_list):
             Nt_rain = savedict[savename][6]
             selmonths = savedict[savename][7]
 
-        retreivals_merged = xr.Dataset({
-                                        "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].z > ds_to_plot.height_ml_new_gia,
-                                                                          ds_to_plot[LWC].where(ds_to_plot[LWC].z < ds_to_plot.height_ml_bottom_new_gia ) ),
-                                        "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].z > ds_to_plot.height_ml_new_gia,
-                                                                          ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ),
-                                        "Nt [log10(1/L)]": (ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].z > ds_to_plot.height_ml_new_gia,
-                                                                          ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ) ),
-            })
+        try:
+            retreivals_merged = xr.Dataset({
+                                            "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].z > ds_to_plot.height_ml_new_gia,
+                                                                              ds_to_plot[LWC].where(ds_to_plot[LWC].z < ds_to_plot.height_ml_bottom_new_gia ) ),
+                                            "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].z > ds_to_plot.height_ml_new_gia,
+                                                                              ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ),
+                                            "Nt [log10(1/L)]": (ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].z > ds_to_plot.height_ml_new_gia,
+                                                                              ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ) ),
+                })
+        except KeyError:
+            print("Unable to plot "+savename+". Some retrieval is not present in the dataset.")
+            continue
 
         fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15,5), width_ratios=(1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
 

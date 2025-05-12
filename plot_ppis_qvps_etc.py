@@ -197,15 +197,15 @@ if not isvolume:
         # Check that the corrected RHOHV does not have a lot more of low values
         # if that is the case we take it that the correction did not work.
         min_rho = 0.7 # min RHOHV value for filtering
-        count_tolerance = 0.5 # 50% tolerance
+        mean_tolerance = 0.02 # 2% tolerance, for checking if RHOHV_NC is actually larger than RHOHV (overall higher values)
 
-        if ( ds["RHOHV_NC"].where(ds["RHOHV_NC"]<min_rho * (ds["z"]>min_height)).count() < ds[X_RHO].where(ds[X_RHO]<min_rho * (ds["z"]>min_height)).count()*(1+count_tolerance) ).compute():
+        if ( ds["RHOHV_NC"].where(ds["z"]>min_height).mean() > ds[X_RHO].where(ds["z"]>min_height).mean()*(1-mean_tolerance) ).compute():
 
             # Check that the corrected RHOHV does not have higher STD than the original (1 + std_margin)
             # if that is the case we take it that the correction did not work well so we won't use it
-            std_margin = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_margin), otherwise use RHOHV
+            std_tolerance = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_tolerance), otherwise use RHOHV
 
-            if ( ds["RHOHV_NC"].where(ds["RHOHV_NC"]>min_rho * (ds["z"]>min_height)).std() < ds[X_RHO].where(ds[X_RHO]>min_rho * (ds["z"]>min_height)).std()*(1+std_margin) ).compute():
+            if ( ds["RHOHV_NC"].where(ds["RHOHV_NC"]>min_rho * (ds["z"]>min_height)).std() < ds[X_RHO].where(ds[X_RHO]>min_rho * (ds["z"]>min_height)).std()*(1+std_tolerance) ).compute():
                 # Change the default RHOHV name to the corrected one
                 X_RHO = "RHOHV_NC"
 
@@ -1535,7 +1535,7 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
                                 selected_data[var.split("_OC")[0]+"_OC"]).compute().median().values,3))+")"
             else:
                 subtitle = var+" (Offset: variable per timestep)"
-        if var == "DBZH": # add elevation angle to DBZH panel
+        if "DBZH" in var: # add elevation angle to DBZH panel
             subtitle = var+" (Elevation: "+str(np.round(selected_data['sweep_fixed_angle'].mean().compute().values, 2))+"°)"
 
         quadmesh = selected_data[var].hvplot.quadmesh(
