@@ -12,10 +12,10 @@
 #SBATCH --nodes=4
 #SBATCH --cpus-per-task=6
 #SBATCH --ntasks-per-node=8
-#SBATCH --time=20:00:00
-#SBATCH --job-name=calib_zdr_umd
-#SBATCH --output=calib_zdr_umd.out
-#SBATCH --error=calib_zdr_umd.err
+#SBATCH --time=05:00:00
+#SBATCH --job-name=calib_zdr_hty
+#SBATCH --output=calib_zdr_hty.out
+#SBATCH --error=calib_zdr_hty.err
 #SBATCH --open-mode=truncate
 #SBATCH --partition=batch
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK}
@@ -25,16 +25,16 @@ codedir=/p/scratch/detectrea/giles1/radar_processing_scripts/
 cd $codedir
 
 # Set the directory to look for the files
-dir=/p/scratch/detectrea/giles1/radar_data/dwd/
+dir=/p/scratch/detectrea/giles1/dmi/
 
 # Set the type of calibration method
 calibtype=23
 
 # set a name for the counter file (counting how many job steps running at the same time
-counterfile=$dir/count_umd.txt
+counterfile=$dir/count_hty.txt
 
 # Create a list of all files that include *allmoms* in their name
-files=$(find $dir -name "*vol5minng01*allm*07*umd*" -type f -not -path "*qvp*" -not -path "*WIND*" -not -path "*SURVEILLANCE*" -not -path "*RHI1*") # "*vol5minng01*allm*07*pro*" # "*90gradstarng01*allm*00*pro*" # "*allm*HTY*"
+files=$(find $dir -name "*allm*HTY*" -type f -not -path "*qvp*" -not -path "*WIND*" -not -path "*SURVEILLANCE*" -not -path "*RHI1*" | sort -u) # "*vol5minng01*allm*07*pro*" # "*90gradstarng01*allm*00*pro*" # "*allm*HTY*"
 # If processing birdbath scans, set the min elevation allowed to 0 in the code below
 
 count=0
@@ -64,7 +64,7 @@ for file in $files; do
         echo $count > $counterfile
         ((startcount++))
         # Pass the file path to the python script
-        { timeout 20m srun -c 6 --account=detectrea -n 1 --exact --threads-per-core=1  python $codedir/calibrate_zdr.py $file $calibtype; count=$(<$counterfile); ((count--)) ; echo $count > $counterfile; } &
+        { timeout 30m srun -c 6 --account=detectrea -n 1 --exact --threads-per-core=1  python $codedir/calibrate_zdr.py $file $calibtype; count=$(<$counterfile); ((count--)) ; echo $count > $counterfile; } &
 
         if [ "$startcount" -le 30 ]; then
             sleep 5

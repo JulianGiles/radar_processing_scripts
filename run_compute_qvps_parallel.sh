@@ -12,10 +12,10 @@
 #SBATCH --nodes=4
 #SBATCH --cpus-per-task=12
 #SBATCH --ntasks-per-node=4
-#SBATCH --time=12:00:00
-#SBATCH --job-name=compute_qvps_pro
-#SBATCH --output=compute_qvps_pro.out
-#SBATCH --error=compute_qvps_pro.err
+#SBATCH --time=01:00:00
+#SBATCH --job-name=compute_qvps_umd
+#SBATCH --output=compute_qvps_umd.out
+#SBATCH --error=compute_qvps_umd.err
 #SBATCH --open-mode=truncate
 #SBATCH --partition=batch
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK}
@@ -25,13 +25,13 @@ codedir=/p/scratch/detectrea/giles1/radar_processing_scripts/
 cd $codedir
 
 # Set the directory to look for the files
-dir=/p/scratch/detectrea/giles1/radar_data/dwd/
+dir=/p/scratch/detectrea/giles1/dwd/
 
 # set a name for the counter file (counting how many job steps running at the same time
-counterfile=$dir/count_pro.txt
+counterfile=$dir/count_umd.txt
 
 # Create a list of all files that include *allmoms* in their name
-files=$(find $dir -name "*vol5minng01*allmoms_07*pro*" -type f -not -path "*qvp*"  -not -path "*ppi*")
+files=$(find $dir -name "*vol5minng01*allmoms_07*umd*" -type f -not -path "*qvp*"  -not -path "*ppi*" | sort -u)
 
 count=0
 echo $count > $counterfile
