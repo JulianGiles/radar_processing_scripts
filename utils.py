@@ -7290,6 +7290,7 @@ def calc_microphys(icon_fields, mom=2):
     if mom>1:
         multimoments = calc_multimoments(moments)
     else:
+        warnings.warn("WARNING calc_microphys: Results of 1-mom scheme are probably wrong (unrealistic D0 values)")
         multimoments = calc_multimoments(moments, inhm=['ice','snow','graupel'])
 
     try:
