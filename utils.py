@@ -6653,8 +6653,15 @@ def icon_to_radar_volume(icon_field, radar_volume):
     if "x" not in radar_volume.coords:
         radar_volume = wrl.georef.georeference(radar_volume)
 
-    lon_icon = np.rad2deg(icon_field["clon"])
-    lat_icon = np.rad2deg(icon_field["clat"])
+    try:
+        lon_icon = np.rad2deg(icon_field["clon"])
+        lat_icon = np.rad2deg(icon_field["clat"])
+    except KeyError:
+        lon_icon = icon_field["lon"]
+        lat_icon = icon_field["lat"]
+    except:
+        raise KeyError("!!! ERROR: Not able to extract lon and lat from icon_field !!!")
+
     alt_icon_hl = icon_field["z_ifc"]
     if "z_mc" in icon_field:
         alt_icon = icon_field["z_mc"]
@@ -6703,20 +6710,32 @@ def icon_to_radar_volume(icon_field, radar_volume):
                    alt_icon_hl >= alt.min() - lower_z) & (
                    alt_icon_hl <= alt.max() + upper_z)).compute()
 
-    mod_x_hl = mod_x[mask_hl[0]].copy() # make copy because we will modify them below
-    mod_y_hl = mod_y[mask_hl[0]].copy()
-    alt_icon_hl = alt_icon_hl.where(mask_hl, other=False, drop=True)
+    alt_icon_z = alt_icon.shape[0]
+    alt_icon_hl_z = alt_icon_hl.shape[0]
 
-    mod_x = mod_x[mask[0]]
-    mod_y = mod_y[mask[0]]
-    alt_icon = alt_icon.where(mask, other=False, drop=True)
+    mod_x_masked = np.repeat(mod_x[np.newaxis, :], alt_icon_z, axis=0)[mask]
+    mod_y_masked = np.repeat(mod_y[np.newaxis, :], alt_icon_z, axis=0)[mask]
+    alt_icon_masked = alt_icon.values[mask]
 
-    src = np.vstack((np.repeat(mod_x[np.newaxis, :], alt_icon.shape[0], axis=0).ravel(),
-                     np.repeat(mod_y[np.newaxis, :], alt_icon.shape[0], axis=0).ravel(),
-                     alt_icon.values.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
-    src_hl = np.vstack((np.repeat(mod_x_hl[np.newaxis, :], alt_icon_hl.shape[0], axis=0).ravel(),
-                     np.repeat(mod_y_hl[np.newaxis, :], alt_icon_hl.shape[0], axis=0).ravel(),
-                     alt_icon_hl.values.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
+    mod_x_hl_masked = np.repeat(mod_x[np.newaxis, :], alt_icon_hl_z, axis=0)[mask_hl].copy() # make copy because we will modify them below
+    mod_y_hl_masked = np.repeat(mod_y[np.newaxis, :], alt_icon_hl_z, axis=0)[mask_hl].copy() # make copy because we will modify them below
+    alt_icon_hl = alt_icon_hl.values[mask_hl]
+
+
+    src = np.vstack((mod_x_masked,
+                     mod_y_masked,
+                     alt_icon_masked  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
+    src_hl = np.vstack((mod_x_hl_masked,
+                     mod_y_hl_masked,
+                     alt_icon_hl.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
+
+
+    # src = np.vstack((np.repeat(mod_x[np.newaxis, :], alt_icon_z, axis=0).ravel(),
+    #                  np.repeat(mod_y[np.newaxis, :], alt_icon_z, axis=0).ravel(),
+    #                  alt_icon.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
+    # src_hl = np.vstack((np.repeat(mod_x_hl[np.newaxis, :], alt_icon_hl_z, axis=0).ravel(),
+    #                  np.repeat(mod_y_hl[np.newaxis, :], alt_icon_hl_z, axis=0).ravel(),
+    #                  alt_icon_hl.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
     trg = np.vstack((rad_x.flatten().ravel(),
                      rad_y.flatten().ravel(),
                      alt.values.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
@@ -6734,15 +6753,22 @@ def icon_to_radar_volume(icon_field, radar_volume):
     vars_to_compute_hl = []
     for vv in icon_field.data_vars:
         if vv not in ["z_ifc", "z_mc"]:
-            if "height" in icon_field[vv].dims and "ncells" in icon_field[vv].dims:
+            if "height" in icon_field[vv].dims and ("ncells" in icon_field[vv].dims or "x" in icon_field[vv].dims):
                 vars_to_compute.append(vv)
-            if "height_2" in icon_field[vv].dims and "ncells" in icon_field[vv].dims:
+            if "height_2" in icon_field[vv].dims and ("ncells" in icon_field[vv].dims or "x" in icon_field[vv].dims):
                 vars_to_compute_hl.append(vv)
+
+    if "ncells" in icon_field.dims:
+        dims3D = ['height', 'ncells']
+        dims3D_h2 = ['height_2', 'ncells']
+    elif "x" in icon_field.dims:
+        dims3D = ['height', 'y', 'x']
+        dims3D_h2 = ['height_2', 'y', 'x']
 
     # Define the nearest neighbors indeces
 
     if len(vars_to_compute)>0:
-        data0 = icon_field[vars_to_compute[0]].isel(time=0).where(mask, drop=True).stack(stacked=['height', 'ncells'])
+        data0 = icon_field[vars_to_compute[0]].isel(time=0).values[mask]
         mesh = pyinterp.RTree(ecef=True)
         mesh.packing(src, data0)
         coords, values = mesh.value(trg, k=1, within=False)
@@ -6751,7 +6777,7 @@ def icon_to_radar_volume(icon_field, radar_volume):
         _, indices = tree.query(coords[:,0,:], k=1)  # Find nearest neighbor indices
 
     if len(vars_to_compute_hl)>0:
-        data0_hl = icon_field[vars_to_compute_hl[0]].isel(time=0).where(mask_hl, drop=True).stack(stacked=['height_2', 'ncells'])
+        data0_hl = icon_field[vars_to_compute_hl[0]].isel(time=0).values[mask_hl]
         mesh = pyinterp.RTree(ecef=True)
         mesh.packing(src_hl, data0_hl)
         coords_hl, values_hl = mesh.value(trg, k=1, within=False)
@@ -6830,9 +6856,11 @@ def icon_to_radar_volume(icon_field, radar_volume):
     if len(vars_to_compute) == 0 and len(vars_to_compute_hl) == 0:
         raise ValueError("ERROR: icon_field has no appropriate variables to regrid")
     if len(vars_to_compute) > 0:
-        icon_vol = process_dataset(icon_field[vars_to_compute].where(mask, drop=True).stack(stacked=['height', 'ncells']), pyinterp_NN)
+        icon_field_stacked = icon_field[vars_to_compute].assign_coords(mask=mask).where(mask, drop=True).stack(stacked=dims3D)
+        icon_vol = process_dataset(icon_field_stacked.where(icon_field_stacked.mask.fillna(False), drop=True), pyinterp_NN)
     if len(vars_to_compute_hl) > 0:
-        icon_vol_hl = process_dataset(icon_field[vars_to_compute_hl].where(mask_hl, drop=True).stack(stacked=['height_2', 'ncells']), pyinterp_NN_hl)
+        icon_field_stacked_hl = icon_field[vars_to_compute_hl].assign_coords(mask_hl=mask_hl).where(mask_hl, drop=True).stack(stacked=dims3D_h2)
+        icon_vol_hl = process_dataset(icon_field_stacked_hl.where(icon_field_stacked_hl.mask_hl.fillna(False), drop=True), pyinterp_NN)
     total_time = time.time() - start_time
     print(f"... took {total_time/60:.2f} minutes to run.")
     # Regridding took 14.92 minutes to run for temp, u, v
