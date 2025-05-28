@@ -1121,7 +1121,7 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
             riming_classif[stratname][ll] = xr.Dataset()
         elif type(riming_classif[stratname][ll]) is not xr.Dataset:
             riming_classif[stratname][ll] = xr.Dataset()
-        for xx in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_ZDR_OC_DBZH',
+        for xx in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_ZDR_EC_OC_AC_DBZH_AC',
                    ]:
             try:
                 riming_classif[stratname][ll] = riming_classif[stratname][ll].assign( xr.open_dataset(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+ll+"_"+xx+".nc") )
@@ -1168,7 +1168,7 @@ for loc in locs_to_plot:
             to_plot_sel = to_plot.sel(\
                                 time=to_plot['time'].dt.month.isin(selseas[1]))
 
-            for vv in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_ZDR_OC_DBZH',
+            for vv in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_ZDR_EC_OC_AC_DBZH_AC',
                        ]:
 
                 try:
@@ -1271,6 +1271,12 @@ total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
 
 #%% Statistics histograms and ridgeplots
+#### Set variable names
+X_DBZH = "DBZH_AC"
+X_RHO = "RHOHV_NC"
+X_ZDR = "ZDR_EC_OC_AC"
+X_KDP = "KDP_ML_corrected_EC"
+
 # load stats
 if 'stats' not in globals() and 'stats' not in locals():
     stats = {}
@@ -1373,33 +1379,33 @@ for loc in locs_to_plot:
                 os.makedirs(savepath_seas)
 
             #### Get necessary variables
-            MLmaxZDR = stats[stratname][loc]["values_ML_max"]["ZDR_OC"].sel(\
+            MLmaxZDR = stats[stratname][loc]["values_ML_max"][X_ZDR].sel(\
                                 time=stats[stratname][loc]["values_ML_max"]['time'].dt.month.isin(selseas[1]))
-            MLmaxKDP = stats[stratname][loc]["values_ML_max"]["KDP_ML_corrected"].sel(\
+            MLmaxKDP = stats[stratname][loc]["values_ML_max"][X_KDP].sel(\
                                 time=stats[stratname][loc]["values_ML_max"]['time'].dt.month.isin(selseas[1]))
-            MLmaxZH = stats[stratname][loc]["values_ML_max"]["DBZH"].sel(\
+            MLmaxZH = stats[stratname][loc]["values_ML_max"][X_DBZH].sel(\
                                 time=stats[stratname][loc]["values_ML_max"]['time'].dt.month.isin(selseas[1]))
-            MLmeanKDP = stats[stratname][loc]["values_ML_mean"]["KDP_ML_corrected"].sel(\
+            MLmeanKDP = stats[stratname][loc]["values_ML_mean"][X_KDP].sel(\
                                 time=stats[stratname][loc]["values_ML_mean"]['time'].dt.month.isin(selseas[1]))
-            ZHrain = stats[stratname][loc]["values_rain"]["DBZH"].sel(\
+            ZHrain = stats[stratname][loc]["values_rain"][X_DBZH].sel(\
                                 time=stats[stratname][loc]["values_rain"]['time'].dt.month.isin(selseas[1]))
-            ZHsnow = stats[stratname][loc]["values_snow"]["DBZH"].sel(\
+            ZHsnow = stats[stratname][loc]["values_snow"][X_DBZH].sel(\
                                 time=stats[stratname][loc]["values_snow"]['time'].dt.month.isin(selseas[1]))
-            ZHsfc = stats[stratname][loc]["values_sfc"]["DBZH"].sel(\
+            ZHsfc = stats[stratname][loc]["values_sfc"][X_DBZH].sel(\
                                 time=stats[stratname][loc]["values_sfc"]['time'].dt.month.isin(selseas[1]))
-            ZDRrain = stats[stratname][loc]["values_rain"]["ZDR_OC"].sel(\
+            ZDRrain = stats[stratname][loc]["values_rain"][X_ZDR].sel(\
                                 time=stats[stratname][loc]["values_rain"]['time'].dt.month.isin(selseas[1]))
-            ZDRsfc = stats[stratname][loc]["values_sfc"]["ZDR_OC"].sel(\
+            ZDRsfc = stats[stratname][loc]["values_sfc"][X_ZDR].sel(\
                                 time=stats[stratname][loc]["values_sfc"]['time'].dt.month.isin(selseas[1]))
             deltaZH = MLmaxZH - ZHrain
-            MLminRHOHV = stats[stratname][loc]["values_ML_min"]["RHOHV_NC"].sel(\
+            MLminRHOHV = stats[stratname][loc]["values_ML_min"][X_RHO].sel(\
                                 time=stats[stratname][loc]["values_ML_min"]['time'].dt.month.isin(selseas[1]))
 
             MLdepth = stats[stratname][loc]["ML_thickness"].sel(\
                                 time=stats[stratname][loc]["ML_thickness"]['time'].dt.month.isin(selseas[1]))
             MLbot = stats[stratname][loc]["ML_bottom"].sel(\
                                 time=stats[stratname][loc]["ML_bottom"]['time'].dt.month.isin(selseas[1]))
-            betaZH = stats[stratname][loc]["beta"]["DBZH"].sel(\
+            betaZH = stats[stratname][loc]["beta"][X_DBZH].sel(\
                                 time=stats[stratname][loc]["beta"]['time'].dt.month.isin(selseas[1]))
             cloudtop = stats[stratname][loc]["cloudtop"].sel(\
                                 time=stats[stratname][loc]["cloudtop"]['time'].dt.month.isin(selseas[1]))
@@ -1952,7 +1958,7 @@ for loc in locs_to_plot:
             # Plot beta vs cloudtop height
             try:
                 plt.close()
-                binsx = np.linspace(5, 15, 51)
+                binsx = np.linspace(0, 15, 76)
                 binsy = np.linspace(-15, 10, 26)
                 # logMLmeanKDPcurve = -2.4 + 0.05*binsx
 
@@ -1982,7 +1988,7 @@ for loc in locs_to_plot:
             # Plot beta vs cloudtop height (5 dBZ)
             try:
                 plt.close()
-                binsx = np.linspace(5, 15, 51)
+                binsx = np.linspace(0, 15, 76)
                 binsy = np.linspace(-15, 10, 26)
                 # logMLmeanKDPcurve = -2.4 + 0.05*binsx
 
@@ -2011,7 +2017,7 @@ for loc in locs_to_plot:
             # Plot beta vs cloudtop height TEMP
             try:
                 plt.close()
-                binsx = np.linspace(-40, -10, 31)
+                binsx = np.linspace(-40, 0, 41)
                 binsy = np.linspace(-15, 10, 26)
                 # logMLmeanKDPcurve = -2.4 + 0.05*binsx
 
@@ -2041,7 +2047,7 @@ for loc in locs_to_plot:
             # Plot beta vs cloudtop height TEMP (5 dBZ)
             try:
                 plt.close()
-                binsx = np.linspace(-40, -10, 31)
+                binsx = np.linspace(-40, 0, 41)
                 binsy = np.linspace(-15, 10, 26)
                 # logMLmeanKDPcurve = -2.4 + 0.05*binsx
 
@@ -2195,9 +2201,9 @@ bandwidths = {"ML_thickness": 50,
         "delta_z_ZHmaxML_RHOHVminML": default_bandwidth,
         }
 # Particular changes
-bandwidths['values_sfc']['KDP_ML_corrected'] = 0.01
-bandwidths['values_sfc']['RHOHV_NC'] = 0.01
-bandwidths['values_snow']['RHOHV_NC'] = 0.01
+bandwidths['values_sfc'][X_KDP] = 0.01
+bandwidths['values_sfc'][X_RHO] = 0.01
+bandwidths['values_snow'][X_RHO] = 0.01
 
 
 order = ['tur', 'umd', 'pro', 'afy', 'ank', 'gzt', 'hty', 'svs']
@@ -2272,7 +2278,7 @@ for selseas in selseaslist:
                     if ss in ["beta"] and vv in ["RHOHV_NC", "RHOHV"]: # filter out unrealistic zero beta values
                         samples = {loc: samples[loc][abs(samples[loc])>0.0001] for loc in samples.keys()}
 
-                    if ss in ["values_DGL_min", "values_ML_min", "values_rain", "values_sfc"] and vv in ["KDP_ML_corrected"]: # filter out unrealistic zero values
+                    if ss in ["values_DGL_min", "values_ML_min", "values_rain", "values_sfc"] and vv in [X_KDP]: # filter out unrealistic zero values
                         samples = {loc: samples[loc][abs(samples[loc])>0.001] for loc in samples.keys()}
 
                     samples = {loc.swapcase(): samples[loc] for loc in samples.keys() if len(samples[loc])>10} # filter out radars with less than 10 samples
@@ -2427,8 +2433,8 @@ line_styles = ["--",  # Dashed
                (0, (3, 5, 1, 5))]  # Custom: long dash, short gap, dot, short gap
 
 for il, loc in enumerate(locs):
-    count = stats[stratname][loc]['beta']['DBZH'].groupby("time.month").count()
-    stats[stratname][loc]['beta']['DBZH'].groupby("time.month").median().where(count>30).plot(
+    count = stats[stratname][loc]['beta'][X_DBZH].groupby("time.month").count()
+    stats[stratname][loc]['beta'][X_DBZH].groupby("time.month").median().where(count>30).plot(
         label=loc.swapcase(), c=colors[il], ls=line_styles[il], lw=2,alpha=0.8)
 plt.ylabel(r'$\beta$ [dBZ/km]')
 plt.xticks([1,2,3,4,5,6,7,8,9,10,11,12], labels=['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'])
@@ -2453,7 +2459,8 @@ riming_class_to_plot = [
                         # 'riming_DR',
                         # 'riming_UDR',
                         # 'riming_ZDR_DBZH',
-                        'riming_ZDR_OC_DBZH',
+                        # 'riming_ZDR_OC_DBZH',
+                        'riming_ZDR_EC_OC_AC_DBZH_AC',
            ]
 
 colors = ["#4c72b0",  # Deep Blue
@@ -2627,9 +2634,9 @@ bandwidths = {"ML_thickness": 50,
         "delta_z_ZHmaxML_RHOHVminML": default_bandwidth,
         }
 # Particular changes
-bandwidths['values_sfc']['KDP_ML_corrected'] = 0.01
-bandwidths['values_sfc']['RHOHV_NC'] = 0.01
-bandwidths['values_snow']['RHOHV_NC'] = 0.01
+bandwidths['values_sfc'][X_KDP] = 0.01
+bandwidths['values_sfc'][X_RHO] = 0.01
+bandwidths['values_snow'][X_RHO] = 0.01
 
 
 order = ['tur', 'umd', 'pro', 'afy', 'ank', 'gzt', 'hty', 'svs']
@@ -2671,7 +2678,7 @@ for selseas in selseaslist:
     print(" ... ... "+selseas[0])
     for stratname in ["stratiform", "stratiform_relaxed"]:
 
-        riming_class = "riming_ZDR_OC_DBZH"
+        riming_class = "riming_ZDR_EC_OC_AC_DBZH_AC"
 
         print("plotting "+stratname+" stats...")
 
@@ -2705,7 +2712,7 @@ for selseas in selseaslist:
                         samples_wriming = {loc: samples_wriming[loc][abs(samples_wriming[loc])>0.0001] for loc in samples_wriming.keys()}
                         samples_woriming = {loc: samples_woriming[loc][abs(samples_woriming[loc])>0.0001] for loc in samples_woriming.keys()}
 
-                    if ss in ["values_DGL_min", "values_ML_min", "values_rain", "values_sfc"] and vv in ["KDP_ML_corrected"]: # filter out unrealistic zero values
+                    if ss in ["values_DGL_min", "values_ML_min", "values_rain", "values_sfc"] and vv in [X_KDP]: # filter out unrealistic zero values
                         samples_wriming = {loc: samples_wriming[loc][abs(samples_wriming[loc])>0.001] for loc in samples_wriming.keys()}
                         samples_woriming = {loc: samples_woriming[loc][abs(samples_woriming[loc])>0.001] for loc in samples_woriming.keys()}
 
