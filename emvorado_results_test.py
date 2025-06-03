@@ -1097,7 +1097,7 @@ print(f"took {total_time/60:.2f} minutes.")
 
 #%% TEST Load Julian S ICON-EMVORADO files and apply microphysics calculations
 
-ff_js = "/automount/data02/agradar/operation_hydrometeors/data/Syn_vol/20210714/ASS_2411/MAIN_2411.1/EMVO_00510000.2/120min_spinup/EMV_Vol_ESS_*.nc"
+ff_js = "/automount/data02/agradar/operation_hydrometeors/data/Syn_vol/20210714/ASS_2411/MAIN_2411.1/EMVO_00510000.2/120min_spinup/EMV_Vol_ESS_?????????????????????????.nc"
 data = utils.load_emvorado_to_radar_volume(ff_js, rename=True)
 radar_volume=data.copy()
 
@@ -1136,22 +1136,35 @@ radar_volume=data.copy()
 ff_icon = "/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_2020101322/out_EU-R13B5_inst_DOM01_ML_20201013T220000Z_1h.nc"
 ff_icon_z = '/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_2020101322/out_EU-R13B5_constant_20201013T220000Z.nc'
 
+
+
+ff = "/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/icon_2017041200/radarout/cdfin_allsim_id-010392_*"
+data = utils.load_emvorado_to_radar_volume(ff, rename=True)
+radar_volume=data.copy()
+
+ff_icon = "/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/icon_2017041200/out_EU-0275_inst_DOM01_ML_20170412T*Z.nc"
+ff_icon_z = '/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/icon_2017041200/out_EU-0275_constant_20170411T220000Z.nc'
+
+
+
+
 icon_field = utils.load_icon(ff_icon, ff_icon_z)
 icon_field['time'] = icon_field['time'].dt.round('1s') # round time coord to the second
 
 # regridding to radar volume geometry
-icon_volume = utils.icon_to_radar_volume(icon_field[["temp", "pres", "qv", "qc", "qi", "qr", "qs", "qg", "z_ifc"]], radar_volume)
+icon_volume = utils.icon_to_radar_volume(icon_field[["temp", "pres", "qv", "qc", "qi", "qr", "qs", "qg", "qh",
+                                                     "qnc", "qni", "qnr", "qns", "qng", "qnh", "z_ifc"]], radar_volume)
 icon_volume["TEMP"] = icon_volume["temp"] - 273.15
 
 # calculate microphysics
-icon_volume_new = utils.calc_microphys(icon_volume, mom=1)
+icon_volume_new = utils.calc_microphys(icon_volume, mom=2)
 
 # Make QVP
 elev = 7
 
 radar_volume_new = xr.merge([radar_volume.sel(time=slice(icon_volume_new.time[0].values, icon_volume_new.time[-1].values)),
                              icon_volume_new])
-qvps = utils.compute_qvp(radar_volume_new.isel(elevation=elev), min_thresh = {"RHOHV":0.9, "DBZH":0, "ZDR":-1, "SNRH":10,"SNRHC":10, "SQIH":0.5} )
+qvps = utils.compute_qvp(radar_volume_new.isel(sweep_fixed_angle=elev), min_thresh = {"RHOHV":0.9, "DBZH":0, "ZDR":-1, "SNRH":10,"SNRHC":10, "SQIH":0.5} )
 
 #%% PLOT QVP
 
