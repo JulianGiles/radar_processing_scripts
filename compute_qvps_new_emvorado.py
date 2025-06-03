@@ -27,7 +27,7 @@ import glob
 import xarray as xr
 
 import warnings
-warnings.filterwarnings('ignore')
+warnings.filterwarnings('ignore', category=RuntimeWarning)
 
 try:
     from Scripts.python.radar_processing_scripts import utils
@@ -40,20 +40,31 @@ import time
 start_time = time.time()
 
 #%% Set paths and options. We are going to convert the data for every day of data (i.e. for every daily file)
+# The files are collected from the same directory. Set the wildcards and other parameters here.
+
+mom = 2 # use 1- or 2- moment scheme?
+emv_wc = "*allsim_id*"
+icon_wc = "*allsim_icon*"
 
 # path0 = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/" # For testing
-path0 = sys.argv[1] # read path from console
+path0 = os.path.dirname(sys.argv[1])+"/" # read path from console
 overwrite = False # overwrite existing files?
 
 clowres0=False # this is for the ML detection algorithm
 qvp_ielev=7 # elevation index to use for QVP
 
 # get the files and check that it is not empty
-files = sorted(glob.glob(path0))
+files_emv = sorted(glob.glob(path0+emv_wc))
+files_icon = sorted(glob.glob(path0+icon_wc))
 
-if len(files)==0:
-    print("No files meet the selection criteria.")
-    sys.exit("No files meet the selection criteria.")
+if len(files_emv)==0:
+    print("No EMVORADO files meet the selection criteria.")
+    sys.exit("No EMVORADO files meet the selection criteria.")
+if len(files_icon)==0:
+    print("No ICON volume files meet the selection criteria.")
+    sys.exit("No ICON volume files meet the selection criteria.")
+if len(files_emv) != len(files_icon):
+    warnings.warn("Different number of EMVORADO and ICON volume files, some timesteps will not be included.")
 
 # ERA5 folder
 if os.path.exists("/automount/ags/jgiles/ERA5/hourly/"):
@@ -68,19 +79,19 @@ elif os.path.exists("/p/largedata2/detectdata/projects/A04/ERA5/hourly/"):
 
 # names of variables
 phidp_names = ["PHIDP"] # names to look for the PHIDP variable, in order of preference
-dbzh_names = ["DBZH"] # same but for DBZH
+dbzh_names = ["DBZH_AC", "DBZH"] # same but for DBZH
 rhohv_names = ["RHOHV"] # same but for RHOHV
-zdr_names = ["ZDR"]
+zdr_names = ["ZDR_AC", "ZDR"]
 th_names = ["TH", "DBTH", "DBZH"]
 
 # default processing parameters
-loc_id = files[0].split("_id-")[1][0:6]
+loc_id = files_emv[0].split("_id-")[1][0:6]
 if loc_id in ["010392", "010356", "010832"]: # if dwd location
     phase_proc_params = utils.phase_proc_params["dwd"]["vol5minng01"] # get default phase processing parameters
 else:
     phase_proc_params = utils.phase_proc_params["dmi"] # get default phase processing parameters
-window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian, rhohv_thresh_gia = phase_proc_params.values()
 
+window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian, rhohv_thresh_gia, grad_thresh = phase_proc_params.values()
 
 # define a function to create save directory and return file save path
 def make_savedir(ff, replace=("/run/", "/run/qvps/")):
@@ -98,13 +109,34 @@ def make_savedir(ff, replace=("/run/", "/run/qvps/")):
 #%% Load data
 
 # check for the file DONE.txt in the savepath before starting
-savepath = make_savedir(files[0][:-25]+".nc", replace=("/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/", "/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/qvps/"))
+savepath = make_savedir(files_emv[0][:-25]+".nc", replace=("/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/", "/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/qvps/"))
 if os.path.exists(os.path.dirname(savepath)+"/DONE.txt") and not overwrite:
     exit()
 
 print("processing "+path0)
-vol_emvorado_sim = utils.load_emvorado_to_radar_volume(files, rename=True)
-data = vol_emvorado_sim.isel({"sweep_fixed_angle":qvp_ielev})
+
+vol_emvorado_sim = utils.load_emvorado_to_radar_volume(files_emv, rename=True)
+
+vol_icon_sim = xr.open_mfdataset(files_icon)
+
+if "AHPI" in vol_emvorado_sim:
+    vol_emvorado_sim["DBZH_AC"] = vol_emvorado_sim["DBZH"] + vol_emvorado_sim["AHPI"]
+    vol_emvorado_sim["DBZH_AC"].attrs = vol_emvorado_sim["DBZH"].attrs
+    for key in ["Description", "long_name"]:
+        if key in vol_emvorado_sim["DBZH_AC"].attrs:
+            vol_emvorado_sim["DBZH_AC"].attrs[key] = vol_emvorado_sim["DBZH_AC"].attrs[key] + " corrected for attenuation"
+
+if "ADPPI" in vol_emvorado_sim:
+    vol_emvorado_sim["ZDR_AC"] = vol_emvorado_sim["ZDR"] + vol_emvorado_sim["ADPPI"]
+    vol_emvorado_sim["ZDR_AC"].attrs = vol_emvorado_sim["ZDR"].attrs
+    for key in ["Description", "long_name"]:
+        if key in vol_emvorado_sim["ZDR_AC"].attrs:
+            vol_emvorado_sim["ZDR_AC"].attrs[key] = vol_emvorado_sim["ZDR_AC"].attrs[key] + " corrected for attenuation"
+
+data = xr.merge([
+                vol_emvorado_sim.isel({"sweep_fixed_angle":qvp_ielev}),
+                vol_icon_sim.isel({"sweep_fixed_angle":qvp_ielev}),
+                          ])
 
 for coord in ["latitude", "longitude", "altitude", "elevation"]:
     if "time" in data[coord].dims:
@@ -141,6 +173,9 @@ for X_TH in th_names:
 
 ds = swp
 
+#%% Calculate microphysical variables
+ds = utils.calc_microphys(ds, mom=mom)
+
 #%% Compute QVP
 ## Only data with a cross-correlation coefficient ρHV above 0.7 are used to calculate their azimuthal median at all ranges (from Trömel et al 2019).
 ## Also added further filtering (TH>0, ZDR>-1)
@@ -160,14 +195,16 @@ if X_PHI in ds.data_vars:
     ds = ds.assign_coords({'height_ml_new_gia': ds_qvp_ra.height_ml_new_gia})
     ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp_ra.height_ml_bottom_new_gia})
 
-#%% Attach ERA5 temperature profile
-loc = utils.find_loc_code(utils.locs_code, files[0])
-ds_qvp_ra = utils.attach_ERA5_TEMP(ds_qvp_ra, path=loc.join(era5_dir.split("loc")))
+#%% Attach ERA5 temperature profile #DISABLED: ICON HAS TEMPERATURE
+# loc = utils.find_loc_code(utils.locs_code, files[0])
+# ds_qvp_ra = utils.attach_ERA5_TEMP(ds_qvp_ra, path=loc.join(era5_dir.split("loc")))
 
 #%% Discard possible erroneous ML values
 if "height_ml_new_gia" in ds_qvp_ra:
     ## First, filter out ML heights that are too high (above selected isotherm)
     isotherm = -1 # isotherm for the upper limit of possible ML values
+    # we need to fill the nans of the TEMP qvp otherwise the argmin operation will fail
+    ds_qvp_ra["TEMP"] = ds_qvp_ra["TEMP"].fillna(ds["TEMP"].median("azimuth", keep_attrs=True).assign_coords({"z": ds["z"].median("azimuth", keep_attrs=True)}).swap_dims({"range":"z"}))
     z_isotherm = ds_qvp_ra.TEMP.isel(z=((ds_qvp_ra["TEMP"]-isotherm)**2).argmin("z").compute())["z"]
 
     ds_qvp_ra.coords["height_ml_new_gia"] = ds_qvp_ra["height_ml_new_gia"].where(ds_qvp_ra["height_ml_new_gia"]<=z_isotherm.values).compute()
@@ -187,13 +224,15 @@ if "height_ml_new_gia" in ds_qvp_ra:
 if X_PHI in ds.data_vars:
 
     # calculate linear values for ZH and ZDR
-    ds = ds.assign({"DBZH_lin": wrl.trafo.idecibel(ds[X_DBZH]), "ZDR_lin": wrl.trafo.idecibel(ds[X_ZDR]) })
+    ds = ds.assign({X_DBZH+"_lin": wrl.trafo.idecibel(ds[X_DBZH]), X_ZDR+"_lin": wrl.trafo.idecibel(ds[X_ZDR]) })
 
     # calculate entropy
-    Entropy = utils.calculate_pseudo_entropy(ds.where(ds[X_DBZH]>0), var_names=["DBZH_lin", "ZDR_lin", X_RHO, "KDP"])
+    Entropy = utils.calculate_pseudo_entropy(utils.apply_min_max_thresh(ds, {X_DBZH:0, "SNRH":10, "SNRHC":10,"SQIH":0.5}, {}),
+                                             dim='azimuth', var_names=[X_DBZH+"_lin", X_ZDR+"_lin", X_RHO, "KDP"], n_lowest=60)
 
     # concate entropy for all variables and get the minimum value
-    strati = xr.concat((Entropy["entropy_DBZH_lin"], Entropy["entropy_ZDR_lin"], Entropy["entropy_"+X_RHO], Entropy["entropy_KDP"]),"entropy")
+    strati = xr.concat((Entropy["entropy_"+X_DBZH+"_lin"], Entropy["entropy_"+X_ZDR+"_lin"],
+                        Entropy["entropy_"+X_RHO], Entropy["entropy_"+"KDP"]),"entropy")
     min_trst_strati = strati.min("entropy")
 
     # assign to datasets
