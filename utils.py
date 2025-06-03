@@ -6893,7 +6893,7 @@ def icon_hydromets(mom=2, which='all', add_emvo=False):
     Returns
     -------
     icon_vol : xarray.Dataset
-        ICON fields interpolated into the shape of radar_volume.
+        Dictionary with ICON 2-mom or 1-mom microphysical parameters.
 
     '''
     hydromets = {}
@@ -7094,7 +7094,7 @@ def calc_n0_snow(qs, t, ageos):
            0.060366,  0.000079,  0.000594, 0.000000, -0.003577]
 
     ztc = t.where(qs>=quasi_zero) - T0C_fwo
-    ztc = ztc.where(ztc >= -40., other = -40.).where(ztc <= 0., other = 0.)
+    ztc = ztc.where(ztc.fillna(-40.) >= -40., other = -40.).where(ztc.fillna(0.) <= 0., other = 0.) #!!! Added .fillna() otherwise the NaN values will be replaced
     ztc2 = ztc**2
     ztc3 = ztc**3
 
@@ -7118,7 +7118,7 @@ def calc_n0_snow(qs, t, ageos):
     zn0s = np.minimum(zn0s,1e2*hlp)
     zn0s = np.minimum(zn0s,1e9)
     n0_s = np.maximum(zn0s,8e5)
-    n0 = n0.where(qs < quasi_zero, other=n0_s) #!!! should this be n0 or n0_s?
+    n0 = n0.where(qs < quasi_zero, other=n0_s) #!!! should this be n0_s or zn0s? (Jana uses  zn0s but then why is n0_s calculated?)
     return n0
 
 def nice_mono_1mom(t,q):
@@ -7154,11 +7154,11 @@ def mgdparams_1mom(q, hymets=icon_hydromets(mom=1), t=None, qn_out=False):
             mgd[key]['n0']  = xr.zeros_like(q[key])
             # n0 of snow according to temperature-dependent parametrization by Field05
             if key=='snow':
-                mgd[key]['n0'] = mgd[key]['n0'].where(q[key]<=0., other = calc_n0_snow(q[key].where(q[key]>0.),
+                mgd[key]['n0'] = mgd[key]['n0'].where(q[key].fillna(0.)<=0., other = calc_n0_snow(q[key].where(q[key]>0.),
                                                                                       t.where(q[key]>0.),
                                                                                       hymets[key]['a']) )
             else:
-                mgd[key]['n0'] = mgd[key]['n0'].where(q[key]<=0., other = hymets[key]['n0'] )
+                mgd[key]['n0'] = mgd[key]['n0'].where(q[key].fillna(0.)<=0., other = hymets[key]['n0'] )
 
             mgd[key]['lam'] = xr.ones_like(q[key])
 
@@ -7166,7 +7166,8 @@ def mgdparams_1mom(q, hymets=icon_hydromets(mom=1), t=None, qn_out=False):
             tmp2 = (mgd[key]['mu'] + hymets[key]['b'] + 1.0) / mgd[key]['nu']
 
             # calculate for valid (q)
-            mgd[key]['lam'] = mgd[key]['lam'].where(q[key] <= 0., other= ( \
+            #!!! Added .fillna() to retain NaNs
+            mgd[key]['lam'] = mgd[key]['lam'].where(q[key].fillna(0.) <= 0., other= ( \
                                            ( hymets[key]['a'] * mgd[key]['n0'].where(q[key]>0.) * gfct(tmp2) ) / \
                                            ( q[key].where(q[key]>0.) * mgd[key]['nu'] ) \
                                          )**(1.0/tmp2) )
@@ -7176,16 +7177,12 @@ def mgdparams_1mom(q, hymets=icon_hydromets(mom=1), t=None, qn_out=False):
             # very large values for ice['mu'] and ice['nu']
             qn = {'ice': nice_mono_1mom(t, q['ice'])}
             mgd['ice'] = mgdparams({'ice': q['ice']}, qn, {'ice': hymets['ice']})['ice']
-            mgd[key]['mu']  = hymets[key]['mu']
-            mgd[key]['nu']  = hymets[key]['nu']
-            mgd[key]['n0']  = xr.zeros_like(q[key])
-            mgd[key]['n0'] = mgd[key]['n0'].where(q[key]<=0., other = hymets[key]['n0'] )
 
     if qn_out:
         qn={}
         for key in q:
             tmp1 = (mgd[key]['mu'] + 1.0) / mgd[key]['nu']
-            qn[key] = xr.ones_like(q[key]).where(q[key] <= 0., other= #!!! not sure this is correct
+            qn[key] = xr.ones_like(q[key]).where(q[key].fillna(0.) <= 0., other= #!!! not sure this is correct
                                                              mgd[key]['n0'].where(q[key]>0.) * gfct(tmp1) / \
                                                             (mgd[key]['n0'].where(q[key]>0.) * mgd[key]['lam']**tmp1)
                                                             )
@@ -7201,21 +7198,32 @@ def mgdparams(q, qn, hymets=icon_hydromets()):
     """
     mgd = {}
     for key in q:
+        # initialize
         mgd[key] = {}
-        tmp1 = (hymets[key]['mu'] + 1.0) / hymets[key]['nu']
-        tmp2 = (hymets[key]['mu'] + hymets[key]['b'] + 1.0) / hymets[key]['nu']
-        tmp3 = hymets[key]['nu'] / hymets[key]['b']
+        mgd[key]['mu']  = hymets[key]['mu']
+        mgd[key]['nu']  = hymets[key]['nu']
+        mgd[key]['n0']  = xr.zeros_like(q[key])
+        mgd[key]['lam'] = xr.ones_like(q[key])
+
+        # precalc auxiliary parameters
+        tmp1 = (mgd[key]['mu'] + 1.0) / mgd[key]['nu']
+        tmp2 = (mgd[key]['mu'] + hymets[key]['b'] + 1.0) / mgd[key]['nu']
+        tmp3 = mgd[key]['nu'] / hymets[key]['b']
         gfct_tmp1 = gfct(tmp1)
         gfct_tmp2 = gfct(tmp2)
         tmp4 = hymets[key]['a'] * gfct_tmp2
-        tmp5 = hymets[key]['nu'] / gfct_tmp1
+        tmp5 = mgd[key]['nu'] / gfct_tmp1
 
         # calculate for valid (q,qn)
-        mgd[key]['lam'] = (( tmp4 * qn[key].where(q[key] > 0.) ) /
-             (q[key].where(q[key] > 0.) * gfct_tmp1)).fillna(1.) ** tmp3
+        mgd[key]['lam'] = mgd[key]['lam'].where( q[key].fillna(0.) <= 0., other=
+                                               (
+                                                ( tmp4 * qn[key].where(q[key] > 0.) ) /
+                                                ( q[key].where(q[key] > 0.) * gfct_tmp1 )
+                                               ) ** tmp3 )
 
-        mgd[key]['n0'] = (qn[key].where(q[key] > 0.) * tmp5 * \
-                        mgd[key]['lam'].where(q[key] > 0.)** tmp1 ).fillna(0.)
+        mgd[key]['n0'] = mgd[key]['n0'].where( q[key].fillna(0.) <= 0., other=
+                                               qn[key].where(q[key] > 0.) * tmp5 * \
+                                               mgd[key]['lam'].where(q[key] > 0.)** tmp1 )
 
     return mgd
 
@@ -7239,9 +7247,13 @@ def calc_moments(mgd, k=[0, 3, 4], hymets=icon_hydromets(), adjust=0):
             c1 = (hymets[key]['mu'] + kk + 1) / hymets[key]['nu']
             c2 = gfct(c1) / hymets[key]['nu']
 
+            # initialize Mk[kk]
+            Mk[key][kk] = xr.zeros_like(mgd[key]['n0'])
+
             # calculate Mk[kk] only if q, ie n0, is non-zero
-            Mk[key][kk] = (c2 * mgd[key]['n0'].where(mgd[key]['n0'] > 0.) / \
-                            mgd[key]['lam'].where(mgd[key]['n0'] > 0.)).fillna(0.) ** c1
+            Mk[key][kk] = Mk[key][kk].where( mgd[key]['n0'].fillna(0.) <= 0., other=
+                                                c2 * mgd[key]['n0'].where(mgd[key]['n0'] > 0.) / \
+                                                mgd[key]['lam'].where(mgd[key]['n0'] > 0.) ** c1 )
 
         if adjust:
             for kk in k:
@@ -7316,11 +7328,17 @@ def calc_microphys(icon_fields, mom=2):
     moments = calc_moments(multi_params, hymets=hymets, adjust=1) #!!! Julian S uses adjust=0
 
     if mom>1:
+        # Add totice, totliq and tot
         multimoments = calc_multimoments(moments)
+        multimoments = calc_multimoments(multimoments, inhm=['cloud', 'rain'], outhm='totliq')
+        multimoments = calc_multimoments(multimoments, inhm=['ice', 'snow', 'graupel', 'hail',
+                                                             'cloud', 'rain'], outhm='tot')
     else:
         warnings.warn("WARNING calc_microphys: Results of 1-mom scheme are probably wrong (unrealistic D0 values)")
         multimoments = calc_multimoments(moments, inhm=['ice','snow','graupel'])
-
+        multimoments = calc_multimoments(multimoments, inhm=['cloud', 'rain'], outhm='totliq')
+        multimoments = calc_multimoments(multimoments, inhm=['ice', 'snow', 'graupel',
+                                                             'cloud', 'rain'], outhm='tot')
     try:
         mean_volume_diameter = calc_Dmean(multimoments)
     except:
@@ -7328,18 +7346,18 @@ def calc_microphys(icon_fields, mom=2):
 
     for hm in ['cloud', 'rain', 'ice', 'snow', 'graupel', 'hail']:
         try:
-            icon_nc['vol_q' + hm[0]] = q_dens[hm].assign_attrs(
+            icon_nc['vol_q' + hm[0]] = (q_dens[hm] * 1000).assign_attrs(
                 dict( standard_name='volume ' +
                          " ".join(icon_nc['q' + hm[0]].long_name.split(" ")),
-                    units='m3 m-3'))
+                    units='g m-3'))
         except:
             warnings.warn("Creation of vol_q"+hm[0]+" not possible")
         try:
-            icon_nc['vol_qn' + hm[0]] = qn_dens[hm].assign_attrs(
+            icon_nc['vol_qn' + hm[0]] = np.log10(qn_dens[hm]/1000).assign_attrs(
                 dict( standard_name=
                          " ".join(icon_nc['qn' + hm[0]].long_name.split("_")) +
                               ' per volume',
-                    units='m-3'))
+                    units='log10(1/L)'))
         except:
             warnings.warn("Creation of vol_qn"+hm[0]+" not possible")
         try:
@@ -7349,6 +7367,8 @@ def calc_microphys(icon_fields, mom=2):
                          units='mm'))
         except:
             warnings.warn("Creation of D0_"+hm[0]+" not possible")
+
+    # Generate vol_qtotice, vol_qtotliq and vol_qtot
 
     vol_qtotice = icon_nc["vol_qi"]
     comment = "vol_qi"
@@ -7360,7 +7380,19 @@ def calc_microphys(icon_fields, mom=2):
     icon_nc['vol_qtotice'] = vol_qtotice.assign_attrs( dict (
         standard_name='volume specific total ice water content',
         comments=comment,
-        units='m3 m-3'))
+        units='g m-3'))
+
+    icon_nc['vol_qtotliq'] = (icon_nc["vol_qc"] + icon_nc["vol_qr"] ).assign_attrs( dict (
+        standard_name='volume specific total liquid water content',
+        comments="vol_qc + vol_qr",
+        units='g m-3'))
+
+    icon_nc['vol_qtot'] = (icon_nc["vol_qtotice"] + icon_nc["vol_qtotliq"] ).assign_attrs( dict (
+        standard_name='volume specific total water content',
+        comments="vol_qtotice + vol_qtotliq",
+        units='g m-3'))
+
+    # Generate vol_qntotice, vol_qntotliq and vol_qntot
 
     try:
         vol_qntotice = icon_nc["vol_qni"]
@@ -7372,9 +7404,27 @@ def calc_microphys(icon_fields, mom=2):
         icon_nc['vol_qntotice'] = vol_qntotice.assign_attrs( dict (
             standard_name='number concentration total ice water content per volume',
             comments=comment,
-            units='m-3'))
+            units='log10(1/L)'))
     except:
         warnings.warn("Creation of vol_qntotice not possible")
+
+    try:
+        icon_nc['vol_qntotliq'] = (icon_nc["vol_qnc"] + icon_nc["vol_qnr"] ).assign_attrs( dict (
+            standard_name='number concentration total liquid water content per volume',
+            comments="vol_qnc + vol_qnr",
+            units='log10(1/L)'))
+    except:
+        warnings.warn("Creation of vol_qntotliq not possible")
+
+    try:
+        icon_nc['vol_qntot'] = (icon_nc["vol_qntotice"] + icon_nc["vol_qntotliq"] ).assign_attrs( dict (
+            standard_name='number concentration total water content per volume',
+            comments="vol_qntotice + vol_qntotliq",
+            units='log10(1/L)'))
+    except:
+        warnings.warn("Creation of vol_qntot not possible")
+
+    # Generate D0_totice, D0_totliq and D0_tot
 
     try:
         icon_nc['D0_totice'] = (mean_volume_diameter['totice'] *1000).assign_attrs(dict(
@@ -7382,6 +7432,20 @@ def calc_microphys(icon_fields, mom=2):
             units='mm'))
     except:
         warnings.warn("Creation of D0_totice not possible")
+
+    try:
+        icon_nc['D0_totliq'] = (mean_volume_diameter['totliq'] *1000).assign_attrs(dict(
+            standard_name='mean volume diameter of total liquid',
+            units='mm'))
+    except:
+        warnings.warn("Creation of D0_totliq not possible")
+
+    try:
+        icon_nc['D0_tot'] = (mean_volume_diameter['tot'] *1000).assign_attrs(dict(
+            standard_name='mean volume diameter of total',
+            units='mm'))
+    except:
+        warnings.warn("Creation of D0_tot not possible")
 
     return icon_nc
 
