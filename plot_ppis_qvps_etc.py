@@ -779,16 +779,19 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "KDP_ML_corrected"
-min_entropy_thresh = 0.85
+mom = "DBZH_AC"
+min_entropy_thresh = 0.99
 
-ticks = radarmet.visdict14[mom.split("_")[0]]["ticks"]
-cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
-cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
-# norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
-cmap = "miub2"
-norm = utils.get_discrete_norm(ticks, cmap, extend="both")
-datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm, figsize=(7,3))
+try:
+    ticks = radarmet.visdict14[mom.split("_")[0]]["ticks"]
+    cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
+    cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
+    # norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
+    cmap = "miub2"
+    norm = utils.get_discrete_norm(ticks, cmap, extend="both")
+    datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm, figsize=(7,3))
+except:
+    datasel[mom].wrl.plot(x="time", figsize=(7,3))
 datasel["min_entropy"].compute().dropna("z", how="all").interpolate_na(dim="z").plot.contourf(
     x="time", levels=[min_entropy_thresh, 1], hatches=["", "XXX", ""], colors=[(1,1,1,0)],
     add_colorbar=False, extend="both")
@@ -818,7 +821,15 @@ plt.gca().set_ylabel("height over sea level")
 if isvolume: elevtitle = " RD-QVP"
 else:
     try: elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
-    except: elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values, 2))+"°"
+    except:
+        try:
+            elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values, 2))+"°"
+        except:
+            try:
+                elevtitle = " "+str(np.round(datasel["sweep_fixed_angle"].values, 2))+"°"
+            except:
+                elevtitle = " "+str(np.round(datasel["elevation"].values, 2))+"°"
+
 plt.title(mom+elevtitle+". "+str(datasel.time.values[0]).split(".")[0])
 plt.show()
 plt.close()
