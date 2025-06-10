@@ -7395,13 +7395,13 @@ def calc_microphys(icon_fields, mom=2):
     # Generate vol_qntotice, vol_qntotliq and vol_qntot
 
     try:
-        vol_qntotice = icon_nc["vol_qni"]
+        vol_qntotice = qn_dens["ice"]
         comment = "vol_qni"
         for hm in ['snow', 'graupel', 'hail']:
             if 'vol_qn' + hm[0] in icon_nc.keys():
-                vol_qntotice += icon_nc['vol_qn' + hm[0]]
+                vol_qntotice += qn_dens[hm]
                 comment += " + vol_qn" + hm[0]
-        icon_nc['vol_qntotice'] = vol_qntotice.assign_attrs( dict (
+        icon_nc['vol_qntotice'] = np.log10(vol_qntotice/1000).assign_attrs( dict (
             standard_name='number concentration total ice water content per volume',
             comments=comment,
             units='log10(1/L)'))
@@ -7409,7 +7409,7 @@ def calc_microphys(icon_fields, mom=2):
         warnings.warn("Creation of vol_qntotice not possible")
 
     try:
-        icon_nc['vol_qntotliq'] = (icon_nc["vol_qnc"] + icon_nc["vol_qnr"] ).assign_attrs( dict (
+        icon_nc['vol_qntotliq'] = np.log10((qn_dens["cloud"] + qn_dens["rain"] )/1000).assign_attrs( dict (
             standard_name='number concentration total liquid water content per volume',
             comments="vol_qnc + vol_qnr",
             units='log10(1/L)'))
@@ -7417,7 +7417,7 @@ def calc_microphys(icon_fields, mom=2):
         warnings.warn("Creation of vol_qntotliq not possible")
 
     try:
-        icon_nc['vol_qntot'] = (icon_nc["vol_qntotice"] + icon_nc["vol_qntotliq"] ).assign_attrs( dict (
+        icon_nc['vol_qntot'] = np.log10((vol_qntotice + qn_dens["cloud"] + qn_dens["rain"] )/1000).assign_attrs( dict (
             standard_name='number concentration total water content per volume',
             comments="vol_qntotice + vol_qntotliq",
             units='log10(1/L)'))
