@@ -7370,11 +7370,11 @@ def calc_microphys(icon_fields, mom=2):
 
     # Generate vol_qtotice, vol_qtotliq and vol_qtot
 
-    vol_qtotice = icon_nc["vol_qi"]
+    vol_qtotice = icon_nc["vol_qi"].copy()
     comment = "vol_qi"
     for hm in ['snow', 'graupel', 'hail']:
         if 'vol_q' + hm[0] in icon_nc.keys():
-            vol_qtotice += icon_nc['vol_q' + hm[0]]
+            vol_qtotice += icon_nc['vol_q' + hm[0]].copy()
             comment += " + vol_q" + hm[0]
 
     icon_nc['vol_qtotice'] = vol_qtotice.assign_attrs( dict (
@@ -7395,11 +7395,11 @@ def calc_microphys(icon_fields, mom=2):
     # Generate vol_qntotice, vol_qntotliq and vol_qntot
 
     try:
-        vol_qntotice = qn_dens["ice"]
+        vol_qntotice = qn_dens["ice"].copy()
         comment = "vol_qni"
         for hm in ['snow', 'graupel', 'hail']:
             if 'vol_qn' + hm[0] in icon_nc.keys():
-                vol_qntotice += qn_dens[hm]
+                vol_qntotice += qn_dens[hm].copy()
                 comment += " + vol_qn" + hm[0]
         icon_nc['vol_qntotice'] = np.log10(vol_qntotice/1000).assign_attrs( dict (
             standard_name='number concentration total ice water content per volume',
