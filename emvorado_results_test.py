@@ -1381,6 +1381,47 @@ radar_volume_new = xr.merge([radar_volume.sel(time=slice(icon_volume_new.time[0]
                              icon_volume_new])
 qvps = utils.compute_qvp(radar_volume_new.isel(sweep_fixed_angle=elev), min_thresh = {"RHOHV":0.9, "DBZH":0, "ZDR":-1, "SNRH":10,"SNRHC":10, "SQIH":0.5} )
 
+#%% TEST Load DETECT or Operation Hydrometeors ICON-EMVORADO files and compute QVPs (must have pre-computed volume files)
+
+# Load my simulations
+test = utils.load_emvorado_to_radar_volume("/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_2017063000/radout/cdfin_allsim_id-010392_*",rename=True)
+
+test_icon = xr.open_mfdataset("/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_2017063000/icon_vol/cdfin_allsim_icon_id-010392_*")
+
+test["DBZH_AC"] = test["DBZH"] + test["AHPI"]
+test["DBZH_AC"].attrs = test["DBZH"].attrs
+test["ZDR_AC"] = test["ZDR"] + test["ADPPI"]
+test["ZDR_AC"].attrs = test["ZDR"].attrs
+
+
+test_merge = xr.merge([
+                test.isel({"sweep_fixed_angle":7}),
+                test_icon.isel({"sweep_fixed_angle":7}),
+                          ])
+ds_qvp= utils.compute_qvp(test_merge)
+
+
+isvolume=False
+
+# ds_qvp= utils.compute_qvp(test.isel(sweep_fixed_angle=7)) # this one if not loading ICON data
+
+# Load Op Hyd simulations
+
+test = utils.load_emvorado_to_radar_volume("/automount/data02/agradar/operation_hydrometeors/data/Syn_vol/20210714/ASS_2411/MAIN_2411.0/EMVO_00410000.2/120min_spinup/EMV_Vol_ESS_20210714*.nc",rename=True)
+test_icon = xr.open_mfdataset("/automount/data02/agradar/operation_hydrometeors/data/Syn_vol/20210714/ASS_2411/MAIN_2411.0/ICONdata/120min_spinup/ICON_Vol_ESS_20210714*.nc")
+test_merge = xr.merge([
+                test.isel({"elevation":7}),
+                test_icon.isel({"elevation":7}),
+                          ], compat="override")
+ds_qvp= utils.compute_qvp(test_merge)
+isvolume=False
+
+for vn in ds_qvp.data_vars:
+    try: ds_qvp[vn].attrs["long_name"] = ds_qvp[vn].attrs["standard_name"]
+    except: print("no standard name for "+vn)
+
+ds_qvp_new =utils.calc_microphys(ds_qvp, mom=2).compute()
+
 #%% PLOT QVP
 
 ds_qvp = qvps
@@ -1418,6 +1459,56 @@ except:
 plt.title(mom+elevtitle+". "+str(datasel.time.values[0]).split(".")[0])
 plt.show()
 plt.close()
+
+#%% Plot microphysics QVPS
+
+#%%% For each hydrometeor
+
+# List of variable names
+variables = ["vol_qc", "vol_qi", "vol_qg", "vol_qs", "vol_qh", "vol_qr"]
+# variables = ["vol_qnc", "vol_qni", "vol_qng", "vol_qns", "vol_qnh", "vol_qnr"]
+# variables = ["D0_c", "D0_i", "D0_g", "D0_s", "D0_h", "D0_r"]
+
+# Create 3x2 subplots
+fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(15, 10), sharex=True, sharey=True)
+axes = axes.flatten()  # Flatten to 1D array for easier iteration
+
+# Plot each variable
+for i, var in enumerate(variables):
+    ds_qvp[var].plot(x="time", ax=axes[i], vmin=0, vmax=0.7, ylim=(0, 10000), cmap="viridis")
+    axes[i].set_title(var)
+
+# Adjust layout
+plt.tight_layout()
+plt.show()
+
+#%%% For the totals
+
+# List of variable names
+variables_q = ["vol_qtot", "vol_qtotice", "vol_qtotliq"]
+variables_qn = ["vol_qntot", "vol_qntotice", "vol_qntotliq"]
+variables_D0 = ["D0_tot", "D0_totice", "D0_totliq"]
+
+# Create 3x3 subplots
+fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(20, 10), sharex=True, sharey=True)
+axes = axes.flatten()  # Flatten to 1D array for easier iteration
+
+# Plot each variable
+for i, var in enumerate(variables_q):
+    ds_qvp[var].plot(x="time", ax=axes[i], vmin=0, vmax=0.7, ylim=(0, 10000), cmap="viridis")
+    axes[i].set_title(var)
+
+for i, var in enumerate(variables_qn):
+    ds_qvp[var].plot(x="time", ax=axes[i+3], vmin=-4, vmax=4, ylim=(0, 10000), cmap="RdBu_r")
+    axes[i+3].set_title(var)
+
+for i, var in enumerate(variables_D0):
+    ds_qvp[var].plot(x="time", ax=axes[i+6], vmin=0, vmax=5, ylim=(0, 10000), cmap="viridis")
+    axes[i+6].set_title(var)
+
+# Adjust layout
+plt.tight_layout()
+plt.show()
 
 
 #%% OLD CODE FROM HERE
