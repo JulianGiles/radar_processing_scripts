@@ -75,6 +75,7 @@ path_qvps = realpep_path+"/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/*allm
 path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
 # Load only events with ML detected (pre-condition for stratiform)
 path_qvps = realpep_path+"/upload/jgiles/dwd/qvps/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
+path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_selected_for_emvorado/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
 path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/20*/*/*/AFY/*/*/ML_detected.txt"
 # path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
 # path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/*/*/*/SVS/*/*/ML_detected.txt"
@@ -2415,6 +2416,8 @@ colors = ["#4c72b0",  # Deep Blue
               "#F46D43"]  # Warm Coral
 
 colors = ["#4c72b0",  # Deep Blue
+          "#4c72b0",  # Deep Blue
+          "#4c72b0",  # Deep Blue
             "#000004",  # Basically black
               "#5c126e",  # Purple
               "#9b2964",  # Dark Magenta
@@ -2422,14 +2425,14 @@ colors = ["#4c72b0",  # Deep Blue
               "#fbba1f"]  # Light Orange
 
 line_styles = ["--",  # Dashed
+               "-.",  # Dash-dot
+               ":",  # Dotted
                "-",  # Solid
                "-",  # Solid
                "-",  # Solid
                "-",  # Solid
                "-",  # Solid
                "--",  # Dashed
-               "-.",  # Dash-dot
-               ":",  # Dotted
                (0, (3, 5, 1, 5))]  # Custom: long dash, short gap, dot, short gap
 
 for il, loc in enumerate(locs):
@@ -2445,7 +2448,7 @@ plt.title(r'$\beta$ seasonality')
 #%%%% Plot riming frequency all radars in same plot
 
 locs_to_plot = locs #[find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
-# savepath = "/automount/agradar/jgiles/images/stats_histograms/"
+savepath = "/automount/agradar/jgiles/images/riming_frequency/"
 
 selseaslist = [
             ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
@@ -2464,6 +2467,8 @@ riming_class_to_plot = [
            ]
 
 colors = ["#4c72b0",  # Deep Blue
+          "#4c72b0",  # Deep Blue
+          "#4c72b0",  # Deep Blue
             "#000004",  # Basically black
               "#5c126e",  # Purple
               "#9b2964",  # Dark Magenta
@@ -2471,6 +2476,8 @@ colors = ["#4c72b0",  # Deep Blue
               "#fbba1f"]  # Light Orange
 
 line_styles = ["--",  # Dashed
+               "-.",  # Dash-dot
+               ":",  # Dotted
                "-",  # Solid
                "-",  # Solid
                "-",  # Solid
@@ -2484,6 +2491,11 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
     print(" ... ... "+stratname)
     for vv in riming_class_to_plot:
         for selseas in selseaslist:
+            # Create savefolder
+            savepath_seas = savepath+stratname+"/"+selseas[0]+"/"
+            if not os.path.exists(savepath_seas):
+                os.makedirs(savepath_seas)
+
             print(" ... ... ... "+selseas[0])
             # Plot the percentage against temperature
             fig = plt.figure(figsize=(5, 4))
@@ -2494,12 +2506,6 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
                 to_plot = riming_classif[stratname][loc].chunk({"time":"auto"}).where(\
                                                                    riming_classif[stratname][loc].z >= riming_classif[stratname][loc].height_ml_new_gia,
                                                                 drop=True)
-
-
-                # # Create savefolder
-                # savepath_seas = savepath+stratname+"/"+selseas[0]+"/"+loc+"/"
-                # if not os.path.exists(savepath_seas):
-                #     os.makedirs(savepath_seas)
 
                 to_plot_sel = to_plot.sel(\
                                     time=to_plot['time'].dt.month.isin(selseas[1]))
@@ -2536,11 +2542,6 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
                     plt.step(percentages, temp_bins[:-1], where="post",
                              label=loc.swapcase(), c=colors[iloc], lw=2, ls=line_styles[iloc])
 
-                    # fig.savefig(savepath_seas+"/"+loc+"_"+vv+"_vsTEMP.png",
-                    #                 bbox_inches="tight")
-                    # plt.close(fig)
-
-
                 except:
                     print("!!! Unable to plot "+vv+" !!!")
 
@@ -2552,6 +2553,11 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
             plt.gca().yaxis.set_inverted(True)
             plt.grid(True)
             plt.show()
+
+            fig.savefig(savepath_seas+"/riming_frequency_"+vv+"_vsTEMP.png",
+                            bbox_inches="tight")
+            plt.close(fig)
+
 
 #%%%% Ridgeplot of of variables in rimed vs not rimed events
 
@@ -2700,12 +2706,14 @@ for selseas in selseaslist:
                                                                     ).where(\
                                                                        riming_classif[stratname][loc].z <= riming_classif[stratname][loc].height_ml_new_gia + 2000,
                                                                     ) for loc in order_fil}
-                    samples_wriming = {loc: stats[stratname][loc][ss][vv].where(riming_filter[loc][riming_class].sum("z")>0).sel(\
-                                time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time").values\
+                    samples_wriming = {loc: stats[stratname][loc][ss][vv].sel(\
+                                        time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1]))\
+                                       .where(riming_filter[loc][riming_class].sum("z")>0).dropna("time").values\
                                for loc in order_fil}
 
-                    samples_woriming = {loc: stats[stratname][loc][ss][vv].where(riming_filter[loc][riming_class].sum("z")==0).sel(\
-                                time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time").values\
+                    samples_woriming = {loc: stats[stratname][loc][ss][vv].sel(\
+                                        time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1]))\
+                                        .where(riming_filter[loc][riming_class].sum("z")==0).dropna("time").values\
                                for loc in order_fil}
 
                     if ss in ["beta"] and vv in ["RHOHV_NC", "RHOHV"]: # filter out unrealistic zero beta values
@@ -2778,12 +2786,12 @@ for selseas in selseaslist:
                                                                     ).where(\
                                                                        riming_classif[stratname][loc].z <= riming_classif[stratname][loc].height_ml_new_gia + 2000,
                                                                     ) for loc in order_fil}
-                    samples_wriming = {loc: stats[stratname][loc][ss].where(riming_filter[loc][riming_class].sum("z")>0).sel(\
-                                time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time").values\
+                    samples_wriming = {loc: stats[stratname][loc][ss].sel(time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1]))\
+                                       .where(riming_filter[loc][riming_class].sum("z")>0).dropna("time").values\
                                for loc in order_fil}
 
-                    samples_woriming = {loc: stats[stratname][loc][ss].where(riming_filter[loc][riming_class].sum("z")==0).sel(\
-                                time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time").values\
+                    samples_woriming = {loc: stats[stratname][loc][ss].sel(time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1]))\
+                                        .where(riming_filter[loc][riming_class].sum("z")==0).dropna("time").values\
                                for loc in order_fil}
 
                     if ss in ["cloudtop", "cloudtop_5dbz", "cloudtop_10dbz"]: # filter out erroneous cloudtop values #!!! this will be fixed now (19.03.25) and this extra filter will not be necessary after re running the stats calculations
