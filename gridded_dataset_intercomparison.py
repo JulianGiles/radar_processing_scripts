@@ -869,7 +869,7 @@ try:
     weights = xr.DataArray(utils.grid_cell_areas(ds_ref.lon.values, ds_ref.lat.values),
                            coords=ds_ref.to_dataset()[["lat","lon"]].coords)
 except AttributeError:
-    weights = xr.DataArray(utils.grid_cell_areas(ds_ref.lon.values, ds_ref.lat.values),
+    weights = xr.DataArray(utils.grid_cell_areas(ds_ref.longitude.values, ds_ref.latitude.values),
                            coords=ds_ref.to_dataset()[["latitude","longitude"]].coords)
 
 # Get mask
@@ -1975,7 +1975,7 @@ for mode in ["", "spatial", "temporal"]:
                 weights = xr.DataArray(utils.grid_cell_areas(ds_ref.lon.values, ds_ref.lat.values),
                                        coords=ds_ref.to_dataset()[["lat","lon"]].coords)
             except AttributeError:
-                weights = xr.DataArray(utils.grid_cell_areas(ds_ref.lon.values, ds_ref.lat.values),
+                weights = xr.DataArray(utils.grid_cell_areas(ds_ref.longitude.values, ds_ref.latitude.values),
                                        coords=ds_ref.to_dataset()[["latitude","longitude"]].coords)
 
             # Get mask
@@ -3104,7 +3104,7 @@ for mode in ["", "spatial", "temporal"]:
                 weights = xr.DataArray(utils.grid_cell_areas(ds_ref.lon.values, ds_ref.lat.values),
                                        coords=ds_ref.to_dataset()[["lat","lon"]].coords)
             except AttributeError:
-                weights = xr.DataArray(utils.grid_cell_areas(ds_ref.lon.values, ds_ref.lat.values),
+                weights = xr.DataArray(utils.grid_cell_areas(ds_ref.longitude.values, ds_ref.latitude.values),
                                        coords=ds_ref.to_dataset()[["latitude","longitude"]].coords)
 
             # Get mask
@@ -4739,7 +4739,7 @@ for mode in ["", "spatial", "temporal"]:
                 weights = xr.DataArray(utils.grid_cell_areas(ds_ref.lon.values, ds_ref.lat.values),
                                        coords=ds_ref.to_dataset()[["lat","lon"]].coords)
             except AttributeError:
-                weights = xr.DataArray(utils.grid_cell_areas(ds_ref.lon.values, ds_ref.lat.values),
+                weights = xr.DataArray(utils.grid_cell_areas(ds_ref.longitude.values, ds_ref.latitude.values),
                                        coords=ds_ref.to_dataset()[["latitude","longitude"]].coords)
 
             # Get mask
