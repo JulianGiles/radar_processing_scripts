@@ -48,7 +48,7 @@ icon_wc = "*allsim_icon*"
 
 # path0 = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/" # For testing
 path0 = os.path.dirname(sys.argv[1])+"/" # read path from console
-overwrite = True # overwrite existing files?
+overwrite = False # overwrite existing files?
 
 clowres0=False # this is for the ML detection algorithm
 qvp_ielev=7 # elevation index to use for QVP
@@ -189,7 +189,7 @@ if X_PHI in ds.data_vars:
     moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI: (0, 180)} # different RHOHV limits for EMVORADO output
 
     ds_qvp_ra = utils.melting_layer_qvp_X_new(ds_qvp_ra, moments=moments, dim="z", fmlh=0.3,
-             xwin=xwin0, ywin=ywin0, min_h=0, rhohv_thresh_gia=(0.99, 1), all_data=True, clowres=clowres0)
+             xwin=xwin0, ywin=ywin0, min_h=0, rhohv_thresh_gia=(0.995, 1), all_data=True, clowres=clowres0)
 
     #### Assign ML values to dataset
 
