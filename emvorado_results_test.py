@@ -281,7 +281,7 @@ plt.show()
 plt.close()
 
 #%% ML detection
-window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian, rhohv_thresh_gia = utils.get_phase_proc_params(path_dwd).values()
+window0, winlen0, xwin0, ywin0, fix_range, rng, azmedian, rhohv_thresh_gia, grad_thresh = utils.get_phase_proc_params(path_dwd).values()
 min_height=0
 clowres0=True
 
