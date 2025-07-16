@@ -13,9 +13,9 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --ntasks-per-node=12
 #SBATCH --time=24:00:00
-#SBATCH --job-name=generate_volumes_hty_detecticonemvorado
-#SBATCH --output=generate_volumes_hty_detecticonemvorado.out
-#SBATCH --error=generate_volumes_hty_detecticonemvorado.err
+#SBATCH --job-name=generate_volumes_pro_detectrea
+#SBATCH --output=generate_volumes_pro_detectrea.out
+#SBATCH --error=generate_volumes_pro_detectrea.err
 #SBATCH --open-mode=truncate
 #SBATCH --partition=batch
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK}
@@ -25,10 +25,10 @@ codedir=/p/scratch/detectrea/giles1/radar_processing_scripts/
 cd $codedir
 
 # Define the radar code
-radar_code="017373" # pro: "010392" hty: "017373"
+radar_code="010392" # pro: "010392" hty: "017373"
 
 # Define your list of dates (format: YYYYMMDDHH)
-dates=(
+dates=( # HTY detecticonemvorado
     "2019122400"
     "2019123000"
     "2020010300"
@@ -38,11 +38,42 @@ dates=(
     "2020112000"
     "2020121400"
 )
+
+dates=( # PRO detecticonemvorado
+    "2018031200"
+    "2018041600"
+    "2018071200"
+    "2019100400"
+    "2020083000"
+    "2020092500"
+    "2020101400"
+)
+
+dates=( # HTY detectrea
+    "2016022100"
+    "2016030300"
+    "2016113000"
+    "2016120100"
+    "2016122600"
+    "2016122900"
+    "2016123000"
+    "2016123100"
+    "2017030300"
+    "2018010400"
+)
+
+dates=( # PRO detectrea
+    "2017041200"
+    "2017063000"
+    "2017072500"
+    "2017100500"
+)
+
 # Set the directory to look for the files
-base_path="/p/scratch/detecticonemvorado/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/"
+base_path="/p/scratch/detectrea/giles1/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/"
 
 # set a name for the counter file (counting how many job steps running at the same time
-counterfile=$base_path/count_hty.txt
+counterfile=$base_path/count_pro.txt
 
 count=0
 echo $count > $counterfile
