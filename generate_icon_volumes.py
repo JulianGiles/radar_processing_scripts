@@ -105,7 +105,7 @@ for radarpath in paths_radar:
     icon_field['time'] = icon_field['time'].dt.round('1s') # round time coord to the second
 
     # regridding to radar volume geometry
-    icon_volume = utils.icon_to_radar_volume(icon_field[["temp", "pres", "qv", "qc", "qi", "qr", "qs", "qg", "qh",
+    icon_volume = utils.icon_to_radar_volume(icon_field[["temp", "pres", "rh", "qv", "qc", "qi", "qr", "qs", "qg", "qh",
                                                          "qnc", "qni", "qnr", "qns", "qng", "qnh", "z_ifc"]], radar_volume)
     icon_volume["TEMP"] = icon_volume["temp"] - 273.15
 
