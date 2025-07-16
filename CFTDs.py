@@ -66,6 +66,8 @@ realpep_path = "/automount/realpep/"
 
 calculate_retrievals = True # Calculate retrievals based on the QVPs?
 
+suffix_name = "" # suffix to add to folder names, for special cases (like computing only a selection of cases)
+
 # This part should be run after having the QVPs computed (compute_qvps.py)
 start_time = time.time()
 print("Loading QVPs...")
@@ -76,7 +78,7 @@ path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol
 # Load only events with ML detected (pre-condition for stratiform)
 path_qvps = realpep_path+"/upload/jgiles/dwd/qvps/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
 path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_selected_for_emvorado/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
-path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/20*/*/*/AFY/*/*/ML_detected.txt"
+path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/20*/*/*/ANK/*/*/ML_detected.txt"
 # path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
 # path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/*/*/*/SVS/*/*/ML_detected.txt"
 # path_qvps = realpep_path+"/upload/jgiles/dmi/qvps_singlefile/ML_detected/ANK/*/12*/*allmoms*"
@@ -252,8 +254,14 @@ allcond = cond_ML_bottom_change * cond_ML_bottom_std * cond_ML_top_change * cond
 qvps_strat = qvps.where( (qvps["min_entropy"]>=min_entropy_thresh).compute() & allcond, drop=True)
 if "TEMP" not in qvps_strat: #!!! For some reason, AFY triggers an issue where it drops the TEMP and ML height coordinates even if there are valid values, so this is a temporary fix
     qvps_strat = qvps.where( (qvps["min_entropy"]>=min_entropy_thresh).compute() & allcond).dropna("time",how="all").dropna("z",how="all")
+
 # Relaxed alternative: Filter qvps with at least 50% of stratiform pixels (min entropy >= min_entropy_thresh and ML detected)
 qvps_strat_relaxed = qvps.where( ( (qvps["min_entropy"]>=min_entropy_thresh).sum("z").compute() >= qvps[X_DBZH].count("z").compute()/2 ) & allcond, drop=True)
+
+# Only-ML alternative: Filter qvps with ML detected
+qvps_strat_ML = qvps.where( allcond, drop=True)
+if "TEMP" not in qvps_strat_ML: #!!! For some reason, AFY triggers an issue where it drops the TEMP and ML height coordinates even if there are valid values, so this is a temporary fix
+    qvps_strat_ML = qvps.where( allcond).dropna("time",how="all").dropna("z",how="all")
 
 # Filter out non relevant values
 qvps_strat_fil = qvps_strat.where((qvps_strat[X_TH] > -10 )&
@@ -270,12 +278,21 @@ qvps_strat_relaxed_fil = qvps_strat_relaxed.where((qvps_strat_relaxed[X_TH] > -1
                                   (qvps_strat_relaxed[X_ZDR] > -1) &
                                   (qvps_strat_relaxed[X_ZDR] < 3))
 
+qvps_strat_ML_fil = qvps_strat_ML.where((qvps_strat_ML[X_TH] > -10 )&
+                                  (qvps_strat_ML[X_KDP].fillna(0.) > -0.1)&
+                                  (qvps_strat_ML[X_KDP].fillna(0.) < 3)&
+                                  (qvps_strat_ML[X_RHO] > 0.7)&
+                                  (qvps_strat_ML[X_ZDR] > -1) &
+                                  (qvps_strat_ML[X_ZDR] < 3))
+
 try:
     qvps_strat_fil = qvps_strat_fil.where(qvps_strat_fil["SNRHC"]>10)
     qvps_strat_relaxed_fil = qvps_strat_relaxed_fil.where(qvps_strat_relaxed_fil["SNRHC"]>10)
+    qvps_strat_ML_fil = qvps_strat_ML_fil.where(qvps_strat_ML_fil["SNRHC"]>10)
 except KeyError:
     qvps_strat_fil = qvps_strat_fil.where(qvps_strat_fil["SNRH"]>10)
     qvps_strat_relaxed_fil = qvps_strat_relaxed_fil.where(qvps_strat_relaxed_fil["SNRH"]>10)
+    qvps_strat_ML_fil = qvps_strat_ML_fil.where(qvps_strat_ML_fil["SNRH"]>10)
 except:
     print("Could not filter out low SNR")
 
@@ -302,7 +319,9 @@ if calculate_retrievals:
     except NameError:
         retrievals_qvpbased = {}
 
-    for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
+    for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
+                                ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
+                                ("stratiform_ML", qvps_strat_ML_fil.copy())]:
         print("   ... for "+stratname)
         retrievals_qvpbased[stratname] = {}
         retrievals_qvpbased[stratname][find_loc(locs, ff[0])] = utils.calc_microphys_retrievals(stratqvp, Lambda = Lambda, mu=0.33,
@@ -310,8 +329,10 @@ if calculate_retrievals:
                                       X_PHI=X_PHI )
 
         # Save retrievals
+        if not os.path.exists(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname):
+            os.makedirs(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname)
         for ll in retrievals_qvpbased[stratname].keys():
-            retrievals_qvpbased[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased/"+stratname+"/"+ll+".nc")
+            retrievals_qvpbased[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname+"/"+ll+".nc")
 
 # Check also if the retrievals are already in the QVP
 try: # check if exists, if not, create it
@@ -319,7 +340,9 @@ try: # check if exists, if not, create it
 except NameError:
     retrievals = {}
 
-for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
+for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
+                            ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
+                            ("stratiform_ML", qvps_strat_ML_fil.copy())]:
     retrievals_namelist = [
         "lwc_zh_zdr_reimann2021",
         "lwc_zh_zdr_rhyzkov2022",
@@ -349,10 +372,10 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
     retrievals[stratname][find_loc(locs, ff[0])] = xr.Dataset({key: stratqvp[key] for key in retrievals_namelist if key in stratqvp.data_vars})
 
     # Save retrievals
-    if not os.path.exists(realpep_path+"/upload/jgiles/radar_retrievals/"+stratname):
-        os.makedirs(realpep_path+"/upload/jgiles/radar_retrievals/"+stratname)
+    if not os.path.exists(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname):
+        os.makedirs(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname)
     for ll in retrievals[stratname].keys():
-        retrievals[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals/"+stratname+"/"+ll+".nc")
+        retrievals[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname+"/"+ll+".nc")
 
 #### General statistics
 print("Calculating statistics ...")
@@ -369,7 +392,9 @@ try: # check if exists, if not, create it
 except NameError:
     stats = {}
 
-for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
+for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
+                            ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
+                            ("stratiform_ML", qvps_strat_ML_fil.copy())]:
     print("   ... for "+stratname)
 
     stats[stratname] = {}
@@ -408,20 +433,45 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
     # We select above z_snow_over_ML and below z_snow_over_ML + z_grad_above_ML
     # Then we compute the gradient as the linear fit of the valid values
 
-    beta = stratqvp.where(stratqvp["z"] > (stratqvp["height_ml_new_gia"] + z_snow_over_ML) ) \
-                        .where(stratqvp["z"] < (stratqvp["height_ml_new_gia"] + z_snow_over_ML + z_grad_above_ML) )\
-                            .polyfit("z", 1, skipna=True).isel(degree=0) * 1000 # x1000 to transform the gradients to /km
+    stratqvp_ = stratqvp.where(stratqvp["z"] > (stratqvp["height_ml_new_gia"] + z_snow_over_ML) ) \
+                        .where(stratqvp["z"] < (stratqvp["height_ml_new_gia"] + z_snow_over_ML + z_grad_above_ML) ).copy()
 
-    beta = beta.rename({var: var.replace("_polyfit_coefficients", "") for var in beta.data_vars})
+    stratqvp_TEMP = stratqvp["TEMP"].where(stratqvp["z"] > (stratqvp["height_ml_new_gia"] + z_snow_over_ML) ) \
+                        .where(stratqvp["z"] < (stratqvp["height_ml_new_gia"] + z_snow_over_ML + z_grad_above_ML) ).copy()
+
+    beta = stratqvp_.polyfit("z", 1, skipna=True).isel(degree=0) * 1000 # x1000 to transform the gradients to /km
+
+    beta = beta.rename({var: var.replace("_polyfit_coefficients", "") for var in beta.data_vars}).assign_coords(
+                            {"valid_count": stratqvp_["DBZH"].count("z"),
+                             "valid_perc": stratqvp_["DBZH"].count("z")/stratqvp_TEMP.count("z")})
+
+    # Variation: Gradient above the ML until the DGL bottom
+
+    stratqvp_belowDGL_ = stratqvp.where((stratqvp["TEMP"] >= -10).compute())\
+                        .where(stratqvp["z"] > (stratqvp["height_ml_new_gia"] + z_snow_over_ML) ) .copy()
+
+    stratqvp_belowDGL_TEMP = stratqvp["TEMP"].where((stratqvp["TEMP"] >= -10).compute())\
+                        .where(stratqvp["z"] > (stratqvp["height_ml_new_gia"] + z_snow_over_ML) ) .copy()
+
+    beta_belowDGL = stratqvp_belowDGL_.polyfit("z", 1, skipna=True).isel(degree=0) * 1000 # x1000 to transform the gradients to /km
+
+    beta_belowDGL = beta_belowDGL.rename({var: var.replace("_polyfit_coefficients", "") for var in beta_belowDGL.data_vars}).assign_coords(
+                            {"valid_count": stratqvp_belowDGL_["DBZH"].count("z"),
+                             "valid_perc": stratqvp_belowDGL_["DBZH"].count("z")/stratqvp_belowDGL_TEMP.count("z")})
 
     # Gradient below the ML
     # We select below z_rain_below_ML
     # Then we compute the gradient as the linear fit of the valid values
 
-    beta_belowML = stratqvp.where(stratqvp["z"] < (stratqvp["height_ml_bottom_new_gia"] - z_rain_below_ML ) )\
-                            .polyfit("z", 1, skipna=True).isel(degree=0) * 1000 # x1000 to transform the gradients to /km
+    stratqvp_belowML_ = stratqvp.where(stratqvp["z"] < (stratqvp["height_ml_bottom_new_gia"] - z_rain_below_ML ) ).copy()
 
-    beta_belowML = beta_belowML.rename({var: var.replace("_polyfit_coefficients", "") for var in beta_belowML.data_vars})
+    stratqvp_belowML_TEMP = stratqvp["TEMP"].where(stratqvp["z"] < (stratqvp["height_ml_bottom_new_gia"] - z_rain_below_ML ) ).copy()
+
+    beta_belowML = stratqvp_belowML_.polyfit("z", 1, skipna=True).isel(degree=0) * 1000 # x1000 to transform the gradients to /km
+
+    beta_belowML = beta_belowML.rename({var: var.replace("_polyfit_coefficients", "") for var in beta_belowML.data_vars}).assign_coords(
+                            {"valid_count": stratqvp_belowML_["DBZH"].count("z"),
+                             "valid_perc": stratqvp_belowML_["DBZH"].count("z")/stratqvp_belowML_TEMP.count("z")})
 
     # Cloud top (3 methods)
     # Get the height value of the last not null value with a minimum of entropy 0.2 (this min entropy is to filter out random noise pixels)
@@ -480,6 +530,7 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
                                        "values_NZ_min": values_NZ_min.compute().copy(deep=True).assign_attrs({"Description": "minimum value within the NZ"}),
                                        "values_NZ_mean": values_NZ_mean.compute().copy(deep=True).assign_attrs({"Description": "mean value within the NZ"}),
                                        "beta": beta.compute().copy(deep=True).assign_attrs({"Description": "Gradient from "+str(z_snow_over_ML)+" to "+str(z_grad_above_ML)+" m above the ML"}),
+                                       "beta_belowDGL": beta_belowDGL.compute().copy(deep=True).assign_attrs({"Description": "Gradient from "+str(z_snow_over_ML)+" m above the ML to DGL bottom"}),
                                        "beta_belowML": beta_belowML.compute().copy(deep=True).assign_attrs({"Description": "Gradient from the first valid value to "+str(z_rain_below_ML)+" m below the ML"}),
                                        "cloudtop": cloudtop.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest not-null ZH value)"}),
                                        "cloudtop_5dbz": cloudtop_5dbz.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest ZH value > 5 dBZ)"}),
@@ -490,11 +541,11 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_
         }
 
     # Save stats
-    if not os.path.exists(realpep_path+"/upload/jgiles/radar_stats/"+stratname):
-        os.makedirs(realpep_path+"/upload/jgiles/radar_stats/"+stratname)
+    if not os.path.exists(realpep_path+"/upload/jgiles/radar_stats"+suffix_name+"/"+stratname):
+        os.makedirs(realpep_path+"/upload/jgiles/radar_stats"+suffix_name+"/"+stratname)
     for ll in stats[stratname].keys():
         for xx in stats[stratname][ll].keys():
-            stats[stratname][ll][xx].to_netcdf(realpep_path+"/upload/jgiles/radar_stats/"+stratname+"/"+ll+"_"+xx+".nc")
+            stats[stratname][ll][xx].to_netcdf(realpep_path+"/upload/jgiles/radar_stats"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc")
 
 
 #### Calculate riming
@@ -524,7 +575,10 @@ try:
         )
 
 
-    for stratname, stratqvp in [("unfiltered", qvps.copy()), ("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
+    for stratname, stratqvp in [("unfiltered", qvps.copy()),
+                                ("stratiform", qvps_strat_fil.copy()),
+                                ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
+                                ("stratiform_ML", qvps_strat_ML_fil.copy())]:
         print("   ... for "+stratname)
 
         riming_classif[stratname] = {}
@@ -579,10 +633,10 @@ try:
                 riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
 
                 # save to file
-                if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname):
-                    os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname)
+                if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname):
+                    os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname)
 
-                pred_riming.to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+loc+"_"+varname+".nc")
+                pred_riming.to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+loc+"_"+varname+".nc")
 
             # predict riming with the model that uses only zh and zdr
             for XZDR, XZH in [(X_ZDR, X_DBZH), ("ZDR", "DBZH")]:
@@ -609,18 +663,23 @@ try:
                 riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
 
                 # save to file
-                if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname):
-                    os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname)
+                if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname):
+                    os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname)
 
-                pred_riming.to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+loc+"_"+varname+".nc")
+                pred_riming.to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+loc+"_"+varname+".nc")
 
         else:
             riming_classif[stratname][loc] = riming_classif["unfiltered"][loc].where(stratqvp[X_DBZH].notnull())
+            for xx in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_'+X_ZDR+'_'+X_DBZH,
+                       ]:
+                riming_classif[stratname][loc][xx].to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+loc+"_"+xx+".nc")
 
 except ModuleNotFoundError:
     print("... Loading the riming model failed, trying to reload pre-calculated riming ...")
-    filtered_qvps = {"stratiform": qvps_strat_fil.copy(), "stratiform_relaxed": qvps_strat_relaxed_fil.copy()}
-    for stratname in ["unfiltered", "stratiform", "stratiform_relaxed"]:
+    filtered_qvps = {"stratiform": qvps_strat_fil.copy(),
+                     "stratiform_relaxed": qvps_strat_relaxed_fil.copy(),
+                     "stratiform_ML": qvps_strat_ML_fil.copy()}
+    for stratname in ["unfiltered", "stratiform", "stratiform_relaxed", "stratiform_ML"]:
         if stratname not in riming_classif.keys():
             riming_classif[stratname] = {}
         elif type(riming_classif[stratname]) is not dict:
@@ -631,17 +690,21 @@ except ModuleNotFoundError:
                 riming_classif[stratname][ll] = xr.Dataset()
             elif type(riming_classif[stratname][ll]) is not xr.Dataset:
                 riming_classif[stratname][ll] = xr.Dataset()
-            if stratname == "unfiltered":
-                for xx in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_'+X_ZDR+'_'+X_DBZH,
-                           ]:
-                    try:
-                        riming_classif[stratname][ll] = riming_classif[stratname][ll].assign( xr.open_dataset(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+ll+"_"+xx+".nc") )
-                        print(ll+" "+xx+" riming_classif loaded")
-                    except:
-                        pass
 
-            if stratname != "unfiltered":
-                riming_classif[stratname][ll] = riming_classif["unfiltered"][ll].where(filtered_qvps[stratname][X_DBZH].notnull())
+            for xx in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_'+X_ZDR+'_'+X_DBZH,
+                       ]:
+                try:
+                    riming_classif[stratname][ll] = riming_classif[stratname][ll].assign( xr.open_dataset(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc") )
+                    print(ll+" "+xx+" riming_classif loaded")
+                except:
+                    if stratname == "unfiltered":
+                        pass
+                    else:
+                        riming_classif[stratname][ll] = riming_classif["unfiltered"][ll].where(filtered_qvps[stratname][X_DBZH].notnull())
+                        for xx in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_'+X_ZDR+'_'+X_DBZH,
+                                   ]:
+                            riming_classif[stratname][ll][xx].to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+loc+"_"+xx+".nc")
+                        break
 
             # delete entry if empty
             if not riming_classif[stratname][ll]:
@@ -650,19 +713,22 @@ except ModuleNotFoundError:
 # Assign
 qvps_strat_fil = qvps_strat_fil.assign( riming_classif['stratiform'][loc] )
 qvps_strat_relaxed_fil = qvps_strat_relaxed_fil.assign( riming_classif['stratiform_relaxed'][loc] )
+qvps_strat_ML_fil = qvps_strat_ML_fil.assign( riming_classif['stratiform_ML'][loc] )
 
 total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
 
 #### Save filtered QVPs to files
 print("Saving filtered QVPs to files ...")
-for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()), ("stratiform_relaxed", qvps_strat_relaxed_fil.copy())]:
+for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
+                            ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
+                            ("stratiform_ML", qvps_strat_ML_fil.copy())]:
     print("   ... "+stratname)
     # save to file
-    if not os.path.exists(realpep_path+"/upload/jgiles/stratiform_qvps/"+stratname):
-        os.makedirs(realpep_path+"/upload/jgiles/stratiform_qvps/"+stratname)
+    if not os.path.exists(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/"+stratname):
+        os.makedirs(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/"+stratname)
 
-    stratqvp.to_netcdf(realpep_path+"/upload/jgiles/stratiform_qvps/"+stratname+"/"+ll+".nc")
+    stratqvp.to_netcdf(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/"+stratname+"/"+ll+".nc")
 
 #%% Reload QVPS
 reload_qvps = False
@@ -671,8 +737,9 @@ ll = "pro"
 if reload_qvps:
     print("Reloading filtered qvps")
 
-    qvps_strat_fil = xr.open_dataset(realpep_path+"/upload/jgiles/stratiform_qvps/stratiform/"+ll+".nc")
-    qvps_strat_relaxed_fil = xr.open_dataset(realpep_path+"/upload/jgiles/stratiform_qvps/stratiform_relaxed/"+ll+".nc")
+    qvps_strat_fil = xr.open_dataset(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform/"+ll+".nc")
+    qvps_strat_relaxed_fil = xr.open_dataset(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform_relaxed/"+ll+".nc")
+    qvps_strat_ML_fil = xr.open_dataset(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform_ML/"+ll+".nc")
 
 
 #%% CFTDs Plot
@@ -681,10 +748,10 @@ if reload_qvps:
 # default configurations (only change savepath and ds_to_plot accordingly).
 # If False, then produce the plot as given below and do not save.
 auto_plot = True
-savepath = "/automount/agradar/jgiles/images/CFTDs/stratiform/"
+savepath = "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed/"
 
 # Which to plot, qvps_strat_fil or qvps_strat_relaxed_fil
-ds_to_plot = qvps_strat_fil.copy()
+ds_to_plot = qvps_strat_relaxed_fil.copy()
 
 # Define list of seasons
 selseaslist = [
@@ -896,14 +963,18 @@ if country=="dwd":
 # savepath_list and ds_to_plot_list) and do not save.
 auto_plot = True
 savepath_list = [
-                "/automount/agradar/jgiles/images/CFTDs/stratiform/",
-                "/automount/agradar/jgiles/images/CFTDs/stratiform_QVPbased/",
-                "/automount/agradar/jgiles/images/CFTDs/stratiform_KDPpos/",
-                "/automount/agradar/jgiles/images/CFTDs/stratiform_KDPpos_QVPbased/",
-                "/automount/agradar/jgiles/images/CFTDs/stratiform_relaxed/",
-                "/automount/agradar/jgiles/images/CFTDs/stratiform_relaxed_QVPbased/",
-                "/automount/agradar/jgiles/images/CFTDs/stratiform_relaxed_KDPpos/",
-                "/automount/agradar/jgiles/images/CFTDs/stratiform_relaxed_KDPpos_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_KDPpos/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_KDPpos_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed_KDPpos/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed_KDPpos_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_ML/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_ML_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_ML_KDPpos/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_ML_KDPpos_QVPbased/",
                  ]
 
 # Which to plot, retrievals or retrievals_qvpbased, stratiform or stratiform_relaxed
@@ -917,6 +988,10 @@ ds_to_plot_list = [
                     retrievals_qvpbased["stratiform_relaxed"][loc].copy(),
                     retrievals["stratiform_relaxed"][loc].copy().where(qvps_strat_relaxed_fil.KDP_ML_corrected>0.01),
                     retrievals_qvpbased["stratiform_relaxed"][loc].copy().where(qvps_strat_relaxed_fil.KDP_ML_corrected>0.01),
+                    retrievals["stratiform_ML"][loc].copy(),
+                    retrievals_qvpbased["stratiform_ML"][loc].copy(),
+                    retrievals["stratiform_ML"][loc].copy().where(qvps_strat_ML_fil.KDP_ML_corrected>0.01),
+                    retrievals_qvpbased["stratiform_ML"][loc].copy().where(qvps_strat_ML_fil.KDP_ML_corrected>0.01),
                     ]
 
 
@@ -1111,7 +1186,7 @@ try: # check if exists, if not, create it
 except NameError:
     riming_classif = {}
 
-for stratname in ["stratiform", "stratiform_relaxed"]:
+for stratname in ["unfiltered", "stratiform", "stratiform_relaxed", "stratiform_ML"]:
     if stratname not in riming_classif.keys():
         riming_classif[stratname] = {}
     elif type(riming_classif[stratname]) is not dict:
@@ -1125,7 +1200,7 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
         for xx in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_ZDR_EC_OC_AC_DBZH_AC',
                    ]:
             try:
-                riming_classif[stratname][ll] = riming_classif[stratname][ll].assign( xr.open_dataset(realpep_path+"/upload/jgiles/radar_riming_classif/"+stratname+"/"+ll+"_"+xx+".nc") )
+                riming_classif[stratname][ll] = riming_classif[stratname][ll].assign( xr.open_dataset(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc") )
                 print(ll+" "+xx+" riming_classif loaded")
             except:
                 pass
@@ -1135,7 +1210,7 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
 
 #%%% Plot riming histograms
 locs_to_plot = locs #[find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
-savepath = "/automount/agradar/jgiles/images/stats_histograms/"
+savepath = "/automount/agradar/jgiles/images/stats_histograms"+suffix_name+"/"
 
 selseaslist = [
             ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
@@ -1151,7 +1226,7 @@ start_time = time.time()
 for loc in locs_to_plot:
     print(" ... "+loc)
 
-    for stratname in ["stratiform", "stratiform_relaxed"]:
+    for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
         print(" ... ... "+stratname)
 
         to_plot = riming_classif[stratname][loc].chunk({"time":"auto"}).where(\
@@ -1282,7 +1357,7 @@ X_KDP = "KDP_ML_corrected_EC"
 if 'stats' not in globals() and 'stats' not in locals():
     stats = {}
 
-for stratname in ["stratiform", "stratiform_relaxed"]:
+for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
     if stratname not in stats.keys():
         stats[stratname] = {}
     elif type(stats[stratname]) is not dict:
@@ -1296,10 +1371,10 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
         for xx in ['values_sfc', 'values_snow', 'values_rain', 'values_ML_max', 'values_ML_min', 'values_ML_mean',
                    'ML_thickness', 'ML_bottom', 'ML_thickness_TEMP', 'ML_bottom_TEMP', 'values_DGL_max', 'values_DGL_min',
                    'values_DGL_mean', 'values_NZ_max', 'values_NZ_min', 'values_NZ_mean', 'height_ML_max', 'height_ML_min',
-                   'ML_bottom', 'beta', 'beta_belowML', 'cloudtop', 'cloudtop_5dbz', 'cloudtop_10dbz',
+                   'ML_bottom', 'beta', 'beta_belowDGL', 'beta_belowML', 'cloudtop', 'cloudtop_5dbz', 'cloudtop_10dbz',
                    'cloudtop_TEMP', 'cloudtop_TEMP_5dbz', 'cloudtop_TEMP_10dbz']:
             try:
-                stats[stratname][ll][xx] = xr.open_dataset(realpep_path+"/upload/jgiles/radar_stats/"+stratname+"/"+ll+"_"+xx+".nc")
+                stats[stratname][ll][xx] = xr.open_dataset(realpep_path+"/upload/jgiles/radar_stats"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc")
                 if len(stats[stratname][ll][xx].data_vars)==1:
                     # if only 1 var, convert to data array
                     stats[stratname][ll][xx] = stats[stratname][ll][xx].to_dataarray()
@@ -1320,7 +1395,7 @@ if 'retrievals' not in globals() and 'retrievals' not in locals():
 if 'retrievals_qvpbased' not in globals() and 'retrievals_qvpbased' not in locals():
     retrievals_qvpbased = {}
 
-for stratname in ["stratiform", "stratiform_relaxed"]:
+for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
     if stratname not in retrievals.keys():
         retrievals[stratname] = {}
     elif type(retrievals[stratname]) is not dict:
@@ -1328,7 +1403,7 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
     print("Loading "+stratname+" retrievals ...")
     for ll in locs:
         try:
-            retrievals[stratname][ll] = xr.open_dataset(realpep_path+"/upload/jgiles/radar_retrievals/"+stratname+"/"+ll+".nc")
+            retrievals[stratname][ll] = xr.open_dataset(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname+"/"+ll+".nc")
             print(ll+" retrievals loaded")
         except:
             pass
@@ -1336,7 +1411,7 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
         if not retrievals[stratname][ll]:
             del retrievals[stratname][ll]
 
-for stratname in ["stratiform", "stratiform_relaxed"]:
+for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
     if stratname not in retrievals_qvpbased.keys():
         retrievals_qvpbased[stratname] = {}
     elif type(retrievals_qvpbased[stratname]) is not dict:
@@ -1344,7 +1419,7 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
     print("Loading "+stratname+" retrievals_qvpbased ...")
     for ll in locs:
         try:
-            retrievals_qvpbased[stratname][ll] = xr.open_dataset(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased/"+stratname+"/"+ll+".nc")
+            retrievals_qvpbased[stratname][ll] = xr.open_dataset(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname+"/"+ll+".nc")
             print(ll+" retrievals_qvpbased loaded")
         except:
             pass
@@ -1354,7 +1429,7 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
 
 #%%% 2d histograms
 locs_to_plot = locs # [find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
-savepath = "/automount/agradar/jgiles/images/stats_histograms/"
+savepath = "/automount/agradar/jgiles/images/stats_histograms"+suffix_name+"/"
 
 selseaslist = [
             ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
@@ -1371,7 +1446,7 @@ for loc in locs_to_plot:
     for selseas in selseaslist:
         print(" ... ... "+selseas[0])
 
-        for stratname in ["stratiform", "stratiform_relaxed"]:
+        for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
             print(" ... ... ... "+stratname)
 
             # Create savefolder
@@ -2124,7 +2199,7 @@ for loc in locs_to_plot:
                     print(" ... ... ... !!! not possible to plot (MLdepth+MLbot) vs betaZH for unknown reason !!! ")
 
 #%%% ridgeplots
-savepath = "/automount/agradar/jgiles/images/stats_ridgeplots/"
+savepath = "/automount/agradar/jgiles/images/stats_ridgeplots"+suffix_name+"/"
 
 vars_ticks = {X_DBZH: np.arange(0, 46, 1),
                 X_ZDR: np.arange(-0.5, 2.1, 0.1),
@@ -2161,6 +2236,7 @@ bins = {
         "cloudtop_5dbz": np.arange(2000,12250,250),
         "cloudtop_10dbz": np.arange(2000,12250,250),
         "beta": beta_vars_ticks,
+        "beta_belowDGL": beta_vars_ticks,
         "beta_belowML": beta_vars_ticks,
         "cloudtop_TEMP": np.arange(-50,5,1),
         "cloudtop_TEMP_5dbz": np.arange(-50,5,1),
@@ -2194,6 +2270,7 @@ bandwidths = {"ML_thickness": 50,
         "cloudtop_5dbz": default_bandwidth,
         "cloudtop_10dbz": default_bandwidth,
         "beta": default_bandwidth_dict,
+        "beta_belowDGL": default_bandwidth_dict,
         "beta_belowML": default_bandwidth_dict,
         "cloudtop_TEMP": default_bandwidth,
         "cloudtop_TEMP_5dbz": default_bandwidth,
@@ -2241,13 +2318,13 @@ def change_rgba_alpha(original_color, new_alpha):
     return f'rgba({r}, {g}, {b}, {new_alpha})'
 
 # Build deltaZH into stats
-for stratname in ["stratiform", "stratiform_relaxed"]:
+for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
     for ll in order:
         if ll in stats[stratname].keys():
             stats[stratname][ll]["deltaZH"] = stats[stratname][ll]["values_ML_max"][X_DBZH] - stats[stratname][ll]["values_rain"][X_DBZH]
 
 # Build delta_z_ZHmaxML_RHOHVminML into stats
-for stratname in ["stratiform", "stratiform_relaxed"]:
+for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
     for ll in order:
         if ll in stats[stratname].keys():
             stats[stratname][ll]["delta_z_ZHmaxML_RHOHVminML"] = stats[stratname][ll]["height_ML_max"][X_DBZH] - stats[stratname][ll]["height_ML_min"][X_RHO]
@@ -2255,7 +2332,7 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
 # Plot stats ridgeplots
 for selseas in selseaslist:
     print(" ... ... "+selseas[0])
-    for stratname in ["stratiform", "stratiform_relaxed"]:
+    for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
 
         print("plotting "+stratname+" stats...")
 
@@ -2448,7 +2525,7 @@ plt.title(r'$\beta$ seasonality')
 #%%%% Plot riming frequency all radars in same plot
 
 locs_to_plot = locs #[find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
-savepath = "/automount/agradar/jgiles/images/riming_frequency/"
+savepath = "/automount/agradar/jgiles/images/riming_frequency"+suffix_name+"/"
 
 selseaslist = [
             ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
@@ -2487,7 +2564,7 @@ line_styles = ["--",  # Dashed
 print("Plotting riming histograms ...")
 
 
-for stratname in ["stratiform", "stratiform_relaxed"]:
+for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
     print(" ... ... "+stratname)
     for vv in riming_class_to_plot:
         for selseas in selseaslist:
@@ -2562,7 +2639,7 @@ for stratname in ["stratiform", "stratiform_relaxed"]:
 #%%%% Ridgeplot of of variables in rimed vs not rimed events
 
 
-savepath = "/automount/agradar/jgiles/images/stats_ridgeplots_riming/"
+savepath = "/automount/agradar/jgiles/images/stats_ridgeplots_riming"+suffix_name+"/"
 
 vars_ticks = {X_DBZH: np.arange(0, 46, 1),
                 X_ZDR: np.arange(-0.5, 2.1, 0.1),
@@ -2599,6 +2676,7 @@ bins = {
         "cloudtop_5dbz": np.arange(2000,12250,250),
         "cloudtop_10dbz": np.arange(2000,12250,250),
         "beta": beta_vars_ticks,
+        "beta_belowDGL": beta_vars_ticks,
         "beta_belowML": beta_vars_ticks,
         "cloudtop_TEMP": np.arange(-50,5,1),
         "cloudtop_TEMP_5dbz": np.arange(-50,5,1),
@@ -2632,6 +2710,7 @@ bandwidths = {"ML_thickness": 50,
         "cloudtop_5dbz": default_bandwidth,
         "cloudtop_10dbz": default_bandwidth,
         "beta": default_bandwidth_dict,
+        "beta_belowDGL": default_bandwidth_dict,
         "beta_belowML": default_bandwidth_dict,
         "cloudtop_TEMP": default_bandwidth,
         "cloudtop_TEMP_5dbz": default_bandwidth,
@@ -2682,7 +2761,7 @@ def change_rgba_alpha(original_color, new_alpha):
 # Plot stats ridgeplots
 for selseas in selseaslist:
     print(" ... ... "+selseas[0])
-    for stratname in ["stratiform", "stratiform_relaxed"]:
+    for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
 
         riming_class = "riming_ZDR_EC_OC_AC_DBZH_AC"
 
