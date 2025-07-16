@@ -111,6 +111,7 @@ def make_savedir(ff, replace=("/run/", "/run/qvps/")):
 # check for the file DONE.txt in the savepath before starting
 savepath = make_savedir(files_emv[0][:-25]+".nc", replace=("/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/", "/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/qvps/"))
 if os.path.exists(os.path.dirname(savepath)+"/DONE.txt") and not overwrite:
+    print("Files already exist, skipping: "+savepath)
     exit()
 
 print("processing "+path0)
