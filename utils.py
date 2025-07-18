@@ -2913,10 +2913,6 @@ def era5_to_radar_volume(radar_volume, site=None, path=None, convert_to_C=True,
             if "time" in radar_volume[coord].dims:
                 radar_volume.coords[coord] = radar_volume.coords[coord].median("time")
 
-    # We need the ds to be georeferenced in case it is not
-    if "z" not in radar_volume.coords:
-        radar_volume = radar_volume.pipe(wrl.georef.georeference)
-
     # get times of the radar files
     startdt0 = dt.datetime.utcfromtimestamp(int(radar_volume.time[0].values)/1e9).date()
     enddt0 = dt.datetime.utcfromtimestamp(int(radar_volume.time[-1].values)/1e9).date() + dt.timedelta(hours=24)
@@ -2986,35 +2982,23 @@ def era5_to_radar_volume(radar_volume, site=None, path=None, convert_to_C=True,
 
             era5_fields[vv] = era5_fields[vv].interp({"latitude": new_latitude, "longitude": new_longitude})
 
-    # create coordinates for the interpolation
-    sitecoords = [float(radar_volume.longitude),
-                    float(radar_volume.latitude),
-                    float(radar_volume.altitude)]
-
-
-    xyz, proj_aeqd = wrl.georef.spherical_to_centroids(radar_volume["range"] + radar_volume["range"].diff("range").mean().values/2,
-                                                    radar_volume["azimuth"],
-                                                    radar_volume["elevation"],
-                                                    sitecoords,
-                                                    )
-
     if pre_interpolate_z:
         lon_era5 = np.meshgrid(era5_fields[vv]["longitude"], era5_fields[vv]["latitude"])[0].flatten()
-        lat_era5 = np.meshgrid(era5_fields[vv]["longitude"], era5_fields[vv]["latitude"])[0].flatten()
+        lat_era5 = np.meshgrid(era5_fields[vv]["longitude"], era5_fields[vv]["latitude"])[1].flatten()
     else:
         lon_era5 = np.meshgrid(era5_g["longitude"], era5_g["latitude"])[0].flatten()
-        lat_era5 = np.meshgrid(era5_g["longitude"], era5_g["latitude"])[0].flatten()
+        lat_era5 = np.meshgrid(era5_g["longitude"], era5_g["latitude"])[1].flatten()
     # the vertical coordinates of ERA5 changes with time so we need to include
-    # them in the function below and not here
+    # them in the function below for each timestep, and not here
 
-    # reproject into radar grid
+    mod_x = lon_era5
+    mod_y = lat_era5
+
+    # ERA5 is already in WGS84, we need to georeference the radar volume to the same system
     proj_wgs = osr.SpatialReference()
     proj_wgs.ImportFromEPSG(4326)
 
-    mod_x, mod_y = wrl.georef.reproject(lon_era5,
-                                        lat_era5,
-                                        trg_crs=proj_aeqd,
-                                        src_crs =proj_wgs)
+    radar_volume = radar_volume.pipe(wrl.georef.georeference, crs=proj_wgs)
     rad_x, rad_y, alt = radar_volume.x.values, radar_volume.y.values, radar_volume.z
 
     trg = np.vstack((rad_x.flatten().ravel(),
@@ -3033,12 +3017,12 @@ def era5_to_radar_volume(radar_volume, site=None, path=None, convert_to_C=True,
                             np.repeat(mod_y[np.newaxis, :], alt_era5.shape[0], axis=0).ravel(),
                             alt_era5.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
 
-        mesh = pyinterp.RTree(ecef=True)
+        mesh = pyinterp.RTree(ecef=False)
         if pre_interpolate_z:
             mesh.packing(src, data.isel(time=0).stack(stacked=['z', 'latitude', 'longitude']))
         else:
             mesh.packing(src, data.isel(time=0).stack(stacked=['lvl', 'latitude', 'longitude']))
-        data_interp, neighbors = mesh.inverse_distance_weighting(trg, within=False, k=k_n, p=1) # k=1 is like nearest neighbors
+        data_interp, neighbors = mesh.inverse_distance_weighting(trg, within=False, k=k_n, p=2) # k=1 is like nearest neighbors
         data_interp_reshape = data_interp.reshape(radar_volume["x"].shape)
         data_interp_reshape_xr = xr.DataArray(data_interp_reshape,
                                                 coords=radar_volume["x"].coords,
