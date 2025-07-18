@@ -6604,39 +6604,6 @@ def icon_to_radar_volume(icon_field, radar_volume):
         ICON fields interpolated into the shape of radar_volume.
     """
 
-    sitecoords = [float(radar_volume.longitude),
-                  float(radar_volume.latitude),
-                  float(radar_volume.altitude)]
-
-    # proj_wgs84 = wrl.georef.epsg_to_osr(4326)
-
-    # I have to shift the ranges:
-    # wrl.georef.spherical_to_centroids: The ranges are assumed to define the exterior
-    # boundaries of the range bins (thus they must be positive). The angles are assumed
-    # to describe the pointing direction fo the main beam lobe.
-    # cent_coords = wrl.georef.spherical_to_centroids(radar_volume["range"] + radar_volume["range"].diff("range").mean().values/2,
-    #                                                 radar_volume["azimuth"],
-    #                                                 radar_volume["elevation"],
-    #                                                 sitecoords,
-    #                                                 crs=proj_wgs84)
-
-    # lon = xr.ones_like(radar_volume["x"])*cent_coords[:,:,:,0]
-    # lat = xr.ones_like(radar_volume["x"])*cent_coords[:,:,:,1]
-    # alt = xr.ones_like(radar_volume["x"])*cent_coords[:,:,:,2]
-
-    # radar_volume = radar_volume.assign_coords({"lon": lon,
-    #                                            "lat": lat,
-    #                                            "alt": alt})
-
-    xyz, proj_aeqd = wrl.georef.spherical_to_centroids(radar_volume["range"] + radar_volume["range"].diff("range").mean().values/2,
-                                                   radar_volume["azimuth"],
-                                                   radar_volume["elevation"],
-                                                   sitecoords,
-                                                   )
-
-    if "x" not in radar_volume.coords:
-        radar_volume = wrl.georef.georeference(radar_volume)
-
     try:
         lon_icon = np.rad2deg(icon_field["clon"])
         lat_icon = np.rad2deg(icon_field["clat"])
@@ -6653,31 +6620,22 @@ def icon_to_radar_volume(icon_field, radar_volume):
         alt_icon = (icon_field["z_ifc"] + icon_field["z_ifc"].shift(height_2=-1))[:-1]/2 # transform from half levels to levels
         alt_icon = alt_icon.rename({"height_2":"height"})
 
-    # reproject icon into radar grid
+    mod_x = lon_icon.values
+    mod_y = lat_icon.values
+
+    # ICON is already in WGS84, we need to georeference the radar volume to the same system
     proj_wgs = osr.SpatialReference()
     proj_wgs.ImportFromEPSG(4326)
 
-    # proj_stereo = wrl.georef.create_osr("dwd-radolan")
-    # mod_x, mod_y = wrl.georef.reproject(lon_icon.values,
-    #                                     lat_icon.values,
-    #                                     trg_crs=proj_stereo,
-    #                                     src_crs =proj_wgs)
-    # rad_x, rad_y = wrl.georef.reproject(lon.values,
-    #                                     lat.values,
-    #                                     trg_crs=proj_stereo,
-    #                                     src_crs=proj_wgs)
+    radar_volume = wrl.georef.georeference(radar_volume, crs=proj_wgs)
 
-    mod_x, mod_y = wrl.georef.reproject(lon_icon.values,
-                                        lat_icon.values,
-                                        trg_crs=proj_aeqd,
-                                        src_crs =proj_wgs)
     rad_x, rad_y, alt = radar_volume.x.values, radar_volume.y.values, radar_volume.z
 
 
     # x y version
     # only those model data that are in radar domain + bordering volume
-    outer_x = max(0.3 * (rad_x.max() - rad_x.min()), 1)
-    outer_y = max(0.3 * (rad_y.max() - rad_y.min()), 1)
+    outer_x = 0.5
+    outer_y = 0.5
     lower_z = 50
     upper_z = 2000
 
@@ -6713,13 +6671,6 @@ def icon_to_radar_volume(icon_field, radar_volume):
                      mod_y_hl_masked,
                      alt_icon_hl.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
 
-
-    # src = np.vstack((np.repeat(mod_x[np.newaxis, :], alt_icon_z, axis=0).ravel(),
-    #                  np.repeat(mod_y[np.newaxis, :], alt_icon_z, axis=0).ravel(),
-    #                  alt_icon.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
-    # src_hl = np.vstack((np.repeat(mod_x_hl[np.newaxis, :], alt_icon_hl_z, axis=0).ravel(),
-    #                  np.repeat(mod_y_hl[np.newaxis, :], alt_icon_hl_z, axis=0).ravel(),
-    #                  alt_icon_hl.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
     trg = np.vstack((rad_x.flatten().ravel(),
                      rad_y.flatten().ravel(),
                      alt.values.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
@@ -6753,7 +6704,7 @@ def icon_to_radar_volume(icon_field, radar_volume):
 
     if len(vars_to_compute)>0:
         data0 = icon_field[vars_to_compute[0]].isel(time=0).values[mask]
-        mesh = pyinterp.RTree(ecef=True)
+        mesh = pyinterp.RTree(ecef=False)
         mesh.packing(src, data0)
         coords, values = mesh.value(trg, k=1, within=False)
 
@@ -6762,43 +6713,12 @@ def icon_to_radar_volume(icon_field, radar_volume):
 
     if len(vars_to_compute_hl)>0:
         data0_hl = icon_field[vars_to_compute_hl[0]].isel(time=0).values[mask_hl]
-        mesh = pyinterp.RTree(ecef=True)
+        mesh = pyinterp.RTree(ecef=False)
         mesh.packing(src_hl, data0_hl)
         coords_hl, values_hl = mesh.value(trg, k=1, within=False)
 
         tree = cKDTree(src_hl)
         _, indices_hl = tree.query(coords_hl[:,0,:], k=1)  # Find nearest neighbor indices
-
-    # Define a reggriding function for one variable and one timestep. The time
-    # dimension must be present (only first timestep is computed)
-    # def pyinterp_NN(data):
-    #     data_interp = data.isel(time=0)[indices]
-    #     data_interp_reshape = data_interp.values.reshape(radar_volume["x"].shape)
-    #     data_interp_reshape_xr =  xr.DataArray(data_interp_reshape,
-    #                                           coords=radar_volume["x"].coords,
-    #                                           dims=radar_volume["x"].dims,
-    #                                           name=data.name).expand_dims(dim={"time": data["time"]}, axis=0)
-    #     return data_interp_reshape_xr
-
-    # def pyinterp_NN_hl(data):
-    #     data_interp = data.isel(time=0)[indices_hl]
-    #     data_interp_reshape = data_interp.values.reshape(radar_volume["x"].shape)
-    #     data_interp_reshape_xr =  xr.DataArray(data_interp_reshape,
-    #                                           coords=radar_volume["x"].coords,
-    #                                           dims=radar_volume["x"].dims,
-    #                                           name=data.name).expand_dims(dim={"time": data["time"]}, axis=0)
-    #     return data_interp_reshape_xr
-
-    # # Define a function to process each variable and timestep
-    # def process_variable_time(var, func):
-    #     """Apply a function to each timestep of a variable."""
-    #     results = []
-    #     for t in range(var.sizes['time']):
-    #         result = func(var.isel(time=t).expand_dims("time"))
-    #         results.append(result)
-
-    #     # Combine the results along the time dimension
-    #     return xr.concat(results, dim='time')
 
     # Define functions to select the indices
     def pyinterp_NN(data):
