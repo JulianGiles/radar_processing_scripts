@@ -3007,7 +3007,7 @@ def era5_to_radar_volume(radar_volume, site=None, path=None, convert_to_C=True,
     # the vertical coordinates of ERA5 changes with time so we need to include
     # them in the function below and not here
 
-    # reproject icon into radar grid
+    # reproject into radar grid
     proj_wgs = osr.SpatialReference()
     proj_wgs.ImportFromEPSG(4326)
 
@@ -3070,7 +3070,7 @@ def era5_to_radar_volume(radar_volume, site=None, path=None, convert_to_C=True,
         # Combine all variables back into a dataset
         return xr.Dataset(processed_vars)
 
-    # Apply the function to icon_field
+    # Apply the function
     start_time = time.time()
     print("Regridding ERA5 fields to radar volume...")
     era5_vol = process_dataset(era5_fields, pyinterp_NN)
@@ -7464,3 +7464,46 @@ ff_icon_z = '/automount/data02/agradar/jgiles/out_EU-R13B5_constant_20200102T220
 icon_field = utils.load_icon(ff_icon, ff_icon_z)
 
 '''
+
+#### Vapor pressure and Relative humidity calculations
+# According to ERA5 IFS Documentation CY49R1 - Part IV: Physical Processes (version 11/2024)
+# https://www.ecmwf.int/en/elibrary/81626-ifs-documentation-cy49r1-part-iv-physical-processes
+
+def saturation_vapor_pressure_water(T):
+    return 611.21 * xr.ufuncs.exp(17.502 * (T - 273.16) / (T - 32.19))
+
+def saturation_vapor_pressure_ice(T):
+    return 611.21 * xr.ufuncs.exp(22.587 * (T - 273.16) / (T + 0.7))
+
+def mixed_phase_parameter(T, T0 = 273.16, Tice = 250.16):
+    return ( ((T - Tice)/(T0 - Tice))**2 ).where(T > Tice, other=0.).where(T < T0, other=1.)
+
+def saturation_vapor_pressure_mixed(e_sw, e_si, alpha):
+    return alpha*e_sw + (1-alpha)*e_si
+
+def vapor_pressure(p, q):
+    # pressure in Pa
+    epsilon = 0.621981
+    epsilon_ = 1/epsilon
+    return p*q*epsilon_ / (1 + q*(epsilon_ - 1))
+
+def relative_humidity(e, e_s):
+    return e/e_s
+
+def relative_humidity_water_ice(RH, T):
+    '''
+    Calculate the relative humidity with regards to water and ice separately
+    from the general relative humidity and temperature.
+
+    RH must be in fractional units (between 0 and 1)
+    T must be in Kelvin
+
+    Returns two objects, RH_w and RH_i separately.
+    '''
+
+    e_sw = saturation_vapor_pressure_water(T)
+    e_si = saturation_vapor_pressure_ice(T)
+    alpha = mixed_phase_parameter(T)
+    e_sm = saturation_vapor_pressure_mixed(e_sw, e_si, alpha)
+    e = RH * e_sm
+    return e/e_sw, e/e_si
