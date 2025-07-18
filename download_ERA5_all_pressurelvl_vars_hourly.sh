@@ -26,6 +26,8 @@ end_year=2023
 
 months=(01 02 03 04 05 06 07 08 09 10 11 12)
 
+days=(01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31)
+
 # bounding box (For whole of Germany: 46-57 N 4-17 E) (For whole of Turkey: 33-45 N 24-47)
 north=57
 south=46
@@ -42,22 +44,25 @@ else
 	cd ${variable}
 fi
 
-for lvl in "${levels_array[@]}"
-do
-
 for ((iy=$init_year;iy<=$end_year;iy++))
 do
 
     for im in "${months[@]}"
     do
 
-        if [ ! -e ${variable}_${lvl}_${iy}-${im}.nc ]; then
-            python ../ERA5_download_pressurelvl_by_year-month.py ${iy} ${im} ${variable} ${lvl} ${north} ${south} ${west} ${east}
+    for id in "${days[@]}"
+    do
+
+    for lvl in "${levels_array[@]}"
+    do
+
+        if [ ! -e ${variable}_${lvl}_${iy}-${im}-${id}.nc ]; then
+            python ../ERA5_download_by_year_Juli.py ${iy} ${im} ${id} ${variable} ${lvl} ${north} ${south} ${west} ${east}
         fi
-        if [ -e ${variable}_${lvl}_${iy}-${im}.nc ]; then
-            ntime=$(tsteps ${variable}_${lvl}_${iy}-${im}.nc)
-            if [ "${ntime}" -eq "8760" ] || [ "${ntime}" -eq "8784" ] || [ "${ntime}" -eq "12" ] || [ "${ntime}" -eq "744" ] || [ "${ntime}" -eq "720" ] || [ "${ntime}" -eq "696" ] || [ "${ntime}" -eq "672" ]; then
-                echo "---------------------------------- ${iy}-${im} ok"
+        if [ -e ${variable}_${lvl}_${iy}-${im}-${id}.nc ]; then
+            ntime=$(tsteps ${variable}_${lvl}_${iy}-${im}-${id}.nc)
+            if [ "${ntime}" -eq "8760" ] || [ "${ntime}" -eq "8784" ] || [ "${ntime}" -eq "12" ] || [ "${ntime}" -eq "744" ] || [ "${ntime}" -eq "720" ] || [ "${ntime}" -eq "696" ] || [ "${ntime}" -eq "672" ] || [ "${ntime}" -eq "24" ]; then
+                echo "---------------------------------- ${iy}-${im}-${id} ok"
 
 
             else
@@ -68,6 +73,8 @@ do
             echo "ERROR -- ERROR -- ERROR: No se realizo la descarga del archivo a partir del script de Python"
     #		exit
         fi
+    done
+
     done
 
 done
