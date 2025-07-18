@@ -367,7 +367,7 @@ era5_vars_rename = {"t":"TEMP", "r":"RH"}
 ds = utils.attach_ERA5_fields(ds, path=era5_dir, convert_to_C=True,
                        variables=era5_vars,
                        rename=era5_vars_rename, set_as_coords=False,
-                       k_n=1, pre_interpolate_z=True)
+                       k_n=9, pre_interpolate_z=True)
 
 # Save ERA5 ppis
 for vv in era5_vars_rename.values():
