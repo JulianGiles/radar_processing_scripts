@@ -123,7 +123,7 @@ if "dmi" in path_qvps:
 
         result_paths = []
         for date, elevations in elevation_dict.items():
-            closest_elevation_path = min(elevations, key=lambda x: abs(x[0] - 10))[1]
+            closest_elevation_path = min(elevations, key=lambda x: abs(x[0] - 10.1))[1] # We use 10.1 to prefer elevation 12 instead of 8 if both available
             result_paths.append(closest_elevation_path)
 
         return result_paths
