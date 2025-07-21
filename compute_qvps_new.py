@@ -49,12 +49,14 @@ save_retrievals_ppi = False # Save PPIs of microphysical retrievals? (this is pr
 abs_zdr_off_min_thresh = 0. # if ZDR_OC has more negative values than the original ZDR
 # and the absolute median offset is < abs_zdr_off_min_thresh, then undo the correction (set to 0 to avoid this step)
 daily_corr = True # correct ZDR with daily offset? if False, correct with timestep offsets
+if "dmi" in path0:
+    daily_corr = False
 variability_check = True # Check the variability of the timestep offsets to decide between daily or timestep offsets?
 variability_thresh = 0.1 # Threshold value of timestep-based ZDR offsets variability to use if variability_check is True.
 first_offset_method_abs_priority = False # If True, give absolute priority to the offset from the first method if valid
 mix_offset_variants = True # Use timestep-offsets variants to fill NaNs?
-mix_daily_offset_variants = False # select the most appropriate offset variant based on how_mix_zdr_offset
-mix_zdr_offsets = True # Select the most appropriate daily offset or timestep offset based on how_mix_zdr_offset
+mix_daily_offset_variants = False # select the most appropriate daily offset variant based on how_mix_zdr_offset
+mix_zdr_offsets = True # Select the most appropriate offset or timestep offset based on how_mix_zdr_offset
 how_mix_zdr_offset = "count" # how to choose between the different offsets
 # if mix_zdr_offsets = True. "count" will choose the offset that has more data points
 # in its calculation (there must be a variable ZDR_offset_datacount in the loaded offset).
@@ -81,6 +83,8 @@ zdrofffile_ts = utils.zdrofffile_ts
 # set the RHOHV correction location
 rhoncdir = utils.rhoncdir  # subfolder where to find the noise corrected rhohv data
 rhoncfile = utils.rhoncfile # pattern to select the appropriate file (careful with the rhohv_nc_2percent)
+if type(rhoncfile) is str:
+    rhoncfile = [rhoncfile]
 
 # get the files and check that it is not empty
 if "hd5" in path0 or "h5" in path0:
@@ -239,30 +243,35 @@ for ff in files:
             clowres0=True # for the ML correction algorithm
 
 #%% Load noise corrected RHOHV if available
-    try:
-        rhoncpath = os.path.dirname(utils.edit_str(ff, country, country+rhoncdir))
-        swp = utils.load_corrected_RHOHV(swp, rhoncpath+"/"+rhoncfile)
+    for rhoncfile0 in rhoncfile:
+        try:
+            rhoncpath = os.path.dirname(utils.edit_str(ff, country, country+rhoncdir))
+            swp = utils.load_corrected_RHOHV(swp, rhoncpath+"/"+rhoncfile0)
 
-        # Check that the corrected RHOHV does not have a lot more of low values
-        # if that is the case we take it that the correction did not work.
-        min_rho = 0.7 # min RHOHV value for filtering
-        mean_tolerance = 0.02 # 2% tolerance, for checking if RHOHV_NC is actually larger than RHOHV (overall higher values)
+            if "RHOHV_NC" not in swp:
+                continue
 
-        if ( swp["RHOHV_NC"].where(swp["z"]>min_height).mean() > swp[X_RHO].where(swp["z"]>min_height).mean()*(1-mean_tolerance) ).compute():
+            # Check that the corrected RHOHV does not have a lot more of low values
+            # if that is the case we take it that the correction did not work.
+            min_rho = 0.7 # min RHOHV value for filtering
+            mean_tolerance = 0.02 # 2% tolerance, for checking if RHOHV_NC is actually larger than RHOHV (overall higher values)
 
-            # Check that the corrected RHOHV does not have higher STD than the original (1 + std_tolerance)
-            # if that is the case we take it that the correction did not work well so we won't use it
-            std_tolerance = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_tolerance), otherwise use RHOHV
+            if ( swp["RHOHV_NC"].where(swp["z"]>min_height).mean() > swp[X_RHO].where(swp["z"]>min_height).mean()*(1-mean_tolerance) ).compute():
 
-            if ( swp["RHOHV_NC"].where(swp["RHOHV_NC"]>min_rho * (swp["z"]>min_height)).std() < swp[X_RHO].where(swp[X_RHO]>min_rho * (swp["z"]>min_height)).std()*(1+std_tolerance) ).compute():
-                # Change the default RHOHV name to the corrected one
-                X_RHO = "RHOHV_NC"
+                # Check that the corrected RHOHV does not have higher STD than the original (1 + std_tolerance)
+                # if that is the case we take it that the correction did not work well so we won't use it
+                std_tolerance = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_tolerance), otherwise use RHOHV
 
-    except OSError:
-        print("No noise corrected rhohv to load: "+rhoncpath+"/"+rhoncfile)
+                if ( swp["RHOHV_NC"].where(swp["RHOHV_NC"]>min_rho * (swp["z"]>min_height)).std() < swp[X_RHO].where(swp[X_RHO]>min_rho * (swp["z"]>min_height)).std()*(1+std_tolerance) ).compute():
+                    # Change the default RHOHV name to the corrected one
+                    X_RHO = "RHOHV_NC"
+            break
 
-    except ValueError:
-        print("ValueError with corrected rhohv: "+rhoncpath+"/"+rhoncfile)
+        except OSError:
+            print("No noise corrected rhohv to load: "+rhoncpath+"/"+rhoncfile0)
+
+        except ValueError:
+            print("ValueError with corrected rhohv: "+rhoncpath+"/"+rhoncfile0)
 
 #%% Correct ZDR-elevation dependency
     try:

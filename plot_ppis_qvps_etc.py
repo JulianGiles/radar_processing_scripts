@@ -71,13 +71,13 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 # ZDR offset loading parameters
 abs_zdr_off_min_thresh = 0. # if ZDR_OC has more negative values than the original ZDR
 # and the absolute median offset is < abs_zdr_off_min_thresh, then undo the correction (set to 0 to avoid this step)
-daily_corr = True # correct ZDR with daily offset? if False, correct with timestep offsets
+daily_corr = False # correct ZDR with daily offset? if False, correct with timestep offsets
 variability_check = True # Check the variability of the timestep offsets to decide between daily or timestep offsets?
 variability_thresh = 0.1 # Threshold value of timestep-based ZDR offsets variability to use if variability_check is True.
 first_offset_method_abs_priority = False # If True, give absolute priority to the offset from the first method if valid
 mix_offset_variants = True # Use timestep-offsets variants to fill NaNs?
-mix_daily_offset_variants = False # select the most appropriate offset variant based on how_mix_zdr_offset
-mix_zdr_offsets = True # Select the most appropriate daily offset or timestep offset based on how_mix_zdr_offset
+mix_daily_offset_variants = False # select the most appropriate daily offset variant based on how_mix_zdr_offset
+mix_zdr_offsets = True # Select the most appropriate offset or timestep offset based on how_mix_zdr_offset
 how_mix_zdr_offset = "count" # how to choose between the different offsets
 # if mix_zdr_offsets = True. "count" will choose the offset that has more data points
 # in its calculation (there must be a variable ZDR_offset_datacount in the loaded offset).
@@ -96,7 +96,7 @@ winlen0max = [9, 25] # max value for winlen0 (only applied if winlen0 is given i
 ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/pro/vol5minng01/07/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2019-07-17/ANK/*F/8.0/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-08-09/AFY/*/10.0/*allmoms*"
-ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-01-05/HTY/*/8.0/*allmoms*"
+ff = "/automount/realpep/upload/jgiles/dmi/*/*/2016-02-21/HTY/*/8.0/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2017-05-20/GZT/*/10.0/*allmoms*.nc"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-04-30/SVS/*/10.0/*allmoms*.nc"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-10-21/SVS/*/7.0/*allmoms*.nc"
@@ -104,14 +104,14 @@ ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-01-05/HTY/*/8.0/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dwd/*/*/2018-06-02/pro/90gradstarng01/00/*allmoms*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-10/2021-10-30/ess/90gradstarng01/00/*"
 # ff = "/automount/realpep/upload/RealPEP-SPP/DWD-CBand/2021/2021-07/2021-07-24/ess/90gradstarng01/00/*"
-ff = "/automount/realpep/upload/jgiles/dwd/2021/2021-07/2021-07-14/ess/vol5minng01/07/*allm*-hd5" # Ahr flood case
+# ff = "/automount/realpep/upload/jgiles/dwd/2021/2021-07/2021-07-14/ess/vol5minng01/07/*allm*-hd5" # Ahr flood case
 
 ff = glob.glob(ff)[0]
 print("Loading "+ff)
 
-ds = utils.load_dwd_preprocessed(ff)
+# ds = utils.load_dwd_preprocessed(ff)
 # ds = utils.load_dwd_raw(ff)
-# ds = utils.load_dmi_preprocessed(ff)
+ds = utils.load_dmi_preprocessed(ff)
 # ds = utils.load_volume(sorted(glob.glob(ff)), func=utils.load_dmi_preprocessed)
 
 # check if we are dealing with several elevations
@@ -186,35 +186,42 @@ X_DBZH, X_PHI, X_RHO, X_ZDR, X_TH = utils.get_names(ds)
 
 rhoncdir = utils.rhoncdir
 rhoncfile = utils.rhoncfile
+if type(rhoncfile) is str:
+    rhoncfile = [rhoncfile]
 
 if not isvolume:
-    try:
-        print("Loading noise corrected RHOHV")
-        rhoncpath = os.path.dirname(utils.edit_str(ff, country, country+rhoncdir))
+    print("Loading noise corrected RHOHV")
+    for rhoncfile0 in rhoncfile:
+        try:
+            rhoncpath = os.path.dirname(utils.edit_str(ff, country, country+rhoncdir))
 
-        ds = utils.load_corrected_RHOHV(ds, rhoncpath+"/"+rhoncfile)
+            ds = utils.load_corrected_RHOHV(ds, rhoncpath+"/"+rhoncfile0)
 
-        # Check that the corrected RHOHV does not have a lot more of low values
-        # if that is the case we take it that the correction did not work.
-        min_rho = 0.7 # min RHOHV value for filtering
-        mean_tolerance = 0.02 # 2% tolerance, for checking if RHOHV_NC is actually larger than RHOHV (overall higher values)
+            if "RHOHV_NC" not in ds:
+                continue
 
-        if ( ds["RHOHV_NC"].where(ds["z"]>min_height).mean() > ds[X_RHO].where(ds["z"]>min_height).mean()*(1-mean_tolerance) ).compute():
+            # Check that the corrected RHOHV does not have a lot more of low values
+            # if that is the case we take it that the correction did not work.
+            min_rho = 0.7 # min RHOHV value for filtering
+            mean_tolerance = 0.02 # 2% tolerance, for checking if RHOHV_NC is actually larger than RHOHV (overall higher values)
 
-            # Check that the corrected RHOHV does not have higher STD than the original (1 + std_tolerance)
-            # if that is the case we take it that the correction did not work well so we won't use it
-            std_tolerance = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_tolerance), otherwise use RHOHV
+            if ( ds["RHOHV_NC"].where(ds["z"]>min_height).mean() > ds[X_RHO].where(ds["z"]>min_height).mean()*(1-mean_tolerance) ).compute():
 
-            if ( ds["RHOHV_NC"].where(ds["RHOHV_NC"]>min_rho * (ds["z"]>min_height)).std() < ds[X_RHO].where(ds[X_RHO]>min_rho * (ds["z"]>min_height)).std()*(1+std_tolerance) ).compute():
-                # Change the default RHOHV name to the corrected one
-                X_RHO = "RHOHV_NC"
+                # Check that the corrected RHOHV does not have higher STD than the original (1 + std_tolerance)
+                # if that is the case we take it that the correction did not work well so we won't use it
+                std_tolerance = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_tolerance), otherwise use RHOHV
 
+                if ( ds["RHOHV_NC"].where(ds["RHOHV_NC"]>min_rho * (ds["z"]>min_height)).std() < ds[X_RHO].where(ds[X_RHO]>min_rho * (ds["z"]>min_height)).std()*(1+std_tolerance) ).compute():
+                    # Change the default RHOHV name to the corrected one
+                    X_RHO = "RHOHV_NC"
 
-    except OSError:
-        print("No noise corrected RHOHV to load: "+rhoncpath+"/"+rhoncfile)
+            break
 
-    except ValueError:
-        print("ValueError with corrected RHOHV: "+rhoncpath+"/"+rhoncfile)
+        except OSError:
+            print("No noise corrected RHOHV to load: "+rhoncpath+"/"+rhoncfile0)
+
+        except ValueError:
+            print("ValueError with corrected RHOHV: "+rhoncpath+"/"+rhoncfile0)
 else:
     print("Skipped Loading noise corrected RHOHV")
 
@@ -779,7 +786,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "DBZH_AC"
+mom = "ZDR"
 min_entropy_thresh = 0.99
 
 try:

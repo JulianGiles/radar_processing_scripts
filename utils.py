@@ -107,7 +107,7 @@ zdrofffile_ts = ["*zdr_offset_belowML_timesteps_00*",  "*zdr_offset_below1C_time
 
 # set the RHOHV correction location
 rhoncdir = "/rhohv_nc/" # subfolder where to find the noise corrected rhohv data
-rhoncfile = "*rhohv_nc_2percent*" # pattern to select the appropriate file (careful with the rhohv_nc_2percent)
+rhoncfile = ["*rhohv_nc_2percent*", "*rhohv_nc-*"] # pattern to select the appropriate file (careful with the rhohv_nc_2percent)
 
 # default parameteres for phidp processing in DWD and turkish (dmi) C-band data
 phase_proc_params = {}
@@ -992,7 +992,7 @@ def load_ZDR_offset(ds, X_ZDR, zdr_off, zdr_off_name="ZDR_offset", zdr_oc_name="
             Dataset with ZDR data.
     X_ZDR : str
             Name of the ZDR variable.
-    zdr_off_path : str or xr.Dataset
+    zdr_off : str or xr.Dataset
             If str: location of the file or path with wildcards.
             If xarray.Dataset: dataset with the ZDR offset variable included.
     zdr_off_name : str
@@ -1458,11 +1458,16 @@ def load_corrected_RHOHV(ds, rho_nc_path, rho_nc_name="RHOHV_NC"):
 
     rho_nc = xr.open_mfdataset(rho_nc_path)
 
-    # create RHOHV_NC variable
-    ds = ds.assign(rho_nc)
-    ds[rho_nc_name].attrs["noise correction level"] = rho_nc.attrs["noise correction level"]
+    if rho_nc[rho_nc_name].notnull().any():
 
-    return ds
+        # create RHOHV_NC variable
+        ds = ds.assign(rho_nc)
+        ds[rho_nc_name].attrs["noise correction level"] = rho_nc.attrs["noise correction level"]
+
+        return ds
+    else:
+        warnings.warn("load_corrected_RHOHV: "+rho_nc_name+" in the provided file has no valid values!")
+        return ds
 
 #### QVPs
 def compute_qvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1} , output_count=False):

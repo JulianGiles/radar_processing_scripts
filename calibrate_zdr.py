@@ -121,8 +121,10 @@ for cp in calib_types:
         sys.exit("Calibration method not implemented. Possible options are 1, 2 or 3")
 
 # set the RHOHV correction location
-rhoncdir = "/rhohv_nc/" # subfolder where to find the noise corrected rhohv data
-rhoncfile = "*rhohv_nc_2percent*" # pattern to select the appropriate file (careful with the rhohv_nc_2percent)
+rhoncdir = utils.rhoncdir # subfolder where to find the noise corrected rhohv data
+rhoncfile = utils.rhoncfile # pattern to select the appropriate file (careful with the rhohv_nc_2percent)
+if type(rhoncfile) is str:
+    rhoncfile = [rhoncfile]
 
 # define a function to create save directory for the offset and return file save path
 def make_savedir(ff, name):
@@ -211,18 +213,23 @@ for ff in files:
         clowres0=True
 
 #%% Load noise corrected RHOHV if available
-    try:
-        if "dwd" in ff:
-            country="dwd"
-        elif "dmi" in ff:
-            country="dmi"
-        rhoncpath = os.path.dirname(utils.edit_str(ff, country, country+rhoncdir))
-        data = utils.load_corrected_RHOHV(data, rhoncpath+"/"+rhoncfile)
+    for rhoncfile0 in rhoncfile:
+        try:
+            if "dwd" in ff:
+                country="dwd"
+            elif "dmi" in ff:
+                country="dmi"
+            rhoncpath = os.path.dirname(utils.edit_str(ff, country, country+rhoncdir))
+            data = utils.load_corrected_RHOHV(data, rhoncpath+"/"+rhoncfile0)
 
-    except OSError:
-        print("No noise corrected rhohv to load: "+rhoncpath+"/"+rhoncfile)
-    except ValueError:
-        print("ValueError with corrected RHOHV: "+rhoncpath+"/"+rhoncfile)
+            if "RHOHV_NC" not in data:
+                continue
+            break
+
+        except OSError:
+            print("No noise corrected rhohv to load: "+rhoncpath+"/"+rhoncfile0)
+        except ValueError:
+            print("ValueError with corrected RHOHV: "+rhoncpath+"/"+rhoncfile0)
 
 #%% Load and attach temperature data (in case no ML is detected, and in case temperature comes from other source different than ERA5)
 
