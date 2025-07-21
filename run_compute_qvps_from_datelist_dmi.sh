@@ -16,7 +16,7 @@ mapfile -t valid_dates < "$date_file"
 
 
 max_attempts=5  # Maximum number of restart attempts
-max_execution_time=240  # Maximum execution time in seconds
+max_execution_time=600  # Maximum execution time in seconds
 
 # Create a list of all files that include *allmoms* in their name
 files=$(find $dir -name "*allm*$loc*" -type f -not -path "*qvp*"  -not -path "*WIND*" -not -path "*SURVEILLANCE*" -not -path "*RHI1*" -not -path "*ppi*" | sort -u)
