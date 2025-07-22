@@ -580,7 +580,7 @@ layout.save("/user/jgiles/qvps_emvorado_pro_stratiform.html", resources=INLINE, 
             max_states=1000, max_opts=1000)
 
 #%% Filters (conditions for stratiform)
-calculate_retrievals = False
+calculate_retrievals = True
 min_entropy_thresh = 0.85
 
 loc = utils.find_loc(utils.locs, ff[0])
@@ -683,7 +683,7 @@ if calculate_retrievals:
         retrievals_qvpbased[stratname] = {}
         retrievals_qvpbased[stratname][loc] = utils.calc_microphys_retrievals(stratqvp, Lambda = Lambda, mu=0.33,
                                       X_DBZH=X_DBZH, X_ZDR=X_ZDR, X_KDP=X_KDP, X_TEMP="TEMP",
-                                      X_PHI=X_PHI )
+                                      X_PHI=X_PHI ).assign_coords({"TEMP": stratqvp["TEMP"]})
 
         # Save retrievals #!!! For now this is disabled
         # for ll in retrievals_qvpbased[stratname].keys():
@@ -748,6 +748,7 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
 # If False, then produce the plot as given below and do not save.
 auto_plot = True
 savepath = "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform/"
+plot_relhum = True # plot relative humidity with respect to ice and water in a separate plot?
 
 # Which to plot, qvps_strat_fil, qvps_strat_relaxed_fil or qvps_entropy4km_fil
 ds_to_plot = qvps_strat_fil.copy()
@@ -778,7 +779,7 @@ selmonths = selseas[1]
 tb=1# degress C
 
 # Min counts per Temp layer
-mincounts=100
+mincounts=30
 
 #Colorbar limits and step
 cblim=[0,10]
@@ -880,7 +881,81 @@ if loc in ['afy', 'ank', 'gzt', 'hty', 'svs']:
             fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
             print("AUTO PLOT: saved "+savename)
 
+    if plot_relhum:
+        ds_to_plot_e = utils.vapor_pressure(ds_to_plot.pres, ds_to_plot.qv)
+        ds_to_plot_e_sw = utils.saturation_vapor_pressure_water(ds_to_plot.temp)
+        ds_to_plot_e_si = utils.saturation_vapor_pressure_ice(ds_to_plot.temp)
+        ds_to_plot_alpha = utils.mixed_phase_parameter(ds_to_plot.temp)
+        ds_to_plot_e_sm = utils.saturation_vapor_pressure_mixed(ds_to_plot_e_sw,
+                                                                ds_to_plot_e_si,
+                                                                ds_to_plot_alpha)
 
+        ds_to_plot_RH = ds_to_plot_e / ds_to_plot_e_sm *100
+        ds_to_plot_RHi = ds_to_plot_e / ds_to_plot_e_si *100
+        ds_to_plot_RHw = ds_to_plot_e / ds_to_plot_e_sw *100
+
+        ds_to_plot_relhum = xr.Dataset({"RH": ds_to_plot_RH,
+                             "RHi": ds_to_plot_RHi,
+                             "RHw": ds_to_plot_RHw,
+            }).assign_coords({"TEMP":ds_to_plot.TEMP})
+
+        vars_to_plot = {
+                        "RHi": [50, 125, 5],
+                        "RHw": [50, 125, 5],
+                        "RH": [50, 125, 5],
+                        }
+
+        if auto_plot:
+            vtp = [ {
+                    "RHi": [50, 125, 5],
+                    "RHw": [50, 125, 5],
+                    "RH": [50, 125, 5],
+                    },
+                   ]
+
+            ytlimlist = [-20, -50]
+            savedict = {}
+            cond_name = os.path.basename(os.path.normpath(savepath))
+            for selseas in selseaslist:
+                savedict.update(
+                            {selseas[0]+"/"+loc+"_cftd_"+cond_name+"_RH.png": [vtp[0], ytlimlist[0], selseas[1]],
+                            selseas[0]+"/"+loc+"_cftd_"+cond_name+"_RH_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
+                            }
+                                )
+
+        for savename in savedict.keys():
+            if auto_plot:
+                vars_to_plot = savedict[savename][0]
+                ytlim = savedict[savename][1]
+                selmonths = savedict[savename][2]
+
+            fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15,5), width_ratios=(1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+            for nn, vv in enumerate(vars_to_plot.keys()):
+                so=False
+                binsx2=None
+                adj=1
+                utils.hist2d(ax[nn], ds_to_plot_relhum[vv].sel(time=ds_to_plot_relhum['time'].dt.month.isin(selmonths))*adj,
+                             ds_to_plot_relhum["TEMP"].sel(time=ds_to_plot_relhum['time'].dt.month.isin(selmonths))+adjtemp,
+                             whole_x_range=True,
+                             binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                             cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
+                             fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                             cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
+                ax[nn].set_ylim(15,ytlim)
+                ax[nn].set_xlabel(vv, fontsize=10)
+
+                ax[nn].tick_params(labelsize=15) #change font size of ticks
+                plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+
+            ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+            if auto_plot:
+                # Create savefolder
+                savepath_seas = os.path.dirname(savepath+savename)
+                if not os.path.exists(savepath_seas):
+                    os.makedirs(savepath_seas)
+                fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
+                print("AUTO PLOT: saved "+savename)
 
 # DWD
 # plot CFTDs moments
@@ -950,6 +1025,82 @@ elif loc in ['pro', 'tur', 'umd', 'ess']:
                 os.makedirs(savepath_seas)
             fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
             print("AUTO PLOT: saved "+savename)
+
+    if plot_relhum:
+        ds_to_plot_e = utils.vapor_pressure(ds_to_plot.pres, ds_to_plot.qv)
+        ds_to_plot_e_sw = utils.saturation_vapor_pressure_water(ds_to_plot.temp)
+        ds_to_plot_e_si = utils.saturation_vapor_pressure_ice(ds_to_plot.temp)
+        ds_to_plot_alpha = utils.mixed_phase_parameter(ds_to_plot.temp)
+        ds_to_plot_e_sm = utils.saturation_vapor_pressure_mixed(ds_to_plot_e_sw,
+                                                                ds_to_plot_e_si,
+                                                                ds_to_plot_alpha)
+
+        ds_to_plot_RH = ds_to_plot_e / ds_to_plot_e_sm *100
+        ds_to_plot_RHi = ds_to_plot_e / ds_to_plot_e_si *100
+        ds_to_plot_RHw = ds_to_plot_e / ds_to_plot_e_sw *100
+
+        ds_to_plot_relhum = xr.Dataset({"RH": ds_to_plot_RH,
+                             "RHi": ds_to_plot_RHi,
+                             "RHw": ds_to_plot_RHw,
+            }).assign_coords({"TEMP":ds_to_plot.TEMP})
+
+        vars_to_plot = {
+                        "RHi": [50, 125, 5],
+                        "RHw": [50, 125, 5],
+                        "RH": [50, 125, 5],
+                        }
+
+        if auto_plot:
+            vtp = [ {
+                    "RHi": [50, 125, 5],
+                    "RHw": [50, 125, 5],
+                    "RH": [50, 125, 5],
+                    },
+                   ]
+
+            ytlimlist = [-20, -50]
+            savedict = {}
+            cond_name = os.path.basename(os.path.normpath(savepath))
+            for selseas in selseaslist:
+                savedict.update(
+                            {selseas[0]+"/"+loc+"_cftd_"+cond_name+"_RH.png": [vtp[0], ytlimlist[0], selseas[1]],
+                            selseas[0]+"/"+loc+"_cftd_"+cond_name+"_RH_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
+                            }
+                                )
+
+        for savename in savedict.keys():
+            if auto_plot:
+                vars_to_plot = savedict[savename][0]
+                ytlim = savedict[savename][1]
+                selmonths = savedict[savename][2]
+
+            fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15,5), width_ratios=(1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+            for nn, vv in enumerate(vars_to_plot.keys()):
+                so=False
+                binsx2=None
+                adj=1
+                utils.hist2d(ax[nn], ds_to_plot_relhum[vv].sel(time=ds_to_plot_relhum['time'].dt.month.isin(selmonths))*adj,
+                             ds_to_plot_relhum["TEMP"].sel(time=ds_to_plot_relhum['time'].dt.month.isin(selmonths))+adjtemp,
+                             whole_x_range=True,
+                             binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                             cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
+                             fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                             cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
+                ax[nn].set_ylim(15,ytlim)
+                ax[nn].set_xlabel(vv, fontsize=10)
+
+                ax[nn].tick_params(labelsize=15) #change font size of ticks
+                plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+
+            ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+            if auto_plot:
+                # Create savefolder
+                savepath_seas = os.path.dirname(savepath+savename)
+                if not os.path.exists(savepath_seas):
+                    os.makedirs(savepath_seas)
+                fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
+                print("AUTO PLOT: saved "+savename)
 
 #%% CFTDs microphysics Plot (microphysics from ICON-EMVORADO)
 # We assume that everything above ML is frozen and everything below is liquid
@@ -1167,7 +1318,7 @@ ds_to_plot_list = [
                     retrievals_qvpbased["stratiform_relaxed"][loc].copy(),
                     # retrievals["stratiform_relaxed"][loc].copy().where(qvps_strat_relaxed_fil.KDP_ML_corrected>0.01),
                     # retrievals_qvpbased["stratiform_relaxed"][loc].copy().where(qvps_strat_relaxed_fil.KDP>0.01),
-                    retrievals_qvpbased["entropy4km_QVPbased"][loc].copy(),
+                    retrievals_qvpbased["entropy4km"][loc].copy(),
                     ]
 
 
@@ -1217,19 +1368,19 @@ for sn, savepath in enumerate(savepath_list):
         savedict = {}
         for selseas in selseaslist:
             savedict.update(
-                        {selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys.png": [ytlimlist[0],
+                        {selseas[0]+"/"+loc+"_cftd_"+cond_name+"_retmicrophys.png": [ytlimlist[0],
                                     "iwc_zh_t_hogan2006_model", "lwc_zh_zdr_reimann2021",
                                     "Dm_ice_zh_matrosov2019", "Dm_rain_zdr_bringi2009",
                                     "Nt_ice_iwc_zh_t_carlin2021", "Nt_rain_zh_zdr_rhyzkov2020", selseas[1]],
-                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_extended.png": [ytlimlist[1],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_retmicrophys_extended.png": [ytlimlist[1],
                                     "iwc_zh_t_hogan2006_model", "lwc_zh_zdr_reimann2021",
                                     "Dm_ice_zh_matrosov2019", "Dm_rain_zdr_bringi2009",
                                     "Nt_ice_iwc_zh_t_carlin2021", "Nt_rain_zh_zdr_rhyzkov2020", selseas[1]],
-                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_KDP.png": [ytlimlist[0],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_retmicrophys_KDP.png": [ytlimlist[0],
                                     "iwc_zdr_zh_kdp_carlin2021", "lwc_hybrid_reimann2021",
                                     "Dm_ice_zdp_kdp_carlin2021", "Dm_rain_zdr_bringi2009",
                                     "Nt_ice_iwc_zdr_zh_kdp_carlin2021", "Nt_rain_zh_zdr_rhyzkov2020", selseas[1]],
-                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_KDP_extended.png": [ytlimlist[1],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_retmicrophys_KDP_extended.png": [ytlimlist[1],
                                     "iwc_zdr_zh_kdp_carlin2021", "lwc_hybrid_reimann2021",
                                     "Dm_ice_zdp_kdp_carlin2021", "Dm_rain_zdr_bringi2009",
                                     "Nt_ice_iwc_zdr_zh_kdp_carlin2021", "Nt_rain_zh_zdr_rhyzkov2020", selseas[1]],
