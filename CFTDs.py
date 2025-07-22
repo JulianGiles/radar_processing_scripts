@@ -815,14 +815,14 @@ if country=="dmi":
                                "RHOHV": [0.9, 1.002, 0.002]} ]
         ytlimlist = [-20, -50]
         loc = find_loc(locs, ff[0])
-        add_relaxed = ["_relaxed" if "relaxed" in savepath else ""][0]
+        cond_name = os.path.basename(os.path.normpath(savepath))
         savedict = {}
         for selseas in selseaslist:
             savedict.update(
-                        {selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+".png": [vtp[0], ytlimlist[0], selseas[1]],
-                        selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
-                        selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_uncorr.png": [vtp[1], ytlimlist[0], selseas[1]],
-                        selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_uncorr_extended.png": [vtp[1], ytlimlist[1], selseas[1]],
+                        {selseas[0]+"/"+loc+"_cftd_"+cond_name+".png": [vtp[0], ytlimlist[0], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_uncorr.png": [vtp[1], ytlimlist[0], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_uncorr_extended.png": [vtp[1], ytlimlist[1], selseas[1]],
                         }
                             )
 
@@ -904,13 +904,13 @@ if country=="dwd":
         ytlimlist = [-20, -50]
         loc = find_loc(locs, ff[0])
         savedict = {}
-        add_relaxed = ["_relaxed" if "relaxed" in savepath else ""][0]
+        cond_name = os.path.basename(os.path.normpath(savepath))
         for selseas in selseaslist:
             savedict.update(
-                        {selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+".png": [vtp[0], ytlimlist[0], selseas[1]],
-                        selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
-                        selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_uncorr.png": [vtp[1], ytlimlist[0], selseas[1]],
-                        selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_uncorr_extended.png": [vtp[1], ytlimlist[1], selseas[1]],
+                        {selseas[0]+"/"+loc+"_cftd_"+cond_name+".png": [vtp[0], ytlimlist[0], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_uncorr.png": [vtp[1], ytlimlist[0], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_uncorr_extended.png": [vtp[1], ytlimlist[1], selseas[1]],
                         }
                             )
 
@@ -1037,23 +1037,23 @@ for sn, savepath in enumerate(savepath_list):
 
     if auto_plot:
         ytlimlist = [-20, -50]
-        add_relaxed = ["_relaxed" if "relaxed" in savepath else ""][0]
+        cond_name = os.path.basename(os.path.normpath(savepath))
         savedict = {}
         for selseas in selseaslist:
             savedict.update(
-                        {selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys.png": [ytlimlist[0],
+                        {selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys.png": [ytlimlist[0],
                                     "iwc_zh_t_hogan2006_model", "lwc_zh_zdr_reimann2021",
                                     "Dm_ice_zh_matrosov2019", "Dm_rain_zdr_bringi2009",
                                     "Nt_ice_iwc_zh_t_carlin2021", "Nt_rain_zh_zdr_rhyzkov2020", selseas[1]],
-                        selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys_extended.png": [ytlimlist[1],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_extended.png": [ytlimlist[1],
                                     "iwc_zh_t_hogan2006_model", "lwc_zh_zdr_reimann2021",
                                     "Dm_ice_zh_matrosov2019", "Dm_rain_zdr_bringi2009",
                                     "Nt_ice_iwc_zh_t_carlin2021", "Nt_rain_zh_zdr_rhyzkov2020", selseas[1]],
-                        selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys_KDP.png": [ytlimlist[0],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_KDP.png": [ytlimlist[0],
                                     "iwc_zdr_zh_kdp_carlin2021", "lwc_hybrid_reimann2021",
                                     "Dm_ice_zdp_kdp_carlin2021", "Dm_rain_zdr_bringi2009",
                                     "Nt_ice_iwc_zdr_zh_kdp_carlin2021", "Nt_rain_zh_zdr_rhyzkov2020", selseas[1]],
-                        selseas[0]+"/"+loc+"_cftd_stratiform"+add_relaxed+"_microphys_KDP_extended.png": [ytlimlist[1],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_KDP_extended.png": [ytlimlist[1],
                                     "iwc_zdr_zh_kdp_carlin2021", "lwc_hybrid_reimann2021",
                                     "Dm_ice_zdp_kdp_carlin2021", "Dm_rain_zdr_bringi2009",
                                     "Nt_ice_iwc_zdr_zh_kdp_carlin2021", "Nt_rain_zh_zdr_rhyzkov2020", selseas[1]],
