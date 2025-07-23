@@ -672,6 +672,8 @@ try:
             riming_classif[stratname][loc] = riming_classif["unfiltered"][loc].where(stratqvp[X_DBZH].notnull())
             for xx in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_'+X_ZDR+'_'+X_DBZH,
                        ]:
+                if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname):
+                    os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname)
                 riming_classif[stratname][loc][xx].to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+loc+"_"+xx+".nc")
 
 except ModuleNotFoundError:
@@ -703,6 +705,8 @@ except ModuleNotFoundError:
                         riming_classif[stratname][ll] = riming_classif["unfiltered"][ll].where(filtered_qvps[stratname][X_DBZH].notnull())
                         for xx in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_'+X_ZDR+'_'+X_DBZH,
                                    ]:
+                            if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname):
+                                os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname)
                             riming_classif[stratname][ll][xx].to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+loc+"_"+xx+".nc")
                         break
 
@@ -748,10 +752,11 @@ if reload_qvps:
 # default configurations (only change savepath and ds_to_plot accordingly).
 # If False, then produce the plot as given below and do not save.
 auto_plot = True
-savepath = "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed/"
+savepath = "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform/"
+plot_relhum = True # plot relative humidity with respect to ice and water in a separate plot?
 
-# Which to plot, qvps_strat_fil or qvps_strat_relaxed_fil
-ds_to_plot = qvps_strat_relaxed_fil.copy()
+# Which to plot, qvps_strat_fil, qvps_strat_relaxed_fil or qvps_strat_ML_fil
+ds_to_plot = qvps_strat_fil.copy()
 
 # Define list of seasons
 selseaslist = [
@@ -881,6 +886,80 @@ if country=="dmi":
             fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
             print("AUTO PLOT: saved "+savename)
 
+    if plot_relhum:
+        ds_to_plot_e_sw = utils.saturation_vapor_pressure_water(ds_to_plot.TEMP+273.15)
+        ds_to_plot_e_si = utils.saturation_vapor_pressure_ice(ds_to_plot.TEMP+273.15)
+        ds_to_plot_alpha = utils.mixed_phase_parameter(ds_to_plot.TEMP+273.15)
+        ds_to_plot_e_sm = utils.saturation_vapor_pressure_mixed(ds_to_plot_e_sw,
+                                                                ds_to_plot_e_si,
+                                                                ds_to_plot_alpha)
+
+        ds_to_plot_RH = ds_to_plot.RH
+        ds_to_plot_RHi = ds_to_plot.RH*ds_to_plot_e_sm/ds_to_plot_e_si
+        ds_to_plot_RHw = ds_to_plot.RH*ds_to_plot_e_sm/ds_to_plot_e_sw
+
+        ds_to_plot_relhum = xr.Dataset({"RH": ds_to_plot_RH,
+                             "RHi": ds_to_plot_RHi,
+                             "RHw": ds_to_plot_RHw,
+            }).assign_coords({"TEMP":ds_to_plot.TEMP})
+
+        vars_to_plot = {
+                        "RHi": [50, 125, 5],
+                        "RHw": [50, 125, 5],
+                        "RH": [50, 125, 5],
+                        }
+
+        if auto_plot:
+            vtp = [ {
+                    "RHi": [50, 125, 5],
+                    "RHw": [50, 125, 5],
+                    "RH": [50, 125, 5],
+                    },
+                   ]
+
+            ytlimlist = [-20, -50]
+            savedict = {}
+            cond_name = os.path.basename(os.path.normpath(savepath))
+            for selseas in selseaslist:
+                savedict.update(
+                            {selseas[0]+"/"+loc+"_cftd_"+cond_name+"_RH.png": [vtp[0], ytlimlist[0], selseas[1]],
+                            selseas[0]+"/"+loc+"_cftd_"+cond_name+"_RH_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
+                            }
+                                )
+
+        for savename in savedict.keys():
+            if auto_plot:
+                vars_to_plot = savedict[savename][0]
+                ytlim = savedict[savename][1]
+                selmonths = savedict[savename][2]
+
+            fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15,5), width_ratios=(1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+            for nn, vv in enumerate(vars_to_plot.keys()):
+                so=False
+                binsx2=None
+                adj=1
+                utils.hist2d(ax[nn], ds_to_plot_relhum[vv].sel(time=ds_to_plot_relhum['time'].dt.month.isin(selmonths))*adj,
+                             ds_to_plot_relhum["TEMP"].sel(time=ds_to_plot_relhum['time'].dt.month.isin(selmonths))+adjtemp,
+                             whole_x_range=True,
+                             binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                             cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
+                             fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                             cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
+                ax[nn].set_ylim(15,ytlim)
+                ax[nn].set_xlabel(vv, fontsize=10)
+
+                ax[nn].tick_params(labelsize=15) #change font size of ticks
+                plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+
+            ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+            if auto_plot:
+                # Create savefolder
+                savepath_seas = os.path.dirname(savepath+savename)
+                if not os.path.exists(savepath_seas):
+                    os.makedirs(savepath_seas)
+                fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
+                print("AUTO PLOT: saved "+savename)
 
 
 # DWD
@@ -953,7 +1032,80 @@ if country=="dwd":
             fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
             print("AUTO PLOT: saved "+savename)
 
+    if plot_relhum:
+        ds_to_plot_e_sw = utils.saturation_vapor_pressure_water(ds_to_plot.TEMP+273.15)
+        ds_to_plot_e_si = utils.saturation_vapor_pressure_ice(ds_to_plot.TEMP+273.15)
+        ds_to_plot_alpha = utils.mixed_phase_parameter(ds_to_plot.TEMP+273.15)
+        ds_to_plot_e_sm = utils.saturation_vapor_pressure_mixed(ds_to_plot_e_sw,
+                                                                ds_to_plot_e_si,
+                                                                ds_to_plot_alpha)
 
+        ds_to_plot_RH = ds_to_plot.RH
+        ds_to_plot_RHi = ds_to_plot.RH*ds_to_plot_e_sm/ds_to_plot_e_si
+        ds_to_plot_RHw = ds_to_plot.RH*ds_to_plot_e_sm/ds_to_plot_e_sw
+
+        ds_to_plot_relhum = xr.Dataset({"RH": ds_to_plot_RH,
+                             "RHi": ds_to_plot_RHi,
+                             "RHw": ds_to_plot_RHw,
+            }).assign_coords({"TEMP":ds_to_plot.TEMP})
+
+        vars_to_plot = {
+                        "RHi": [50, 125, 5],
+                        "RHw": [50, 125, 5],
+                        "RH": [50, 125, 5],
+                        }
+
+        if auto_plot:
+            vtp = [ {
+                    "RHi": [50, 125, 5],
+                    "RHw": [50, 125, 5],
+                    "RH": [50, 125, 5],
+                    },
+                   ]
+
+            ytlimlist = [-20, -50]
+            savedict = {}
+            cond_name = os.path.basename(os.path.normpath(savepath))
+            for selseas in selseaslist:
+                savedict.update(
+                            {selseas[0]+"/"+loc+"_cftd_"+cond_name+"_RH.png": [vtp[0], ytlimlist[0], selseas[1]],
+                            selseas[0]+"/"+loc+"_cftd_"+cond_name+"_RH_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
+                            }
+                                )
+
+        for savename in savedict.keys():
+            if auto_plot:
+                vars_to_plot = savedict[savename][0]
+                ytlim = savedict[savename][1]
+                selmonths = savedict[savename][2]
+
+            fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15,5), width_ratios=(1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+            for nn, vv in enumerate(vars_to_plot.keys()):
+                so=False
+                binsx2=None
+                adj=1
+                utils.hist2d(ax[nn], ds_to_plot_relhum[vv].sel(time=ds_to_plot_relhum['time'].dt.month.isin(selmonths))*adj,
+                             ds_to_plot_relhum["TEMP"].sel(time=ds_to_plot_relhum['time'].dt.month.isin(selmonths))+adjtemp,
+                             whole_x_range=True,
+                             binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                             cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
+                             fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                             cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
+                ax[nn].set_ylim(15,ytlim)
+                ax[nn].set_xlabel(vv, fontsize=10)
+
+                ax[nn].tick_params(labelsize=15) #change font size of ticks
+                plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+
+            ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+            if auto_plot:
+                # Create savefolder
+                savepath_seas = os.path.dirname(savepath+savename)
+                if not os.path.exists(savepath_seas):
+                    os.makedirs(savepath_seas)
+                fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
+                print("AUTO PLOT: saved "+savename)
 #%% CFTDs retrievals Plot
 # We assume that everything above ML is frozen and everything below is liquid
 
