@@ -198,6 +198,7 @@ total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
 
 #%% Filters (conditions for stratiform)
+#### Filters
 start_time = time.time()
 print("Filtering stratiform conditions...")
 
@@ -252,7 +253,7 @@ allcond = cond_ML_bottom_change * cond_ML_bottom_std * cond_ML_top_change * cond
 
 # Filter only fully stratiform pixels (min entropy >= min_entropy_thresh and ML detected)
 qvps_strat = qvps.where( (qvps["min_entropy"]>=min_entropy_thresh).compute() & allcond, drop=True)
-if "TEMP" not in qvps_strat: #!!! For some reason, AFY triggers an issue where it drops the TEMP and ML height coordinates even if there are valid values, so this is a temporary fix
+if "TEMP" not in qvps_strat or "height_ml_new_gia" not in qvps_strat: #!!! For some reason, AFY triggers an issue where it drops the TEMP and ML height coordinates even if there are valid values, so this is a temporary fix
     qvps_strat = qvps.where( (qvps["min_entropy"]>=min_entropy_thresh).compute() & allcond).dropna("time",how="all").dropna("z",how="all")
 
 # Relaxed alternative: Filter qvps with at least 50% of stratiform pixels (min entropy >= min_entropy_thresh and ML detected)
@@ -260,7 +261,7 @@ qvps_strat_relaxed = qvps.where( ( (qvps["min_entropy"]>=min_entropy_thresh).sum
 
 # Only-ML alternative: Filter qvps with ML detected
 qvps_strat_ML = qvps.where( allcond, drop=True)
-if "TEMP" not in qvps_strat_ML: #!!! For some reason, AFY triggers an issue where it drops the TEMP and ML height coordinates even if there are valid values, so this is a temporary fix
+if "TEMP" not in qvps_strat_ML or "height_ml_new_gia" not in qvps_strat_ML: #!!! For some reason, AFY triggers an issue where it drops the TEMP and ML height coordinates even if there are valid values, so this is a temporary fix
     qvps_strat_ML = qvps.where( allcond).dropna("time",how="all").dropna("z",how="all")
 
 # Filter out non relevant values
@@ -298,6 +299,24 @@ except:
 
 total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
+
+#### Temporarely save filtered QVPs to files (for conflictive cases, like TUR) and reload
+loc = find_loc(locs, ff[0])
+if loc in ["tur", "hty"]:
+    print("Temporarely saving filtered QVPs to files and reloading...")
+    for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
+                                ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
+                                ("stratiform_ML", qvps_strat_ML_fil.copy())]:
+        print("   ... "+stratname)
+        # save to file
+        if not os.path.exists(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/"+stratname):
+            os.makedirs(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/"+stratname)
+
+        stratqvp.to_netcdf(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/"+stratname+"/"+loc+".nc")
+
+    qvps_strat_fil = xr.open_dataset(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/stratiform/"+loc+".nc")
+    qvps_strat_relaxed_fil = xr.open_dataset(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/stratiform_relaxed/"+loc+".nc")
+    qvps_strat_ML_fil = xr.open_dataset(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/stratiform_ML/"+loc+".nc")
 
 #### Calculate retrievals
 if calculate_retrievals:
@@ -418,8 +437,14 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
     ML_thickness_TEMP = ML_bottom_TEMP - stratqvp["TEMP"].sel(z=stratqvp["height_ml_new_gia"], method="nearest")
 
     #!!! Temporary solution with np.isfinite because there are -inf and inf values in ANK data
-    height_ML_max = qvps_ML.where(np.isfinite(qvps_ML)).idxmax("z", skipna=True)
-    height_ML_min = qvps_ML.where(np.isfinite(qvps_ML)).idxmin("z", skipna=True)
+    try:
+        height_ML_max = qvps_ML.where(np.isfinite(qvps_ML)).idxmax("z", skipna=True)
+        height_ML_min = qvps_ML.where(np.isfinite(qvps_ML)).idxmin("z", skipna=True)
+    except xr.core.merge.MergeError:
+        # this might fail for some unkwon reason with the range and z_idx coordinate (TUR)
+        # remove those and try again
+        height_ML_max = qvps_ML.where(np.isfinite(qvps_ML)).drop_vars(["range", "z_idx"]).idxmax("z", skipna=True)
+        height_ML_min = qvps_ML.where(np.isfinite(qvps_ML)).drop_vars(["range", "z_idx"]).idxmin("z", skipna=True)
 
     # Silke style
     # select timesteps with detected ML
@@ -784,7 +809,7 @@ selmonths = selseas[1]
 tb=1# degress C
 
 # Min counts per Temp layer
-mincounts=100
+mincounts=30
 
 #Colorbar limits and step
 cblim=[0,10]
