@@ -312,6 +312,8 @@ if loc in ["tur", "hty"]:
         if not os.path.exists(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/"+stratname):
             os.makedirs(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/"+stratname)
 
+        for vv in stratqvp.data_vars:
+            stratqvp[vv].encoding = {'zlib': True, 'complevel': 6}
         stratqvp.to_netcdf(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/"+stratname+"/"+loc+".nc")
 
     qvps_strat_fil = xr.open_dataset(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/stratiform/"+loc+".nc")
@@ -756,6 +758,9 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
     # save to file
     if not os.path.exists(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/"+stratname):
         os.makedirs(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/"+stratname)
+
+    for vv in stratqvp.data_vars:
+        stratqvp[vv].encoding = {'zlib': True, 'complevel': 6}
 
     stratqvp.to_netcdf(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/"+stratname+"/"+ll+".nc")
 
