@@ -2997,6 +2997,25 @@ for selseas in selseaslist:
                     if ss in ["values_DGL_min", "values_ML_min", "values_rain", "values_sfc"] and vv in [X_KDP]: # filter out unrealistic zero values
                         samples_wriming = {loc: samples_wriming[loc][abs(samples_wriming[loc])>0.001] for loc in samples_wriming.keys()}
                         samples_woriming = {loc: samples_woriming[loc][abs(samples_woriming[loc])>0.001] for loc in samples_woriming.keys()}
+                    if ss in ["beta_belowDGL"]: # filter out values computed out of few points (less than 50% of the available points)
+                        samples_wriming_times = {loc: stats[stratname][loc][ss][vv].sel(\
+                                    time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1]))\
+                                    .where(riming_filter[loc][riming_class].sum("z")>0).dropna("time")["time"]\
+                                   for loc in order_fil}
+                        samples_wriming_valid_perc = {loc: stats[stratname][loc][ss]["valid_perc"].sel(\
+                                    time=samples_wriming_times[loc]).values\
+                                   for loc in order_fil}
+                        samples_wriming = {loc: samples_wriming[loc][samples_wriming_valid_perc[loc]>=0.5] for loc in samples_wriming.keys()}
+
+                        samples_woriming_times = {loc: stats[stratname][loc][ss][vv].sel(\
+                                    time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1]))\
+                                    .where(riming_filter[loc][riming_class].sum("z")==0).dropna("time")["time"]\
+                                   for loc in order_fil}
+                        samples_woriming_valid_perc = {loc: stats[stratname][loc][ss]["valid_perc"].sel(\
+                                    time=samples_woriming_times[loc]).values\
+                                   for loc in order_fil}
+                        samples_woriming = {loc: samples_woriming[loc][samples_woriming_valid_perc[loc]>=0.5] for loc in samples_wriming.keys()}
+
 
                     samples = {loc.swapcase(): [ samples_wriming[loc], samples_woriming[loc] ] for loc in samples_wriming.keys() if ( len(samples_wriming[loc])>10 and len(samples_woriming[loc])>10 )} # filter out radars with no samples
 
@@ -3069,8 +3088,10 @@ for selseas in selseaslist:
                                for loc in order_fil}
 
                     if ss in ["cloudtop", "cloudtop_5dbz", "cloudtop_10dbz"]: # filter out erroneous cloudtop values #!!! this will be fixed now (19.03.25) and this extra filter will not be necessary after re running the stats calculations
-                        samples_wriming = {loc: samples_wriming[loc][samples_wriming[loc]<np.max(samples_wriming[loc])] for loc in samples_wriming.keys()}
-                        samples_woriming = {loc: samples_woriming[loc][samples_woriming[loc]<np.max(samples_woriming[loc])] for loc in samples_woriming.keys()}
+                        if np.inf in [samples_wriming[loc].max() for loc in samples_wriming.keys() if len(samples_wriming[loc])>=1]:
+                            samples_wriming = {loc: samples_wriming[loc][samples_wriming[loc]<np.max(samples_wriming[loc])] for loc in samples_wriming.keys() if len(samples_wriming[loc])>=1}
+                        if np.inf in [samples_woriming[loc].max() for loc in samples_woriming.keys() if len(samples_woriming[loc])>=1]:
+                            samples_woriming = {loc: samples_woriming[loc][samples_woriming[loc]<np.max(samples_woriming[loc])] for loc in samples_woriming.keys() if len(samples_woriming[loc])>=1}
                     if ss in ["cloudtop_TEMP", "cloudtop_TEMP_5dbz", "cloudtop_TEMP_10dbz"]: # filter out erroneous cloudtop values #!!! this will be fixed now (19.03.25) and this extra filter will not be necessary after re running the stats calculations
                         samples_wriming = {loc: stats[stratname][loc][ss].where(riming_filter[loc][riming_class].sum("z")>0).where(stats[stratname][loc]["".join(ss.split("_TEMP"))].sel(\
                                     time=stats[stratname][loc]["".join(ss.split("_TEMP"))]['time'].dt.month.isin(selseas[1])) <
