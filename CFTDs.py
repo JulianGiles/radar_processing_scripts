@@ -2541,6 +2541,15 @@ for selseas in selseaslist:
                     if ss in ["values_DGL_min", "values_ML_min", "values_rain", "values_sfc"] and vv in [X_KDP]: # filter out unrealistic zero values
                         samples = {loc: samples[loc][abs(samples[loc])>0.001] for loc in samples.keys()}
 
+                    if ss in ["beta_belowDGL"]: # filter out values computed out of few points (less than 50% of the available points)
+                        samples_times = {loc: stats[stratname][loc][ss][vv].sel(\
+                                    time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time")["time"]\
+                                   for loc in order_fil}
+                        samples_valid_perc = {loc: stats[stratname][loc][ss]["valid_perc"].sel(\
+                                    time=samples_times[loc]).values\
+                                   for loc in order_fil}
+                        samples = {loc: samples[loc][samples_valid_perc[loc]>=0.5] for loc in samples.keys()}
+
                     samples = {loc.swapcase(): samples[loc] for loc in samples.keys() if len(samples[loc])>10} # filter out radars with less than 10 samples
 
                     fig = ridgeplot.ridgeplot(samples=samples.values(),
@@ -2695,14 +2704,18 @@ line_styles = ["--",  # Dashed
                (0, (3, 5, 1, 5))]  # Custom: long dash, short gap, dot, short gap
 
 for il, loc in enumerate(locs):
-    count = stats[stratname][loc]['beta'][X_DBZH].groupby("time.month").count()
-    stats[stratname][loc]['beta'][X_DBZH].groupby("time.month").median().where(count>30).plot(
+    count = stats[stratname][loc]['beta_belowDGL'][X_DBZH]\
+                .where(stats[stratname][loc]['beta_belowDGL']["valid_perc"]>=0.5)\
+                    .groupby("time.month").count()
+    stats[stratname][loc]['beta_belowDGL'][X_DBZH]\
+                .where(stats[stratname][loc]['beta_belowDGL']["valid_perc"]>0.5)\
+                    .groupby("time.month").median().where(count>=30).plot(
         label=loc.swapcase(), c=colors[il], ls=line_styles[il], lw=2,alpha=0.8)
 plt.ylabel(r'$\beta$ [dBZ/km]')
 plt.xticks([1,2,3,4,5,6,7,8,9,10,11,12], labels=['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'])
 plt.grid(visible=True)
 plt.legend()
-plt.title(r'$\beta$ seasonality')
+plt.title(r'$\beta$_DGL seasonality')
 
 #%%%% Plot riming frequency all radars in same plot
 
