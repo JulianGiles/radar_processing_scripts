@@ -1304,6 +1304,523 @@ for sn, savepath in enumerate(savepath_list):
     if auto_plot is False:
         break
 
+#%% CFTDs Plot riming vs no riming
+
+# If auto_plot is True, then produce and save the plots automatically based on
+# default configurations (only change savepath and ds_to_plot accordingly).
+# If False, then produce the plot as given below and do not save.
+auto_plot = True
+savepath = "/automount/agradar/jgiles/images/CFTDs_riming"+suffix_name+"/stratiform/"
+plot_relhum = True # plot relative humidity with respect to ice and water in a separate plot?
+riming_class = "riming_ZDR_EC_OC_AC_DBZH_AC"
+
+# Which to plot, qvps_strat_fil, qvps_strat_relaxed_fil or qvps_strat_ML_fil
+ds_to_plot = qvps_strat_fil.copy()
+
+# Define list of seasons
+selseaslist = [
+            ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
+            ("DJF", [12,1,2]),
+            ("MAM", [3,4,5]),
+            ("JJA", [6,7,8]),
+            ("SON", [9,10,11]),
+           ] # ("nameofseas", [months included])
+
+# adjustment from K to C (disabled now because I know that all qvps have ERA5 data)
+adjtemp = 0
+# if (qvps_strat_fil["TEMP"]>100).any(): #if there is any temp value over 100, we assume the units are Kelvin
+#     print("at least one TEMP value > 100 found, assuming TEMP is in K and transforming to C")
+#     adjtemp = -273.15 # adjustment parameter from K to C
+
+# top temp limit (only works if auto_plot=False)
+ytlim=-20
+
+# season to plot (only works if auto_plot=False)
+selseas = selseaslist[0]
+selmonths = selseas[1]
+
+# Temp bins
+tb=1# degress C
+
+# Min counts per Temp layer
+mincounts=30
+
+#Colorbar limits and step
+cblim=[0,10]
+colsteps=10
+
+# Set colors for rimed and not rimed cases
+cmaphist_r="Oranges"
+mq_color_r="black"
+qq_color_r="black"
+N_color_r="cornflowerblue"
+hist_alpha_r=1
+plot_cb_r = True
+
+cmaphist_nr="Purples"
+mq_color_nr="#40BAFF"
+qq_color_nr="#40BAFF"
+N_color_nr="darkviolet"
+hist_alpha_nr=0.
+plot_cb_nr = False
+
+savedict = {"custom": None} # placeholder for the for loop below, not important
+
+# Plot horizontally
+# DMI
+# Native worst-resolution of the data (for 1-byte moments)
+# DBZH: 0.5 dB
+# ZDR: 0.0625 dB
+# KDP: complicated. From 0.013 at KDP approaching zero to 7.42 at extreme KDP. KDP min absolute value is 0.25 and max abs is 150 (both positive and negative)
+# RHOHV: scales with a square root (finer towards RHOHV=1), so from 0.00278 at RHOHV=0.7 to 0.002 resolution at RHOHV=1
+# PHIDP: 0.708661 deg
+if country=="dmi":
+
+    vars_to_plot = {X_DBZH: [0, 45.5, 0.5],
+                    X_ZDR: [-0.505, 2.05, 0.1],
+                    X_KDP:  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
+                    "RHOHV": [0.9, 1.002, 0.002]}
+
+    if auto_plot:
+        vtp = [{X_DBZH: [0, 45.5, 0.5],
+                        X_ZDR: [-0.505, 2.05, 0.1],
+                        X_KDP:  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
+                        X_RHO: [0.9, 1.002, 0.002]},
+               {"DBZH": [0, 45.5, 0.5],
+                               "ZDR": [-0.505, 2.05, 0.1],
+                               "KDP_CONV":  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
+                               "RHOHV": [0.9, 1.002, 0.002]} ]
+        ytlimlist = [-20, -50]
+        loc = find_loc(locs, ff[0])
+        cond_name = os.path.basename(os.path.normpath(savepath))
+        savedict = {}
+        for selseas in selseaslist:
+            savedict.update(
+                        {selseas[0]+"/"+loc+"_cftd_"+cond_name+".png": [vtp[0], ytlimlist[0], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_uncorr.png": [vtp[1], ytlimlist[0], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_uncorr_extended.png": [vtp[1], ytlimlist[1], selseas[1]],
+                        }
+                            )
+
+    for savename in savedict.keys():
+        if auto_plot:
+            vars_to_plot = savedict[savename][0]
+            ytlim = savedict[savename][1]
+            selmonths = savedict[savename][2]
+
+        if plot_cb_nr and plot_cb_r:
+            fzx = 2
+            cbx = 4
+        else:
+            fzx = 0
+            cbx = 2
+
+        fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20+fzx,5),
+                               width_ratios=(1,1,1,1.15+0.05*cbx))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+        for nn, vv in enumerate(vars_to_plot.keys()):
+            so=False
+            binsx2=None
+            rd=10 # arbitrarily large decimal position to round to (so it is actually not rounded)
+            if "DBZH" in vv:
+                so=True
+                binsx2 = [0, 46, 1]
+                rd = 1 # decimal position to round to
+            if "ZDR" in vv:
+                so=True
+                binsx2 = [-0.5, 2.1, 0.1]
+                rd=1
+            if "KDP" in vv:
+                so=True #True
+                binsx2 = [-0.1, 0.52, 0.02]
+                rd=2
+            if "RHOHV" in vv:
+                so = True
+                binsx2 = [0.9, 1.005, 0.005]
+                rd=3
+
+            riming_filter = ds_to_plot[riming_class].where(\
+                                       ds_to_plot.z >= ds_to_plot.height_ml_new_gia,
+                                    ).where(\
+                                       ds_to_plot.z <= ds_to_plot.height_ml_new_gia + 2000,
+                                    ).sel(time=ds_to_plot['time'].dt.month.isin(selmonths))
+
+            #!!! For some reason SVS now requires rechunking here
+            dstp_ = ds_to_plot[vv].chunk({"time":-1}).sel(time=ds_to_plot['time'].dt.month.isin(selmonths))
+
+            # Plot the histogram of non rimed QVPs
+            dstp = dstp_.where(riming_filter.sum("z") == 0, drop=True).copy().round(rd)
+            dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") == 0, drop=True).copy() + adjtemp
+            utils.hist2d(ax[nn], dstp,
+                         dstp_TEMP,
+                         whole_x_range=True,
+                         binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                         cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_nr else False][0],
+                         cmap=cmaphist_nr, colsteps=colsteps,
+                         fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
+                         mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr,
+                         alpha=hist_alpha_nr)
+
+            # Plot the histogram of rimed QVPs
+            dstp = dstp_.where(riming_filter.sum("z") > 0, drop=True).copy().round(rd)
+            dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") > 0, drop=True).copy() + adjtemp
+            utils.hist2d(ax[nn], dstp,
+                         dstp_TEMP,
+                         whole_x_range=True,
+                         binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                         cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_r else False][0],
+                         cmap=cmaphist, colsteps=colsteps,
+                         fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
+                         mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r,
+                         alpha=hist_alpha_r)
+
+            ax[nn].set_ylim(15,ytlim)
+            ax[nn].set_xlabel(vv, fontsize=10)
+
+            ax[nn].tick_params(labelsize=15) #change font size of ticks
+            plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+
+        ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+
+        if auto_plot:
+            # Create savefolder
+            savepath_seas = os.path.dirname(savepath+savename)
+            if not os.path.exists(savepath_seas):
+                os.makedirs(savepath_seas)
+            fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
+            print("AUTO PLOT: saved "+savename)
+
+    if plot_relhum:
+        ds_to_plot_e_sw = utils.saturation_vapor_pressure_water(ds_to_plot.TEMP+273.15)
+        ds_to_plot_e_si = utils.saturation_vapor_pressure_ice(ds_to_plot.TEMP+273.15)
+        ds_to_plot_alpha = utils.mixed_phase_parameter(ds_to_plot.TEMP+273.15)
+        ds_to_plot_e_sm = utils.saturation_vapor_pressure_mixed(ds_to_plot_e_sw,
+                                                                ds_to_plot_e_si,
+                                                                ds_to_plot_alpha)
+
+        ds_to_plot_RH = ds_to_plot.RH
+        ds_to_plot_RHi = ds_to_plot.RH*ds_to_plot_e_sm/ds_to_plot_e_si
+        ds_to_plot_RHw = ds_to_plot.RH*ds_to_plot_e_sm/ds_to_plot_e_sw
+
+        ds_to_plot_relhum = xr.Dataset({"RH": ds_to_plot_RH,
+                             "RHi": ds_to_plot_RHi,
+                             "RHw": ds_to_plot_RHw,
+            }).assign_coords({"TEMP":ds_to_plot.TEMP})
+
+        vars_to_plot = {
+                        "RHi": [50, 125, 5],
+                        "RHw": [50, 125, 5],
+                        "RH": [50, 125, 5],
+                        }
+
+        if auto_plot:
+            vtp = [ {
+                    "RHi": [50, 125, 5],
+                    "RHw": [50, 125, 5],
+                    "RH": [50, 125, 5],
+                    },
+                   ]
+
+            ytlimlist = [-20, -50]
+            savedict = {}
+            cond_name = os.path.basename(os.path.normpath(savepath))
+            for selseas in selseaslist:
+                savedict.update(
+                            {selseas[0]+"/"+loc+"_cftd_"+cond_name+"_RH.png": [vtp[0], ytlimlist[0], selseas[1]],
+                            selseas[0]+"/"+loc+"_cftd_"+cond_name+"_RH_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
+                            }
+                                )
+
+        for savename in savedict.keys():
+            if auto_plot:
+                vars_to_plot = savedict[savename][0]
+                ytlim = savedict[savename][1]
+                selmonths = savedict[savename][2]
+
+            fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15+fzx,5),
+                                   width_ratios=(1,1,1.15+0.05*cbx))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+            for nn, vv in enumerate(vars_to_plot.keys()):
+                so=False
+                binsx2=None
+                adj=1
+
+                riming_filter = ds_to_plot[riming_class].where(\
+                                           ds_to_plot.z >= ds_to_plot.height_ml_new_gia,
+                                        ).where(\
+                                           ds_to_plot.z <= ds_to_plot.height_ml_new_gia + 2000,
+                                        ).sel(time=ds_to_plot['time'].dt.month.isin(selmonths))
+
+                dstp_ = ds_to_plot_relhum[vv].sel(time=ds_to_plot_relhum['time'].dt.month.isin(selmonths))
+
+                # Plot the histogram of non rimed QVPs
+                dstp = dstp_.where(riming_filter.sum("z") == 0, drop=True).copy()*adj
+                dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") == 0, drop=True).copy() + adjtemp
+                utils.hist2d(ax[nn], dstp,
+                             dstp_TEMP,
+                             whole_x_range=True,
+                             binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                             cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_nr else False][0],
+                             cmap=cmaphist_nr, colsteps=colsteps,
+                             fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                             cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
+                             mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr,
+                             alpha=hist_alpha_nr)
+
+                # Plot the histogram of rimed QVPs
+                dstp = dstp_.where(riming_filter.sum("z") > 0, drop=True).copy()*adj
+                dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") > 0, drop=True).copy() + adjtemp
+                utils.hist2d(ax[nn], dstp,
+                             dstp_TEMP,
+                             whole_x_range=True,
+                             binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                             cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_r else False][0],
+                             cmap=cmaphist, colsteps=colsteps,
+                             fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                             cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
+                             mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r,
+                             alpha=hist_alpha_r)
+
+                ax[nn].set_ylim(15,ytlim)
+                ax[nn].set_xlabel(vv, fontsize=10)
+
+                ax[nn].tick_params(labelsize=15) #change font size of ticks
+                plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+
+            ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+            if auto_plot:
+                # Create savefolder
+                savepath_seas = os.path.dirname(savepath+savename)
+                if not os.path.exists(savepath_seas):
+                    os.makedirs(savepath_seas)
+                fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
+                print("AUTO PLOT: saved "+savename)
+
+
+# DWD
+# plot CFTDs moments
+if country=="dwd":
+
+    vars_to_plot = {X_DBZH: [0, 46, 1],
+                    X_ZDR: [-0.5, 2.1, 0.1],
+                    X_KDP: [-0.1, 0.52, 0.02],
+                    X_RHO: [0.9, 1.004, 0.004]}
+
+    if auto_plot:
+        vtp = [{X_DBZH: [0, 46, 1],
+                        X_ZDR: [-0.5, 2.1, 0.1],
+                        X_KDP:  [-0.1, 0.52, 0.02],
+                        X_RHO: [0.9, 1.004, 0.004]},
+               {"DBZH": [0, 46, 1],
+                               "ZDR": [-0.5, 2.1, 0.1],
+                               "KDP_CONV":  [-0.1, 0.52, 0.02],
+                               "RHOHV": [0.9, 1.004, 0.004]} ]
+        ytlimlist = [-20, -50]
+        loc = find_loc(locs, ff[0])
+        savedict = {}
+        cond_name = os.path.basename(os.path.normpath(savepath))
+        for selseas in selseaslist:
+            savedict.update(
+                        {selseas[0]+"/"+loc+"_cftd_"+cond_name+".png": [vtp[0], ytlimlist[0], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_uncorr.png": [vtp[1], ytlimlist[0], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_uncorr_extended.png": [vtp[1], ytlimlist[1], selseas[1]],
+                        }
+                            )
+
+    for savename in savedict.keys():
+        if auto_plot:
+            vars_to_plot = savedict[savename][0]
+            ytlim = savedict[savename][1]
+            selmonths = savedict[savename][2]
+
+        if plot_cb_nr and plot_cb_r:
+            fzx = 2
+            cbx = 4
+        else:
+            fzx = 0
+            cbx = 2
+
+        fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20+fzx,5),
+                               width_ratios=(1,1,1,1.15+0.05*cbx))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+        for nn, vv in enumerate(vars_to_plot.keys()):
+            so=False
+            binsx2=None
+            adj=1
+            if "RHOHV" in vv:
+                so = True
+                binsx2 = [0.9, 1.005, 0.005]
+            if "KDP" in vv:
+                adj=1
+
+            riming_filter = ds_to_plot[riming_class].where(\
+                                       ds_to_plot.z >= ds_to_plot.height_ml_new_gia,
+                                    ).where(\
+                                       ds_to_plot.z <= ds_to_plot.height_ml_new_gia + 2000,
+                                    ).sel(time=ds_to_plot['time'].dt.month.isin(selmonths))
+
+            dstp_ = ds_to_plot[vv].sel(time=ds_to_plot['time'].dt.month.isin(selmonths))
+
+            # Plot the histogram of non rimed QVPs
+            dstp = dstp_.where(riming_filter.sum("z") == 0, drop=True).copy()*adj
+            dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") == 0, drop=True).copy() + adjtemp
+            utils.hist2d(ax[nn], dstp,
+                         dstp_TEMP,
+                         whole_x_range=True,
+                         binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                         cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_nr else False][0],
+                         cmap=cmaphist_nr, colsteps=colsteps,
+                         fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
+                         mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr,
+                         alpha=hist_alpha_nr)
+
+            # Plot the histogram of rimed QVPs
+            dstp = dstp_.where(riming_filter.sum("z") > 0, drop=True).copy()*adj
+            dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") > 0, drop=True).copy() + adjtemp
+            utils.hist2d(ax[nn], dstp,
+                         dstp_TEMP,
+                         whole_x_range=True,
+                         binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                         cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_r else False][0],
+                         cmap=cmaphist, colsteps=colsteps,
+                         fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
+                         mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r,
+                         alpha=hist_alpha_r)
+
+            ax[nn].set_ylim(15,ytlim)
+            ax[nn].set_xlabel(vv, fontsize=10)
+
+            ax[nn].tick_params(labelsize=15) #change font size of ticks
+            plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+
+        ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+        if auto_plot:
+            # Create savefolder
+            savepath_seas = os.path.dirname(savepath+savename)
+            if not os.path.exists(savepath_seas):
+                os.makedirs(savepath_seas)
+            fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
+            print("AUTO PLOT: saved "+savename)
+
+    if plot_relhum:
+        ds_to_plot_e_sw = utils.saturation_vapor_pressure_water(ds_to_plot.TEMP+273.15)
+        ds_to_plot_e_si = utils.saturation_vapor_pressure_ice(ds_to_plot.TEMP+273.15)
+        ds_to_plot_alpha = utils.mixed_phase_parameter(ds_to_plot.TEMP+273.15)
+        ds_to_plot_e_sm = utils.saturation_vapor_pressure_mixed(ds_to_plot_e_sw,
+                                                                ds_to_plot_e_si,
+                                                                ds_to_plot_alpha)
+
+        ds_to_plot_RH = ds_to_plot.RH
+        ds_to_plot_RHi = ds_to_plot.RH*ds_to_plot_e_sm/ds_to_plot_e_si
+        ds_to_plot_RHw = ds_to_plot.RH*ds_to_plot_e_sm/ds_to_plot_e_sw
+
+        ds_to_plot_relhum = xr.Dataset({"RH": ds_to_plot_RH,
+                             "RHi": ds_to_plot_RHi,
+                             "RHw": ds_to_plot_RHw,
+            }).assign_coords({"TEMP":ds_to_plot.TEMP})
+
+        vars_to_plot = {
+                        "RHi": [50, 125, 5],
+                        "RHw": [50, 125, 5],
+                        "RH": [50, 125, 5],
+                        }
+
+        if auto_plot:
+            vtp = [ {
+                    "RHi": [50, 125, 5],
+                    "RHw": [50, 125, 5],
+                    "RH": [50, 125, 5],
+                    },
+                   ]
+
+            ytlimlist = [-20, -50]
+            savedict = {}
+            cond_name = os.path.basename(os.path.normpath(savepath))
+            for selseas in selseaslist:
+                savedict.update(
+                            {selseas[0]+"/"+loc+"_cftd_"+cond_name+"_RH.png": [vtp[0], ytlimlist[0], selseas[1]],
+                            selseas[0]+"/"+loc+"_cftd_"+cond_name+"_RH_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
+                            }
+                                )
+
+        for savename in savedict.keys():
+            if auto_plot:
+                vars_to_plot = savedict[savename][0]
+                ytlim = savedict[savename][1]
+                selmonths = savedict[savename][2]
+
+            if plot_cb_nr and plot_cb_r:
+                fzx = 2
+                cbx = 4
+            else:
+                fzx = 0
+                cbx = 2
+
+            fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15+fzx,5),
+                                   width_ratios=(1,1,1.15+0.05*cbx))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+            for nn, vv in enumerate(vars_to_plot.keys()):
+                so=False
+                binsx2=None
+                adj=1
+
+                riming_filter = ds_to_plot[riming_class].where(\
+                                           ds_to_plot.z >= ds_to_plot.height_ml_new_gia,
+                                        ).where(\
+                                           ds_to_plot.z <= ds_to_plot.height_ml_new_gia + 2000,
+                                        ).sel(time=ds_to_plot['time'].dt.month.isin(selmonths))
+
+                dstp_ = ds_to_plot_relhum[vv].sel(time=ds_to_plot_relhum['time'].dt.month.isin(selmonths))
+
+                # Plot the histogram of non rimed QVPs
+                dstp = dstp_.where(riming_filter.sum("z") == 0, drop=True).copy()*adj
+                dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") == 0, drop=True).copy() + adjtemp
+                utils.hist2d(ax[nn], dstp,
+                             dstp_TEMP,
+                             whole_x_range=True,
+                             binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                             cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_nr else False][0],
+                             cmap=cmaphist_nr, colsteps=colsteps,
+                             fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                             cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
+                             mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr,
+                             alpha=hist_alpha_nr)
+
+                # Plot the histogram of rimed QVPs
+                dstp = dstp_.where(riming_filter.sum("z") > 0, drop=True).copy()*adj
+                dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") > 0, drop=True).copy() + adjtemp
+                utils.hist2d(ax[nn], dstp,
+                             dstp_TEMP,
+                             whole_x_range=True,
+                             binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                             cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_r else False][0],
+                             cmap=cmaphist, colsteps=colsteps,
+                             fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                             cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
+                             mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r,
+                             alpha=hist_alpha_r)
+
+                ax[nn].set_ylim(15,ytlim)
+                ax[nn].set_xlabel(vv, fontsize=10)
+
+                ax[nn].tick_params(labelsize=15) #change font size of ticks
+                plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+
+            ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+            if auto_plot:
+                # Create savefolder
+                savepath_seas = os.path.dirname(savepath+savename)
+                if not os.path.exists(savepath_seas):
+                    os.makedirs(savepath_seas)
+                fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
+                print("AUTO PLOT: saved "+savename)
+
 #%% Check particular dates
 
 # Plot QVP
