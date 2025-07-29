@@ -2272,7 +2272,7 @@ ds = ds.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data
 def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, cb_mode=True,
            mq="median", mq_color="black", qq=0.2, qq_color="black", cmap='turbo', smooth_out=False, binsx_out=[],
            colsteps=10, mini=0, fsize=13, fcolor='black', mincounts=500, cblim=[0,26],
-           N=False, N_color="cornflowerblue",
+           N=False, N_color="cornflowerblue", N_xlim=None,
            cborientation="horizontal", shading='gouraud', **kwargs):
     """
     Plots the 2-dimensional distribution of two Parameters
@@ -2304,6 +2304,7 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
     mincounts: minimum sample number to plot
     N: plot sample size?
     N_color: Color for the sample size line plot. Default is "cornflowerblue".
+    N_xlim: if not None, tuple of range values to set the x limits of the sample size plot.
     cborientation: orientation of the colorbar, "horizontal" or "vertical"
     shading: shading argument for matplotlib pcolormesh. Should be 'nearest' (no interpolation) or 'gouraud' (interpolated).
     kwargs: additional arguments for matplotlib pcolormesh
@@ -2466,7 +2467,8 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
     if N==True:
         ax2 = ax.twiny()
         ax2.plot(var_count, my, color=N_color, linestyle='-', lw=2)
-        #ax2.set_xlim(0,2500)
+        if N_xlim is not None:
+            ax2.set_xlim(N_xlim[0], N_xlim[1])
         ax2.xaxis.label.set_color(N_color)
         ax2.yaxis.label.set_color(N_color)
         ax2.tick_params(axis='both', colors=N_color)
