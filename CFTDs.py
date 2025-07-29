@@ -1540,6 +1540,13 @@ if country=="dmi":
                 ytlim = savedict[savename][1]
                 selmonths = savedict[savename][2]
 
+            if plot_cb_nr and plot_cb_r:
+                fzx = 2
+                cbx = 4
+            else:
+                fzx = 0
+                cbx = 2
+
             fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15+fzx,5),
                                    width_ratios=(1,1,1.15+0.05*cbx))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
 
@@ -1820,6 +1827,233 @@ if country=="dwd":
                     os.makedirs(savepath_seas)
                 fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
                 print("AUTO PLOT: saved "+savename)
+
+#%% CFTDs retrievals Plot riming vs no riming
+# We assume that everything above ML is frozen and everything below is liquid
+
+# If auto_plot is True, then produce and save the plots automatically based on
+# default configurations (only change savepath and ds_to_plot accordingly).
+# If False, then produce the plot as given below (selecting the first option of
+# savepath_list and ds_to_plot_list) and do not save.
+auto_plot = False
+riming_class = "riming_ZDR_EC_OC_AC_DBZH_AC"
+savepath_list = [
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_KDPpos/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_KDPpos_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed_KDPpos/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed_KDPpos_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_ML/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_ML_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_ML_KDPpos/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_ML_KDPpos_QVPbased/",
+                 ]
+
+# Which to plot, retrievals or retrievals_qvpbased, stratiform or stratiform_relaxed
+loc = find_loc(locs, ff[0]) # by default, plot only the histograms of the currently loaded QVPs.
+ds_to_plot_list = [
+                    retrievals["stratiform"][loc].copy().assign(qvps_strat_fil[[riming_class]]),
+                    retrievals_qvpbased["stratiform"][loc].copy().assign(qvps_strat_fil[[riming_class]]),
+                    retrievals["stratiform"][loc].copy().assign(qvps_strat_fil[[riming_class]]).where(qvps_strat_fil.KDP_ML_corrected>0.01),
+                    retrievals_qvpbased["stratiform"][loc].copy().assign(qvps_strat_fil[[riming_class]]).where(qvps_strat_fil.KDP_ML_corrected>0.01),
+                    retrievals["stratiform_relaxed"][loc].copy().assign(qvps_strat_relaxed_fil[[riming_class]]),
+                    retrievals_qvpbased["stratiform_relaxed"][loc].copy().assign(qvps_strat_relaxed_fil[[riming_class]]),
+                    retrievals["stratiform_relaxed"][loc].copy().assign(qvps_strat_relaxed_fil[[riming_class]]).where(qvps_strat_relaxed_fil.KDP_ML_corrected>0.01),
+                    retrievals_qvpbased["stratiform_relaxed"][loc].copy().assign(qvps_strat_relaxed_fil[[riming_class]]).where(qvps_strat_relaxed_fil.KDP_ML_corrected>0.01),
+                    retrievals["stratiform_ML"][loc].copy().assign(qvps_strat_ML_fil[[riming_class]]),
+                    retrievals_qvpbased["stratiform_ML"][loc].copy().assign(qvps_strat_ML_fil[[riming_class]]),
+                    retrievals["stratiform_ML"][loc].copy().assign(qvps_strat_ML_fil[[riming_class]]).where(qvps_strat_ML_fil.KDP_ML_corrected>0.01),
+                    retrievals_qvpbased["stratiform_ML"][loc].copy().assign(qvps_strat_ML_fil[[riming_class]]).where(qvps_strat_ML_fil.KDP_ML_corrected>0.01),
+                    ]
+
+
+# Define list of seasons
+selseaslist = [
+            ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
+            ("DJF", [12,1,2]),
+            ("MAM", [3,4,5]),
+            ("JJA", [6,7,8]),
+            ("SON", [9,10,11]),
+           ] # ("nameofseas", [months included])
+
+# adjustment from K to C (disabled now because I know that all qvps have ERA5 data)
+adjtemp = 0
+# if (qvps_strat_fil["TEMP"]>100).any(): #if there is any temp value over 100, we assume the units are Kelvin
+#     print("at least one TEMP value > 100 found, assuming TEMP is in K and transforming to C")
+#     adjtemp = -273.15 # adjustment parameter from K to C
+
+# top temp limit (only works if auto_plot=False)
+ytlim=-20
+
+#Colorbar limits and step
+cblim=[0,10]
+colsteps=10
+
+# Set colors for rimed and not rimed cases
+cmaphist_r="Oranges"
+mq_color_r="black"
+qq_color_r="black"
+N_color_r="cornflowerblue"
+hist_alpha_r=1
+plot_cb_r = True
+
+cmaphist_nr="Purples"
+mq_color_nr="#40BAFF"
+qq_color_nr="#40BAFF"
+N_color_nr="darkviolet"
+hist_alpha_nr=0.
+plot_cb_nr = False
+
+# season to plot (only works if auto_plot=False)
+selseas = selseaslist[0]
+selmonths = selseas[1]
+
+# Select which retrievals to plot (only works if auto_plot=False)
+IWC = "iwc_zdr_zh_kdp_carlin2021" # iwc_zh_t_hogan2006, iwc_zh_t_hogan2006_model, iwc_zh_t_hogan2006_combined, iwc_zdr_zh_kdp_carlin2021
+LWC = "lwc_hybrid_reimann2021" # lwc_zh_zdr_reimann2021, lwc_zh_zdr_rhyzkov2022, lwc_kdp_reimann2021, lwc_ah_reimann2021, lwc_hybrid_reimann2021
+Dm_ice = "Dm_ice_zdp_kdp_carlin2021" # Dm_ice_zh_matrosov2019, Dm_ice_zh_kdp_carlin2021, Dm_ice_zdp_kdp_carlin2021, Dm_hybrid_blanke2023
+Dm_rain = "Dm_rain_zdr_bringi2009" # Dm_rain_zdr_chen, Dm_rain_zdr_hu2022, Dm_rain_zdr_bringi2009
+Nt_ice = "Nt_ice_iwc_zdr_zh_kdp_carlin2021" # Nt_ice_iwc_zh_t_hu2022, Nt_ice_iwc_zh_t_carlin2021, Nt_ice_iwc_zh_t_combined_hu2022, Nt_ice_iwc_zh_t_combined_carlin2021, Nt_ice_iwc_zdr_zh_kdp_hu2022, Nt_ice_iwc_zdr_zh_kdp_carlin2021
+Nt_rain = "Nt_rain_zh_zdr_rhyzkov2020" # Nt_rain_zh_zdr_rhyzkov2020
+
+vars_to_plot = {"IWC/LWC [g/m^{3}]": [-0.1, 0.82, 0.02], # [-0.1, 0.82, 0.02],
+                "Dm [mm]": [0, 4.1, 0.1], # [0, 3.1, 0.1],
+                "Nt [log10(1/L)]": [-2, 2.1, 0.1], # [-2, 2.1, 0.1],
+                }
+
+savedict = {"custom": None} # placeholder for the for loop below, not important
+
+for sn, savepath in enumerate(savepath_list):
+    ds_to_plot = ds_to_plot_list[sn]
+
+    if auto_plot:
+        ytlimlist = [-20, -50]
+        cond_name = os.path.basename(os.path.normpath(savepath))
+        savedict = {}
+        for selseas in selseaslist:
+            savedict.update(
+                        {selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys.png": [ytlimlist[0],
+                                    "iwc_zh_t_hogan2006_model", "lwc_zh_zdr_reimann2021",
+                                    "Dm_ice_zh_matrosov2019", "Dm_rain_zdr_bringi2009",
+                                    "Nt_ice_iwc_zh_t_carlin2021", "Nt_rain_zh_zdr_rhyzkov2020", selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_extended.png": [ytlimlist[1],
+                                    "iwc_zh_t_hogan2006_model", "lwc_zh_zdr_reimann2021",
+                                    "Dm_ice_zh_matrosov2019", "Dm_rain_zdr_bringi2009",
+                                    "Nt_ice_iwc_zh_t_carlin2021", "Nt_rain_zh_zdr_rhyzkov2020", selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_KDP.png": [ytlimlist[0],
+                                    "iwc_zdr_zh_kdp_carlin2021", "lwc_hybrid_reimann2021",
+                                    "Dm_ice_zdp_kdp_carlin2021", "Dm_rain_zdr_bringi2009",
+                                    "Nt_ice_iwc_zdr_zh_kdp_carlin2021", "Nt_rain_zh_zdr_rhyzkov2020", selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_KDP_extended.png": [ytlimlist[1],
+                                    "iwc_zdr_zh_kdp_carlin2021", "lwc_hybrid_reimann2021",
+                                    "Dm_ice_zdp_kdp_carlin2021", "Dm_rain_zdr_bringi2009",
+                                    "Nt_ice_iwc_zdr_zh_kdp_carlin2021", "Nt_rain_zh_zdr_rhyzkov2020", selseas[1]],
+                        }
+                    )
+
+    for savename in savedict.keys():
+        if auto_plot:
+            ytlim = savedict[savename][0]
+            IWC = savedict[savename][1]
+            LWC = savedict[savename][2]
+            Dm_ice = savedict[savename][3]
+            Dm_rain = savedict[savename][4]
+            Nt_ice = savedict[savename][5]
+            Nt_rain = savedict[savename][6]
+            selmonths = savedict[savename][7]
+
+        try:
+            retreivals_merged = xr.Dataset({
+                                            "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].z > ds_to_plot.height_ml_new_gia,
+                                                                              ds_to_plot[LWC].where(ds_to_plot[LWC].z < ds_to_plot.height_ml_bottom_new_gia ) ),
+                                            "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].z > ds_to_plot.height_ml_new_gia,
+                                                                              ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ),
+                                            "Nt [log10(1/L)]": (ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].z > ds_to_plot.height_ml_new_gia,
+                                                                              ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ) ),
+                })
+        except KeyError:
+            print("Unable to plot "+savename+". Some retrieval is not present in the dataset.")
+            continue
+
+        if plot_cb_nr and plot_cb_r:
+            fzx = 2
+            cbx = 4
+        else:
+            fzx = 0
+            cbx = 2
+
+        fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15+fzx,5),
+                               width_ratios=(1,1,1.15+0.05*cbx))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+        for nn, vv in enumerate(vars_to_plot.keys()):
+            so=False
+            binsx2=None
+            adj=1
+            if "RHOHV" in vv:
+                so = True
+                binsx2 = [0.9, 1.005, 0.005]
+            if "KDP" in vv:
+                adj=1
+
+            riming_filter = ds_to_plot[riming_class].where(\
+                                       ds_to_plot.z >= ds_to_plot.height_ml_new_gia,
+                                    ).where(\
+                                       ds_to_plot.z <= ds_to_plot.height_ml_new_gia + 2000,
+                                    ).sel(time=ds_to_plot['time'].dt.month.isin(selmonths))
+
+            #!!! For some reason SVS now requires rechunking here
+            dstp_ = retreivals_merged[vv].chunk({"time":-1}).sel(time=retreivals_merged['time'].dt.month.isin(selmonths))
+
+
+            # Plot the histogram of non rimed QVPs
+            dstp = dstp_.where(riming_filter.sum("z") == 0, drop=True).copy()*adj
+            dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") == 0, drop=True).copy() + adjtemp
+            utils.hist2d(ax[nn], dstp,
+                         dstp_TEMP,
+                         whole_x_range=True,
+                         binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                         cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_nr else False][0],
+                         cmap=cmaphist_nr, colsteps=colsteps,
+                         fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
+                         mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr,
+                         alpha=hist_alpha_nr)
+
+            # Plot the histogram of rimed QVPs
+            dstp = dstp_.where(riming_filter.sum("z") > 0, drop=True).copy()*adj
+            dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") > 0, drop=True).copy() + adjtemp
+            utils.hist2d(ax[nn], dstp,
+                         dstp_TEMP,
+                         whole_x_range=True,
+                         binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                         cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_r else False][0],
+                         cmap=cmaphist, colsteps=colsteps,
+                         fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
+                         mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r,
+                         alpha=hist_alpha_r)
+
+            ax[nn].set_ylim(15,ytlim)
+            ax[nn].set_xlabel(vv, fontsize=10)
+
+            ax[nn].tick_params(labelsize=15) #change font size of ticks
+            plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+
+        ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+
+        if auto_plot:
+            # Create savefolder
+            savepath_seas = os.path.dirname(savepath+savename)
+            if not os.path.exists(savepath_seas):
+                os.makedirs(savepath_seas)
+            fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
+            print("AUTO PLOT: saved "+savename)
+
+    if auto_plot is False:
+        break
 
 #%% Check particular dates
 
