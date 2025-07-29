@@ -1353,16 +1353,18 @@ colsteps=10
 cmaphist_r="Oranges"
 mq_color_r="black"
 qq_color_r="black"
-N_color_r="cornflowerblue"
+N_color_r="#800420"
 hist_alpha_r=1
 plot_cb_r = True
 
 cmaphist_nr="Purples"
 mq_color_nr="#40BAFF"
 qq_color_nr="#40BAFF"
-N_color_nr="darkviolet"
+N_color_nr="cornflowerblue"
 hist_alpha_nr=0.
 plot_cb_nr = False
+
+unify_N_xlim = True # unify the xlim for both N line plots?
 
 savedict = {"custom": None} # placeholder for the for loop below, not important
 
@@ -1452,6 +1454,11 @@ if country=="dmi":
             # Plot the histogram of non rimed QVPs
             dstp = dstp_.where(riming_filter.sum("z") == 0, drop=True).copy().round(rd)
             dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") == 0, drop=True).copy() + adjtemp
+
+            N_xlim = None
+            if unify_N_xlim:
+                N_xlim = (0, dstp.time.size)
+
             utils.hist2d(ax[nn], dstp,
                          dstp_TEMP,
                          whole_x_range=True,
@@ -1460,7 +1467,7 @@ if country=="dmi":
                          cmap=cmaphist_nr, colsteps=colsteps,
                          fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                         mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr,
+                         mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr, N_xlim=N_xlim,
                          alpha=hist_alpha_nr)
 
             # Plot the histogram of rimed QVPs
@@ -1474,7 +1481,7 @@ if country=="dmi":
                          cmap=cmaphist, colsteps=colsteps,
                          fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                         mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r,
+                         mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r, N_xlim=N_xlim,
                          alpha=hist_alpha_r)
 
             ax[nn].set_ylim(15,ytlim)
@@ -1566,6 +1573,11 @@ if country=="dmi":
                 # Plot the histogram of non rimed QVPs
                 dstp = dstp_.where(riming_filter.sum("z") == 0, drop=True).copy()*adj
                 dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") == 0, drop=True).copy() + adjtemp
+
+                N_xlim = None
+                if unify_N_xlim:
+                    N_xlim = (0, dstp.time.size)
+
                 utils.hist2d(ax[nn], dstp,
                              dstp_TEMP,
                              whole_x_range=True,
@@ -1574,7 +1586,7 @@ if country=="dmi":
                              cmap=cmaphist_nr, colsteps=colsteps,
                              fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                             mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr,
+                             mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr, N_xlim=N_xlim,
                              alpha=hist_alpha_nr)
 
                 # Plot the histogram of rimed QVPs
@@ -1588,7 +1600,7 @@ if country=="dmi":
                              cmap=cmaphist, colsteps=colsteps,
                              fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                             mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r,
+                             mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r, N_xlim=N_xlim,
                              alpha=hist_alpha_r)
 
                 ax[nn].set_ylim(15,ytlim)
@@ -1675,6 +1687,11 @@ if country=="dwd":
             # Plot the histogram of non rimed QVPs
             dstp = dstp_.where(riming_filter.sum("z") == 0, drop=True).copy()*adj
             dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") == 0, drop=True).copy() + adjtemp
+
+            N_xlim = None
+            if unify_N_xlim:
+                N_xlim = (0, dstp.time.size)
+
             utils.hist2d(ax[nn], dstp,
                          dstp_TEMP,
                          whole_x_range=True,
@@ -1683,7 +1700,7 @@ if country=="dwd":
                          cmap=cmaphist_nr, colsteps=colsteps,
                          fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                         mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr,
+                         mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr, N_xlim=N_xlim,
                          alpha=hist_alpha_nr)
 
             # Plot the histogram of rimed QVPs
@@ -1697,7 +1714,7 @@ if country=="dwd":
                          cmap=cmaphist, colsteps=colsteps,
                          fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                         mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r,
+                         mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r, N_xlim=N_xlim,
                          alpha=hist_alpha_r)
 
             ax[nn].set_ylim(15,ytlim)
@@ -1788,6 +1805,11 @@ if country=="dwd":
                 # Plot the histogram of non rimed QVPs
                 dstp = dstp_.where(riming_filter.sum("z") == 0, drop=True).copy()*adj
                 dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") == 0, drop=True).copy() + adjtemp
+
+                N_xlim = None
+                if unify_N_xlim:
+                    N_xlim = (0, dstp.time.size)
+
                 utils.hist2d(ax[nn], dstp,
                              dstp_TEMP,
                              whole_x_range=True,
@@ -1796,7 +1818,7 @@ if country=="dwd":
                              cmap=cmaphist_nr, colsteps=colsteps,
                              fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                             mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr,
+                             mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr, N_xlim=N_xlim,
                              alpha=hist_alpha_nr)
 
                 # Plot the histogram of rimed QVPs
@@ -1810,7 +1832,7 @@ if country=="dwd":
                              cmap=cmaphist, colsteps=colsteps,
                              fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                             mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r,
+                             mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r, N_xlim=N_xlim,
                              alpha=hist_alpha_r)
 
                 ax[nn].set_ylim(15,ytlim)
@@ -1835,7 +1857,7 @@ if country=="dwd":
 # default configurations (only change savepath and ds_to_plot accordingly).
 # If False, then produce the plot as given below (selecting the first option of
 # savepath_list and ds_to_plot_list) and do not save.
-auto_plot = False
+auto_plot = True
 riming_class = "riming_ZDR_EC_OC_AC_DBZH_AC"
 savepath_list = [
                 "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform/",
@@ -1896,16 +1918,18 @@ colsteps=10
 cmaphist_r="Oranges"
 mq_color_r="black"
 qq_color_r="black"
-N_color_r="cornflowerblue"
+N_color_r="#800420"
 hist_alpha_r=1
 plot_cb_r = True
 
 cmaphist_nr="Purples"
 mq_color_nr="#40BAFF"
 qq_color_nr="#40BAFF"
-N_color_nr="darkviolet"
+N_color_nr="cornflowerblue"
 hist_alpha_nr=0.
 plot_cb_nr = False
+
+unify_N_xlim = True # unify the xlim for both N line plots?
 
 # season to plot (only works if auto_plot=False)
 selseas = selseaslist[0]
@@ -2007,11 +2031,15 @@ for sn, savepath in enumerate(savepath_list):
             #!!! For some reason SVS now requires rechunking here
             dstp_ = retreivals_merged[vv].chunk({"time":-1}).sel(time=retreivals_merged['time'].dt.month.isin(selmonths))
 
-
             # Plot the histogram of non rimed QVPs
             dstp = dstp_.where(riming_filter.sum("z") == 0, drop=True).copy()*adj
             dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") == 0, drop=True).copy() + adjtemp
-            utils.hist2d(ax[nn], dstp,
+
+            N_xlim = None
+            if unify_N_xlim:
+                N_xlim = (0, dstp.time.size)
+
+            img1 = utils.hist2d(ax[nn], dstp,
                          dstp_TEMP,
                          whole_x_range=True,
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
@@ -2019,13 +2047,13 @@ for sn, savepath in enumerate(savepath_list):
                          cmap=cmaphist_nr, colsteps=colsteps,
                          fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                         mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr,
+                         mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr, N_xlim=N_xlim,
                          alpha=hist_alpha_nr)
 
             # Plot the histogram of rimed QVPs
             dstp = dstp_.where(riming_filter.sum("z") > 0, drop=True).copy()*adj
             dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") > 0, drop=True).copy() + adjtemp
-            utils.hist2d(ax[nn], dstp,
+            img2 = utils.hist2d(ax[nn], dstp,
                          dstp_TEMP,
                          whole_x_range=True,
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
@@ -2033,7 +2061,7 @@ for sn, savepath in enumerate(savepath_list):
                          cmap=cmaphist, colsteps=colsteps,
                          fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                         mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r,
+                         mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r, N_xlim=N_xlim,
                          alpha=hist_alpha_r)
 
             ax[nn].set_ylim(15,ytlim)
