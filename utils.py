@@ -2270,8 +2270,9 @@ ds = ds.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data
 #################################### CFADs
 
 def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, cb_mode=True,
-           mq="median", qq=0.2, cmap='turbo', smooth_out=False, binsx_out=[],
-           colsteps=10, mini=0, fsize=13, fcolor='black', mincounts=500, cblim=[0,26], N=False,
+           mq="median", mq_color="black", qq=0.2, qq_color="black", cmap='turbo', smooth_out=False, binsx_out=[],
+           colsteps=10, mini=0, fsize=13, fcolor='black', mincounts=500, cblim=[0,26],
+           N=False, N_color="cornflowerblue",
            cborientation="horizontal", shading='gouraud', **kwargs):
     """
     Plots the 2-dimensional distribution of two Parameters
@@ -2297,9 +2298,12 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
     binsx_out : Desired output bins for the x dimension if smooth_out is True.
     cb_mode : plot colorbar?
     mq = Middle line to plot. Can be "median" or "mean"
-    qq = percentile [0-1]. Calculates the qq and 1-qq percentiles.
+    mq_color = Color for the middle line. Default is "black"
+    qq = percentile [0-1]. Calculates and plots the qq and 1-qq percentiles.
+    qq_color = Color for the percentile lines. Default is "black"
     mincounts: minimum sample number to plot
     N: plot sample size?
+    N_color: Color for the sample size line plot. Default is "cornflowerblue".
     cborientation: orientation of the colorbar, "horizontal" or "vertical"
     shading: shading argument for matplotlib pcolormesh. Should be 'nearest' (no interpolation) or 'gouraud' (interpolated).
     kwargs: additional arguments for matplotlib pcolormesh
@@ -2340,6 +2344,7 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
     cmap = matplotlib.colors.ListedColormap(colors[:-1], "cfad")
     # set over-color to last color of list
     cmap.set_over(colors[-1])
+    cmap.set_under("#FFFFFF00")
 
     # Define bins arange
     bins_px = np.arange(binsx[0], binsx[1], binsx[2])
@@ -2439,15 +2444,15 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
     img = ax.pcolormesh(mx, my ,RES , cmap=cmap, vmin=cblim[0], vmax=cblim[1], shading=shading, **kwargs) #, shading="gouraud"
 
     if mq == "median":
-        ax.plot(var_med, my, color='black', lw=2)
+        ax.plot(var_med, my, color=mq_color, lw=2)
         # ax.plot(var_med, my, color='black', lw=2, ls=(0, (5, 5)))
     elif mq == "mean":
-        ax.plot(var_mean, my, color='black', lw=2)
+        ax.plot(var_mean, my, color=mq_color, lw=2)
         # ax.plot(var_mean, my, color='black', lw=2, ls=(0, (5, 5)))
 
-    ax.plot(var_qq1, my, color='black', ls="-.", lw=2)
+    ax.plot(var_qq1, my, color=qq_color, ls="-.", lw=2)
     # ax.plot(var_qq1, my, color='black', linestyle=(0, (1, 5)), lw=2)
-    ax.plot(var_qq2, my, color='black', ls="-.", lw=2)
+    ax.plot(var_qq2, my, color=qq_color, ls="-.", lw=2)
     # ax.plot(var_qq2, my, color='black', linestyle=(0, (1, 5)), lw=2)
 
     # se the x limits in case the lines go off the pcolormesh
@@ -2460,11 +2465,11 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
 
     if N==True:
         ax2 = ax.twiny()
-        ax2.plot(var_count, my, color='cornflowerblue', linestyle='-', lw=2)
+        ax2.plot(var_count, my, color=N_color, linestyle='-', lw=2)
         #ax2.set_xlim(0,2500)
-        ax2.xaxis.label.set_color('cornflowerblue')
-        ax2.yaxis.label.set_color('cornflowerblue')
-        ax2.tick_params(axis='both', colors='cornflowerblue')
+        ax2.xaxis.label.set_color(N_color)
+        ax2.yaxis.label.set_color(N_color)
+        ax2.tick_params(axis='both', colors=N_color)
 
         xticks = ax2.xaxis.get_major_ticks()
         xticks[0].label1.set_visible(False)
