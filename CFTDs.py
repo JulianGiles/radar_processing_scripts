@@ -1605,7 +1605,8 @@ if country=="dmi":
                         dstp = dstp_.copy()*adj
                         dstp_TEMP = dstp_["TEMP"].copy() + adjtemp
                     else:
-                        raise Exception("ERROR: check the RH data")
+                        dstp = dstp_.where(riming_filter.sum("z") > 0).copy()*adj
+                        dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") > 0).copy() + adjtemp
 
                 utils.hist2d(ax[nn], dstp,
                              dstp_TEMP,
