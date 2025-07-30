@@ -1478,7 +1478,7 @@ if country=="dmi":
                          whole_x_range=True,
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                          cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_r else False][0],
-                         cmap=cmaphist, colsteps=colsteps,
+                         cmap=cmaphist_r, colsteps=colsteps,
                          fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
                          mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r, N_xlim=N_xlim,
@@ -1571,8 +1571,15 @@ if country=="dmi":
                 dstp_ = ds_to_plot_relhum[vv].sel(time=ds_to_plot_relhum['time'].dt.month.isin(selmonths))
 
                 # Plot the histogram of non rimed QVPs
-                dstp = dstp_.where(riming_filter.sum("z") == 0, drop=True).copy()*adj
-                dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") == 0, drop=True).copy() + adjtemp
+                try:
+                    dstp = dstp_.where(riming_filter.sum("z") == 0, drop=True).copy()*adj
+                    dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") == 0, drop=True).copy() + adjtemp
+                except ValueError: # this is to handle cases with no profiles available (just plots empty plot)
+                    if dstp_.time.size == 0:
+                        dstp = dstp_.copy()*adj
+                        dstp_TEMP = dstp_["TEMP"].copy() + adjtemp
+                    else:
+                        raise Exception("ERROR: check the RH data")
 
                 N_xlim = None
                 if unify_N_xlim:
@@ -1590,14 +1597,22 @@ if country=="dmi":
                              alpha=hist_alpha_nr)
 
                 # Plot the histogram of rimed QVPs
-                dstp = dstp_.where(riming_filter.sum("z") > 0, drop=True).copy()*adj
-                dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") > 0, drop=True).copy() + adjtemp
+                try:
+                    dstp = dstp_.where(riming_filter.sum("z") > 0, drop=True).copy()*adj
+                    dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") > 0, drop=True).copy() + adjtemp
+                except ValueError: # this is to handle cases with no profiles available (just plots empty plot)
+                    if dstp_.time.size == 0:
+                        dstp = dstp_.copy()*adj
+                        dstp_TEMP = dstp_["TEMP"].copy() + adjtemp
+                    else:
+                        raise Exception("ERROR: check the RH data")
+
                 utils.hist2d(ax[nn], dstp,
                              dstp_TEMP,
                              whole_x_range=True,
                              binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                              cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_r else False][0],
-                             cmap=cmaphist, colsteps=colsteps,
+                             cmap=cmaphist_r, colsteps=colsteps,
                              fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
                              mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r, N_xlim=N_xlim,
@@ -1711,7 +1726,7 @@ if country=="dwd":
                          whole_x_range=True,
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                          cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_r else False][0],
-                         cmap=cmaphist, colsteps=colsteps,
+                         cmap=cmaphist_r, colsteps=colsteps,
                          fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
                          mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r, N_xlim=N_xlim,
@@ -1803,8 +1818,15 @@ if country=="dwd":
                 dstp_ = ds_to_plot_relhum[vv].sel(time=ds_to_plot_relhum['time'].dt.month.isin(selmonths))
 
                 # Plot the histogram of non rimed QVPs
-                dstp = dstp_.where(riming_filter.sum("z") == 0, drop=True).copy()*adj
-                dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") == 0, drop=True).copy() + adjtemp
+                try:
+                    dstp = dstp_.where(riming_filter.sum("z") == 0, drop=True).copy()*adj
+                    dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") == 0, drop=True).copy() + adjtemp
+                except ValueError: # this is to handle cases with no profiles available (just plots empty plot)
+                    if dstp_.time.size == 0:
+                        dstp = dstp_.copy()*adj
+                        dstp_TEMP = dstp_["TEMP"].copy() + adjtemp
+                    else:
+                        raise Exception("ERROR: check the RH data")
 
                 N_xlim = None
                 if unify_N_xlim:
@@ -1822,14 +1844,22 @@ if country=="dwd":
                              alpha=hist_alpha_nr)
 
                 # Plot the histogram of rimed QVPs
-                dstp = dstp_.where(riming_filter.sum("z") > 0, drop=True).copy()*adj
-                dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") > 0, drop=True).copy() + adjtemp
+                try:
+                    dstp = dstp_.where(riming_filter.sum("z") > 0, drop=True).copy()*adj
+                    dstp_TEMP = dstp_["TEMP"].where(riming_filter.sum("z") > 0, drop=True).copy() + adjtemp
+                except ValueError: # this is to handle cases with no profiles available (just plots empty plot)
+                    if dstp_.time.size == 0:
+                        dstp = dstp_.copy()*adj
+                        dstp_TEMP = dstp_["TEMP"].copy() + adjtemp
+                    else:
+                        raise Exception("ERROR: check the RH data")
+
                 utils.hist2d(ax[nn], dstp,
                              dstp_TEMP,
                              whole_x_range=True,
                              binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                              cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_r else False][0],
-                             cmap=cmaphist, colsteps=colsteps,
+                             cmap=cmaphist_r, colsteps=colsteps,
                              fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
                              mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r, N_xlim=N_xlim,
@@ -1860,18 +1890,18 @@ if country=="dwd":
 auto_plot = True
 riming_class = "riming_ZDR_EC_OC_AC_DBZH_AC"
 savepath_list = [
-                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform/",
-                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_QVPbased/",
-                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_KDPpos/",
-                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_KDPpos_QVPbased/",
-                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed/",
-                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed_QVPbased/",
-                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed_KDPpos/",
-                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed_KDPpos_QVPbased/",
-                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_ML/",
-                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_ML_QVPbased/",
-                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_ML_KDPpos/",
-                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_ML_KDPpos_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs_riming"+suffix_name+"/stratiform/",
+                "/automount/agradar/jgiles/images/CFTDs_riming"+suffix_name+"/stratiform_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs_riming"+suffix_name+"/stratiform_KDPpos/",
+                "/automount/agradar/jgiles/images/CFTDs_riming"+suffix_name+"/stratiform_KDPpos_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs_riming"+suffix_name+"/stratiform_relaxed/",
+                "/automount/agradar/jgiles/images/CFTDs_riming"+suffix_name+"/stratiform_relaxed_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs_riming"+suffix_name+"/stratiform_relaxed_KDPpos/",
+                "/automount/agradar/jgiles/images/CFTDs_riming"+suffix_name+"/stratiform_relaxed_KDPpos_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs_riming"+suffix_name+"/stratiform_ML/",
+                "/automount/agradar/jgiles/images/CFTDs_riming"+suffix_name+"/stratiform_ML_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs_riming"+suffix_name+"/stratiform_ML_KDPpos/",
+                "/automount/agradar/jgiles/images/CFTDs_riming"+suffix_name+"/stratiform_ML_KDPpos_QVPbased/",
                  ]
 
 # Which to plot, retrievals or retrievals_qvpbased, stratiform or stratiform_relaxed
@@ -2058,7 +2088,7 @@ for sn, savepath in enumerate(savepath_list):
                          whole_x_range=True,
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                          cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_r else False][0],
-                         cmap=cmaphist, colsteps=colsteps,
+                         cmap=cmaphist_r, colsteps=colsteps,
                          fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
                          mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r, N_xlim=N_xlim,
