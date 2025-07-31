@@ -32,8 +32,10 @@ import matplotlib as mpl
 import xradar as xd
 import time
 import ridgeplot
+import seaborn as sns
 import plotly
 import pickle
+import scipy
 
 try:
     from Scripts.python.radar_processing_scripts import utils
@@ -3971,6 +3973,240 @@ for selseas in selseaslist:
                     print("!!! unable to plot "+stratname+" "+ss+" !!!")
             except:
                 print("!!! unable to plot "+stratname+" "+ss+" !!!")
+
+
+#%% Correlation matrices
+
+#### Set variable names
+X_DBZH = "DBZH_AC"
+X_RHO = "RHOHV_NC"
+X_ZDR = "ZDR_EC_OC_AC"
+X_KDP = "KDP_ML_corrected_EC"
+
+IWC = "iwc_zdr_zh_kdp_carlin2021" # iwc_zh_t_hogan2006, iwc_zh_t_hogan2006_model, iwc_zh_t_hogan2006_combined, iwc_zdr_zh_kdp_carlin2021
+LWC = "lwc_hybrid_reimann2021" # lwc_zh_zdr_reimann2021, lwc_zh_zdr_rhyzkov2022, lwc_kdp_reimann2021, lwc_ah_reimann2021, lwc_hybrid_reimann2021
+Dm_ice = "Dm_ice_zdp_kdp_carlin2021" # Dm_ice_zh_matrosov2019, Dm_ice_zh_kdp_carlin2021, Dm_ice_zdp_kdp_carlin2021, Dm_hybrid_blanke2023
+Dm_rain = "Dm_rain_zdr_bringi2009" # Dm_rain_zdr_chen, Dm_rain_zdr_hu2022, Dm_rain_zdr_bringi2009
+Nt_ice = "Nt_ice_iwc_zdr_zh_kdp_carlin2021" # Nt_ice_iwc_zh_t_hu2022, Nt_ice_iwc_zh_t_carlin2021, Nt_ice_iwc_zh_t_combined_hu2022, Nt_ice_iwc_zh_t_combined_carlin2021, Nt_ice_iwc_zdr_zh_kdp_hu2022, Nt_ice_iwc_zdr_zh_kdp_carlin2021
+Nt_rain = "Nt_rain_zh_zdr_rhyzkov2020" # Nt_rain_zh_zdr_rhyzkov2020
+
+locs_to_plot = locs # [find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
+savepath = "/automount/agradar/jgiles/images/stats_corr_matrix"+suffix_name+"/"
+
+selseaslist = [
+            ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
+            ("DJF", [12,1,2]),
+            ("MAM", [3,4,5]),
+            ("JJA", [6,7,8]),
+            ("SON", [9,10,11]),
+           ] # ("nameofseas", [months included])
+
+# Variables to include:
+# dicts that will be combined. Name: variable
+
+moments = [X_DBZH, X_RHO, X_ZDR, X_KDP]
+vars_ice = moments + [IWC, Dm_ice, Nt_ice]
+vars_liq = moments + [LWC, Dm_rain, Nt_rain]
+vars_notnested = ['ML_thickness', 'ML_bottom', 'ML_thickness_TEMP', 'ML_bottom_TEMP',
+                  'cloudtop', 'cloudtop_5dbz', 'cloudtop_10dbz',
+                  'cloudtop_TEMP', 'cloudtop_TEMP_5dbz', 'cloudtop_TEMP_10dbz']
+
+nested_dict = {'values_sfc': vars_liq,
+               'values_snow': vars_ice,
+               'values_rain': vars_liq,
+               'values_ML_max': moments,
+               'values_ML_min': moments,
+               'values_ML_mean': moments,
+               'values_DGL_max': vars_ice,
+               'values_DGL_min': vars_ice,
+               'values_DGL_mean': vars_ice,
+               'values_NZ_max': vars_ice,
+               'values_NZ_min': vars_ice,
+               'values_NZ_mean': vars_ice,
+               'height_ML_max': moments,
+               'height_ML_min': moments,
+               'beta': vars_ice,
+               'beta_belowDGL': vars_ice,
+               'beta_belowML': vars_liq}
+
+notnested_dict = {x_var: x_var for x_var in vars_notnested}
+
+vars_sel_dict = nested_dict | notnested_dict
+
+print("Plotting correlation matrices ...")
+
+for loc in locs_to_plot:
+    print(" ... "+loc)
+    for selseas in selseaslist:
+        print(" ... ... "+selseas[0])
+
+        for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
+            print(" ... ... ... "+stratname)
+
+            # Create savefolder
+            savepath_seas = savepath+stratname+"/"+selseas[0]+"/"+loc+"/"
+            if not os.path.exists(savepath_seas):
+                os.makedirs(savepath_seas)
+
+            #### Get necessary variables
+            variables_nested = {x_name0+"|"+x_name1: stats[stratname][loc][x_name0][x_name1].where(\
+                                                             stats[stratname][loc][x_name0]["valid_perc"]>0.5).sel(\
+                                                    time=stats[stratname][loc][x_name0]['time'].dt.month.isin(selseas[1]))
+                                if
+                                    "valid_perc" in stats[stratname][loc][x_name0]
+                                else
+                                    stats[stratname][loc][x_name0][x_name1].sel(\
+                                                                            time=stats[stratname][loc][x_name0]['time'].dt.month.isin(selseas[1]))
+                                for x_name0, value in nested_dict.items() for x_name1 in value }
+
+            variables_notnested = {x_name0: stats[stratname][loc][x_name0].sel(\
+                                                    time=stats[stratname][loc][x_name0]['time'].dt.month.isin(selseas[1]))
+                                for x_name0, value in notnested_dict.items()}
+
+            variables_all = variables_nested | variables_notnested
+
+            # Put everything in a new dataset and transform it to Pandas dataframe
+            variables_ds = xr.Dataset({name: data.reset_coords(drop=True) for name, data in variables_all.items()})
+            variables_df = variables_ds.to_dataframe()
+
+            # Compute correlation matrix across time
+            correlation_matrix_pearson = variables_df.corr(method="pearson")
+            correlation_matrix_spearman = variables_df.corr(method="spearman")
+
+            # Compute significance pearson
+            pval_pearson = pd.DataFrame(np.ones_like(correlation_matrix_pearson),
+                                        columns=correlation_matrix_pearson.columns,
+                                        index=correlation_matrix_pearson.index)
+
+            def pairwise_pearsonr(x, y): # we need to manually handle NaNs.
+                # Combine into DataFrame and drop NaNs
+                df = pd.DataFrame({"x": x, "y": y}).dropna()
+                if len(df) < 2:
+                    return np.nan, np.nan  # Not enough data to compute correlation
+                return scipy.stats.pearsonr(df["x"], df["y"])
+
+            for i in correlation_matrix_pearson.columns:
+                for j in correlation_matrix_pearson.columns:
+                    _, p = pairwise_pearsonr(variables_df[i], variables_df[j])
+                    pval_pearson.loc[i, j] = p.copy()
+
+            # Compute significance Spearman
+            pval_spearman = pd.DataFrame(np.ones_like(correlation_matrix_spearman),
+                                        columns=correlation_matrix_spearman.columns,
+                                        index=correlation_matrix_spearman.index)
+
+            for i in correlation_matrix_spearman.columns:
+                for j in correlation_matrix_spearman.columns:
+                    _, p = scipy.stats.spearmanr(variables_df[i], variables_df[j],
+                                                 nan_policy='omit')
+                    pval_spearman.loc[i, j] = p
+
+
+            # Plot static figures
+            # Pearson
+            fig = plt.figure(figsize=(100, 100))
+            sns.heatmap(correlation_matrix_pearson, vmin=-1, vmax=1, center=0,
+                        cmap="RdBu_r", annot=True)
+
+            fig.savefig(savepath_seas+"/"+loc+"_correlation_matrix_pearson.png",
+                            bbox_inches="tight")
+            plt.close(fig)
+            print("PLOT: saved "+savepath_seas+"/"+loc+"_correlation_matrix_pearson.png")
+
+            # Spearman
+            fig = plt.figure(figsize=(100, 100))
+            sns.heatmap(correlation_matrix_spearman, vmin=-1, vmax=1, center=0,
+                        cmap="RdBu_r", annot=True)
+
+            fig.savefig(savepath_seas+"/"+loc+"_correlation_matrix_spearman.png",
+                            bbox_inches="tight")
+            plt.close(fig)
+            print("PLOT: saved "+savepath_seas+"/"+loc+"_correlation_matrix_spearman.png")
+
+            # Plot interactive figures
+            # Pearson
+            # Reset index to use in plotly
+            correlation_df = correlation_matrix_pearson.reset_index().melt(id_vars='index')
+            correlation_df.columns = ['Variable1', 'Variable2', 'Correlation']
+
+            # Identify significant correlations (p < 0.05)
+            sig_y, sig_x = np.where(pval_pearson.values < 0.05)
+
+            px =plotly.express
+
+            # Create interactive heatmap
+            fig = px.imshow(
+                correlation_matrix_pearson,
+                labels=dict(x="Variable", y="Variable", color="Correlation"),
+                x=correlation_matrix_pearson.columns,
+                y=correlation_matrix_pearson.index,
+                color_continuous_scale="RdBu_r",
+                zmin=-1, zmax=1,
+            )
+
+            # Add dot markers at significant positions
+            fig.add_trace(plotly.graph_objects.Scatter(
+                x=correlation_matrix_pearson.columns[sig_x],
+                y=correlation_matrix_pearson.index[sig_y],
+                mode='markers',
+                marker=dict(size=1, color='black', symbol='circle'),
+                name='Significant (p < 0.05)',
+                hoverinfo='skip'
+            ))
+
+            fig.update_layout(
+                title="Pearson Correlation Matrix",
+                autosize=False,
+                width=1000,  # Adjust size as needed
+                height=1000,
+                xaxis=dict(tickangle=45),
+            )
+
+            # Save to interactive HTML file
+            fig.write_html(savepath_seas+"/"+loc+"_correlation_matrix_pearson.html")
+            print("PLOT: saved "+savepath_seas+"/"+loc+"_correlation_matrix_pearson.html")
+
+            # Spearman
+            # Reset index to use in plotly
+            correlation_df = correlation_matrix_spearman.reset_index().melt(id_vars='index')
+            correlation_df.columns = ['Variable1', 'Variable2', 'Correlation']
+
+            # Identify significant correlations (p < 0.05)
+            sig_y, sig_x = np.where(pval_spearman.values < 0.05)
+
+            px =plotly.express
+
+            # Create interactive heatmap
+            fig = px.imshow(
+                correlation_matrix_spearman,
+                labels=dict(x="Variable", y="Variable", color="Correlation"),
+                x=correlation_matrix_spearman.columns,
+                y=correlation_matrix_spearman.index,
+                color_continuous_scale="RdBu_r",
+                zmin=-1, zmax=1,
+            )
+
+            # Add dot markers at significant positions
+            fig.add_trace(plotly.graph_objects.Scatter(
+                x=correlation_matrix_spearman.columns[sig_x],
+                y=correlation_matrix_spearman.index[sig_y],
+                mode='markers',
+                marker=dict(size=1, color='black', symbol='circle'),
+                name='Significant (p < 0.05)',
+                hoverinfo='skip'
+            ))
+
+            fig.update_layout(
+                title="Spearman Correlation Matrix",
+                autosize=False,
+                width=1000,  # Adjust size as needed
+                height=1000,
+                xaxis=dict(tickangle=45),
+            )
+
+            # Save to interactive HTML file
+            fig.write_html(savepath_seas+"/"+loc+"_correlation_matrix_spearman.html")
+            print("PLOT: saved "+savepath_seas+"/"+loc+"_correlation_matrix_spearman.html")
 
 #%% Checking PHIDP
 # get and plot a random selection of QVPs
