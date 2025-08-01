@@ -373,30 +373,31 @@ ff = [glob.glob(os.path.dirname(fp)+"/*allsim*")[0] for fp in ff_ML_glob ]
 
 ds_qvps = xr.open_mfdataset(ff)
 
-# Conditions to clean ML height values
-max_change = 400 # set a maximum value of ML height change from one timestep to another (in m)
-max_std = 200 # set a maximum value of ML std from one timestep to another (in m)
-time_window = 5 # set timestep window for the std computation (centered)
-min_period = 3 # set minimum number of valid ML values in the window (centered)
+# 01/08/2025: Disable the ML filter since the ML detection is not so reliable in the simulations
+# # Conditions to clean ML height values
+# max_change = 400 # set a maximum value of ML height change from one timestep to another (in m)
+# max_std = 200 # set a maximum value of ML std from one timestep to another (in m)
+# time_window = 5 # set timestep window for the std computation (centered)
+# min_period = 3 # set minimum number of valid ML values in the window (centered)
 
-cond_ML_bottom_change = abs(ds_qvps["height_ml_bottom_new_gia"].diff("time").compute())<max_change
-cond_ML_bottom_std = ds_qvps["height_ml_bottom_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
-# cond_ML_bottom_minlen = qvps["height_ml_bottom_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
+# cond_ML_bottom_change = abs(ds_qvps["height_ml_bottom_new_gia"].diff("time").compute())<max_change
+# cond_ML_bottom_std = ds_qvps["height_ml_bottom_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
+# # cond_ML_bottom_minlen = qvps["height_ml_bottom_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
 
-cond_ML_top_change = abs(ds_qvps["height_ml_new_gia"].diff("time").compute())<max_change
-cond_ML_top_std = ds_qvps["height_ml_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
-# cond_ML_top_minlen = qvps["height_ml_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
+# cond_ML_top_change = abs(ds_qvps["height_ml_new_gia"].diff("time").compute())<max_change
+# cond_ML_top_std = ds_qvps["height_ml_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
+# # cond_ML_top_minlen = qvps["height_ml_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
 
-allcond = cond_ML_bottom_change * cond_ML_bottom_std * cond_ML_top_change * cond_ML_top_std
+# allcond = cond_ML_bottom_change * cond_ML_bottom_std * cond_ML_top_change * cond_ML_top_std
 
-# reduce to daily condition
-# allcond_daily = allcond.resample(time="D").any().dropna("time")
-allcond_daily = allcond.resample(time="D").sum().dropna("time")
-allcond_daily = allcond_daily.where(allcond_daily, drop=True)
+# # reduce to daily condition
+# # allcond_daily = allcond.resample(time="D").any().dropna("time")
+# allcond_daily = allcond.resample(time="D").sum().dropna("time")
+# allcond_daily = allcond_daily.where(allcond_daily, drop=True)
 
-# Filter only events with clean ML (requeriment for stratiform) on a daily basis
-# (not efficient and not elegant but I could not find other solution)
-ds_qvps = ds_qvps.isel(time=[date.values in  allcond_daily.time.dt.date for date in ds_qvps.time.dt.date])
+# # Filter only events with clean ML (requeriment for stratiform) on a daily basis
+# # (not efficient and not elegant but I could not find other solution)
+# ds_qvps = ds_qvps.isel(time=[date.values in  allcond_daily.time.dt.date for date in ds_qvps.time.dt.date])
 
 
 #%% Plot QPVs interactive, with matplotlib backend (working) fix in holoviews/plotting/mpl/raster.py (COPIED FROM plot_ppis_qvps_etc.py)
