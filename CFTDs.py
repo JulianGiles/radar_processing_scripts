@@ -37,6 +37,9 @@ import plotly
 import pickle
 import scipy
 
+from joblib import Parallel, delayed
+from itertools import combinations_with_replacement
+
 try:
     from Scripts.python.radar_processing_scripts import utils
     from Scripts.python.radar_processing_scripts import radarmet
@@ -64,11 +67,11 @@ locs = ["pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs"]
 
 realpep_path = "/automount/realpep/"
 
+suffix_name = "" # suffix to add to folder names, for special cases (like computing only a selection of cases)
+
 #%% Load QVPs for stratiform-case CFTDs
 
 calculate_retrievals = True # Calculate retrievals based on the QVPs?
-
-suffix_name = "" # suffix to add to folder names, for special cases (like computing only a selection of cases)
 
 # This part should be run after having the QVPs computed (compute_qvps.py)
 start_time = time.time()
@@ -4085,21 +4088,58 @@ for loc in locs_to_plot:
                     return np.nan, np.nan  # Not enough data to compute correlation
                 return scipy.stats.pearsonr(df["x"], df["y"])
 
-            for i in correlation_matrix_pearson.columns:
-                for j in correlation_matrix_pearson.columns:
-                    _, p = pairwise_pearsonr(variables_df[i], variables_df[j])
-                    pval_pearson.loc[i, j] = p.copy()
+            # All unique (i, j) index pairs (including diagonals)
+            pairs = list(combinations_with_replacement(range(len(variables_df.columns)), 2))
+
+            results = Parallel(n_jobs=-1)(  # Use all available cores
+                delayed(pairwise_pearsonr)(variables_df.iloc[:, i], variables_df.iloc[:, j])
+                for i, j in pairs
+            )
+
+            for (i, j), (r, p) in zip(pairs, results):
+                col_i = variables_df.columns[i]
+                col_j = variables_df.columns[j]
+                pval_pearson.loc[col_i, col_j] = p
+                if i != j:  # Fill symmetric entry
+                    pval_pearson.loc[col_j, col_i] = p
+
+            # for i in correlation_matrix_pearson.columns:
+            #     for j in correlation_matrix_pearson.columns:
+            #         _, p = pairwise_pearsonr(variables_df[i], variables_df[j])
+            #         pval_pearson.loc[i, j] = p.copy()
 
             # Compute significance Spearman
             pval_spearman = pd.DataFrame(np.ones_like(correlation_matrix_spearman),
                                         columns=correlation_matrix_spearman.columns,
                                         index=correlation_matrix_spearman.index)
 
-            for i in correlation_matrix_spearman.columns:
-                for j in correlation_matrix_spearman.columns:
-                    _, p = scipy.stats.spearmanr(variables_df[i], variables_df[j],
-                                                 nan_policy='omit')
-                    pval_spearman.loc[i, j] = p
+            def safe_spearmanr(x, y): # we need to manually handle df with less than 3 valid values
+                notnullsum = (x*y).notnull().sum()
+                if notnullsum <= 3:
+                    return np.nan, np.nan
+                else:
+                    return scipy.stats.spearmanr(x, y, nan_policy='omit')
+
+            # All unique (i, j) index pairs (including diagonals)
+            pairs = list(combinations_with_replacement(range(len(variables_df.columns)), 2))
+
+            results = Parallel(n_jobs=-1)(  # Use all available cores
+                delayed(safe_spearmanr)(variables_df.iloc[:, i], variables_df.iloc[:, j])
+                for i, j in pairs
+            )
+
+            for (i, j), (r, p) in zip(pairs, results):
+                col_i = variables_df.columns[i]
+                col_j = variables_df.columns[j]
+                pval_spearman.loc[col_i, col_j] = p
+                if i != j:  # Fill symmetric entry
+                    pval_spearman.loc[col_j, col_i] = p
+
+            # for i in correlation_matrix_spearman.columns:
+            #     for j in correlation_matrix_spearman.columns:
+            #         _, p = scipy.stats.spearmanr(variables_df[i], variables_df[j],
+            #                                      nan_policy='omit')
+            #         pval_spearman.loc[i, j] = p
 
 
             # Plot static figures
