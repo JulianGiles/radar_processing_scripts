@@ -630,6 +630,9 @@ hl = 4000 # 4km height limit
 pv = 0.8 # 80% of values must be entropy-valid
 qvps_entropy4km = qvps.where( ( (qvps["min_entropy"].where(qvps["z"]<hl)>=min_entropy_thresh).sum("z").compute() >= qvps[X_DBZH].where(qvps["z"]<hl).count("z").compute()*pv ) , drop=True)
 
+# Alternative: ML condition with the not refined ML
+qvps_strat_urML = qvps.where( (qvps["min_entropy"]>=min_entropy_thresh).compute() & qvps["height_ml"].notnull().compute(), drop=True)
+
 
 # Filter out non relevant values
 qvps_strat_fil = qvps_strat.where((qvps_strat[X_TH] > -10 )&
@@ -652,6 +655,14 @@ qvps_entropy4km_fil = qvps_entropy4km.where((qvps_entropy4km[X_TH] > -10 )&
                                   (qvps_entropy4km[X_RHO] > 0.7)&
                                   (qvps_entropy4km[X_ZDR] > -1) &
                                   (qvps_entropy4km[X_ZDR] < 3))
+
+qvps_strat_urML_fil = qvps_strat_urML.where((qvps_strat_urML[X_TH] > -10 )&
+                                  (qvps_strat_urML[X_KDP].fillna(0.) > -0.1)&
+                                  (qvps_strat_urML[X_KDP].fillna(0.) < 3)&
+                                  (qvps_strat_urML[X_RHO] > 0.7)&
+                                  (qvps_strat_urML[X_ZDR] > -1) &
+                                  (qvps_strat_urML[X_ZDR] < 3))
+
 
 total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
@@ -679,7 +690,9 @@ if calculate_retrievals:
 
     for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
                                 ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
-                                ("entropy4km", qvps_entropy4km_fil.copy())]:
+                                ("entropy4km", qvps_entropy4km_fil.copy()),
+                                ("stratiform_urML", qvps_strat_urML_fil.copy())
+                                ]:
         print("   ... for "+stratname)
         retrievals_qvpbased[stratname] = {}
         retrievals_qvpbased[stratname][loc] = utils.calc_microphys_retrievals(stratqvp, Lambda = Lambda, mu=0.33,
@@ -702,7 +715,9 @@ except NameError:
 
 for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
                             ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
-                            ("entropy4km", qvps_entropy4km_fil.copy())]:
+                            ("entropy4km", qvps_entropy4km_fil.copy()),
+                            ("stratiform_urML", qvps_strat_urML_fil.copy())
+                            ]:
     print("   ... for "+stratname)
     microphys[stratname] = {}
     microphys[stratname][loc] = stratqvp[[
@@ -733,7 +748,9 @@ except NameError:
 
 for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
                             ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
-                            ("entropy4km", qvps_entropy4km_fil.copy())]:
+                            ("entropy4km", qvps_entropy4km_fil.copy()),
+                            ("stratiform_urML", qvps_strat_urML_fil.copy())
+                            ]:
     print("   ... for "+stratname)
     microphys_qvpbased[stratname] = {}
     microphys_qvpbased[stratname][loc] = utils.calc_microphys(stratqvp, mom=2 ).set_coords("TEMP")
@@ -751,7 +768,7 @@ auto_plot = True
 savepath = "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform/"
 plot_relhum = True # plot relative humidity with respect to ice and water in a separate plot?
 
-# Which to plot, qvps_strat_fil, qvps_strat_relaxed_fil or qvps_entropy4km_fil
+# Which to plot, qvps_strat_fil, qvps_strat_relaxed_fil, qvps_entropy4km_fil or qvps_strat_urML_fil
 ds_to_plot = qvps_strat_fil.copy()
 
 # Define list of seasons
@@ -1126,6 +1143,8 @@ savepath_list = [
                 # "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform_relaxed_KDPpos_QVPbased/",
                 "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/entropy4km/",
                 "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/entropy4km_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform_urML/",
+                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform_urML_QVPbased/",
                  ]
 
 # Which to plot, retrievals or retrievals_qvpbased, stratiform or stratiform_relaxed
@@ -1141,6 +1160,8 @@ ds_to_plot_list = [
                     # retrievals_qvpbased["stratiform_relaxed"][loc].copy().where(qvps_strat_relaxed_fil.KDP>0.01),
                     microphys["entropy4km"][loc].copy(),
                     microphys_qvpbased["entropy4km"][loc].copy(),
+                    microphys["stratiform_urML"][loc].copy(),
+                    microphys_qvpbased["stratiform_urML"][loc].copy(),
                     ]
 
 
@@ -1283,6 +1304,183 @@ for sn, savepath in enumerate(savepath_list):
     if auto_plot is False:
         break
 
+#%% CFTDs microphysics Plot (microphysics from ICON-EMVORADO)
+# SEPARATED BY HYDROMETEOR CLASS
+# We assume that everything above ML is frozen and everything below is liquid
+
+# In case the ML top and bottom variables are not available, use this isotherms
+TEMP_ML_top = 0
+TEMP_ML_bottom = 0
+
+# If auto_plot is True, then produce and save the plots automatically based on
+# default configurations (only change savepath and ds_to_plot accordingly).
+# If False, then produce the plot as given below (selecting the first option of
+# savepath_list and ds_to_plot_list) and do not save.
+auto_plot = True
+savepath_list = [
+                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_stratiform/",
+                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_stratiform_QVPbased/",
+                # "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_stratiform_KDPpos/",
+                # "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_stratiform_KDPpos_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_stratiform_relaxed/",
+                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_stratiform_relaxed_QVPbased/",
+                # "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_stratiform_relaxed_KDPpos/",
+                # "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_stratiform_relaxed_KDPpos_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_entropy4km/",
+                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_entropy4km_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_stratiform_urML/",
+                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_stratiform_urML_QVPbased/",
+                 ]
+
+# Which to plot, retrievals or retrievals_qvpbased, stratiform or stratiform_relaxed
+loc = utils.find_loc(utils.locs, ff[0])
+ds_to_plot_list = [
+                    microphys["stratiform"][loc].copy(),
+                    microphys_qvpbased["stratiform"][loc].copy(),
+                    # retrievals["stratiform"][loc].copy().where(qvps_strat_fil.KDP_ML_corrected>0.01),
+                    # retrievals_qvpbased["stratiform"][loc].copy().where(qvps_strat_fil.KDP>0.01),
+                    microphys["stratiform_relaxed"][loc].copy(),
+                    microphys_qvpbased["stratiform_relaxed"][loc].copy(),
+                    # retrievals["stratiform_relaxed"][loc].copy().where(qvps_strat_relaxed_fil.KDP_ML_corrected>0.01),
+                    # retrievals_qvpbased["stratiform_relaxed"][loc].copy().where(qvps_strat_relaxed_fil.KDP>0.01),
+                    microphys["entropy4km"][loc].copy(),
+                    microphys_qvpbased["entropy4km"][loc].copy(),
+                    microphys["stratiform_urML"][loc].copy(),
+                    microphys_qvpbased["stratiform_urML"][loc].copy(),
+                    ]
+
+
+# Define list of seasons
+selseaslist = [
+            ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
+            # ("DJF", [12,1,2]),
+            # ("MAM", [3,4,5]),
+            # ("JJA", [6,7,8]),
+            # ("SON", [9,10,11]),
+           ] # ("nameofseas", [months included])
+
+# adjustment from K to C (disabled now because I know that all qvps have ERA5 data)
+adjtemp = 0
+# if (qvps_strat_fil["TEMP"]>100).any(): #if there is any temp value over 100, we assume the units are Kelvin
+#     print("at least one TEMP value > 100 found, assuming TEMP is in K and transforming to C")
+#     adjtemp = -273.15 # adjustment parameter from K to C
+
+# top temp limit (only works if auto_plot=False)
+ytlim=-20
+
+# season to plot (only works if auto_plot=False)
+selseas = selseaslist[0]
+selmonths = selseas[1]
+
+# Select which retrievals to plot (only works if auto_plot=False)
+IWC = "vol_qtot" # iwc_zh_t_hogan2006, iwc_zh_t_hogan2006_model, iwc_zh_t_hogan2006_combined, iwc_zdr_zh_kdp_carlin2021
+LWC = "vol_qtot" # lwc_zh_zdr_reimann2021, lwc_zh_zdr_rhyzkov2022, lwc_kdp_reimann2021, lwc_ah_reimann2021, lwc_hybrid_reimann2021
+Dm_ice = "D0_tot" # Dm_ice_zh_matrosov2019, Dm_ice_zh_kdp_carlin2021, Dm_ice_zdp_kdp_carlin2021, Dm_hybrid_blanke2023
+Dm_rain = "D0_tot" # Dm_rain_zdr_chen, Dm_rain_zdr_hu2022, Dm_rain_zdr_bringi2009
+Nt_ice = "vol_qntot" # Nt_ice_iwc_zh_t_hu2022, Nt_ice_iwc_zh_t_carlin2021, Nt_ice_iwc_zh_t_combined_hu2022, Nt_ice_iwc_zh_t_combined_carlin2021, Nt_ice_iwc_zdr_zh_kdp_hu2022, Nt_ice_iwc_zdr_zh_kdp_carlin2021
+Nt_rain = "vol_qntot" # Nt_rain_zh_zdr_rhyzkov2020
+
+vars_to_plot = {"IWC/LWC [g/m^{3}]": [-0.1, 0.82, 0.02], # [-0.1, 0.82, 0.02],
+                "Dm [mm]": [0, 4.1, 0.1], # [0, 3.1, 0.1],
+                "Nt [log10(1/L)]": [-2, 2.1, 0.1], # [-2, 2.1, 0.1],
+                }
+
+savedict = {"custom": None} # placeholder for the for loop below, not important
+
+for sn, savepath in enumerate(savepath_list):
+    ds_to_plot = ds_to_plot_list[sn]
+
+    if auto_plot:
+        ytlimlist = [-20, -50]
+        cond_name = os.path.basename(os.path.normpath(savepath))
+        savedict = {}
+        for selseas in selseaslist:
+            for hmc in ["c", "i", "g", "s", "h", "r"]:
+                savedict.update(
+                            {selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_"+hmc+".png": [ytlimlist[0],
+                                        "vol_q"+hmc, "vol_q"+hmc,
+                                        "D0_"+hmc, "D0_"+hmc,
+                                        "vol_qn"+hmc, "vol_qn"+hmc, selseas[1]],
+                            selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_"+hmc+"_extended.png": [ytlimlist[1],
+                                        "vol_q"+hmc, "vol_q"+hmc,
+                                        "D0_"+hmc, "D0_"+hmc,
+                                        "vol_qn"+hmc, "vol_qn"+hmc, selseas[1]],
+                            }
+                        )
+
+    for savename in savedict.keys():
+        if auto_plot:
+            ytlim = savedict[savename][0]
+            IWC = savedict[savename][1]
+            LWC = savedict[savename][2]
+            Dm_ice = savedict[savename][3]
+            Dm_rain = savedict[savename][4]
+            Nt_ice = savedict[savename][5]
+            Nt_rain = savedict[savename][6]
+            selmonths = savedict[savename][7]
+
+        try:
+            if ds_to_plot.height_ml_new_gia.notnull().all():
+                retreivals_merged = xr.Dataset({
+                                                "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].z > ds_to_plot.height_ml_new_gia,
+                                                                                  ds_to_plot[LWC].where(ds_to_plot[LWC].z < ds_to_plot.height_ml_bottom_new_gia ) ),
+                                                "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].z > ds_to_plot.height_ml_new_gia,
+                                                                                  ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ),
+                                                "Nt [log10(1/L)]": (ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].z > ds_to_plot.height_ml_new_gia,
+                                                                                  ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ) ),
+                    })
+            else:
+                # if ML is not valid at all timesteps, we filter with 0-4 degrees isotherms
+                retreivals_merged = xr.Dataset({
+                                                "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].TEMP < TEMP_ML_top,
+                                                                                  ds_to_plot[LWC].where(ds_to_plot[LWC].TEMP > TEMP_ML_bottom ) ),
+                                                "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].TEMP < TEMP_ML_top,
+                                                                                  ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].TEMP > TEMP_ML_bottom ) ),
+                                                "Nt [log10(1/L)]": ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].TEMP < TEMP_ML_top,
+                                                                                  ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].TEMP > TEMP_ML_bottom ) ),
+                    })
+
+        except KeyError:
+            print("Unable to plot "+savename+". Some retrieval is not present in the dataset.")
+            continue
+
+        fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15,5), width_ratios=(1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+        for nn, vv in enumerate(vars_to_plot.keys()):
+            so=False
+            binsx2=None
+            adj=1
+            if "RHOHV" in vv:
+                so = True
+                binsx2 = [0.9, 1.005, 0.005]
+            if "KDP" in vv:
+                adj=1
+            #!!! For some reason SVS now requires rechunking here
+            utils.hist2d(ax[nn], retreivals_merged[vv].chunk({"time":-1}).sel(time=retreivals_merged['time'].dt.month.isin(selmonths))*adj,
+                         retreivals_merged["TEMP"].sel(time=retreivals_merged['time'].dt.month.isin(selmonths))+adjtemp,
+                         whole_x_range=True,
+                         binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                         cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
+                         fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
+            ax[nn].set_ylim(15,ytlim)
+            ax[nn].set_xlabel(vv, fontsize=10)
+
+            ax[nn].tick_params(labelsize=15) #change font size of ticks
+            plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+
+        ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+
+        if auto_plot:
+            # Create savefolder
+            savepath_seas = os.path.dirname(savepath+savename)
+            if not os.path.exists(savepath_seas):
+                os.makedirs(savepath_seas)
+            fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
+            print("AUTO PLOT: saved "+savename)
+
+    if auto_plot is False:
+        break
 
 #%% CFTDs retrievals Plot (retrievals from formulas)
 # We assume that everything above ML is frozen and everything below is liquid
