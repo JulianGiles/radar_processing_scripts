@@ -509,15 +509,15 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
     # Get the height value of the last not null value with a minimum of entropy 0.2 (this min entropy is to filter out random noise pixels)
     cloudtop = stratqvp[X_DBZH].where(stratqvp["z"] > (stratqvp["height_ml_new_gia"]) ) \
                         .where(stratqvp["min_entropy"] > 0.2 ) \
-                        .isel(z=slice(None,None,-1)).idxmax("z").rename("cloudtop")
+                        .isel(z=slice(None,None,-1)).notnull().idxmax("z").rename("cloudtop")
     # Get the height value of the last value > 5 dBZ
     cloudtop_5dbz = stratqvp[X_DBZH].where(stratqvp["z"] > (stratqvp["height_ml_new_gia"]) ) \
                         .where(stratqvp["min_entropy"] > 0.2).where(stratqvp[X_DBZH]>5) \
-                        .isel(z=slice(None,None,-1)).idxmax("z").rename("cloudtop 5 dBZ")
+                        .isel(z=slice(None,None,-1)).notnull().idxmax("z").rename("cloudtop 5 dBZ")
     # Get the height value of the last value > 10 dBZ
     cloudtop_10dbz = stratqvp[X_DBZH].where(stratqvp["z"] > (stratqvp["height_ml_new_gia"]) ) \
                         .where(stratqvp["min_entropy"] > 0.2).where(stratqvp[X_DBZH]>10) \
-                        .isel(z=slice(None,None,-1)).idxmax("z").rename("cloudtop 10 dBZ")
+                        .isel(z=slice(None,None,-1)).notnull().idxmax("z").rename("cloudtop 10 dBZ")
 
     # Temperature of the cloud top (3 methods)
     cloudtop_TEMP = stratqvp["TEMP"].sel({"z": cloudtop}, method="nearest")
@@ -2478,8 +2478,10 @@ for loc in locs_to_plot:
                                 time=stats[stratname][loc]["ML_thickness"]['time'].dt.month.isin(selseas[1]))
             MLbot = stats[stratname][loc]["ML_bottom"].sel(\
                                 time=stats[stratname][loc]["ML_bottom"]['time'].dt.month.isin(selseas[1]))
-            betaZH = stats[stratname][loc]["beta"][X_DBZH].sel(\
-                                time=stats[stratname][loc]["beta"]['time'].dt.month.isin(selseas[1]))
+            betaZH = stats[stratname][loc]["beta_belowDGL"][X_DBZH].where(\
+                                stats[stratname][loc]["beta_belowDGL"]["valid_perc"] > 0.5
+                                                                          ).sel(\
+                                time=stats[stratname][loc]["beta_belowDGL"]['time'].dt.month.isin(selseas[1]))
             cloudtop = stats[stratname][loc]["cloudtop"].sel(\
                                 time=stats[stratname][loc]["cloudtop"]['time'].dt.month.isin(selseas[1]))
             cloudtop_5dbz = stats[stratname][loc]["cloudtop_5dbz"].sel(\
@@ -3356,7 +3358,7 @@ for selseas in selseaslist:
                     if ss in ["values_DGL_min", "values_ML_min", "values_rain", "values_sfc"] and vv in [X_KDP]: # filter out unrealistic zero values
                         samples = {loc: samples[loc][abs(samples[loc])>0.001] for loc in samples.keys()}
 
-                    if ss in ["beta_belowDGL"]: # filter out values computed out of few points (less than 50% of the available points)
+                    if ss in ["beta_belowDGL", "beta_belowML"]: # filter out values computed out of few points (less than 50% of the available points)
                         samples_times = {loc: stats[stratname][loc][ss][vv].sel(\
                                     time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time")["time"]\
                                    for loc in order_fil}
@@ -3812,7 +3814,7 @@ for selseas in selseaslist:
                     if ss in ["values_DGL_min", "values_ML_min", "values_rain", "values_sfc"] and vv in [X_KDP]: # filter out unrealistic zero values
                         samples_wriming = {loc: samples_wriming[loc][abs(samples_wriming[loc])>0.001] for loc in samples_wriming.keys()}
                         samples_woriming = {loc: samples_woriming[loc][abs(samples_woriming[loc])>0.001] for loc in samples_woriming.keys()}
-                    if ss in ["beta_belowDGL"]: # filter out values computed out of few points (less than 50% of the available points)
+                    if ss in ["beta_belowDGL", "beta_belowML"]: # filter out values computed out of few points (less than 50% of the available points)
                         samples_wriming_times = {loc: stats[stratname][loc][ss][vv].sel(\
                                     time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1]))\
                                     .where(riming_filter[loc][riming_class].sum("z")>0).dropna("time")["time"]\
