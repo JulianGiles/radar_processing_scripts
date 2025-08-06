@@ -3242,6 +3242,7 @@ bins = {
         "cloudtop_TEMP_10dbz": np.arange(-50,5,1),
         "deltaZH": np.arange(-5,21,1),
         "delta_z_ZHmaxML_RHOHVminML": np.arange(0,440, 40),
+        "delta_belowML": beta_vars_ticks,
         }
 
 # set a dictionary of bandwidths, this is important for the cases where the low resolution of the
@@ -3276,6 +3277,7 @@ bandwidths = {"ML_thickness": 50,
         "cloudtop_TEMP_10dbz": default_bandwidth,
         "deltaZH": default_bandwidth,
         "delta_z_ZHmaxML_RHOHVminML": default_bandwidth,
+        "delta_belowML": default_bandwidth_dict,
         }
 # Particular changes
 bandwidths['values_sfc'][X_KDP] = 0.01
@@ -3328,6 +3330,12 @@ for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
         if ll in stats[stratname].keys():
             stats[stratname][ll]["delta_z_ZHmaxML_RHOHVminML"] = stats[stratname][ll]["height_ML_max"][X_DBZH] - stats[stratname][ll]["height_ML_min"][X_RHO]
 
+# Build delta_belowML into stats
+for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
+    for ll in order:
+        if ll in stats[stratname].keys():
+            stats[stratname][ll]["delta_belowML"] = (stats[stratname][ll]["values_rain"] - stats[stratname][ll]["values_sfc"]).assign_coords({"valid_perc": stats[stratname][ll]["beta_belowML"]["valid_perc"]})
+
 # Plot stats ridgeplots
 for selseas in selseaslist:
     print(" ... ... "+selseas[0])
@@ -3358,7 +3366,7 @@ for selseas in selseaslist:
                     if ss in ["values_DGL_min", "values_ML_min", "values_rain", "values_sfc"] and vv in [X_KDP]: # filter out unrealistic zero values
                         samples = {loc: samples[loc][abs(samples[loc])>0.001] for loc in samples.keys()}
 
-                    if ss in ["beta_belowDGL", "beta_belowML"]: # filter out values computed out of few points (less than 50% of the available points)
+                    if ss in ["beta_belowDGL", "beta_belowML", "delta_belowML"]: # filter out values computed out of few points (less than 50% of the available points)
                         samples_times = {loc: stats[stratname][loc][ss][vv].sel(\
                                     time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time")["time"]\
                                    for loc in order_fil}
