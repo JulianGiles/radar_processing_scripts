@@ -1436,7 +1436,7 @@ if "dmi" in ff_ML:
 
         result_paths = []
         for date, elevations in elevation_dict.items():
-            closest_elevation_path = min(elevations, key=lambda x: abs(x[0] - 10))[1]
+            closest_elevation_path = min(elevations, key=lambda x: abs(x[0] - 10.1))[1] # We use 10.1 to prefer elevation 12 instead of 8 if both available
             result_paths.append(closest_elevation_path)
 
         return result_paths
@@ -1447,7 +1447,7 @@ ff = [glob.glob(os.path.dirname(fp)+"/*allmoms*")[0] for fp in ff_ML_glob ]
 
 alignz = False
 if "dwd" in ff_ML: alignz = True
-ds_qvps = utils.load_qvps(ff, align_z=alignz, fix_TEMP=True, fillna=True)
+ds_qvps = utils.load_qvps(ff, align_z=alignz, fix_TEMP=False, fillna=False)
 
 
 # Conditions to clean ML height values
