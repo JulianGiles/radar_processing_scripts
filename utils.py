@@ -749,9 +749,9 @@ def load_dwd_raw(filepath):
     # extract list of moments
     moments = set(fp.split("_")[-2] for fp in files)
 
-    # discard "allmoms" from the set if it exists
-    moments.discard("allmoms")
-
+    # discard "allmoms" or "any" from the set if it exists
+    moments.discard("allmoms") # legacy naming
+    moments.discard("any")
 
     try:
         # for every moment, open all files in folder (all timesteps) per moment into a dataset

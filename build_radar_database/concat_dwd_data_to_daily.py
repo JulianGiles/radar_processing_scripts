@@ -8,7 +8,7 @@ Created on Wed Mar  1 09:43:05 2023
 This script takes all dwd radar files from a folder (for one elevation) and
 merges them into a single file combining all moments along all timesteps.
 Then saves the resulting dataset into a new file with the same naming
-style but with "allmoms" instead of the moment name. Additionally, it saves
+style but with "any" instead of the moment name. Additionally, it saves
 either a true.txt or false.txt file alongside, if the data fulfills certain
 condition, as an attempt to check if there is actually something interesting
 in that period of data.
@@ -48,7 +48,7 @@ scan_elevs = np.array([5.5, 4.5, 3.5, 2.5, 1.5, 0.5, 8.0, 12.0, 17.0, 25.0])
 path = sys.argv[1]
 
 # Load the files. This loading function already takes care of not loading a
-# concatenated daily file if it already exists (if "allmoms" is in the name)
+# concatenated daily file if it already exists (if "allmoms" or "any" is in the name)
 # and also aligns coordinates and fixes some expected typical issues when doing so.
 ds = utils.load_dwd_raw(path+"/ras*hd5")
 
