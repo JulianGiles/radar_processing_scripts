@@ -135,7 +135,7 @@ if "dmi" in path_qvps:
 
     ff_glob = get_closest_elevation(ff_glob)
 
-ff = [glob.glob(os.path.dirname(fp)+"/*allmoms*")[0] for fp in ff_glob ]
+ff = [glob.glob(os.path.dirname(fp)+"/*allm*")[0] for fp in ff_glob ]
 
 alignz = False
 if "dwd" in path_qvps: alignz = True
