@@ -91,6 +91,7 @@ fill_with_daily_offset = True # Fill timestep NaN offsets with daily offset?
 # PHIDP processing / KDP calc parameters
 window0max = 25 # max value for window0 (only applied if window0 is given in meters)
 winlen0max = [9, 25] # max value for winlen0 (only applied if winlen0 is given in meters)
+SNRH_min = 15 # min value for SNRH thresholding. This has a significant influence in the KDP calculation and also affects the QVPs computations.
 
 # Data file
 ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/pro/vol5minng01/07/*allmoms*"
@@ -329,7 +330,7 @@ if X_PHI in ds.data_vars:
     # phidp may be already preprocessed (turkish case), then only offset-correct (no smoothing) and then vulpiani
     if "PHIDP" not in X_PHI: # This is now always skipped with this definition ("PHIDP" is in both X_PHI); i.e., we apply full processing to turkish data too
         # calculate phidp offset
-        ds_phiproc = utils.phidp_offset_correction(utils.apply_min_max_thresh(ds, {"SNRH":10, "SNRHC":10, "SQIH":0.5}, {}, skipfullna=True),
+        ds_phiproc = utils.phidp_offset_correction(utils.apply_min_max_thresh(ds, {"SNRH":SNRH_min, "SNRHC":SNRH_min, "SQIH":0.5}, {}, skipfullna=True),
                                            X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                              dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
                              rng_min=1000, rng=rng, azmedian=azmedian, tolerance=(0,5)) # shorter rng, rng_min for finer turkish data
@@ -337,7 +338,7 @@ if X_PHI in ds.data_vars:
         phi_masked = ds_phiproc[X_PHI+"_OC"].where((ds[X_RHO] >= 0.8) * (ds[X_DBZH] >= 0.) * (ds["range"]>min_range) )
 
     else:
-        ds_phiproc = utils.phidp_processing(utils.apply_min_max_thresh(ds, {"SNRH":10, "SNRHC":10, "SQIH":0.5}, {}, skipfullna=True),
+        ds_phiproc = utils.phidp_processing(utils.apply_min_max_thresh(ds, {"SNRH":SNRH_min, "SNRHC":SNRH_min, "SQIH":0.5}, {}, skipfullna=True),
                                     X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                              dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
                              rng=rng, azmedian=azmedian, tolerance=(0,5), clean_invalid=False, fillna=False)
@@ -387,11 +388,11 @@ for vv in era5_vars_rename.values():
 
 if isvolume:
     print("Computing RD-QVP")
-    ds_qvp = utils.compute_rdqvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10,"SNRHC":10, "SQIH":0.5},
+    ds_qvp = utils.compute_rdqvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5},
                                  max_range=30000.)
 else:
     print("Computing QVP")
-    ds_qvp = utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10,"SNRHC":10, "SQIH":0.5} )
+    ds_qvp = utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5} )
 
 # filter out values close to the ground
 ds_qvp = ds_qvp.where(ds_qvp["z"]>min_height)
@@ -453,7 +454,7 @@ if not isvolume:
                                            temp = "TEMP", temp_mlbot = 3, temp_mltop = 0, z_mlbot = 2000, dz_ml = 500,
                                            interpolate_deltabump = True )
 
-        ds_qvp = ds_qvp.assign( utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10,"SNRHC":10, "SQIH":0.5})[[vv for vv in ds if "_AC" in vv]] )
+        ds_qvp = ds_qvp.assign( utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5})[[vv for vv in ds if "_AC" in vv]] )
         X_DBZH = X_DBZH+"_AC"
         X_ZDR = X_ZDR+"_AC"
 
@@ -474,7 +475,7 @@ if not isvolume:
         # Mask KDP_ML_correction with PHIDP_OC_MASKED
         ds["KDP_ML_corrected"] = ds["KDP_ML_corrected"].where(ds[X_PHI+"_MASKED"].notnull())
 
-        ds_qvp = ds_qvp.assign({"KDP_ML_corrected": utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10,"SNRHC":10, "SQIH":0.5})["KDP_ML_corrected"]})
+        ds_qvp = ds_qvp.assign({"KDP_ML_corrected": utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5})["KDP_ML_corrected"]})
 
     #### Correct KDP elevation dependency
     try:
@@ -495,7 +496,7 @@ if not isvolume:
         ds = ds.assign({X_DBZH+"_lin": wrl.trafo.idecibel(ds[X_DBZH]), X_ZDR+"_lin": wrl.trafo.idecibel(ds[X_ZDR]) })
 
         # calculate entropy
-        Entropy = utils.calculate_pseudo_entropy(utils.apply_min_max_thresh(ds, {X_DBZH:0, "SNRH":10, "SNRHC":10,"SQIH":0.5}, {}),
+        Entropy = utils.calculate_pseudo_entropy(utils.apply_min_max_thresh(ds, {X_DBZH:0, "SNRH":SNRH_min, "SNRHC":SNRH_min,"SQIH":0.5}, {}),
                                                  dim='azimuth', var_names=[X_DBZH+"_lin", X_ZDR+"_lin", X_RHO, "KDP_ML_corrected_EC"], n_lowest=60)
 
         # concate entropy for all variables and get the minimum value
@@ -516,7 +517,7 @@ ds_zphi = utils.attenuation_corr_zphi(ds , alpha = 0.08, beta = 0.02,
                           X_DBZH="DBZH", X_ZDR=["_".join(X_ZDR.split("_")[:-1]) if "_AC" in X_ZDR else X_ZDR][0],
                           X_PHI=X_PHI+"_MASKED")
 
-ds_qvp = ds_qvp.assign( utils.compute_qvp(ds_zphi, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10,"SNRHC":10, "SQIH":0.5})[["AH"]] )
+ds_qvp = ds_qvp.assign( utils.compute_qvp(ds_zphi, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5})[["AH"]] )
 
 # filter out values close to the ground
 ds_qvp = ds_qvp.where(ds_qvp["z"]>min_height)
@@ -670,7 +671,7 @@ im = datasel.KDP_ML_corrected.wrl.vis.plot(cmap="turbo", vmin=0, vmax=1)
 im = (datasel.AH/0.08).wrl.vis.plot(cmap="turbo", vmin=0, vmax=1)
 
 # add AH to ds_qvp
-ds_qvp = ds_qvp.assign( utils.compute_qvp(ds_zphi, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":10, "SQIH":0.5})[["AH"]] )
+ds_qvp = ds_qvp.assign( utils.compute_qvp(ds_zphi, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min, "SQIH":0.5})[["AH"]] )
 
 #%% Plot simple PPI
 
@@ -912,11 +913,11 @@ ds_qvp_strat_relaxed_fil = ds_qvp_strat_relaxed.where((ds_qvp_strat_relaxed[X_TH
                                   (ds_qvp_strat_relaxed[X_ZDR] < 3))
 
 try:
-    ds_qvp_strat_fil = ds_qvp_strat_fil.where(ds_qvp_strat_fil["SNRHC"]>10)
-    ds_qvp_strat_relaxed_fil = ds_qvp_strat_relaxed_fil.where(ds_qvp_strat_relaxed_fil["SNRHC"]>10)
+    ds_qvp_strat_fil = ds_qvp_strat_fil.where(ds_qvp_strat_fil["SNRHC"]>SNRH_min)
+    ds_qvp_strat_relaxed_fil = ds_qvp_strat_relaxed_fil.where(ds_qvp_strat_relaxed_fil["SNRHC"]>SNRH_min)
 except KeyError:
-    ds_qvp_strat_fil = ds_qvp_strat_fil.where(ds_qvp_strat_fil["SNRH"]>10)
-    ds_qvp_strat_relaxed_fil = ds_qvp_strat_relaxed_fil.where(ds_qvp_strat_relaxed_fil["SNRH"]>10)
+    ds_qvp_strat_fil = ds_qvp_strat_fil.where(ds_qvp_strat_fil["SNRH"]>SNRH_min)
+    ds_qvp_strat_relaxed_fil = ds_qvp_strat_relaxed_fil.where(ds_qvp_strat_relaxed_fil["SNRH"]>SNRH_min)
 except:
     print("Could not filter out low SNR")
 

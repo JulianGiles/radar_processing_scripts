@@ -215,6 +215,10 @@ print(f"took {total_time/60:.2f} minutes.")
 start_time = time.time()
 print("Filtering stratiform conditions...")
 
+# min value for SNRH thresholding. This has a significant influence in the KDP calculation and also affects the QVPs computations.
+# Here is just redundant but I add it anyways
+SNRH_min = 15
+
 min_entropy_thresh = 0.85
 # Filter only stratiform events (min entropy >= min_entropy_thresh) and ML detected
 # with ProgressBar():
@@ -300,13 +304,13 @@ qvps_strat_ML_fil = qvps_strat_ML.where((qvps_strat_ML[X_TH] > -10 )&
                                   (qvps_strat_ML[X_ZDR] < 3))
 
 try:
-    qvps_strat_fil = qvps_strat_fil.where(qvps_strat_fil["SNRHC"]>10)
-    qvps_strat_relaxed_fil = qvps_strat_relaxed_fil.where(qvps_strat_relaxed_fil["SNRHC"]>10)
-    qvps_strat_ML_fil = qvps_strat_ML_fil.where(qvps_strat_ML_fil["SNRHC"]>10)
+    qvps_strat_fil = qvps_strat_fil.where(qvps_strat_fil["SNRHC"]>SNRH_min)
+    qvps_strat_relaxed_fil = qvps_strat_relaxed_fil.where(qvps_strat_relaxed_fil["SNRHC"]>SNRH_min)
+    qvps_strat_ML_fil = qvps_strat_ML_fil.where(qvps_strat_ML_fil["SNRHC"]>SNRH_min)
 except KeyError:
-    qvps_strat_fil = qvps_strat_fil.where(qvps_strat_fil["SNRH"]>10)
-    qvps_strat_relaxed_fil = qvps_strat_relaxed_fil.where(qvps_strat_relaxed_fil["SNRH"]>10)
-    qvps_strat_ML_fil = qvps_strat_ML_fil.where(qvps_strat_ML_fil["SNRH"]>10)
+    qvps_strat_fil = qvps_strat_fil.where(qvps_strat_fil["SNRH"]>SNRH_min)
+    qvps_strat_relaxed_fil = qvps_strat_relaxed_fil.where(qvps_strat_relaxed_fil["SNRH"]>SNRH_min)
+    qvps_strat_ML_fil = qvps_strat_ML_fil.where(qvps_strat_ML_fil["SNRH"]>SNRH_min)
 except:
     print("Could not filter out low SNR")
 
