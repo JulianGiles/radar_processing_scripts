@@ -211,7 +211,7 @@ if not isvolume:
                 # if that is the case we take it that the correction did not work well so we won't use it
                 std_tolerance = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_tolerance), otherwise use RHOHV
 
-                if ( ds["RHOHV_NC"].where(ds["RHOHV_NC"]>min_rho * (ds["z"]>min_height)).std() < ds[X_RHO].where(ds[X_RHO]>min_rho * (ds["z"]>min_height)).std()*(1+std_tolerance) ).compute():
+                if ( ds["RHOHV_NC"].where(ds[X_RHO]>min_rho * (ds["z"]>min_height)).std() < ds[X_RHO].where(ds[X_RHO]>min_rho * (ds["z"]>min_height)).std()*(1+std_tolerance) ).compute():
                     # Change the default RHOHV name to the corrected one
                     X_RHO = "RHOHV_NC"
 

@@ -129,6 +129,8 @@ if "dwd" in path0:
     cloc = "germany"
 if "dmi" in path0:
     cloc = "turkey"
+if "boxpol" in path0:
+    cloc = "germany"
 
 if os.path.exists("/automount/ags/jgiles/ERA5/hourly/"):
     # then we are in local system
@@ -159,6 +161,8 @@ def make_savedir(ff, name):
         country="dwd"
     elif "dmi" in ff:
         country="dmi"
+    elif "boxpol" in ff:
+        country="boxpol"
     else:
         print("Country code not found in path")
         sys.exit("Country code not found in path.")
@@ -198,6 +202,7 @@ for ff in files:
         country="dmi"
         data = utils.load_dmi_preprocessed(ff) # this loads DMI file and flips and unfolds phidp and fixes time coord
     else:
+        if "boxpol" in ff: country="boxpol"
         data=xr.open_dataset(ff)
 
     # flip UPHIDP and KDP in UMD data
@@ -262,7 +267,7 @@ for ff in files:
                 # if that is the case we take it that the correction did not work well so we won't use it
                 std_tolerance = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_tolerance), otherwise use RHOHV
 
-                if ( swp["RHOHV_NC"].where(swp["RHOHV_NC"]>min_rho * (swp["z"]>min_height)).std() < swp[X_RHO].where(swp[X_RHO]>min_rho * (swp["z"]>min_height)).std()*(1+std_tolerance) ).compute():
+                if ( swp["RHOHV_NC"].where(swp[X_RHO]>min_rho * (swp["z"]>min_height)).std() < swp[X_RHO].where(swp[X_RHO]>min_rho * (swp["z"]>min_height)).std()*(1+std_tolerance) ).compute():
                     # Change the default RHOHV name to the corrected one
                     X_RHO = "RHOHV_NC"
             break
@@ -332,7 +337,7 @@ for ff in files:
 
 #%% Correct PHIDP
     ################## Before entropy calculation we need to use the melting layer detection algorithm
-    ds = swp
+    ds = swp.copy()
     interpolation_method_ML = "linear" # for interpolating PHIDP in the ML
 
     # Check that PHIDP is in data, otherwise skip ML detection
@@ -434,10 +439,7 @@ for ff in files:
 
 #%% Detect melting layer
     if X_PHI in ds.data_vars:
-        if country=="dwd":
-            moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI: (-20, 180)}
-        elif country=="dmi":
-            moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI: (-20, 180)}
+        moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI: (-20, 180)}
 
         ds_qvp_ra = utils.melting_layer_qvp_X_new(ds_qvp_ra2, moments=moments, dim="z", fmlh=0.3, grad_thresh=grad_thresh,
                  xwin=xwin0, ywin=ywin0, min_h=min_height, rhohv_thresh_gia=rhohv_thresh_gia, all_data=True, clowres=clowres0)
@@ -489,17 +491,26 @@ for ff in files:
 #%% Fix KDP in the ML using PHIDP:
     if X_PHI in ds.data_vars:
 
+        top_tolerance = 0
+        bottom_tolerance = 0
+        if country == "boxpol":
+            top_tolerance = 0
+            bottom_tolerance = 0
+
         # derive KDP from PHIDP (Vulpiani)
         if isinstance(winlen0, list):
             # if winlen0 is a list, use the first value (small window) for strong rain (SR, DBZH>40) and
             # use the second value (large window) for light rain (LR, DBZH<=40)
-            ds_kdpSR_mlcorr = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen0[0], min_periods=max(3, int((winlen0[0] - 1) / 4)))[["KDP_ML_corrected"]]
-            ds_kdpLR_mlcorr = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen0[1], min_periods=max(3, int((winlen0[1] - 1) / 4)))[["KDP_ML_corrected"]]
+            ds_kdpSR_mlcorr = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen0[0], min_periods=max(3, int((winlen0[0] - 1) / 4)),
+                                                      top_tolerance=top_tolerance, bottom_tolerance=bottom_tolerance)[["KDP_ML_corrected"]]
+            ds_kdpLR_mlcorr = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen0[1], min_periods=max(3, int((winlen0[1] - 1) / 4)),
+                                                      top_tolerance=top_tolerance, bottom_tolerance=bottom_tolerance)[["KDP_ML_corrected"]]
             ds_kdp_mlcorr = xr.where(ds[X_DBZH]>40,
                               ds_kdpSR_mlcorr, ds_kdpLR_mlcorr)
             ds = ds.assign(ds_kdp_mlcorr)
         else:
-            ds = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen=winlen0, min_periods=max(3, int((winlen0 - 1) / 4)))
+            ds = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen=winlen0, min_periods=max(3, int((winlen0 - 1) / 4)),
+                                         top_tolerance=top_tolerance, bottom_tolerance=bottom_tolerance)
 
         # Mask KDP_ML_correction with PHIDP_OC_MASKED
         ds["KDP_ML_corrected"] = ds["KDP_ML_corrected"].where(ds[X_PHI+"_MASKED"].notnull())
@@ -554,7 +565,11 @@ for ff in files:
 
         print("Calculating retrievals...")
 
-        retrievals = utils.calc_microphys_retrievals(ds_zphi, Lambda = 53.1, mu=0.33,
+        Lambda = 53.1
+        if country == "boxpol":
+            Lambda = 32
+
+        retrievals = utils.calc_microphys_retrievals(ds_zphi, Lambda = Lambda, mu=0.33,
                                       X_DBZH=X_DBZH, X_ZDR=X_ZDR, X_KDP="KDP_ML_corrected_EC", X_TEMP="TEMP",
                                       X_PHI=X_PHI+"_MASKED"
                                       ) #!!! filter out -inf inf values

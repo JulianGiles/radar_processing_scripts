@@ -63,7 +63,7 @@ def find_loc(locs, path):
                 return element
     return None
 
-locs = ["pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs"]
+locs = ["boxpol", "pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs"]
 
 realpep_path = "/automount/realpep/"
 
@@ -84,6 +84,7 @@ path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol
 path_qvps = realpep_path+"/upload/jgiles/dwd/qvps/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
 path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_selected_for_emvorado/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
 path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/20*/*/*/ANK/*/*/ML_detected.txt"
+path_qvps = realpep_path+"/upload/jgiles/boxpol/qvps/20*/*/2017-07-25/n_ppi_110deg/ML_detected.txt"
 # path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
 # path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/*/*/*/SVS/*/*/ML_detected.txt"
 # path_qvps = realpep_path+"/upload/jgiles/dmi/qvps_singlefile/ML_detected/ANK/*/12*/*allmoms*"
@@ -107,6 +108,10 @@ X_PHI = "UPHIDP_OC_MASKED"
 if "dwd" in path_qvps:
     country="dwd"
     X_TH = "TH"
+if "boxpol" in path_qvps:
+    country="boxpol"
+    X_TH = "DBTH"
+    X_PHI = "PHIDP_OC_MASKED"
 elif "dmi" in path_qvps:
     country="dmi"
     X_TH = "DBZH"
@@ -135,7 +140,10 @@ if "dmi" in path_qvps:
 
     ff_glob = get_closest_elevation(ff_glob)
 
-ff = [glob.glob(os.path.dirname(fp)+"/*allm*")[0] for fp in ff_glob ]
+try:
+    ff = [glob.glob(os.path.dirname(fp)+"/*allm*")[0] for fp in ff_glob ]
+except IndexError:
+    ff = [glob.glob(os.path.dirname(fp)+"/*12345*")[0] for fp in ff_glob ]
 
 alignz = False
 if "dwd" in path_qvps: alignz = True
@@ -338,6 +346,8 @@ if calculate_retrievals:
     # xd.io.backends.iris.IrisRawFile(file1, loaddata=False).ingest_header["task_configuration"]["task_misc_info"]["wavelength"]
 
     Lambda = 53.1 # radar wavelength in mm (pro: 53.138, ANK: 53.1, AFY: 53.3, GZT: 53.3, HTY: 53.3, SVS:53.3)
+    if country == "boxpol":
+        Lambda = 32
 
     # We will put the final retrievals in a dict
     try: # check if exists, if not, create it
@@ -999,7 +1009,7 @@ if country=="dmi":
 
 # DWD
 # plot CFTDs moments
-if country=="dwd":
+if country=="dwd" or country=="boxpol":
 
     vars_to_plot = {X_DBZH: [0, 46, 1],
                     X_ZDR: [-0.5, 2.1, 0.1],
@@ -1169,16 +1179,16 @@ loc = find_loc(locs, ff[0]) # by default, plot only the histograms of the curren
 ds_to_plot_list = [
                     retrievals["stratiform"][loc].copy(),
                     retrievals_qvpbased["stratiform"][loc].copy(),
-                    retrievals["stratiform"][loc].copy().where(qvps_strat_fil.KDP_ML_corrected>0.01),
-                    retrievals_qvpbased["stratiform"][loc].copy().where(qvps_strat_fil.KDP_ML_corrected>0.01),
+                    retrievals["stratiform"][loc].copy().where(qvps_strat_fil[X_KDP]>0.01),
+                    retrievals_qvpbased["stratiform"][loc].copy().where(qvps_strat_fil[X_KDP]>0.01),
                     retrievals["stratiform_relaxed"][loc].copy(),
                     retrievals_qvpbased["stratiform_relaxed"][loc].copy(),
-                    retrievals["stratiform_relaxed"][loc].copy().where(qvps_strat_relaxed_fil.KDP_ML_corrected>0.01),
-                    retrievals_qvpbased["stratiform_relaxed"][loc].copy().where(qvps_strat_relaxed_fil.KDP_ML_corrected>0.01),
+                    retrievals["stratiform_relaxed"][loc].copy().where(qvps_strat_relaxed_fil[X_KDP]>0.01),
+                    retrievals_qvpbased["stratiform_relaxed"][loc].copy().where(qvps_strat_relaxed_fil[X_KDP]>0.01),
                     retrievals["stratiform_ML"][loc].copy(),
                     retrievals_qvpbased["stratiform_ML"][loc].copy(),
-                    retrievals["stratiform_ML"][loc].copy().where(qvps_strat_ML_fil.KDP_ML_corrected>0.01),
-                    retrievals_qvpbased["stratiform_ML"][loc].copy().where(qvps_strat_ML_fil.KDP_ML_corrected>0.01),
+                    retrievals["stratiform_ML"][loc].copy().where(qvps_strat_ML_fil[X_KDP]>0.01),
+                    retrievals_qvpbased["stratiform_ML"][loc].copy().where(qvps_strat_ML_fil[X_KDP]>0.01),
                     ]
 
 
@@ -1915,16 +1925,16 @@ loc = find_loc(locs, ff[0]) # by default, plot only the histograms of the curren
 ds_to_plot_list = [
                     retrievals["stratiform"][loc].copy().assign(qvps_strat_fil[[riming_class]]),
                     retrievals_qvpbased["stratiform"][loc].copy().assign(qvps_strat_fil[[riming_class]]),
-                    retrievals["stratiform"][loc].copy().assign(qvps_strat_fil[[riming_class]]).where(qvps_strat_fil.KDP_ML_corrected>0.01),
-                    retrievals_qvpbased["stratiform"][loc].copy().assign(qvps_strat_fil[[riming_class]]).where(qvps_strat_fil.KDP_ML_corrected>0.01),
+                    retrievals["stratiform"][loc].copy().assign(qvps_strat_fil[[riming_class]]).where(qvps_strat_fil[X_KDP]>0.01),
+                    retrievals_qvpbased["stratiform"][loc].copy().assign(qvps_strat_fil[[riming_class]]).where(qvps_strat_fil[X_KDP]>0.01),
                     retrievals["stratiform_relaxed"][loc].copy().assign(qvps_strat_relaxed_fil[[riming_class]]),
                     retrievals_qvpbased["stratiform_relaxed"][loc].copy().assign(qvps_strat_relaxed_fil[[riming_class]]),
-                    retrievals["stratiform_relaxed"][loc].copy().assign(qvps_strat_relaxed_fil[[riming_class]]).where(qvps_strat_relaxed_fil.KDP_ML_corrected>0.01),
-                    retrievals_qvpbased["stratiform_relaxed"][loc].copy().assign(qvps_strat_relaxed_fil[[riming_class]]).where(qvps_strat_relaxed_fil.KDP_ML_corrected>0.01),
+                    retrievals["stratiform_relaxed"][loc].copy().assign(qvps_strat_relaxed_fil[[riming_class]]).where(qvps_strat_relaxed_fil[X_KDP]>0.01),
+                    retrievals_qvpbased["stratiform_relaxed"][loc].copy().assign(qvps_strat_relaxed_fil[[riming_class]]).where(qvps_strat_relaxed_fil[X_KDP]>0.01),
                     retrievals["stratiform_ML"][loc].copy().assign(qvps_strat_ML_fil[[riming_class]]),
                     retrievals_qvpbased["stratiform_ML"][loc].copy().assign(qvps_strat_ML_fil[[riming_class]]),
-                    retrievals["stratiform_ML"][loc].copy().assign(qvps_strat_ML_fil[[riming_class]]).where(qvps_strat_ML_fil.KDP_ML_corrected>0.01),
-                    retrievals_qvpbased["stratiform_ML"][loc].copy().assign(qvps_strat_ML_fil[[riming_class]]).where(qvps_strat_ML_fil.KDP_ML_corrected>0.01),
+                    retrievals["stratiform_ML"][loc].copy().assign(qvps_strat_ML_fil[[riming_class]]).where(qvps_strat_ML_fil[X_KDP]>0.01),
+                    retrievals_qvpbased["stratiform_ML"][loc].copy().assign(qvps_strat_ML_fil[[riming_class]]).where(qvps_strat_ML_fil[X_KDP]>0.01),
                     ]
 
 
@@ -2163,10 +2173,10 @@ def plot_qvp(data, momname="DBZH", tloc=slice("2015-01-01", "2020-12-31"), plot_
 qvps_fix = qvps.copy()
 # qvps_fix["KDP_ML_corrected"] = qvps_fix["KDP_ML_corrected"].where(qvps_fix.height_ml_new_gia.notnull(),  qvps_fix["KDP_CONV"])
 with mpl.rc_context({'font.size': 10}):
-    plot_qvp(qvps_fix, "ZDR", tloc="2020-08-02", plot_ml=True, plot_entropy=True,
+    plot_qvp(qvps_fix, "KDP_ML_corrected_EC", tloc="2017-07-25", plot_ml=True, plot_entropy=False,
               # add_riming = qvps_strat_relaxed_fil.riming_DR,
              ylim = (qvps.altitude,10000),
-              xlim=[datetime.date(2020, 8, 2), datetime.date(2020, 8, 3)],
+              # xlim=[datetime.date(2020, 8, 2), datetime.date(2020, 8, 3)],
              )
 
 

@@ -39,6 +39,7 @@ except FileNotFoundError:
 
 import sys
 import glob
+import xarray as xr
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -136,6 +137,8 @@ def make_savedir(ff, name):
         country="dwd"
     elif "dmi" in ff:
         country="dmi"
+    elif "boxpol" in ff:
+        country="boxpol"
     else:
         print("Country code not found in path")
         sys.exit("Country code not found in path.")
@@ -152,6 +155,8 @@ if "dwd" in path0:
     cloc = "germany"
 if "dmi" in path0:
     cloc = "turkey"
+if "boxpol" in path0:
+    cloc = "germany"
 
 if os.path.exists("/automount/ags/jgiles/ERA5/hourly/"):
     # then we are in local system
@@ -171,6 +176,8 @@ for ff in files:
     separator = "any"
     if "allmoms" in ff: # allmoms naming is deprecated but old files remain
         separator = "allmoms"
+    if "12345" in ff: # separator for boxpol
+        separator = "12345"
 
     # check if the resulting calib file already exists before starting
     calib_1 = True # by default we compute as if overwrite is True
@@ -206,6 +213,9 @@ for ff in files:
     elif "dmi" in ff:
         # data=xr.open_dataset(ff)
         data = utils.load_dmi_preprocessed(ff) # this loads DMI file and flips phidp and fixes time coord
+
+    elif "boxpol" in ff:
+        data=xr.open_mfdataset(ff)
     else:
         raise NotImplementedError("Only DWD or DMI data supported at the moment")
 
@@ -219,6 +229,8 @@ for ff in files:
                 country="dwd"
             elif "dmi" in ff:
                 country="dmi"
+            elif "boxpol" in ff:
+                country="boxpol"
             rhoncpath = os.path.dirname(utils.edit_str(ff, country, country+rhoncdir))
             data = utils.load_corrected_RHOHV(data, rhoncpath+"/"+rhoncfile0)
 
@@ -271,7 +283,7 @@ for ff in files:
                         # if that is the case we take it that the correction did not work well so we won't use it
                         std_tolerance = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_tolerance), otherwise use RHOHV
 
-                        if ( data["RHOHV"].where(data["RHOHV"]>min_rho * (data["z"]>min_height)).std()*(1+std_tolerance) < data[X_RHO].where(data[X_RHO]>min_rho * (data["z"]>min_height)).std() ).compute():
+                        if ( data["RHOHV"].where(data["RHOHV"]>min_rho * (data["z"]>min_height)).std()*(1+std_tolerance) < data[X_RHO].where(data["RHOHV"]>min_rho * (data["z"]>min_height)).std() ).compute():
                             # Change the default RHOHV name
                             X_RHO = "RHOHV"
 
@@ -468,9 +480,11 @@ for ff in files:
                 zdr_offset.to_netcdf(filename)
 
         if 2 in calib_types and calib_2:
+            band = "C"
+            if "boxpol" in ff: band = "X"
             if "height_ml_bottom_new_gia" in data:
                 # Calculate offset below ML per timestep
-                zdr_offset = utils.zhzdr_lr_consistency(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, min_h=min_height, timemode="step")
+                zdr_offset = utils.zhzdr_lr_consistency(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, min_h=min_height, timemode="step", band=band)
 
                 # Copy encodings
                 zdr_offset.encoding = data[X_ZDR].encoding
@@ -481,7 +495,7 @@ for ff in files:
                 zdr_offset.to_netcdf(filename)
 
                 # Calculate offset below ML for full timespan
-                zdr_offset = utils.zhzdr_lr_consistency(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, min_h=min_height, timemode="all")
+                zdr_offset = utils.zhzdr_lr_consistency(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, min_h=min_height, timemode="all", band=band)
 
                 # Copy encodings
                 zdr_offset.encoding = data[X_ZDR].encoding
@@ -492,7 +506,7 @@ for ff in files:
                 zdr_offset.to_netcdf(filename)
 
             # Calculate offset below 1 degree C per timestep
-            zdr_offset = utils.zhzdr_lr_consistency(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=1, min_h=min_height, timemode="step")
+            zdr_offset = utils.zhzdr_lr_consistency(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=1, min_h=min_height, timemode="step", band=band)
 
             # Copy encodings
             zdr_offset.encoding = data[X_ZDR].encoding
@@ -503,7 +517,7 @@ for ff in files:
             zdr_offset.to_netcdf(filename)
 
             # Calculate offset below 1 degree C for full timespan
-            zdr_offset = utils.zhzdr_lr_consistency(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=1, min_h=min_height, timemode="all")
+            zdr_offset = utils.zhzdr_lr_consistency(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=1, min_h=min_height, timemode="all", band=band)
 
             # Copy encodings
             zdr_offset.encoding = data[X_ZDR].encoding

@@ -37,6 +37,8 @@ except ModuleNotFoundError:
 import time
 start_time = time.time()
 
+realpep_path = "/automount/realpep/"
+
 #%% Set paths and options
 # paths for testing
 # path="/automount/realpep/upload/jgiles/dwd/2017/2017-09/2017-09-30/tur/vol5minng01/01/*hd5" # for QVPs: /home/jgiles/
@@ -45,7 +47,7 @@ start_time = time.time()
 path0 = sys.argv[1]
 overwrite = False # overwrite existing files?
 
-dwd_rhohv_nc_reference_file = "/automount/realpep/upload/jgiles/reference_files/reference_dwd_rhohv_nc_file/ras07-90gradstarng01_sweeph5onem_rhohv_nc_00-2015010100042300-pro-10392-hd5"
+dwd_rhohv_nc_reference_file = realpep_path+"/upload/jgiles/reference_files/reference_dwd_rhohv_nc_file/ras07-90gradstarng01_sweeph5onem_rhohv_nc_00-2015010100042300-pro-10392-hd5"
 
 dbzh_names = ["DBZH"] # names to look for the DBZH variable, in order of preference
 rhohv_names = ["RHOHV"] # same but for RHOHV
@@ -75,6 +77,8 @@ def make_savedir(ff, name):
         country="dwd"
     elif "dmi" in ff:
         country="dmi"
+    elif "boxpol" in ff:
+        country="boxpol"
     else:
         print("Country code not found in path")
         sys.exit("Country code not found in path.")
@@ -93,6 +97,8 @@ for ff in files:
     separator = "any"
     if "allmoms" in ff: # allmoms naming is deprecated but old files remain
         separator = "allmoms"
+    if "12345" in ff: # separator for boxpol
+        separator = "12345"
 
     # check if the QVP file already exists before starting
     savepath = make_savedir(ff, "")
@@ -105,8 +111,10 @@ for ff in files:
     elif "dmi" in ff:
         # data=xr.open_dataset(ff)
         data = utils.load_dmi_preprocessed(ff) # this loads DMI file and flips phidp and fixes time coord
+    elif "boxpol" in ff:
+        data = xr.open_dataset(ff)
     else:
-        raise NotImplementedError("Only DWD or DMI data supported at the moment")
+        raise NotImplementedError("Only DWD, DMI or BoXPol data supported at the moment")
 
     # fix time dim and time in coords
     # data = utils.fix_time_in_coords(data)
@@ -180,6 +188,8 @@ for ff in files:
         country="dwd"
     elif "dmi" in ff:
         country="dmi"
+    elif "boxpol" in ff:
+        country="boxpol"
     else:
         print("Country code not found in path")
         sys.exit("Country code not found in path.")

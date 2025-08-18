@@ -98,12 +98,16 @@ min_rngs = {
 zdroffdir = ["/calibration/zdr/VP/", "/calibration/zdr/LR_consistency/", "/calibration/zdr/QVP/",]# "/calibration/zdr/falseQVP/"] # subfolder(s) where to find the zdr offset data
 zdrofffile = ["*zdr_offset_belowML_00*",  "*zdr_offset_below1C_00*", "*zdr_offset_below3C_00*", "*zdr_offset_wholecol_00*",
               "*zdr_offset_belowML_07*", "*zdr_offset_below1C_07*", "*zdr_offset_below3C_07*",
-              "*zdr_offset_belowML-*", "*zdr_offset_below1C-*", "*zdr_offset_below3C-*"] # pattern to select the appropriate file (careful with the zdr_offset_belowML_timesteps)
+              "*zdr_offset_belowML-*", "*zdr_offset_below1C-*", "*zdr_offset_below3C-*",
+              "*zdr_offset_belowML_2*", "*zdr_offset_below1C_2*", "*zdr_offset_below3C_2*", # this line is for boxpol
+              ] # pattern to select the appropriate file (careful with the zdr_offset_belowML_timesteps)
 
 # like the previous one but for timestep-based correction
 zdrofffile_ts = ["*zdr_offset_belowML_timesteps_00*",  "*zdr_offset_below1C_timesteps_00*", "*zdr_offset_below3C_timesteps_00*", #"*zdr_offset_wholecol_timesteps_00*",
               "*zdr_offset_belowML_timesteps_07*", "*zdr_offset_below1C_timesteps_07*", "*zdr_offset_below3C_timesteps_07*",
-              "*zdr_offset_belowML_timesteps-*", "*zdr_offset_below1C_timesteps-*", "*zdr_offset_below3C_timesteps-*"] # pattern to select the appropriate file (careful with the zdr_offset_belowML_timesteps)
+              "*zdr_offset_belowML_timesteps-*", "*zdr_offset_below1C_timesteps-*", "*zdr_offset_below3C_timesteps-*",
+              "*zdr_offset_belowML_timesteps_2*", "*zdr_offset_below1C_timesteps_2*", "*zdr_offset_below3C_timesteps_2*", # this line is for boxpol
+              ] # pattern to select the appropriate file (careful with the zdr_offset_belowML_timesteps)
 
 # set the RHOHV correction location
 rhoncdir = "/rhohv_nc/" # subfolder where to find the noise corrected rhohv data
@@ -165,6 +169,19 @@ phase_proc_params["dmi"] = {
         "grad_thresh": 0.0001 # additional filtering parameter for ML refinement
 }
 
+phase_proc_params["boxpol"] = {
+        "window0": 7000, # Tobi uses 11 bins
+        "winlen0": [2500, 7000], # Tobi uses 31 bins
+        "xwin0": 5,
+        "ywin0": 5,
+        "fix_range": 350,
+        "rng": 1000, # range for phidp offset correction, if None it is auto calculated based on window0
+        "azmedian": 10, # reduce the phidp offset by applying median along the azimuths?
+        "rhohv_thresh_gia": (0.97, 1), # rhohv thresholds for ML Giangrande refinement of KDP
+        "grad_thresh": 1 # additional filtering parameter for ML refinement
+}
+
+
 # make a function to retreive only the phase_proc_params dictionary corresponding to the a data path (not very precise, tuned to my data naming)
 def get_phase_proc_params(path):
     """
@@ -210,6 +227,8 @@ def get_phase_proc_params(path):
 
     elif "dmi" in path:
         return phase_proc_params["dmi"]
+    elif "boxpol" in path:
+        return phase_proc_params["boxpol"]
     else:
         raise ValueError("No default phase_proc_params dictionary could be inferred from path")
 
@@ -3346,7 +3365,7 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
 
 #### KDP delta bump correction in the ML
 def KDP_ML_correction(ds, X_PHI="PHIDP_OC_MASKED", winlen=7, min_periods=2, mlt="height_ml_new_gia",
-                      mlb="height_ml_bottom_new_gia", method="linear"):
+                      mlb="height_ml_bottom_new_gia", method="linear", top_tolerance=0, bottom_tolerance=0):
     '''
     Function to correct KDP in the melting layer due to PHIDP delta bump. KDP calculation
     uses Vulpiani et al 2012 method.
@@ -3371,6 +3390,10 @@ def KDP_ML_correction(ds, X_PHI="PHIDP_OC_MASKED", winlen=7, min_periods=2, mlt=
         Name of the variable/coordinate with melting layer bottom data.
     method : str
         Method to interpolating PHIDP in the melting layer. Default is "linear".
+    top_tolerance : float
+        Top tolerance for ML selection. top_tolerance is added to the values of mlt
+    bottom_tolerance : float
+        Bottom tolerance for ML selection. bottom_tolerance is substracted from the values of mlb
 
 
     Return
@@ -3383,7 +3406,7 @@ def KDP_ML_correction(ds, X_PHI="PHIDP_OC_MASKED", winlen=7, min_periods=2, mlt=
     # get where PHIDP has nan values
     nan = np.isnan(ds[X_PHI])
     # get PHIDP outside the ML
-    phi2 = ds[X_PHI].where( (ds.z < ds[mlb]) | (ds.z > ds[mlt]) | ds[mlt].isnull() )#.interpolate_na(dim='range',dask_gufunc_kwargs = "allow_rechunk")
+    phi2 = ds[X_PHI].where( (ds.z < ( ds[mlb] - bottom_tolerance ) ) | (ds.z > ( ds[mlt] + top_tolerance ) ) | ds[mlt].isnull() )#.interpolate_na(dim='range',dask_gufunc_kwargs = "allow_rechunk")
     # interpolate PHIDP in ML
     phi2 = phi2.chunk(dict(range=-1)).interpolate_na(dim='range', method=method)
     # restore originally nan values
