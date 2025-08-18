@@ -440,8 +440,8 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
     stats[stratname] = {}
 
     values_sfc = stratqvp.where( (stratqvp["z"] < (stratqvp["height_ml_bottom_new_gia"]+stratqvp["z"][0])/2) ).bfill("z").isel({"z": 0}) # selects the closest value to the ground starting from below half of the ML height (with respect to the radar altitude)
-    values_snow = stratqvp.where( (stratqvp["z"] > stratqvp["height_ml_new_gia"]) ).bfill("z").ffill("z").sel({"z": stratqvp["height_ml_new_gia"] + z_snow_over_ML}, method="nearest")
-    values_rain = stratqvp.where( (stratqvp["z"] < stratqvp["height_ml_bottom_new_gia"]) ).ffill("z").bfill("z").sel({"z": stratqvp["height_ml_bottom_new_gia"] - z_rain_below_ML}, method="nearest")
+    values_snow = stratqvp.where( (stratqvp["z"] > stratqvp["height_ml_new_gia"]) ).sel({"z": stratqvp["height_ml_new_gia"] + z_snow_over_ML}, method="nearest", tolerance=z_snow_over_ML)
+    values_rain = stratqvp.where( (stratqvp["z"] < stratqvp["height_ml_bottom_new_gia"]) ).sel({"z": stratqvp["height_ml_bottom_new_gia"] - z_rain_below_ML}, method="nearest", tolerance=z_rain_below_ML)
 
     #### ML statistics
     # select values inside the ML
@@ -2439,6 +2439,9 @@ for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
             del retrievals_qvpbased[stratname][ll]
 
 #%%% 2d histograms
+
+valid_perc_thresh = 0.8 # minimum fraction of valid values to filter out gradients
+
 locs_to_plot = locs # [find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
 savepath = "/automount/agradar/jgiles/images/stats_histograms"+suffix_name+"/"
 
@@ -2493,7 +2496,7 @@ for loc in locs_to_plot:
             MLbot = stats[stratname][loc]["ML_bottom"].sel(\
                                 time=stats[stratname][loc]["ML_bottom"]['time'].dt.month.isin(selseas[1]))
             betaZH = stats[stratname][loc]["beta_belowDGL"][X_DBZH].where(\
-                                stats[stratname][loc]["beta_belowDGL"]["valid_perc"] > 0.5
+                                stats[stratname][loc]["beta_belowDGL"]["valid_perc"] > valid_perc_thresh
                                                                           ).sel(\
                                 time=stats[stratname][loc]["beta_belowDGL"]['time'].dt.month.isin(selseas[1]))
             cloudtop = stats[stratname][loc]["cloudtop"].sel(\
@@ -3214,6 +3217,8 @@ for loc in locs_to_plot:
 #%%% ridgeplots
 savepath = "/automount/agradar/jgiles/images/stats_ridgeplots"+suffix_name+"/"
 
+valid_perc_thresh = 0.8 # minimum fraction of valid values to filter out gradients
+
 vars_ticks = {X_DBZH: np.arange(0, 46, 1),
                 X_ZDR: np.arange(-0.5, 2.1, 0.1),
                 X_KDP: np.arange(-0.1, 0.52, 0.02),
@@ -3387,7 +3392,7 @@ for selseas in selseaslist:
                         samples_valid_perc = {loc: stats[stratname][loc][ss]["valid_perc"].sel(\
                                     time=samples_times[loc]).values\
                                    for loc in order_fil}
-                        samples = {loc: samples[loc][samples_valid_perc[loc]>=0.5] for loc in samples.keys()}
+                        samples = {loc: samples[loc][samples_valid_perc[loc]>=valid_perc_thresh] for loc in samples.keys()}
 
                     samples = {loc.swapcase(): samples[loc] for loc in samples.keys() if len(samples[loc])>10} # filter out radars with less than 10 samples
 
@@ -3514,6 +3519,7 @@ for selseas in selseaslist:
 #%%%% Plot beta seasonality
 stratname = "stratiform"
 
+valid_perc_thresh = 0.8 # minimum fraction of valid values to filter out gradients
 
 colors = ["#4c72b0",  # Deep Blue
             "#D73027",  # Bright Red
@@ -3544,10 +3550,10 @@ line_styles = ["--",  # Dashed
 
 for il, loc in enumerate(locs):
     count = stats[stratname][loc]['beta_belowDGL'][X_DBZH]\
-                .where(stats[stratname][loc]['beta_belowDGL']["valid_perc"]>=0.5)\
+                .where(stats[stratname][loc]['beta_belowDGL']["valid_perc"]>=valid_perc_thresh)\
                     .groupby("time.month").count()
     stats[stratname][loc]['beta_belowDGL'][X_DBZH]\
-                .where(stats[stratname][loc]['beta_belowDGL']["valid_perc"]>0.5)\
+                .where(stats[stratname][loc]['beta_belowDGL']["valid_perc"]>valid_perc_thresh)\
                     .groupby("time.month").median().where(count>=30).plot(
         label=loc.swapcase(), c=colors[il], ls=line_styles[il], lw=2,alpha=0.8)
 plt.ylabel(r'$\beta$ [dBZ/km]')
@@ -3672,6 +3678,7 @@ for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
 
 #%%%% Ridgeplot of of variables in rimed vs not rimed events
 
+valid_perc_thresh = 0.8 # minimum fraction of valid values to filter out gradients
 
 savepath = "/automount/agradar/jgiles/images/stats_ridgeplots_riming"+suffix_name+"/"
 
@@ -3844,7 +3851,7 @@ for selseas in selseaslist:
                         samples_wriming_valid_perc = {loc: stats[stratname][loc][ss]["valid_perc"].sel(\
                                     time=samples_wriming_times[loc]).values\
                                    for loc in order_fil}
-                        samples_wriming = {loc: samples_wriming[loc][samples_wriming_valid_perc[loc]>=0.5] for loc in samples_wriming.keys()}
+                        samples_wriming = {loc: samples_wriming[loc][samples_wriming_valid_perc[loc]>=valid_perc_thresh] for loc in samples_wriming.keys()}
 
                         samples_woriming_times = {loc: stats[stratname][loc][ss][vv].sel(\
                                     time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1]))\
@@ -3853,7 +3860,7 @@ for selseas in selseaslist:
                         samples_woriming_valid_perc = {loc: stats[stratname][loc][ss]["valid_perc"].sel(\
                                     time=samples_woriming_times[loc]).values\
                                    for loc in order_fil}
-                        samples_woriming = {loc: samples_woriming[loc][samples_woriming_valid_perc[loc]>=0.5] for loc in samples_wriming.keys()}
+                        samples_woriming = {loc: samples_woriming[loc][samples_woriming_valid_perc[loc]>=valid_perc_thresh] for loc in samples_wriming.keys()}
 
 
                     samples = {loc.swapcase(): [ samples_wriming[loc], samples_woriming[loc] ] for loc in samples_wriming.keys() if ( len(samples_wriming[loc])>10 and len(samples_woriming[loc])>10 )} # filter out radars with no samples
@@ -4004,6 +4011,8 @@ for selseas in selseaslist:
 
 #%% Correlation matrices
 
+valid_perc_thresh = 0.8 # minimum fraction of valid values to filter out gradients
+
 #### Set variable names
 X_DBZH = "DBZH_AC"
 X_RHO = "RHOHV_NC"
@@ -4077,7 +4086,7 @@ for loc in locs_to_plot:
 
             #### Get necessary variables
             variables_nested = {x_name0+"|"+x_name1: stats[stratname][loc][x_name0][x_name1].where(\
-                                                             stats[stratname][loc][x_name0]["valid_perc"]>0.5).sel(\
+                                                             stats[stratname][loc][x_name0]["valid_perc"]>valid_perc_thresh).sel(\
                                                     time=stats[stratname][loc][x_name0]['time'].dt.month.isin(selseas[1]))
                                 if
                                     "valid_perc" in stats[stratname][loc][x_name0]
