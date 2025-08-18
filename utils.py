@@ -143,8 +143,8 @@ phase_proc_params["dwd"]["pcpng01"] = phase_proc_params["dwd"]["90gradstarng01"]
 
 phase_proc_params["dwd-hres"] = {}
 phase_proc_params["dwd-hres"]["vol5minng01"] = { # for the volume scan
-    "window0": 25, # number of range bins for phidp smoothing (this one is quite important!)
-    "winlen0": [9, 25], # size of range window (bins) for the kdp-phidp calculations
+    "window0": 11, # number of range bins for phidp smoothing (this one is quite important!)
+    "winlen0": [9, 11], # size of range window (bins) for the kdp-phidp calculations
     "xwin0": 5, # window size (bins) for the time rolling median smoothing in ML detection
     "ywin0": 5, # window size (bins) for the height rolling mean smoothing in ML detection
     "fix_range": 1500, # range from where to consider phi values (dwd data is bad in the first bins)
