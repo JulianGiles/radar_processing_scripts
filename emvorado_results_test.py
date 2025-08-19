@@ -28,6 +28,7 @@ import datetime
 import pandas as pd
 import cartopy
 import time
+import ridgeplot
 
 import xarray as xr
 
@@ -51,6 +52,17 @@ except ModuleNotFoundError:
     from classify_precip_typ import classify_precip_typ
 
 realpep_path = "/automount/realpep/"
+
+# we define a funtion to look for loc inside a path string
+def find_loc(locs, path):
+    components = path.split(os.path.sep)
+    for element in locs:
+        for component in components:
+            if element.lower() in component.lower():
+                return element
+    return None
+
+locs = ["boxpol", "pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs"]
 
 #%% Initial definitions
 # Create a feature for States/Admin 1 regions at 1:50m from Natural Earth
@@ -373,6 +385,8 @@ ff = [glob.glob(os.path.dirname(fp)+"/*allsim*")[0] for fp in ff_ML_glob ]
 
 ds_qvps = xr.open_mfdataset(ff)
 
+ds_qvps = ds_qvps.set_coords("TEMP")
+
 # 01/08/2025: Disable the ML filter since the ML detection is not so reliable in the simulations
 # # Conditions to clean ML height values
 # max_change = 400 # set a maximum value of ML height change from one timestep to another (in m)
@@ -581,6 +595,9 @@ layout.save("/user/jgiles/qvps_emvorado_pro_stratiform.html", resources=INLINE, 
             max_states=1000, max_opts=1000)
 
 #%% Filters (conditions for stratiform)
+
+suffix_name = "_emvorado_cases" # for saving results
+
 calculate_retrievals = True
 min_entropy_thresh = 0.85
 
@@ -758,6 +775,205 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
     # Save retrievals #!!! For now this is disabled
     # for ll in retrievals_qvpbased[stratname].keys():
     #     retrievals_qvpbased[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/ICON_EMVORADO_offline_radardata/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/radar_retrievals_QVPbased/"+stratname+"/"+ll+".nc")
+
+
+
+#### General statistics
+print("Calculating statistics ...")
+
+# In case the ML top and bottom variables are not available, use this isotherms
+TEMP_ML_top = 0
+TEMP_ML_bottom = 4
+
+# We do this for both qvps_strat_fil and relaxed qvps_strat_relaxed_fil
+
+z_snow_over_ML = 300 # set the height above the ML from where to consider snow. 300 m like in https://doi.org/10.1175/JAMC-D-19-0128.1
+z_rain_below_ML = 300 # set the height below the ML from where to consider rain. 300 m like in https://doi.org/10.1175/JAMC-D-19-0128.1
+z_grad_above_ML = 2000 # height above the ML until which to compute the gradient
+
+# We will put the final stats in a dict
+try: # check if exists, if not, create it
+    stats
+except NameError:
+    stats = {}
+
+for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
+                            ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
+                            ("entropy4km", qvps_entropy4km_fil.copy()),
+                            ("stratiform_urML", qvps_strat_urML_fil.copy())]:
+    print("   ... for "+stratname)
+
+    stats[stratname] = {}
+
+    if stratqvp["height_ml_new_gia"].notnull().all():
+        mlh = "height_ml_new_gia"
+        mlb = "height_ml_bottom_new_gia"
+    else:
+        mlh = "height_ml_TEMP"
+        mlb = "height_ml_bottom_TEMP"
+        stratqvp = stratqvp.assign_coords({"height_ml_TEMP":
+                                           stratqvp["z"].broadcast_like(stratqvp["TEMP"]).where(stratqvp["TEMP"]<TEMP_ML_top).min("z")})
+        stratqvp = stratqvp.assign_coords({"height_ml_bottom_TEMP":
+                                           stratqvp["z"].broadcast_like(stratqvp["TEMP"]).where(stratqvp["TEMP"]>TEMP_ML_bottom).max("z")})
+
+    values_sfc_ = stratqvp.where( (stratqvp["z"] < (stratqvp[mlb]+stratqvp["z"][0])/2) ).bfill("z").dropna("time", how="all")
+    values_sfc = values_sfc_.isel({"z": 0}) # selects the closest value to the ground starting from below half of the ML height (with respect to the radar altitude)
+    values_snow_ = stratqvp.where( (stratqvp["z"] > stratqvp[mlh]) ).dropna("time", how="all")
+    values_snow = values_snow_.sel({"z": values_snow_[mlh] + z_snow_over_ML}, method="nearest", tolerance=z_snow_over_ML)
+    values_rain_ = stratqvp.where( (stratqvp["z"] < stratqvp[mlb]) ).dropna("time", how="all")
+    values_rain = values_rain_.sel({"z": values_rain_[mlb] - z_rain_below_ML}, method="nearest", tolerance=z_rain_below_ML)
+
+    #### ML statistics
+    # select values inside the ML
+    qvps_ML = stratqvp.where( (stratqvp["z"] < stratqvp[mlh].compute()) & \
+                                   (stratqvp["z"] > stratqvp[mlb].compute()), drop=True)
+
+    values_ML_max = qvps_ML.max(dim="z")
+    values_ML_min = qvps_ML.min(dim="z")
+    values_ML_mean = qvps_ML.mean(dim="z")
+    ML_thickness = (qvps_ML[mlh] - qvps_ML[mlb]).rename("ML_thickness")
+    ML_bottom = qvps_ML[mlb]
+
+    ML_bottom_TEMP = stratqvp["TEMP"].sel(z=stratqvp[mlb], method="nearest")
+    ML_thickness_TEMP = ML_bottom_TEMP - stratqvp["TEMP"].sel(z=stratqvp[mlh], method="nearest")
+
+    #!!! Temporary solution with np.isfinite because there are -inf and inf values in ANK data
+    try:
+        height_ML_max = qvps_ML.where(np.isfinite(qvps_ML)).idxmax("z", skipna=True)
+        height_ML_min = qvps_ML.where(np.isfinite(qvps_ML)).idxmin("z", skipna=True)
+    except xr.core.merge.MergeError:
+        # this might fail for some unkwon reason with the range and z_idx coordinate (TUR)
+        # remove those and try again
+        height_ML_max = qvps_ML.where(np.isfinite(qvps_ML)).drop_vars(["range", "z_idx"]).idxmax("z", skipna=True)
+        height_ML_min = qvps_ML.where(np.isfinite(qvps_ML)).drop_vars(["range", "z_idx"]).idxmin("z", skipna=True)
+
+    # Silke style
+    # select timesteps with detected ML
+    # gradient_silke = stratqvp.where(stratqvp["height_ml_new_gia"] > stratqvp["height_ml_bottom_new_gia"], drop=True)
+    # gradient_silke_ML = gradient_silke.sel({"z": gradient_silke["height_ml_new_gia"]}, method="nearest")
+    # gradient_silke_ML_plus_2km = gradient_silke.sel({"z": gradient_silke_ML["z"]+2000}, method="nearest")
+    # gradient_final = (gradient_silke_ML_plus_2km - gradient_silke_ML)/2
+    # beta = gradient_final[X_TH] #### TH OR DBZH??
+
+    # Gradient above the ML
+    # We select above z_snow_over_ML and below z_snow_over_ML + z_grad_above_ML
+    # Then we compute the gradient as the linear fit of the valid values
+
+    stratqvp_ = stratqvp.where(stratqvp["z"] > (stratqvp[mlh] + z_snow_over_ML) ) \
+                        .where(stratqvp["z"] < (stratqvp[mlh] + z_snow_over_ML + z_grad_above_ML) ).copy()
+
+    stratqvp_TEMP = stratqvp["TEMP"].where(stratqvp["z"] > (stratqvp[mlh] + z_snow_over_ML) ) \
+                        .where(stratqvp["z"] < (stratqvp[mlh] + z_snow_over_ML + z_grad_above_ML) ).copy()
+
+    beta = stratqvp_.polyfit("z", 1, skipna=True).isel(degree=0) * 1000 # x1000 to transform the gradients to /km
+
+    beta = beta.rename({var: var.replace("_polyfit_coefficients", "") for var in beta.data_vars}).assign_coords(
+                            {"valid_count": stratqvp_["DBZH"].count("z"),
+                             "valid_perc": stratqvp_["DBZH"].count("z")/stratqvp_TEMP.count("z")})
+
+    # Variation: Gradient above the ML until the DGL bottom
+
+    stratqvp_belowDGL_ = stratqvp.where((stratqvp["TEMP"] >= -10).compute())\
+                        .where(stratqvp["z"] > (stratqvp[mlh] + z_snow_over_ML) ) .copy()
+
+    stratqvp_belowDGL_TEMP = stratqvp["TEMP"].where((stratqvp["TEMP"] >= -10).compute())\
+                        .where(stratqvp["z"] > (stratqvp[mlh] + z_snow_over_ML) ) .copy()
+
+    beta_belowDGL = stratqvp_belowDGL_.polyfit("z", 1, skipna=True).isel(degree=0) * 1000 # x1000 to transform the gradients to /km
+
+    beta_belowDGL = beta_belowDGL.rename({var: var.replace("_polyfit_coefficients", "") for var in beta_belowDGL.data_vars}).assign_coords(
+                            {"valid_count": stratqvp_belowDGL_["DBZH"].count("z"),
+                             "valid_perc": stratqvp_belowDGL_["DBZH"].count("z")/stratqvp_belowDGL_TEMP.count("z")})
+
+    # Gradient below the ML
+    # We select below z_rain_below_ML
+    # Then we compute the gradient as the linear fit of the valid values
+
+    stratqvp_belowML_ = stratqvp.where(stratqvp["z"] < (stratqvp[mlb] - z_rain_below_ML ) ).copy()
+
+    stratqvp_belowML_TEMP = stratqvp["TEMP"].where(stratqvp["z"] < (stratqvp[mlb] - z_rain_below_ML ) ).copy()
+
+    beta_belowML = stratqvp_belowML_.polyfit("z", 1, skipna=True).isel(degree=0) * 1000 # x1000 to transform the gradients to /km
+
+    beta_belowML = beta_belowML.rename({var: var.replace("_polyfit_coefficients", "") for var in beta_belowML.data_vars}).assign_coords(
+                            {"valid_count": stratqvp_belowML_["DBZH"].count("z"),
+                             "valid_perc": stratqvp_belowML_["DBZH"].count("z")/stratqvp_belowML_TEMP.count("z")})
+
+    # Cloud top (3 methods)
+    # Get the height value of the last not null value with a minimum of entropy 0.2 (this min entropy is to filter out random noise pixels)
+    cloudtop = stratqvp[X_DBZH].where(stratqvp["z"] > (stratqvp[mlh]) ) \
+                        .where(stratqvp["min_entropy"] > 0.2 ) \
+                        .isel(z=slice(None,None,-1)).notnull().idxmax("z").rename("cloudtop")
+    # Get the height value of the last value > 5 dBZ
+    cloudtop_5dbz = stratqvp[X_DBZH].where(stratqvp["z"] > (stratqvp[mlh]) ) \
+                        .where(stratqvp["min_entropy"] > 0.2).where(stratqvp[X_DBZH]>5) \
+                        .isel(z=slice(None,None,-1)).notnull().idxmax("z").rename("cloudtop 5 dBZ")
+    # Get the height value of the last value > 10 dBZ
+    cloudtop_10dbz = stratqvp[X_DBZH].where(stratqvp["z"] > (stratqvp[mlh]) ) \
+                        .where(stratqvp["min_entropy"] > 0.2).where(stratqvp[X_DBZH]>10) \
+                        .isel(z=slice(None,None,-1)).notnull().idxmax("z").rename("cloudtop 10 dBZ")
+
+    # Temperature of the cloud top (3 methods)
+    cloudtop_TEMP = stratqvp["TEMP"].sel({"z": cloudtop}, method="nearest")
+    cloudtop_TEMP_5dbz = stratqvp["TEMP"].sel({"z": cloudtop_5dbz}, method="nearest")
+    cloudtop_TEMP_10dbz = stratqvp["TEMP"].sel({"z": cloudtop_10dbz}, method="nearest")
+
+
+    #### DGL statistics
+    # select values in the DGL
+    qvps_DGL = stratqvp.where(((stratqvp["TEMP"] >= -20)&(stratqvp["TEMP"] <= -10)).compute(), drop=True)
+
+    values_DGL_max = qvps_DGL.max(dim="z")
+    values_DGL_min = qvps_DGL.min(dim="z")
+    values_DGL_mean = qvps_DGL.mean(dim="z")
+
+    #### Needle zone statistics
+    # select values in the NZ
+    # qvps_NZ = stratqvp.where(((stratqvp["TEMP"] >= -8)&(stratqvp["TEMP"] <= -1)).compute(), drop=True).unify_chunks()
+    qvps_NZ = stratqvp.where(((stratqvp["TEMP"] >= -8)&(stratqvp["TEMP"] <= -1)).compute())
+
+    values_NZ_max = qvps_NZ.max(dim="z")
+    values_NZ_min = qvps_NZ.min(dim="z")
+    values_NZ_mean = qvps_NZ.mean(dim="z")
+
+    # Put in the dictionary
+    stats[stratname][find_loc(locs, ff[0])] = {"values_sfc": values_sfc.compute().copy(deep=True).assign_attrs({"Description": "value closest to the ground (at least lower than half of the ML height)"}),
+                                       "values_snow": values_snow.compute().copy(deep=True).assign_attrs({"Description": "value in snow ("" m above the ML)"}),
+                                       "values_rain": values_rain.compute().copy(deep=True).assign_attrs({"Description": "value in rain ("+str(z_rain_below_ML)+" m above the ML)"}),
+                                       "values_ML_max": values_ML_max.compute().copy(deep=True).assign_attrs({"Description": "maximum value within the ML"}),
+                                       "values_ML_min": values_ML_min.compute().copy(deep=True).assign_attrs({"Description": "minimum value within the ML"}),
+                                       "values_ML_mean": values_ML_mean.compute().copy(deep=True).assign_attrs({"Description": "mean value within the ML"}),
+                                       "height_ML_max": height_ML_max.compute().copy(deep=True).assign_attrs({"Description": "height (z) of the maximum value within the ML"}),
+                                       "height_ML_min": height_ML_min.compute().copy(deep=True).assign_attrs({"Description": "height (z) of the minimum value within the ML"}),
+                                       "ML_thickness": ML_thickness.compute().copy(deep=True).assign_attrs({"Description": "thickness of the ML (in m)"}),
+                                       "ML_bottom": ML_bottom.compute().copy(deep=True).assign_attrs({"Description": "height of the ML bottom (in m)"}),
+                                       "ML_thickness_TEMP": ML_thickness_TEMP.compute().copy(deep=True).assign_attrs({"Description": "thickness of the ML (in temperature)"}),
+                                       "ML_bottom_TEMP": ML_bottom_TEMP.compute().copy(deep=True).assign_attrs({"Description": "height of the ML bottom (in temperature)"}),
+                                       "values_DGL_max": values_DGL_max.compute().copy(deep=True).assign_attrs({"Description": "maximum value within the DGL"}),
+                                       "values_DGL_min": values_DGL_min.compute().copy(deep=True).assign_attrs({"Description": "minimum value within the DGL"}),
+                                       "values_DGL_mean": values_DGL_mean.compute().copy(deep=True).assign_attrs({"Description": "mean value within the DGL"}),
+                                       "values_NZ_max": values_NZ_max.compute().copy(deep=True).assign_attrs({"Description": "maximum value within the NZ"}),
+                                       "values_NZ_min": values_NZ_min.compute().copy(deep=True).assign_attrs({"Description": "minimum value within the NZ"}),
+                                       "values_NZ_mean": values_NZ_mean.compute().copy(deep=True).assign_attrs({"Description": "mean value within the NZ"}),
+                                       "beta": beta.compute().copy(deep=True).assign_attrs({"Description": "Gradient from "+str(z_snow_over_ML)+" to "+str(z_grad_above_ML)+" m above the ML"}),
+                                       "beta_belowDGL": beta_belowDGL.compute().copy(deep=True).assign_attrs({"Description": "Gradient from "+str(z_snow_over_ML)+" m above the ML to DGL bottom"}),
+                                       "beta_belowML": beta_belowML.compute().copy(deep=True).assign_attrs({"Description": "Gradient from the first valid value to "+str(z_rain_below_ML)+" m below the ML"}),
+                                       "cloudtop": cloudtop.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest not-null ZH value)"}),
+                                       "cloudtop_5dbz": cloudtop_5dbz.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest ZH value > 5 dBZ)"}),
+                                       "cloudtop_10dbz": cloudtop_10dbz.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest ZH value > 10 dBZ)"}),
+                                       "cloudtop_TEMP": cloudtop_TEMP.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest not-null ZH value)"}),
+                                       "cloudtop_TEMP_5dbz": cloudtop_TEMP_5dbz.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest ZH value > 5 dBZ)"}),
+                                       "cloudtop_TEMP_10dbz": cloudtop_TEMP_10dbz.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest ZH value > 10 dBZ)"}),
+        }
+
+    # Save stats
+    if not os.path.exists(realpep_path+"/upload/jgiles/radar_stats"+suffix_name+"/"+stratname):
+        os.makedirs(realpep_path+"/upload/jgiles/radar_stats"+suffix_name+"/"+stratname)
+    for ll in stats[stratname].keys():
+        for xx in stats[stratname][ll].keys():
+            stats[stratname][ll][xx].to_netcdf(realpep_path+"/upload/jgiles/radar_stats"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc")
+
+
 
 #%% CFTDs Plot
 
@@ -2565,6 +2781,356 @@ for sn, savepath in enumerate(savepath_list):
 
     if auto_plot is False:
         break
+
+
+#%% Statistics histograms and ridgeplots
+suffix_name = "_emvorado_cases"
+
+#### Set variable names
+X_DBZH = "DBZH_AC"
+X_RHO = "RHOHV"
+X_ZDR = "ZDR_AC"
+X_KDP = "KDP"
+
+
+# load stats
+if 'stats' not in globals() and 'stats' not in locals():
+    stats = {}
+
+for stratname in ["stratiform", "stratiform_relaxed", "entropy4km", "stratiform_urML"]:
+    if stratname not in stats.keys():
+        stats[stratname] = {}
+    elif type(stats[stratname]) is not dict:
+        stats[stratname] = {}
+    print("Loading "+stratname+" stats ...")
+    for ll in ["pro", "hty"]: #locs
+        if ll not in stats[stratname].keys():
+            stats[stratname][ll] = {}
+        elif type(stats[stratname][ll]) is not dict:
+            stats[stratname][ll] = {}
+        for xx in ['values_sfc', 'values_snow', 'values_rain', 'values_ML_max', 'values_ML_min', 'values_ML_mean',
+                   'ML_thickness', 'ML_bottom', 'ML_thickness_TEMP', 'ML_bottom_TEMP', 'values_DGL_max', 'values_DGL_min',
+                   'values_DGL_mean', 'values_NZ_max', 'values_NZ_min', 'values_NZ_mean', 'height_ML_max', 'height_ML_min',
+                   'ML_bottom', 'beta', 'beta_belowDGL', 'beta_belowML', 'cloudtop', 'cloudtop_5dbz', 'cloudtop_10dbz',
+                   'cloudtop_TEMP', 'cloudtop_TEMP_5dbz', 'cloudtop_TEMP_10dbz']:
+            try:
+                stats[stratname][ll][xx] = xr.open_dataset(realpep_path+"/upload/jgiles/radar_stats"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc")
+                if len(stats[stratname][ll][xx].data_vars)==1:
+                    # if only 1 var, convert to data array
+                    stats[stratname][ll][xx] = stats[stratname][ll][xx].to_dataarray()
+                if "variable" in stats[stratname][ll][xx].coords:
+                    if len(stats[stratname][ll][xx]["variable"]) == 1:
+                        # if there is a generic coord called "variable", remove it
+                        stats[stratname][ll][xx] = stats[stratname][ll][xx].isel(variable=0)
+                print(ll+" "+xx+" stats loaded")
+            except:
+                pass
+        # delete entry if empty
+        if not stats[stratname][ll]:
+            del stats[stratname][ll]
+
+#%%% ridgeplots
+folder_name_suffix = "_emvorado_cases"
+
+savepath = "/automount/agradar/jgiles/images/stats_ridgeplots"+folder_name_suffix+"/"
+
+valid_perc_thresh = 0.8 # minimum fraction of valid values to filter out gradients
+
+vars_ticks = {X_DBZH: np.arange(0, 46, 1),
+                X_ZDR: np.arange(-0.5, 2.1, 0.1),
+                X_KDP: np.arange(-0.1, 0.52, 0.02),
+                X_RHO: np.arange(0.9, 1.004, 0.004)
+                }
+
+beta_vars_ticks = {X_DBZH: np.linspace(-15, 10, int((10--15)/1)+1 ),
+                X_ZDR: np.linspace(-0.5, 1, int((1--0.5)/0.1)+1 ),
+                X_KDP: np.linspace(-0.2, 0.2, int((0.2--0.2)/0.01)+1 ),
+                X_RHO: np.linspace(-0.05, 0.05, int((0.05--0.05)/0.001)+1 ),
+                } # the "_polyfit_coefficients" in the var names will be added below
+
+ridge_vars = set(list(vars_ticks.keys())+list(beta_vars_ticks.keys()))
+
+bins = {
+        "ML_thickness": np.arange(0,1200,50),
+        "ML_thickness_TEMP": np.arange(0, 8.5, 0.5),
+        "ML_bottom": np.arange(0,4100,100),
+        "ML_bottom_TEMP": np.arange(0, 9.5, 0.5),
+        "values_snow": vars_ticks,
+        "values_rain": vars_ticks,
+        "values_DGL_mean": vars_ticks,
+        "values_DGL_min": vars_ticks,
+        "values_DGL_max": vars_ticks,
+        "values_NZ_mean": vars_ticks,
+        "values_NZ_min": vars_ticks,
+        "values_NZ_max": vars_ticks,
+        "values_ML_mean": vars_ticks,
+        "values_ML_min": vars_ticks,
+        "values_ML_max": vars_ticks,
+        "values_sfc": vars_ticks,
+        "cloudtop": np.arange(2000,12250,250),
+        "cloudtop_5dbz": np.arange(2000,12250,250),
+        "cloudtop_10dbz": np.arange(2000,12250,250),
+        "beta": beta_vars_ticks,
+        "beta_belowDGL": beta_vars_ticks,
+        "beta_belowML": beta_vars_ticks,
+        "cloudtop_TEMP": np.arange(-50,5,1),
+        "cloudtop_TEMP_5dbz": np.arange(-50,5,1),
+        "cloudtop_TEMP_10dbz": np.arange(-50,5,1),
+        "deltaZH": np.arange(-5,21,1),
+        "delta_z_ZHmaxML_RHOHVminML": np.arange(0,440, 40),
+        "delta_belowML": beta_vars_ticks,
+        }
+
+# set a dictionary of bandwidths, this is important for the cases where the low resolution of the
+# data generates a histogram with only a few intervals with data. "normal_reference" is the default
+default_bandwidth_dict = {vv:"normal_reference" for vv in vars_ticks.keys()}
+default_bandwidth = "normal_reference"
+
+bandwidths = {"ML_thickness": 50,
+        "ML_thickness_TEMP": default_bandwidth,
+        "ML_bottom": default_bandwidth,
+        "ML_bottom_TEMP": default_bandwidth,
+        "values_snow": default_bandwidth_dict,
+        "values_rain": default_bandwidth_dict,
+        "values_DGL_mean": default_bandwidth_dict,
+        "values_DGL_min": default_bandwidth_dict,
+        "values_DGL_max": default_bandwidth_dict,
+        "values_NZ_mean": default_bandwidth_dict,
+        "values_NZ_min": default_bandwidth_dict,
+        "values_NZ_max": default_bandwidth_dict,
+        "values_ML_mean": default_bandwidth_dict,
+        "values_ML_min": default_bandwidth_dict,
+        "values_ML_max": default_bandwidth_dict,
+        "values_sfc": default_bandwidth_dict,
+        "cloudtop": default_bandwidth,
+        "cloudtop_5dbz": default_bandwidth,
+        "cloudtop_10dbz": default_bandwidth,
+        "beta": default_bandwidth_dict,
+        "beta_belowDGL": default_bandwidth_dict,
+        "beta_belowML": default_bandwidth_dict,
+        "cloudtop_TEMP": default_bandwidth,
+        "cloudtop_TEMP_5dbz": default_bandwidth,
+        "cloudtop_TEMP_10dbz": default_bandwidth,
+        "deltaZH": default_bandwidth,
+        "delta_z_ZHmaxML_RHOHVminML": default_bandwidth,
+        "delta_belowML": default_bandwidth_dict,
+        }
+# Particular changes
+bandwidths['values_sfc'][X_KDP] = 0.01
+bandwidths['values_sfc'][X_RHO] = 0.01
+bandwidths['values_snow'][X_RHO] = 0.01
+
+
+# order = ['tur', 'umd', 'pro', 'afy', 'ank', 'gzt', 'hty', 'svs']
+order = ['pro', 'hty']
+
+selseaslist = [
+            ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
+            # ("DJF", [12,1,2]),
+            # ("MAM", [3,4,5]),
+            # ("JJA", [6,7,8]),
+            # ("SON", [9,10,11]),
+           ] # ("nameofseas", [months included])
+
+
+# Define a function to reorder the elements of the ridgeplot
+def reorder_tuple_elements(data, n):
+    # Extract the last n elements
+    last_n = data[-n:]
+
+    # Convert the tuple to a list to facilitate reordering
+    data_list = list(data[:-n])
+
+    # Insert each of the last n elements at the desired positions
+    for i in range(n):
+        target_position = i * 3 + 2
+        data_list.insert(target_position, last_n[i])
+
+    # Convert back to a tuple and return
+    return tuple(data_list)
+
+# Define a function to change the alpha value of an rgba string
+def change_rgba_alpha(original_color, new_alpha):
+    r, g, b, alpha = original_color.lstrip('rgba(').rstrip(')').split(',')
+    return f'rgba({r}, {g}, {b}, {new_alpha})'
+
+# Build deltaZH into stats
+for stratname in ["stratiform", "stratiform_relaxed", "entropy4km", "stratiform_urML"]:
+    for ll in order:
+        if ll in stats[stratname].keys():
+            stats[stratname][ll]["deltaZH"] = stats[stratname][ll]["values_ML_max"][X_DBZH] - stats[stratname][ll]["values_rain"][X_DBZH]
+
+# Build delta_z_ZHmaxML_RHOHVminML into stats
+for stratname in ["stratiform", "stratiform_relaxed", "entropy4km", "stratiform_urML"]:
+    for ll in order:
+        if ll in stats[stratname].keys():
+            stats[stratname][ll]["delta_z_ZHmaxML_RHOHVminML"] = stats[stratname][ll]["height_ML_max"][X_DBZH] - stats[stratname][ll]["height_ML_min"][X_RHO]
+
+# Build delta_belowML into stats
+for stratname in ["stratiform", "stratiform_relaxed", "entropy4km", "stratiform_urML"]:
+    for ll in order:
+        if ll in stats[stratname].keys():
+            stats[stratname][ll]["delta_belowML"] = (stats[stratname][ll]["values_rain"] - stats[stratname][ll]["values_sfc"]).assign_coords({"valid_perc": stats[stratname][ll]["beta_belowML"]["valid_perc"]})
+
+# Plot stats ridgeplots
+for selseas in selseaslist:
+    print(" ... ... "+selseas[0])
+    for stratname in ["stratiform", "stratiform_relaxed", "entropy4km", "stratiform_urML"]:
+
+        print("plotting "+stratname+" stats...")
+
+        # Create savefolder
+        savepath_seas = savepath+stratname+"/"+selseas[0]+"/"
+        if not os.path.exists(savepath_seas):
+            os.makedirs(savepath_seas)
+
+        order_fil = [ll for ll in order if ll in stats[stratname].keys()]
+
+        for ss in bins.keys():
+            print("...plotting "+ss)
+            try:
+                for vv in ridge_vars:
+
+                    # Get the samples for each radar and filter out the radars that have zero samples.
+                    samples = {loc: stats[stratname][loc][ss][vv].sel(\
+                                time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time").values\
+                               for loc in order_fil}
+
+                    if ss in ["beta"] and vv in ["RHOHV_NC", "RHOHV"]: # filter out unrealistic zero beta values
+                        samples = {loc: samples[loc][abs(samples[loc])>0.0001] for loc in samples.keys()}
+
+                    if ss in ["values_DGL_min", "values_ML_min", "values_rain", "values_sfc"] and vv in [X_KDP]: # filter out unrealistic zero values
+                        samples = {loc: samples[loc][abs(samples[loc])>0.001] for loc in samples.keys()}
+
+                    if ss in ["beta_belowDGL", "beta_belowML", "delta_belowML"]: # filter out values computed out of few points (less than 50% of the available points)
+                        samples_times = {loc: stats[stratname][loc][ss][vv].sel(\
+                                    time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time")["time"]\
+                                   for loc in order_fil}
+                        samples_valid_perc = {loc: stats[stratname][loc][ss]["valid_perc"].sel(\
+                                    time=samples_times[loc]).values\
+                                   for loc in order_fil}
+                        samples = {loc: samples[loc][samples_valid_perc[loc]>=valid_perc_thresh] for loc in samples.keys()}
+
+                    samples = {loc.swapcase(): samples[loc] for loc in samples.keys() if len(samples[loc])>10} # filter out radars with less than 10 samples
+
+                    fig = ridgeplot.ridgeplot(samples=samples.values(),
+                                            colorscale="viridis",
+                                            colormode="row-index",
+                                            coloralpha=0.65,
+                                            labels=samples.keys(),
+                                            linewidth=2,
+                                            spacing=5 / 9,
+                                            # kde_points=bins[ss],
+                                            bandwidth=bandwidths[ss][vv],
+                                            )
+                    fig.update_layout(
+                                    height=760,
+                                    width=900,
+                                    font_size=20,
+                                    plot_bgcolor="white",
+                                    showlegend=False,
+                                    title=ss+" "+vv,
+                                    xaxis_tickvals=bins[ss][vv],
+                    )
+
+                    # Add vertical zero line
+                    fig.add_vline(x=0, line_width=2, line_color="gray")
+
+                    # Get densities data from the plot
+                    densities = [ fig.data[2*i+1] for i in range(len(samples)) ]
+
+                    # calculate means or median
+                    means = [np.median(sample) for sample in samples.values()]
+
+                    # Add a vertical line at the mean for each distribution
+                    for i, mean in enumerate(means):
+                        # define the bottom and top of each distribution
+                        y_bot = np.array(densities[i]["y"]).min()
+                        y_top = np.array(densities[i]["y"])[(np.where(np.array(densities[i]["x"]) >= mean))][0]
+
+                        fig.add_scatter(
+                            mode="lines",
+                            x=[mean, mean],  # Vertical line at the mean
+                            y=[y_bot , y_top],  # Set y0 and y1 based on the vertical offset
+                            line=dict(color=change_rgba_alpha(densities[i]["fillcolor"], 1), width=2),
+                        )
+
+                    # We need to reorder the elements of the fig.data tuple so that
+                    # the mean lines go below each distribution.
+                    fig.data = reorder_tuple_elements(fig.data,len(means))
+
+                    # save figure
+                    fig.write_html(savepath_seas+"/"+ss+"_"+vv+".html")
+
+            except KeyError:
+                try:
+                    samples = {loc: stats[stratname][loc][ss].sel(\
+                                time=stats[stratname][loc][ss]['time'].dt.month.isin(selseas[1])).dropna("time").values\
+                               for loc in order_fil}
+
+                    if ss in ["cloudtop", "cloudtop_5dbz", "cloudtop_10dbz"]: # filter out erroneous cloudtop values #!!! this will be fixed now (19.03.25) and this extra filter will not be necessary after re running the stats calculations
+                        samples = {loc: samples[loc][samples[loc]<np.max(samples[loc])] for loc in samples.keys()}
+                    if ss in ["cloudtop_TEMP", "cloudtop_TEMP_5dbz", "cloudtop_TEMP_10dbz"]: # filter out erroneous cloudtop values #!!! this will be fixed now (19.03.25) and this extra filter will not be necessary after re running the stats calculations
+                        samples = {loc: stats[stratname][loc][ss].where(stats[stratname][loc]["".join(ss.split("_TEMP"))].sel(\
+                                    time=stats[stratname][loc]["".join(ss.split("_TEMP"))]['time'].dt.month.isin(selseas[1])) <
+                                                                            stats[stratname][loc]["".join(ss.split("_TEMP"))].max().values).dropna("time").values\
+                                   for loc in order_fil}
+                        # samples = {loc: samples[loc][samples_aux[loc]<np.max(samples_aux[loc])] for loc in samples.keys()}
+
+                    samples = {loc.swapcase(): samples[loc] for loc in samples.keys() if len(samples[loc])>10} # filter out radars with no samples
+
+                    fig = ridgeplot.ridgeplot(samples=samples.values(),
+                                            colorscale="viridis",
+                                            colormode="row-index",
+                                            coloralpha=0.65,
+                                            labels=samples.keys(),
+                                            linewidth=2,
+                                            spacing=5 / 9,
+                                            # kde_points=bins[ss],
+                                            bandwidth=bandwidths[ss],
+                                            )
+                    fig.update_layout(
+                                    height=760,
+                                    width=900,
+                                    font_size=20,
+                                    plot_bgcolor="white",
+                                    showlegend=False,
+                                    title=ss,
+                                    xaxis_tickvals=bins[ss],
+                    )
+
+                    # Add vertical zero line
+                    fig.add_vline(x=0, line_width=2, line_color="gray")
+
+                    # Get densities data from the plot
+                    densities = [ fig.data[2*i+1] for i in range(len(samples)) ]
+
+                    # calculate means
+                    means = [np.median(sample) for sample in samples.values()]
+
+                    # Add a vertical line at the mean for each distribution
+                    for i, mean in enumerate(means):
+                        # define the bottom and top of each distribution
+                        y_bot = np.array(densities[i]["y"]).min()
+                        y_top = np.array(densities[i]["y"])[(np.where(np.array(densities[i]["x"]) >= mean))][0]
+
+                        fig.add_scatter(
+                            mode="lines",
+                            x=[mean, mean],  # Vertical line at the mean
+                            y=[y_bot , y_top],  # Set y0 and y1 based on the vertical offset
+                            line=dict(color=change_rgba_alpha(densities[i]["fillcolor"], 1), width=2),
+                        )
+
+                    # We need to reorder the elements of the fig.data tuple so that
+                    # the mean lines go below each distribution.
+                    fig.data = reorder_tuple_elements(fig.data,len(means))
+
+                    fig.write_html(savepath_seas+"/"+ss+".html")
+                except:
+                    print("!!! unable to plot "+stratname+" "+ss+" !!!")
+            except:
+                print("!!! unable to plot "+stratname+" "+ss+" !!!")
+
 
 #%% TEST Load Julian S ICON-EMVORADO files and compare to my workflow
 
