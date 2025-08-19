@@ -1660,6 +1660,93 @@ for sn, savepath in enumerate(savepath_list):
     if auto_plot is False:
         break
 
+#%% PLOT QVP
+
+ds_qvp = qvps
+
+max_height = 12000 # max height for the qvp plots
+
+tsel = ""# slice("2017-08-31T19","2017-08-31T22")
+if tsel == "":
+    datasel = ds_qvp.loc[{"z": slice(0, max_height)}]
+else:
+    datasel = ds_qvp.loc[{"time": tsel, "z": slice(0, max_height)}]
+
+templevels = [-100, 0]
+mom = "ZDR"
+
+ticks = radarmet.visdict14[mom]["ticks"]
+cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
+cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
+# norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
+cmap = "miub2"
+norm = utils.get_discrete_norm(ticks, cmap, extend="both")
+datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm, figsize=(7,3))
+# figcontour = ds_qvp["TEMP"].plot.contour(x="time", y="z", levels=templevels)
+# datasel["min_entropy"].compute().dropna("z", how="all").interpolate_na(dim="z").plot.contourf(x="time", levels=[0.8, 1], hatches=["", "XXX", ""], colors=[(1,1,1,0)], add_colorbar=False, extend="both")
+plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only the hour in the x-axis
+# datasel["height_ml_new_gia"].plot(c="black")
+# datasel["height_ml_bottom_new_gia"].plot(c="black")
+plt.gca().set_ylabel("height over sea level")
+
+try:
+    elevtitle = " "+str(np.round(ds_qvp["elevation"].values, 2))+"°"
+except:
+    elevtitle = " "+str(np.round(ds_qvp["elevation"].values, 2))+"°"
+
+plt.title(mom+elevtitle+". "+str(datasel.time.values[0]).split(".")[0])
+plt.show()
+plt.close()
+
+#%% Plot microphysics QVPS
+
+#%%% For each hydrometeor
+
+# List of variable names
+variables = ["vol_qc", "vol_qi", "vol_qg", "vol_qs", "vol_qh", "vol_qr"]
+# variables = ["vol_qnc", "vol_qni", "vol_qng", "vol_qns", "vol_qnh", "vol_qnr"]
+# variables = ["D0_c", "D0_i", "D0_g", "D0_s", "D0_h", "D0_r"]
+
+# Create 3x2 subplots
+fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(15, 10), sharex=True, sharey=True)
+axes = axes.flatten()  # Flatten to 1D array for easier iteration
+
+# Plot each variable
+for i, var in enumerate(variables):
+    ds_qvp[var].plot(x="time", ax=axes[i], vmin=0, vmax=0.7, ylim=(0, 10000), cmap="viridis")
+    axes[i].set_title(var)
+
+# Adjust layout
+plt.tight_layout()
+plt.show()
+
+#%%% For the totals
+
+# List of variable names
+variables_q = ["vol_qtot", "vol_qtotice", "vol_qtotliq"]
+variables_qn = ["vol_qntot", "vol_qntotice", "vol_qntotliq"]
+variables_D0 = ["D0_tot", "D0_totice", "D0_totliq"]
+
+# Create 3x3 subplots
+fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(20, 10), sharex=True, sharey=True)
+axes = axes.flatten()  # Flatten to 1D array for easier iteration
+
+# Plot each variable
+for i, var in enumerate(variables_q):
+    ds_qvp[var].plot(x="time", ax=axes[i], vmin=0, vmax=0.7, ylim=(0, 10000), cmap="viridis")
+    axes[i].set_title(var)
+
+for i, var in enumerate(variables_qn):
+    ds_qvp[var].plot(x="time", ax=axes[i+3], vmin=-4, vmax=4, ylim=(0, 10000), cmap="RdBu_r")
+    axes[i+3].set_title(var)
+
+for i, var in enumerate(variables_D0):
+    ds_qvp[var].plot(x="time", ax=axes[i+6], vmin=0, vmax=5, ylim=(0, 10000), cmap="viridis")
+    axes[i+6].set_title(var)
+
+# Adjust layout
+plt.tight_layout()
+plt.show()
 
 #%% TEST Load Julian S ICON-EMVORADO files and compare to my workflow
 
@@ -1829,93 +1916,6 @@ for vn in ds_qvp.data_vars:
 
 ds_qvp_new =utils.calc_microphys(ds_qvp, mom=2).compute()
 
-#%% PLOT QVP
-
-ds_qvp = qvps
-
-max_height = 12000 # max height for the qvp plots
-
-tsel = ""# slice("2017-08-31T19","2017-08-31T22")
-if tsel == "":
-    datasel = ds_qvp.loc[{"z": slice(0, max_height)}]
-else:
-    datasel = ds_qvp.loc[{"time": tsel, "z": slice(0, max_height)}]
-
-templevels = [-100, 0]
-mom = "ZDR"
-
-ticks = radarmet.visdict14[mom]["ticks"]
-cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
-cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
-# norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
-cmap = "miub2"
-norm = utils.get_discrete_norm(ticks, cmap, extend="both")
-datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm, figsize=(7,3))
-# figcontour = ds_qvp["TEMP"].plot.contour(x="time", y="z", levels=templevels)
-# datasel["min_entropy"].compute().dropna("z", how="all").interpolate_na(dim="z").plot.contourf(x="time", levels=[0.8, 1], hatches=["", "XXX", ""], colors=[(1,1,1,0)], add_colorbar=False, extend="both")
-plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only the hour in the x-axis
-# datasel["height_ml_new_gia"].plot(c="black")
-# datasel["height_ml_bottom_new_gia"].plot(c="black")
-plt.gca().set_ylabel("height over sea level")
-
-try:
-    elevtitle = " "+str(np.round(ds_qvp["elevation"].values, 2))+"°"
-except:
-    elevtitle = " "+str(np.round(ds_qvp["elevation"].values, 2))+"°"
-
-plt.title(mom+elevtitle+". "+str(datasel.time.values[0]).split(".")[0])
-plt.show()
-plt.close()
-
-#%% Plot microphysics QVPS
-
-#%%% For each hydrometeor
-
-# List of variable names
-variables = ["vol_qc", "vol_qi", "vol_qg", "vol_qs", "vol_qh", "vol_qr"]
-# variables = ["vol_qnc", "vol_qni", "vol_qng", "vol_qns", "vol_qnh", "vol_qnr"]
-# variables = ["D0_c", "D0_i", "D0_g", "D0_s", "D0_h", "D0_r"]
-
-# Create 3x2 subplots
-fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(15, 10), sharex=True, sharey=True)
-axes = axes.flatten()  # Flatten to 1D array for easier iteration
-
-# Plot each variable
-for i, var in enumerate(variables):
-    ds_qvp[var].plot(x="time", ax=axes[i], vmin=0, vmax=0.7, ylim=(0, 10000), cmap="viridis")
-    axes[i].set_title(var)
-
-# Adjust layout
-plt.tight_layout()
-plt.show()
-
-#%%% For the totals
-
-# List of variable names
-variables_q = ["vol_qtot", "vol_qtotice", "vol_qtotliq"]
-variables_qn = ["vol_qntot", "vol_qntotice", "vol_qntotliq"]
-variables_D0 = ["D0_tot", "D0_totice", "D0_totliq"]
-
-# Create 3x3 subplots
-fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(20, 10), sharex=True, sharey=True)
-axes = axes.flatten()  # Flatten to 1D array for easier iteration
-
-# Plot each variable
-for i, var in enumerate(variables_q):
-    ds_qvp[var].plot(x="time", ax=axes[i], vmin=0, vmax=0.7, ylim=(0, 10000), cmap="viridis")
-    axes[i].set_title(var)
-
-for i, var in enumerate(variables_qn):
-    ds_qvp[var].plot(x="time", ax=axes[i+3], vmin=-4, vmax=4, ylim=(0, 10000), cmap="RdBu_r")
-    axes[i+3].set_title(var)
-
-for i, var in enumerate(variables_D0):
-    ds_qvp[var].plot(x="time", ax=axes[i+6], vmin=0, vmax=5, ylim=(0, 10000), cmap="viridis")
-    axes[i+6].set_title(var)
-
-# Adjust layout
-plt.tight_layout()
-plt.show()
 
 
 #%% OLD CODE FROM HERE
