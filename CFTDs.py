@@ -1375,13 +1375,15 @@ qq_color_r="black"
 N_color_r="#800420"
 hist_alpha_r=1
 plot_cb_r = True
+N_r = False
 
 cmaphist_nr="Purples"
-mq_color_nr="#40BAFF"
-qq_color_nr="#40BAFF"
+mq_color_nr="#40BAFF" # indianred
+qq_color_nr="#40BAFF" # indianred
 N_color_nr="cornflowerblue"
 hist_alpha_nr=0.
 plot_cb_nr = False
+N_nr = False
 
 unify_N_xlim = True # unify the xlim for both N line plots?
 
@@ -1484,7 +1486,8 @@ if country=="dmi":
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                          cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_nr else False][0],
                          cmap=cmaphist_nr, colsteps=colsteps,
-                         fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         fsize=20, mincounts=mincounts, cblim=cblim,
+                         N=[(nn+1)/len(vars_to_plot) if N_nr else False][0],
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
                          mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr, N_xlim=N_xlim,
                          alpha=hist_alpha_nr)
@@ -1498,7 +1501,8 @@ if country=="dmi":
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                          cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_r else False][0],
                          cmap=cmaphist_r, colsteps=colsteps,
-                         fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         fsize=20, mincounts=mincounts, cblim=cblim,
+                         N=[(nn+1)/len(vars_to_plot) if N_r else False][0],
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
                          mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r, N_xlim=N_xlim,
                          alpha=hist_alpha_r)
@@ -1610,7 +1614,8 @@ if country=="dmi":
                              binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                              cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_nr else False][0],
                              cmap=cmaphist_nr, colsteps=colsteps,
-                             fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                             fsize=20, mincounts=mincounts, cblim=cblim,
+                             N=[(nn+1)/len(vars_to_plot) if N_nr else False][0],
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
                              mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr, N_xlim=N_xlim,
                              alpha=hist_alpha_nr)
@@ -1633,7 +1638,8 @@ if country=="dmi":
                              binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                              cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_r else False][0],
                              cmap=cmaphist_r, colsteps=colsteps,
-                             fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                             fsize=20, mincounts=mincounts, cblim=cblim,
+                             N=[(nn+1)/len(vars_to_plot) if N_r else False][0],
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
                              mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r, N_xlim=N_xlim,
                              alpha=hist_alpha_r)
@@ -1733,7 +1739,8 @@ if country=="dwd":
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                          cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_nr else False][0],
                          cmap=cmaphist_nr, colsteps=colsteps,
-                         fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         fsize=20, mincounts=mincounts, cblim=cblim,
+                         N=[(nn+1)/len(vars_to_plot) if N_nr else False][0],
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
                          mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr, N_xlim=N_xlim,
                          alpha=hist_alpha_nr)
@@ -1747,7 +1754,8 @@ if country=="dwd":
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                          cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_r else False][0],
                          cmap=cmaphist_r, colsteps=colsteps,
-                         fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         fsize=20, mincounts=mincounts, cblim=cblim,
+                         N=[(nn+1)/len(vars_to_plot) if N_r else False][0],
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
                          mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r, N_xlim=N_xlim,
                          alpha=hist_alpha_r)
@@ -1858,7 +1866,8 @@ if country=="dwd":
                              binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                              cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_nr else False][0],
                              cmap=cmaphist_nr, colsteps=colsteps,
-                             fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                             fsize=20, mincounts=mincounts, cblim=cblim,
+                             N=[(nn+1)/len(vars_to_plot) if N_nr else False][0],
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
                              mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr, N_xlim=N_xlim,
                              alpha=hist_alpha_nr)
@@ -1880,7 +1889,8 @@ if country=="dwd":
                              binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                              cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_r else False][0],
                              cmap=cmaphist_r, colsteps=colsteps,
-                             fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                             fsize=20, mincounts=mincounts, cblim=cblim,
+                             N=[(nn+1)/len(vars_to_plot) if N_r else False][0],
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
                              mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r, N_xlim=N_xlim,
                              alpha=hist_alpha_r)
@@ -1971,6 +1981,7 @@ qq_color_r="black"
 N_color_r="#800420"
 hist_alpha_r=1
 plot_cb_r = True
+N_r = False
 
 cmaphist_nr="Purples"
 mq_color_nr="#40BAFF"
@@ -1978,6 +1989,7 @@ qq_color_nr="#40BAFF"
 N_color_nr="cornflowerblue"
 hist_alpha_nr=0.
 plot_cb_nr = False
+N_nr = False
 
 unify_N_xlim = True # unify the xlim for both N line plots?
 
@@ -2095,7 +2107,8 @@ for sn, savepath in enumerate(savepath_list):
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                          cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_nr else False][0],
                          cmap=cmaphist_nr, colsteps=colsteps,
-                         fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         fsize=20, mincounts=mincounts, cblim=cblim,
+                         N=[(nn+1)/len(vars_to_plot) if N_nr else False][0],
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
                          mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr, N_xlim=N_xlim,
                          alpha=hist_alpha_nr)
@@ -2109,7 +2122,8 @@ for sn, savepath in enumerate(savepath_list):
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                          cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_r else False][0],
                          cmap=cmaphist_r, colsteps=colsteps,
-                         fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         fsize=20, mincounts=mincounts, cblim=cblim,
+                         N=[(nn+1)/len(vars_to_plot) if N_r else False][0],
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
                          mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r, N_xlim=N_xlim,
                          alpha=hist_alpha_r)
