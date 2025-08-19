@@ -1748,6 +1748,824 @@ for i, var in enumerate(variables_D0):
 plt.tight_layout()
 plt.show()
 
+#%% Reload QVPS for obs
+suffix_name = "_selected_cases"
+reload_qvps = True
+ll = "pro"
+
+if reload_qvps:
+    print("Reloading filtered qvps")
+
+    qvps_strat_fil_obs = xr.open_dataset(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform/"+ll+".nc")
+    qvps_strat_relaxed_fil_obs = xr.open_dataset(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform_relaxed/"+ll+".nc")
+    qvps_strat_ML_fil_obs = xr.open_dataset(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform_ML/"+ll+".nc")
+
+    try: # check if exists, if not, create it
+        retrievals_obs
+    except NameError:
+        retrievals_obs = {}
+
+    try: # check if exists, if not, create it
+        retrievals_qvpbased_obs
+    except NameError:
+        retrievals_qvpbased_obs = {}
+
+    for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
+
+        retrievals_obs[stratname] = {}
+        retrievals_qvpbased_obs[stratname] = {}
+
+        retrievals_obs[stratname][ll] = xr.open_dataset(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname+"/"+ll+".nc")
+        retrievals_qvpbased_obs[stratname][ll] = xr.open_dataset(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname+"/"+ll+".nc")
+
+#%% CFTDs Plot simulations vs observations
+
+# If auto_plot is True, then produce and save the plots automatically based on
+# default configurations (only change savepath and ds_to_plot accordingly).
+# If False, then produce the plot as given below and do not save.
+auto_plot = True
+savepath = "/automount/agradar/jgiles/images/CFTDs_sim_vs_obs_cases/stratiform/"
+plot_relhum = True # plot relative humidity with respect to ice and water in a separate plot?
+
+# Which to plot, qvps_strat_fil, qvps_strat_relaxed_fil, qvps_entropy4km_fil or qvps_strat_urML_fil
+ds_to_plot_sim = qvps_strat_fil.copy()
+ds_to_plot_obs = qvps_strat_fil_obs.copy()
+
+X_DBZH_obs = "DBZH_AC"
+X_ZDR_obs = "ZDR_EC_OC_AC"
+X_KDP_obs = "KDP_ML_corrected_EC"
+X_RHO_obs = "RHOHV_NC" # whatch out for what was used actually on the CFTDs.py
+
+var_names_obs = [X_DBZH_obs, X_ZDR_obs, X_KDP_obs, X_RHO_obs] # the order is important!
+
+# Define list of seasons
+selseaslist = [
+            ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
+            # ("DJF", [12,1,2]),
+            # ("MAM", [3,4,5]),
+            # ("JJA", [6,7,8]),
+            # ("SON", [9,10,11]),
+           ] # ("nameofseas", [months included])
+
+# adjustment from K to C (disabled now because I know that all qvps have ERA5 data)
+adjtemp = 0
+# if (qvps_strat_fil["TEMP"]>100).any(): #if there is any temp value over 100, we assume the units are Kelvin
+#     print("at least one TEMP value > 100 found, assuming TEMP is in K and transforming to C")
+#     adjtemp = -273.15 # adjustment parameter from K to C
+
+# top temp limit (only works if auto_plot=False)
+ytlim=-20
+
+# season to plot (only works if auto_plot=False)
+selseas = selseaslist[0]
+selmonths = selseas[1]
+
+# Temp bins
+tb=1# degress C
+
+# Min counts per Temp layer
+mincounts=30
+
+#Colorbar limits and step
+cblim=[0,10]
+colsteps=10
+
+# Set colors for rimed and not rimed cases
+cmaphist_sim="Oranges"
+mq_color_sim="black"
+qq_color_sim="black"
+N_color_sim="#800420"
+hist_alpha_sim=0.
+plot_cb_sim = False
+N_sim = False
+
+cmaphist_obs="Purples"
+mq_color_obs="indianred"
+qq_color_obs="indianred"
+N_color_obs="cornflowerblue"
+hist_alpha_obs=0.
+plot_cb_obs = False
+N_obs = False
+
+unify_N_xlim = True # unify the xlim for both N line plots?
+
+
+savedict = {"custom": None} # placeholder for the for loop below, not important
+
+# Plot horizontally
+# DMI
+# Native worst-resolution of the data (for 1-byte moments)
+# DBZH: 0.5 dB
+# ZDR: 0.0625 dB
+# KDP: complicated. From 0.013 at KDP approaching zero to 7.42 at extreme KDP. KDP min absolute value is 0.25 and max abs is 150 (both positive and negative)
+# RHOHV: scales with a square root (finer towards RHOHV=1), so from 0.00278 at RHOHV=0.7 to 0.002 resolution at RHOHV=1
+# PHIDP: 0.708661 deg
+loc = utils.find_loc(utils.locs, ff[0])
+if loc in ['afy', 'ank', 'gzt', 'hty', 'svs']:
+
+    vars_to_plot = {X_DBZH: [0, 45.5, 0.5],
+                    X_ZDR: [-0.505, 2.05, 0.1],
+                    X_KDP:  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
+                    X_RHO: [0.9, 1.002, 0.002]}
+
+    if auto_plot:
+        vtp = [{X_DBZH: [0, 45.5, 0.5],
+                        X_ZDR: [-0.505, 2.05, 0.1],
+                        X_KDP:  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
+                        X_RHO: [0.9, 1.002, 0.002]},
+               {"DBZH": [0, 45.5, 0.5],
+                               "ZDR": [-0.505, 2.05, 0.1],
+                               "KDP":  [-0.1, 0.55, 0.05], # [-0.1, 0.55, 0.05],
+                               "RHOHV": [0.9, 1.002, 0.002]} ]
+        ytlimlist = [-20, -50]
+        cond_name = os.path.basename(os.path.normpath(savepath))
+        savedict = {}
+        for selseas in selseaslist:
+            savedict.update(
+                        {selseas[0]+"/"+loc+"_cftd_"+cond_name+".png": [vtp[0], ytlimlist[0], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_uncorr.png": [vtp[1], ytlimlist[0], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_uncorr_extended.png": [vtp[1], ytlimlist[1], selseas[1]],
+                        }
+                            )
+
+    for savename in savedict.keys():
+        if auto_plot:
+            vars_to_plot = savedict[savename][0]
+            ytlim = savedict[savename][1]
+            selmonths = savedict[savename][2]
+
+        fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+        for nn, vv in enumerate(vars_to_plot.keys()):
+
+            if "_uncorr" not in savename:
+                vv_obs = var_names_obs[nn]
+            else: vv_obs = vv
+
+            so=False
+            binsx2=None
+            rd=10 # arbitrarily large decimal position to round to (so it is actually not rounded)
+            if "DBZH" in vv:
+                so=True
+                binsx2 = [0, 46, 1]
+                rd = 1 # decimal position to round to
+            if "ZDR" in vv:
+                so=True
+                binsx2 = [-0.5, 2.1, 0.1]
+                rd=1
+            if "KDP" in vv:
+                so=True #True
+                binsx2 = [-0.1, 0.52, 0.02]
+                rd=2
+            if "RHOHV" in vv:
+                so = True
+                binsx2 = [0.9, 1.005, 0.005]
+                rd=3
+
+            adj=1
+
+            N_xlim = None
+            if unify_N_xlim:
+                N_xlim = (0, ds_to_plot_sim[vv].chunk({"time":-1}).sel(\
+                                                        time=ds_to_plot_sim['time'].dt.month.isin(selmonths)).time.size)
+
+            # Plot simulations
+            #!!! For some reason SVS now requires rechunking here
+            utils.hist2d(ax[nn], ds_to_plot_sim[vv].chunk({"time":-1}).sel(\
+                                                    time=ds_to_plot_sim['time'].dt.month.isin(selmonths)).round(rd)*adj,
+                         ds_to_plot_sim["TEMP"].sel(\
+                                             time=ds_to_plot_sim['time'].dt.month.isin(selmonths))+adjtemp,
+                         whole_x_range=True,
+                         binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                         cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_sim else False][0],
+                         cmap=cmaphist_sim, colsteps=colsteps,
+                         fsize=20, mincounts=mincounts, cblim=cblim,
+                         N=[(nn+1)/len(vars_to_plot) if N_sim else False][0],
+                         cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
+                         mq_color=mq_color_sim, qq_color=qq_color_sim, N_color=N_color_sim, N_xlim=N_xlim,
+                         alpha=hist_alpha_sim)
+
+            # Plot observations
+            utils.hist2d(ax[nn], ds_to_plot_obs[vv_obs].chunk({"time":-1}).sel(\
+                                                    time=ds_to_plot_obs['time'].dt.month.isin(selmonths)).round(rd)*adj,
+                         ds_to_plot_obs["TEMP"].sel(\
+                                             time=ds_to_plot_obs['time'].dt.month.isin(selmonths))+adjtemp,
+                         whole_x_range=True,
+                         binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                         cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_obs else False][0],
+                         cmap=cmaphist_obs, colsteps=colsteps,
+                         fsize=20, mincounts=mincounts, cblim=cblim,
+                         N=[(nn+1)/len(vars_to_plot) if N_obs else False][0],
+                         cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
+                         mq_color=mq_color_obs, qq_color=qq_color_obs, N_color=N_color_obs, N_xlim=N_xlim,
+                         alpha=hist_alpha_obs)
+
+            ax[nn].set_ylim(15,ytlim)
+            ax[nn].set_xlabel(vv+" / "+vv_obs, fontsize=10)
+
+            ax[nn].tick_params(labelsize=15) #change font size of ticks
+            plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+
+        ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+
+        if auto_plot:
+            # Create savefolder
+            savepath_seas = os.path.dirname(savepath+savename)
+            if not os.path.exists(savepath_seas):
+                os.makedirs(savepath_seas)
+            fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
+            print("AUTO PLOT: saved "+savename)
+
+    if plot_relhum:
+
+        # Calculate RH for simulations
+        ds_to_plot_e = utils.vapor_pressure(ds_to_plot_sim.pres, ds_to_plot_sim.qv)
+        ds_to_plot_e_sw = utils.saturation_vapor_pressure_water(ds_to_plot_sim.temp)
+        ds_to_plot_e_si = utils.saturation_vapor_pressure_ice(ds_to_plot_sim.temp)
+        ds_to_plot_alpha = utils.mixed_phase_parameter(ds_to_plot_sim.temp)
+        ds_to_plot_e_sm = utils.saturation_vapor_pressure_mixed(ds_to_plot_e_sw,
+                                                                ds_to_plot_e_si,
+                                                                ds_to_plot_alpha)
+
+        ds_to_plot_RH = ds_to_plot_e / ds_to_plot_e_sm *100
+        ds_to_plot_RHi = ds_to_plot_e / ds_to_plot_e_si *100
+        ds_to_plot_RHw = ds_to_plot_e / ds_to_plot_e_sw *100
+
+        ds_to_plot_relhum = xr.Dataset({"RH": ds_to_plot_RH.copy().compute(),
+                             "RHi": ds_to_plot_RHi.copy().compute(),
+                             "RHw": ds_to_plot_RHw.copy().compute(),
+            }).assign_coords({"TEMP":ds_to_plot_sim.TEMP})
+
+        # Calculate RH for observations
+        ds_to_plot_e_sw = utils.saturation_vapor_pressure_water(ds_to_plot_obs.TEMP+273.15)
+        ds_to_plot_e_si = utils.saturation_vapor_pressure_ice(ds_to_plot_obs.TEMP+273.15)
+        ds_to_plot_alpha = utils.mixed_phase_parameter(ds_to_plot_obs.TEMP+273.15)
+        ds_to_plot_e_sm = utils.saturation_vapor_pressure_mixed(ds_to_plot_e_sw,
+                                                                ds_to_plot_e_si,
+                                                                ds_to_plot_alpha)
+
+        ds_to_plot_RH = ds_to_plot_obs.RH
+        ds_to_plot_RHi = ds_to_plot_obs.RH*ds_to_plot_e_sm/ds_to_plot_e_si
+        ds_to_plot_RHw = ds_to_plot_obs.RH*ds_to_plot_e_sm/ds_to_plot_e_sw
+
+        ds_to_plot_relhum_obs = xr.Dataset({"RH": ds_to_plot_RH.copy().compute(),
+                             "RHi": ds_to_plot_RHi.copy().compute(),
+                             "RHw": ds_to_plot_RHw.copy().compute(),
+            }).assign_coords({"TEMP":ds_to_plot_obs.TEMP})
+
+
+        vars_to_plot = {
+                        "RHi": [50, 125, 5],
+                        "RHw": [50, 125, 5],
+                        "RH": [50, 125, 5],
+                        }
+
+        if auto_plot:
+            vtp = [ {
+                    "RHi": [50, 125, 5],
+                    "RHw": [50, 125, 5],
+                    "RH": [50, 125, 5],
+                    },
+                   ]
+
+            ytlimlist = [-20, -50]
+            savedict = {}
+            cond_name = os.path.basename(os.path.normpath(savepath))
+            for selseas in selseaslist:
+                savedict.update(
+                            {selseas[0]+"/"+loc+"_cftd_"+cond_name+"_RH.png": [vtp[0], ytlimlist[0], selseas[1]],
+                            selseas[0]+"/"+loc+"_cftd_"+cond_name+"_RH_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
+                            }
+                                )
+
+        for savename in savedict.keys():
+            if auto_plot:
+                vars_to_plot = savedict[savename][0]
+                ytlim = savedict[savename][1]
+                selmonths = savedict[savename][2]
+
+            fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15,5), width_ratios=(1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+            for nn, vv in enumerate(vars_to_plot.keys()):
+                so=False
+                binsx2=None
+                adj=1
+
+                # plot simulations
+                utils.hist2d(ax[nn], ds_to_plot_relhum[vv].sel(time=ds_to_plot_relhum['time'].dt.month.isin(selmonths))*adj,
+                             ds_to_plot_relhum["TEMP"].sel(time=ds_to_plot_relhum['time'].dt.month.isin(selmonths))+adjtemp,
+                             whole_x_range=True,
+                             binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                             cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_sim else False][0],
+                             cmap=cmaphist_sim, colsteps=colsteps,
+                             fsize=20, mincounts=mincounts, cblim=cblim,
+                             N=[(nn+1)/len(vars_to_plot) if N_sim else False][0],
+                             cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
+                             mq_color=mq_color_sim, qq_color=qq_color_sim, N_color=N_color_sim, N_xlim=N_xlim,
+                             alpha=hist_alpha_sim)
+
+
+                # plot observations
+                utils.hist2d(ax[nn], ds_to_plot_relhum_obs[vv].sel(time=ds_to_plot_relhum_obs['time'].dt.month.isin(selmonths))*adj,
+                             ds_to_plot_relhum_obs["TEMP"].sel(time=ds_to_plot_relhum_obs['time'].dt.month.isin(selmonths))+adjtemp,
+                             whole_x_range=True,
+                             binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                             cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_obs else False][0],
+                             cmap=cmaphist_obs, colsteps=colsteps,
+                             fsize=20, mincounts=mincounts, cblim=cblim,
+                             N=[(nn+1)/len(vars_to_plot) if N_obs else False][0],
+                             cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
+                             mq_color=mq_color_obs, qq_color=qq_color_obs, N_color=N_color_obs, N_xlim=N_xlim,
+                             alpha=hist_alpha_obs)
+
+                ax[nn].set_ylim(15,ytlim)
+                ax[nn].set_xlabel(vv, fontsize=10)
+
+                ax[nn].tick_params(labelsize=15) #change font size of ticks
+                plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+
+            ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+            if auto_plot:
+                # Create savefolder
+                savepath_seas = os.path.dirname(savepath+savename)
+                if not os.path.exists(savepath_seas):
+                    os.makedirs(savepath_seas)
+                fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
+                print("AUTO PLOT: saved "+savename)
+
+# DWD
+# plot CFTDs moments
+elif loc in ['pro', 'tur', 'umd', 'ess']:
+
+    vars_to_plot = {X_DBZH: [0, 46, 1],
+                    X_ZDR: [-0.5, 2.1, 0.1],
+                    X_KDP: [-0.1, 0.52, 0.02],
+                    X_RHO: [0.9, 1.004, 0.004]}
+
+    if auto_plot:
+        vtp = [{X_DBZH: [0, 46, 1],
+                        X_ZDR: [-0.5, 2.1, 0.1],
+                        X_KDP:  [-0.1, 0.52, 0.02],
+                        X_RHO: [0.9, 1.004, 0.004]},
+               {"DBZH": [0, 46, 1],
+                               "ZDR": [-0.5, 2.1, 0.1],
+                               "KDP":  [-0.1, 0.52, 0.02],
+                               "RHOHV": [0.9, 1.004, 0.004]} ]
+        ytlimlist = [-20, -50]
+        savedict = {}
+        cond_name = os.path.basename(os.path.normpath(savepath))
+        for selseas in selseaslist:
+            savedict.update(
+                        {selseas[0]+"/"+loc+"_cftd_"+cond_name+".png": [vtp[0], ytlimlist[0], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_uncorr.png": [vtp[1], ytlimlist[0], selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_uncorr_extended.png": [vtp[1], ytlimlist[1], selseas[1]],
+                        }
+                            )
+
+    for savename in savedict.keys():
+        if auto_plot:
+            vars_to_plot = savedict[savename][0]
+            ytlim = savedict[savename][1]
+            selmonths = savedict[savename][2]
+
+        fig, ax = plt.subplots(1, 4, sharey=True, figsize=(20,5), width_ratios=(1,1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+        for nn, vv in enumerate(vars_to_plot.keys()):
+
+            if "_uncorr" not in savename:
+                vv_obs = var_names_obs[nn]
+            else: vv_obs = vv
+
+            so=False
+            binsx2=None
+            adj=1
+            if "RHOHV" in vv:
+                so = True
+                binsx2 = [0.9, 1.005, 0.005]
+            if "KDP" in vv:
+                adj=1
+
+            N_xlim = None
+            if unify_N_xlim:
+                N_xlim = (0, ds_to_plot_sim[vv].sel(\
+                                                time=ds_to_plot_sim['time'].dt.month.isin(selmonths)).time.size)
+
+            # Plot simulations
+            utils.hist2d(ax[nn], ds_to_plot_sim[vv].sel(time=ds_to_plot_sim['time'].dt.month.isin(selmonths))*adj,
+                         ds_to_plot_sim["TEMP"].sel(time=ds_to_plot_sim['time'].dt.month.isin(selmonths))+adjtemp,
+                         whole_x_range=True,
+                         binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                         cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_sim else False][0],
+                         cmap=cmaphist_sim, colsteps=colsteps,
+                         fsize=20, mincounts=mincounts, cblim=cblim,
+                         N=[(nn+1)/len(vars_to_plot) if N_sim else False][0],
+                         cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
+                         mq_color=mq_color_sim, qq_color=qq_color_sim, N_color=N_color_sim, N_xlim=N_xlim,
+                         alpha=hist_alpha_sim)
+
+
+            # Plot observations
+            utils.hist2d(ax[nn], ds_to_plot_obs[vv_obs].sel(\
+                                                    time=ds_to_plot_obs['time'].dt.month.isin(selmonths))*adj,
+                         ds_to_plot_obs["TEMP"].sel(\
+                                             time=ds_to_plot_obs['time'].dt.month.isin(selmonths))+adjtemp,
+                         whole_x_range=True,
+                         binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                         cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_obs else False][0],
+                         cmap=cmaphist_obs, colsteps=colsteps,
+                         fsize=20, mincounts=mincounts, cblim=cblim,
+                         N=[(nn+1)/len(vars_to_plot) if N_obs else False][0],
+                         cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
+                         mq_color=mq_color_obs, qq_color=qq_color_obs, N_color=N_color_obs, N_xlim=N_xlim,
+                         alpha=hist_alpha_obs)
+
+
+            ax[nn].set_ylim(15,ytlim)
+            ax[nn].set_xlabel(vv+" / "+vv_obs, fontsize=10)
+
+            ax[nn].tick_params(labelsize=15) #change font size of ticks
+            plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+
+        ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+        if auto_plot:
+            # Create savefolder
+            savepath_seas = os.path.dirname(savepath+savename)
+            if not os.path.exists(savepath_seas):
+                os.makedirs(savepath_seas)
+            fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
+            print("AUTO PLOT: saved "+savename)
+
+    if plot_relhum:
+
+        # Calculate RH for simulations
+        ds_to_plot_e = utils.vapor_pressure(ds_to_plot_sim.pres, ds_to_plot_sim.qv)
+        ds_to_plot_e_sw = utils.saturation_vapor_pressure_water(ds_to_plot_sim.temp)
+        ds_to_plot_e_si = utils.saturation_vapor_pressure_ice(ds_to_plot_sim.temp)
+        ds_to_plot_alpha = utils.mixed_phase_parameter(ds_to_plot_sim.temp)
+        ds_to_plot_e_sm = utils.saturation_vapor_pressure_mixed(ds_to_plot_e_sw,
+                                                                ds_to_plot_e_si,
+                                                                ds_to_plot_alpha)
+
+        ds_to_plot_RH = ds_to_plot_e / ds_to_plot_e_sm *100
+        ds_to_plot_RHi = ds_to_plot_e / ds_to_plot_e_si *100
+        ds_to_plot_RHw = ds_to_plot_e / ds_to_plot_e_sw *100
+
+        ds_to_plot_relhum = xr.Dataset({"RH": ds_to_plot_RH.copy().compute(),
+                             "RHi": ds_to_plot_RHi.copy().compute(),
+                             "RHw": ds_to_plot_RHw.copy().compute(),
+            }).assign_coords({"TEMP":ds_to_plot_sim.TEMP})
+
+        # Calculate RH for observations
+        ds_to_plot_e_sw = utils.saturation_vapor_pressure_water(ds_to_plot_obs.TEMP+273.15)
+        ds_to_plot_e_si = utils.saturation_vapor_pressure_ice(ds_to_plot_obs.TEMP+273.15)
+        ds_to_plot_alpha = utils.mixed_phase_parameter(ds_to_plot_obs.TEMP+273.15)
+        ds_to_plot_e_sm = utils.saturation_vapor_pressure_mixed(ds_to_plot_e_sw,
+                                                                ds_to_plot_e_si,
+                                                                ds_to_plot_alpha)
+
+        ds_to_plot_RH = ds_to_plot_obs.RH
+        ds_to_plot_RHi = ds_to_plot_obs.RH*ds_to_plot_e_sm/ds_to_plot_e_si
+        ds_to_plot_RHw = ds_to_plot_obs.RH*ds_to_plot_e_sm/ds_to_plot_e_sw
+
+        ds_to_plot_relhum_obs = xr.Dataset({"RH": ds_to_plot_RH.copy().compute(),
+                             "RHi": ds_to_plot_RHi.copy().compute(),
+                             "RHw": ds_to_plot_RHw.copy().compute(),
+            }).assign_coords({"TEMP":ds_to_plot_obs.TEMP})
+
+
+
+        vars_to_plot = {
+                        "RHi": [50, 125, 5],
+                        "RHw": [50, 125, 5],
+                        "RH": [50, 125, 5],
+                        }
+
+        if auto_plot:
+            vtp = [ {
+                    "RHi": [50, 125, 5],
+                    "RHw": [50, 125, 5],
+                    "RH": [50, 125, 5],
+                    },
+                   ]
+
+            ytlimlist = [-20, -50]
+            savedict = {}
+            cond_name = os.path.basename(os.path.normpath(savepath))
+            for selseas in selseaslist:
+                savedict.update(
+                            {selseas[0]+"/"+loc+"_cftd_"+cond_name+"_RH.png": [vtp[0], ytlimlist[0], selseas[1]],
+                            selseas[0]+"/"+loc+"_cftd_"+cond_name+"_RH_extended.png": [vtp[0], ytlimlist[1], selseas[1]],
+                            }
+                                )
+
+        for savename in savedict.keys():
+            if auto_plot:
+                vars_to_plot = savedict[savename][0]
+                ytlim = savedict[savename][1]
+                selmonths = savedict[savename][2]
+
+            fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15,5), width_ratios=(1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+            for nn, vv in enumerate(vars_to_plot.keys()):
+                so=False
+                binsx2=None
+                adj=1
+
+                # plot simulations
+                utils.hist2d(ax[nn], ds_to_plot_relhum[vv].sel(time=ds_to_plot_relhum['time'].dt.month.isin(selmonths))*adj,
+                             ds_to_plot_relhum["TEMP"].sel(time=ds_to_plot_relhum['time'].dt.month.isin(selmonths))+adjtemp,
+                             whole_x_range=True,
+                             binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                             cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_sim else False][0],
+                             cmap=cmaphist_sim, colsteps=colsteps,
+                             fsize=20, mincounts=mincounts, cblim=cblim,
+                             N=[(nn+1)/len(vars_to_plot) if N_sim else False][0],
+                             cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
+                             mq_color=mq_color_sim, qq_color=qq_color_sim, N_color=N_color_sim, N_xlim=N_xlim,
+                             alpha=hist_alpha_sim)
+
+
+                # plot observations
+                utils.hist2d(ax[nn], ds_to_plot_relhum_obs[vv].sel(time=ds_to_plot_relhum_obs['time'].dt.month.isin(selmonths))*adj,
+                             ds_to_plot_relhum_obs["TEMP"].sel(time=ds_to_plot_relhum_obs['time'].dt.month.isin(selmonths))+adjtemp,
+                             whole_x_range=True,
+                             binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                             cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_obs else False][0],
+                             cmap=cmaphist_obs, colsteps=colsteps,
+                             fsize=20, mincounts=mincounts, cblim=cblim,
+                             N=[(nn+1)/len(vars_to_plot) if N_obs else False][0],
+                             cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
+                             mq_color=mq_color_obs, qq_color=qq_color_obs, N_color=N_color_obs, N_xlim=N_xlim,
+                             alpha=hist_alpha_obs)
+
+
+                ax[nn].set_ylim(15,ytlim)
+                ax[nn].set_xlabel(vv, fontsize=10)
+
+                ax[nn].tick_params(labelsize=15) #change font size of ticks
+                plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+
+            ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+            if auto_plot:
+                # Create savefolder
+                savepath_seas = os.path.dirname(savepath+savename)
+                if not os.path.exists(savepath_seas):
+                    os.makedirs(savepath_seas)
+                fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
+                print("AUTO PLOT: saved "+savename)
+
+#%% CFTDs microphysics Plot (microphysics from ICON-EMVORADO simulations vs observations)
+# We assume that everything above ML is frozen and everything below is liquid
+
+# In case the ML top and bottom variables are not available, use this isotherms
+TEMP_ML_top = 0
+TEMP_ML_bottom = 4
+
+# If auto_plot is True, then produce and save the plots automatically based on
+# default configurations (only change savepath and ds_to_plot accordingly).
+# If False, then produce the plot as given below (selecting the first option of
+# savepath_list and ds_to_plot_list) and do not save.
+auto_plot = True
+savepath_list = [
+                "/automount/agradar/jgiles/images/CFTDs_sim_vs_obs_cases/stratiform/",
+                "/automount/agradar/jgiles/images/CFTDs_sim_vs_obs_cases/stratiform_QVPbased/",
+                # "/automount/agradar/jgiles/images/CFTDs_sim_vs_obs_cases/stratiform_KDPpos/",
+                # "/automount/agradar/jgiles/images/CFTDs_sim_vs_obs_cases/stratiform_KDPpos_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs_sim_vs_obs_cases/stratiform_relaxed/",
+                "/automount/agradar/jgiles/images/CFTDs_sim_vs_obs_cases/stratiform_relaxed_QVPbased/",
+                # "/automount/agradar/jgiles/images/CFTDs_sim_vs_obs_cases/stratiform_relaxed_KDPpos/",
+                # "/automount/agradar/jgiles/images/CFTDs_sim_vs_obs_cases/stratiform_relaxed_KDPpos_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs_sim_vs_obs_cases/entropy4km/",
+                "/automount/agradar/jgiles/images/CFTDs_sim_vs_obs_cases/entropy4km_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs_sim_vs_obs_cases/stratiform_urML/",
+                "/automount/agradar/jgiles/images/CFTDs_sim_vs_obs_cases/stratiform_urML_QVPbased/",
+                 ]
+
+# Which to plot, retrievals or retrievals_qvpbased, stratiform or stratiform_relaxed
+loc = utils.find_loc(utils.locs, ff[0])
+ds_to_plot_list = [
+                    microphys["stratiform"][loc].copy(),
+                    microphys_qvpbased["stratiform"][loc].copy(),
+                    # retrievals["stratiform"][loc].copy().where(qvps_strat_fil.KDP_ML_corrected>0.01),
+                    # retrievals_qvpbased["stratiform"][loc].copy().where(qvps_strat_fil.KDP>0.01),
+                    microphys["stratiform_relaxed"][loc].copy(),
+                    microphys_qvpbased["stratiform_relaxed"][loc].copy(),
+                    # retrievals["stratiform_relaxed"][loc].copy().where(qvps_strat_relaxed_fil.KDP_ML_corrected>0.01),
+                    # retrievals_qvpbased["stratiform_relaxed"][loc].copy().where(qvps_strat_relaxed_fil.KDP>0.01),
+                    microphys["entropy4km"][loc].copy(),
+                    microphys_qvpbased["entropy4km"][loc].copy(),
+                    microphys["stratiform_urML"][loc].copy(),
+                    microphys_qvpbased["stratiform_urML"][loc].copy(),
+                    ]
+
+ds_to_plot_list_obs = [
+                    retrievals_obs["stratiform"][loc].copy(),
+                    retrievals_qvpbased_obs["stratiform"][loc].copy(),
+                    # retrievals_obs["stratiform"][loc].copy().where(qvps_strat_fil.KDP_ML_corrected>0.01),
+                    # retrievals_qvpbased_obs["stratiform"][loc].copy().where(qvps_strat_fil.KDP>0.01),
+                    retrievals_obs["stratiform_relaxed"][loc].copy(),
+                    retrievals_qvpbased_obs["stratiform_relaxed"][loc].copy(),
+                    # retrievals_obs["stratiform_relaxed"][loc].copy().where(qvps_strat_relaxed_fil.KDP_ML_corrected>0.01),
+                    # retrievals_qvpbased_obs["stratiform_relaxed"][loc].copy().where(qvps_strat_relaxed_fil.KDP>0.01),
+                    retrievals_obs["stratiform_ML"][loc].copy(),
+                    retrievals_qvpbased_obs["stratiform_ML"][loc].copy(),
+                    retrievals_obs["stratiform"][loc].copy(),
+                    retrievals_qvpbased_obs["stratiform"][loc].copy(),
+                    ]
+
+
+# Define list of seasons
+selseaslist = [
+            ("full", [1,2,3,4,5,6,7,8,9,10,11,12]),
+            # ("DJF", [12,1,2]),
+            # ("MAM", [3,4,5]),
+            # ("JJA", [6,7,8]),
+            # ("SON", [9,10,11]),
+           ] # ("nameofseas", [months included])
+
+# adjustment from K to C (disabled now because I know that all qvps have ERA5 data)
+adjtemp = 0
+# if (qvps_strat_fil["TEMP"]>100).any(): #if there is any temp value over 100, we assume the units are Kelvin
+#     print("at least one TEMP value > 100 found, assuming TEMP is in K and transforming to C")
+#     adjtemp = -273.15 # adjustment parameter from K to C
+
+# top temp limit (only works if auto_plot=False)
+ytlim=-20
+
+# season to plot (only works if auto_plot=False)
+selseas = selseaslist[0]
+selmonths = selseas[1]
+
+# Select which retrievals to plot (only works if auto_plot=False)
+IWC = "vol_qtot" # iwc_zh_t_hogan2006, iwc_zh_t_hogan2006_model, iwc_zh_t_hogan2006_combined, iwc_zdr_zh_kdp_carlin2021
+LWC = "vol_qtot" # lwc_zh_zdr_reimann2021, lwc_zh_zdr_rhyzkov2022, lwc_kdp_reimann2021, lwc_ah_reimann2021, lwc_hybrid_reimann2021
+Dm_ice = "D0_tot" # Dm_ice_zh_matrosov2019, Dm_ice_zh_kdp_carlin2021, Dm_ice_zdp_kdp_carlin2021, Dm_hybrid_blanke2023
+Dm_rain = "D0_tot" # Dm_rain_zdr_chen, Dm_rain_zdr_hu2022, Dm_rain_zdr_bringi2009
+Nt_ice = "vol_qntot" # Nt_ice_iwc_zh_t_hu2022, Nt_ice_iwc_zh_t_carlin2021, Nt_ice_iwc_zh_t_combined_hu2022, Nt_ice_iwc_zh_t_combined_carlin2021, Nt_ice_iwc_zdr_zh_kdp_hu2022, Nt_ice_iwc_zdr_zh_kdp_carlin2021
+Nt_rain = "vol_qntot" # Nt_rain_zh_zdr_rhyzkov2020
+
+IWC_obs = "iwc_zdr_zh_kdp_carlin2021" # iwc_zh_t_hogan2006, iwc_zh_t_hogan2006_model, iwc_zh_t_hogan2006_combined, iwc_zdr_zh_kdp_carlin2021
+LWC_obs = "lwc_hybrid_reimann2021" # lwc_zh_zdr_reimann2021, lwc_zh_zdr_rhyzkov2022, lwc_kdp_reimann2021, lwc_ah_reimann2021, lwc_hybrid_reimann2021
+Dm_ice_obs = "Dm_ice_zdp_kdp_carlin2021" # Dm_ice_zh_matrosov2019, Dm_ice_zh_kdp_carlin2021, Dm_ice_zdp_kdp_carlin2021, Dm_hybrid_blanke2023
+Dm_rain_obs = "Dm_rain_zdr_bringi2009" # Dm_rain_zdr_chen, Dm_rain_zdr_hu2022, Dm_rain_zdr_bringi2009
+Nt_ice_obs = "Nt_ice_iwc_zdr_zh_kdp_carlin2021" # Nt_ice_iwc_zh_t_hu2022, Nt_ice_iwc_zh_t_carlin2021, Nt_ice_iwc_zh_t_combined_hu2022, Nt_ice_iwc_zh_t_combined_carlin2021, Nt_ice_iwc_zdr_zh_kdp_hu2022, Nt_ice_iwc_zdr_zh_kdp_carlin2021
+Nt_rain_obs = "Nt_rain_zh_zdr_rhyzkov2020" # Nt_rain_zh_zdr_rhyzkov2020
+
+vars_to_plot = {"IWC/LWC [g/m^{3}]": [-0.1, 0.82, 0.02], # [-0.1, 0.82, 0.02],
+                "Dm [mm]": [0, 4.1, 0.1], # [0, 3.1, 0.1],
+                "Nt [log10(1/L)]": [-2, 2.1, 0.1], # [-2, 2.1, 0.1],
+                }
+
+savedict = {"custom": None} # placeholder for the for loop below, not important
+
+for sn, savepath in enumerate(savepath_list):
+    ds_to_plot = ds_to_plot_list[sn].copy()
+    ds_to_plot_obs = ds_to_plot_list_obs[sn].copy()
+
+    if auto_plot:
+        ytlimlist = [-20, -50]
+        cond_name = os.path.basename(os.path.normpath(savepath))
+        savedict = {}
+        for selseas in selseaslist:
+            savedict.update(
+                        {selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys.png": [ytlimlist[0],
+                                    "vol_qtotice", "vol_qtotliq",
+                                    "D0_totice", "D0_totliq",
+                                    "vol_qntotice", "vol_qntotliq", selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_extended.png": [ytlimlist[1],
+                                    "vol_qtotice", "vol_qtotliq",
+                                    "D0_totice", "D0_totliq",
+                                    "vol_qntotice", "vol_qntotliq", selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_tot.png": [ytlimlist[0],
+                                    "vol_qtot", "vol_qtot",
+                                    "D0_tot", "D0_tot",
+                                    "vol_qntot", "vol_qntot", selseas[1]],
+                        selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_tot_extended.png": [ytlimlist[1],
+                                    "vol_qtot", "vol_qtot",
+                                    "D0_tot", "D0_tot",
+                                    "vol_qntot", "vol_qntot", selseas[1]],
+                        }
+                    )
+
+    for savename in savedict.keys():
+        if auto_plot:
+            ytlim = savedict[savename][0]
+            IWC = savedict[savename][1]
+            LWC = savedict[savename][2]
+            Dm_ice = savedict[savename][3]
+            Dm_rain = savedict[savename][4]
+            Nt_ice = savedict[savename][5]
+            Nt_rain = savedict[savename][6]
+            selmonths = savedict[savename][7]
+
+        try:
+            if ds_to_plot.height_ml_new_gia.notnull().all():
+                retreivals_merged = xr.Dataset({
+                                                "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].z > ds_to_plot.height_ml_new_gia,
+                                                                                  ds_to_plot[LWC].where(ds_to_plot[LWC].z < ds_to_plot.height_ml_bottom_new_gia ) ),
+                                                "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].z > ds_to_plot.height_ml_new_gia,
+                                                                                  ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ),
+                                                "Nt [log10(1/L)]": (ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].z > ds_to_plot.height_ml_new_gia,
+                                                                                  ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ) ),
+                    })
+            else:
+                # if ML is not valid at all timesteps, we filter with 0-4 degrees isotherms
+                retreivals_merged = xr.Dataset({
+                                                "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].TEMP < TEMP_ML_top,
+                                                                                  ds_to_plot[LWC].where(ds_to_plot[LWC].TEMP > TEMP_ML_bottom ) ),
+                                                "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].TEMP < TEMP_ML_top,
+                                                                                  ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].TEMP > TEMP_ML_bottom ) ),
+                                                "Nt [log10(1/L)]": ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].TEMP < TEMP_ML_top,
+                                                                                  ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].TEMP > TEMP_ML_bottom ) ),
+                    })
+
+        except KeyError:
+            print("Unable to plot "+savename+". Some retrieval is not present in the dataset.")
+            continue
+
+        try:
+            retreivals_merged_obs = xr.Dataset({
+                                            "IWC/LWC [g/m^{3}]": ds_to_plot_obs[IWC_obs].where(ds_to_plot_obs[IWC_obs].z > ds_to_plot_obs.height_ml_new_gia,
+                                                                              ds_to_plot_obs[LWC_obs].where(ds_to_plot_obs[LWC_obs].z < ds_to_plot_obs.height_ml_bottom_new_gia ) ),
+                                            "Dm [mm]": ds_to_plot_obs[Dm_ice_obs].where(ds_to_plot_obs[Dm_ice_obs].z > ds_to_plot_obs.height_ml_new_gia,
+                                                                              ds_to_plot_obs[Dm_rain_obs].where(ds_to_plot_obs[Dm_rain_obs].z < ds_to_plot_obs.height_ml_bottom_new_gia ) ),
+                                            "Nt [log10(1/L)]": (ds_to_plot_obs[Nt_ice_obs].where(ds_to_plot_obs[Nt_ice_obs].z > ds_to_plot_obs.height_ml_new_gia,
+                                                                              ds_to_plot_obs[Nt_rain_obs].where(ds_to_plot_obs[Nt_rain_obs].z < ds_to_plot_obs.height_ml_bottom_new_gia ) ) ),
+                })
+        except KeyError:
+            print("Unable to plot "+savename+". Some retrieval is not present in the dataset.")
+            continue
+
+
+        fig, ax = plt.subplots(1, 3, sharey=True, figsize=(15,5), width_ratios=(1,1,1.15+0.05*2))# we make the width or height ratio of the last plot 15%+0.05*2 larger to accomodate the colorbar without distorting the subplot size
+
+        for nn, vv in enumerate(vars_to_plot.keys()):
+
+            N_xlim = None
+            if unify_N_xlim:
+                N_xlim = (0, retreivals_merged[vv].sel(\
+                                                time=retreivals_merged['time'].dt.month.isin(selmonths)).time.size)
+
+            so=False
+            binsx2=None
+            adj=1
+            if "RHOHV" in vv:
+                so = True
+                binsx2 = [0.9, 1.005, 0.005]
+            if "KDP" in vv:
+                adj=1
+
+            # plot simulations
+
+            #!!! For some reason SVS now requires rechunking here
+            utils.hist2d(ax[nn], retreivals_merged[vv].chunk({"time":-1}).sel(time=retreivals_merged['time'].dt.month.isin(selmonths))*adj,
+                         retreivals_merged["TEMP"].sel(time=retreivals_merged['time'].dt.month.isin(selmonths))+adjtemp,
+                         whole_x_range=True,
+                         binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                         cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_sim else False][0],
+                         cmap=cmaphist_sim, colsteps=colsteps,
+                         fsize=20, mincounts=mincounts, cblim=cblim,
+                         N=[(nn+1)/len(vars_to_plot) if N_sim else False][0],
+                         cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
+                         mq_color=mq_color_sim, qq_color=qq_color_sim, N_color=N_color_sim, N_xlim=N_xlim,
+                         alpha=hist_alpha_sim)
+
+
+            # plot observations
+            utils.hist2d(ax[nn], retreivals_merged_obs[vv].sel(time=retreivals_merged_obs['time'].dt.month.isin(selmonths))*adj,
+                         retreivals_merged_obs["TEMP"].sel(time=retreivals_merged_obs['time'].dt.month.isin(selmonths))+adjtemp,
+                         whole_x_range=True,
+                         binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
+                         cb_mode=[(nn+1)/len(vars_to_plot) if plot_cb_obs else False][0],
+                         cmap=cmaphist_obs, colsteps=colsteps,
+                         fsize=20, mincounts=mincounts, cblim=cblim,
+                         N=[(nn+1)/len(vars_to_plot) if N_obs else False][0],
+                         cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
+                         mq_color=mq_color_obs, qq_color=qq_color_obs, N_color=N_color_obs, N_xlim=N_xlim,
+                         alpha=hist_alpha_obs)
+
+
+            ax[nn].set_ylim(15,ytlim)
+            ax[nn].set_xlabel(vv, fontsize=10)
+
+            ax[nn].tick_params(labelsize=15) #change font size of ticks
+            plt.rcParams.update({'font.size': 15}) #change font size of ticks for line of counts
+
+        ax[0].set_ylabel('Temperature [°C]', fontsize=15, color='black')
+
+        if auto_plot:
+            # Create savefolder
+            savepath_seas = os.path.dirname(savepath+savename)
+            if not os.path.exists(savepath_seas):
+                os.makedirs(savepath_seas)
+            fig.savefig(savepath+savename, bbox_inches="tight", dpi=300)
+            print("AUTO PLOT: saved "+savename)
+
+    if auto_plot is False:
+        break
+
 #%% TEST Load Julian S ICON-EMVORADO files and compare to my workflow
 
 ff_js = "/automount/data02/agradar/operation_hydrometeors/data/Syn_vol/20210714/ASS_2411/MAIN_2411.1/EMVO_00510000.2/120min_spinup/EMV_Vol_ESS_*.nc"
