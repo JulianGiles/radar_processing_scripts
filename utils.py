@@ -2289,7 +2289,8 @@ ds = ds.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data
 #################################### CFADs
 
 def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, cb_mode=True,
-           mq="median", mq_color="black", qq=0.2, qq_color="black", cmap='turbo', smooth_out=False, binsx_out=[],
+           mq="median", mq_color="black", mq_lw=2, qq=0.2, qq_color="black", qq_lw=2,
+           cmap='turbo', smooth_out=False, binsx_out=[],
            colsteps=10, mini=0, fsize=13, fcolor='black', mincounts=500, cblim=[0,26],
            N=False, N_color="cornflowerblue", N_xlim=None,
            cborientation="horizontal", shading='gouraud', **kwargs):
@@ -2318,8 +2319,10 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
     cb_mode : plot colorbar?
     mq = Middle line to plot. Can be "median" or "mean"
     mq_color = Color for the middle line. Default is "black"
+    mq_lw = Line with for the middle line
     qq = percentile [0-1]. Calculates and plots the qq and 1-qq percentiles.
     qq_color = Color for the percentile lines. Default is "black"
+    qq_lw = Line with for the percentile lines
     mincounts: minimum sample number to plot
     N: plot sample size?
     N_color: Color for the sample size line plot. Default is "cornflowerblue".
@@ -2464,15 +2467,15 @@ def hist2d(ax, PX, PY, binsx=[], binsy=[], mode='rel_all', whole_x_range=True, c
     img = ax.pcolormesh(mx, my ,RES , cmap=cmap, vmin=cblim[0], vmax=cblim[1], shading=shading, **kwargs) #, shading="gouraud"
 
     if mq == "median":
-        ax.plot(var_med, my, color=mq_color, lw=2)
+        ax.plot(var_med, my, color=mq_color, lw=mq_lw)
         # ax.plot(var_med, my, color='black', lw=2, ls=(0, (5, 5)))
     elif mq == "mean":
-        ax.plot(var_mean, my, color=mq_color, lw=2)
+        ax.plot(var_mean, my, color=mq_color, lw=mq_lw)
         # ax.plot(var_mean, my, color='black', lw=2, ls=(0, (5, 5)))
 
-    ax.plot(var_qq1, my, color=qq_color, ls="-.", lw=2)
+    ax.plot(var_qq1, my, color=qq_color, ls="-.", lw=qq_lw)
     # ax.plot(var_qq1, my, color='black', linestyle=(0, (1, 5)), lw=2)
-    ax.plot(var_qq2, my, color=qq_color, ls="-.", lw=2)
+    ax.plot(var_qq2, my, color=qq_color, ls="-.", lw=qq_lw)
     # ax.plot(var_qq2, my, color='black', linestyle=(0, (1, 5)), lw=2)
 
     # se the x limits in case the lines go off the pcolormesh
