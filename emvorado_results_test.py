@@ -1021,6 +1021,9 @@ colsteps=10
 
 cmaphist="Oranges"
 
+mq_lw=3
+qq_lw=2
+
 savedict = {"custom": None} # placeholder for the for loop below, not important
 
 # Plot horizontally
@@ -1098,6 +1101,7 @@ if loc in ['afy', 'ank', 'gzt', 'hty', 'svs']:
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                          cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
                          fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         mq_lw=mq_lw, qq_lw=qq_lw,
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
             ax[nn].set_ylim(15,ytlim)
             ax[nn].set_xlabel(vv, fontsize=10)
@@ -1175,6 +1179,7 @@ if loc in ['afy', 'ank', 'gzt', 'hty', 'svs']:
                              binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                              cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
                              fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                             mq_lw=mq_lw, qq_lw=qq_lw,
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
                 ax[nn].set_ylim(15,ytlim)
                 ax[nn].set_xlabel(vv, fontsize=10)
@@ -1244,6 +1249,7 @@ elif loc in ['pro', 'tur', 'umd', 'ess']:
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                          cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
                          fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         mq_lw=mq_lw, qq_lw=qq_lw,
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
             ax[nn].set_ylim(15,ytlim)
             ax[nn].set_xlabel(vv, fontsize=10)
@@ -1320,6 +1326,7 @@ elif loc in ['pro', 'tur', 'umd', 'ess']:
                              binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                              cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
                              fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                             mq_lw=mq_lw, qq_lw=qq_lw,
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
                 ax[nn].set_ylim(15,ytlim)
                 ax[nn].set_xlabel(vv, fontsize=10)
@@ -1500,6 +1507,7 @@ for sn, savepath in enumerate(savepath_list):
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                          cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
                          fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         mq_lw=mq_lw, qq_lw=qq_lw,
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
             ax[nn].set_ylim(15,ytlim)
             ax[nn].set_xlabel(vv, fontsize=10)
@@ -1678,6 +1686,7 @@ for sn, savepath in enumerate(savepath_list):
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                          cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
                          fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         mq_lw=mq_lw, qq_lw=qq_lw,
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
             ax[nn].set_ylim(15,ytlim)
             ax[nn].set_xlabel(vv, fontsize=10)
@@ -1856,6 +1865,7 @@ for sn, savepath in enumerate(savepath_list):
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                          cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
                          fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         mq_lw=mq_lw, qq_lw=qq_lw,
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
             ax[nn].set_ylim(15,ytlim)
             ax[nn].set_xlabel(vv, fontsize=10)
@@ -2051,6 +2061,8 @@ cmaphist_sim="Oranges"
 mq_color_sim="black"
 qq_color_sim="black"
 N_color_sim="#800420"
+mq_lw_sim=3
+qq_lw_sim=2
 hist_alpha_sim=0.
 plot_cb_sim = False
 N_sim = False
@@ -2059,6 +2071,8 @@ cmaphist_obs="Purples"
 mq_color_obs="indianred"
 qq_color_obs="indianred"
 N_color_obs="cornflowerblue"
+mq_lw_obs=3
+qq_lw_obs=2
 hist_alpha_obs=0.
 plot_cb_obs = False
 N_obs = False
@@ -2159,7 +2173,8 @@ if loc in ['afy', 'ank', 'gzt', 'hty', 'svs']:
                          fsize=20, mincounts=mincounts, cblim=cblim,
                          N=[(nn+1)/len(vars_to_plot) if N_sim else False][0],
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                         mq_color=mq_color_sim, qq_color=qq_color_sim, N_color=N_color_sim, N_xlim=N_xlim,
+                         mq_color=mq_color_sim, qq_color=qq_color_sim, mq_lw=mq_lw_sim, qq_lw=qq_lw_sim,
+                         N_color=N_color_sim, N_xlim=N_xlim,
                          alpha=hist_alpha_sim)
 
             # Plot observations
@@ -2174,7 +2189,8 @@ if loc in ['afy', 'ank', 'gzt', 'hty', 'svs']:
                          fsize=20, mincounts=mincounts, cblim=cblim,
                          N=[(nn+1)/len(vars_to_plot) if N_obs else False][0],
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                         mq_color=mq_color_obs, qq_color=qq_color_obs, N_color=N_color_obs, N_xlim=N_xlim,
+                         mq_color=mq_color_obs, qq_color=qq_color_obs, mq_lw=mq_lw_obs, qq_lw=qq_lw_obs,
+                         N_color=N_color_obs, N_xlim=N_xlim,
                          alpha=hist_alpha_obs)
 
             ax[nn].set_ylim(15,ytlim)
@@ -2278,7 +2294,8 @@ if loc in ['afy', 'ank', 'gzt', 'hty', 'svs']:
                              fsize=20, mincounts=mincounts, cblim=cblim,
                              N=[(nn+1)/len(vars_to_plot) if N_sim else False][0],
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                             mq_color=mq_color_sim, qq_color=qq_color_sim, N_color=N_color_sim, N_xlim=N_xlim,
+                             mq_color=mq_color_sim, qq_color=qq_color_sim, mq_lw=mq_lw_sim, qq_lw=qq_lw_sim,
+                             N_color=N_color_sim, N_xlim=N_xlim,
                              alpha=hist_alpha_sim)
 
 
@@ -2292,7 +2309,8 @@ if loc in ['afy', 'ank', 'gzt', 'hty', 'svs']:
                              fsize=20, mincounts=mincounts, cblim=cblim,
                              N=[(nn+1)/len(vars_to_plot) if N_obs else False][0],
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                             mq_color=mq_color_obs, qq_color=qq_color_obs, N_color=N_color_obs, N_xlim=N_xlim,
+                             mq_color=mq_color_obs, qq_color=qq_color_obs, mq_lw=mq_lw_obs, qq_lw=qq_lw_obs,
+                             N_color=N_color_obs, N_xlim=N_xlim,
                              alpha=hist_alpha_obs)
 
                 ax[nn].set_ylim(15,ytlim)
@@ -2378,7 +2396,8 @@ elif loc in ['pro', 'tur', 'umd', 'ess']:
                          fsize=20, mincounts=mincounts, cblim=cblim,
                          N=[(nn+1)/len(vars_to_plot) if N_sim else False][0],
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                         mq_color=mq_color_sim, qq_color=qq_color_sim, N_color=N_color_sim, N_xlim=N_xlim,
+                         mq_color=mq_color_sim, qq_color=qq_color_sim, mq_lw=mq_lw_sim, qq_lw=qq_lw_sim,
+                         N_color=N_color_sim, N_xlim=N_xlim,
                          alpha=hist_alpha_sim)
 
 
@@ -2394,7 +2413,8 @@ elif loc in ['pro', 'tur', 'umd', 'ess']:
                          fsize=20, mincounts=mincounts, cblim=cblim,
                          N=[(nn+1)/len(vars_to_plot) if N_obs else False][0],
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                         mq_color=mq_color_obs, qq_color=qq_color_obs, N_color=N_color_obs, N_xlim=N_xlim,
+                         mq_color=mq_color_obs, qq_color=qq_color_obs, mq_lw=mq_lw_obs, qq_lw=qq_lw_obs,
+                         N_color=N_color_obs, N_xlim=N_xlim,
                          alpha=hist_alpha_obs)
 
 
@@ -2499,7 +2519,8 @@ elif loc in ['pro', 'tur', 'umd', 'ess']:
                              fsize=20, mincounts=mincounts, cblim=cblim,
                              N=[(nn+1)/len(vars_to_plot) if N_sim else False][0],
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                             mq_color=mq_color_sim, qq_color=qq_color_sim, N_color=N_color_sim, N_xlim=N_xlim,
+                             mq_color=mq_color_sim, qq_color=qq_color_sim, mq_lw=mq_lw_sim, qq_lw=qq_lw_sim,
+                             N_color=N_color_sim, N_xlim=N_xlim,
                              alpha=hist_alpha_sim)
 
 
@@ -2513,7 +2534,8 @@ elif loc in ['pro', 'tur', 'umd', 'ess']:
                              fsize=20, mincounts=mincounts, cblim=cblim,
                              N=[(nn+1)/len(vars_to_plot) if N_obs else False][0],
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                             mq_color=mq_color_obs, qq_color=qq_color_obs, N_color=N_color_obs, N_xlim=N_xlim,
+                             mq_color=mq_color_obs, qq_color=qq_color_obs, mq_lw=mq_lw_obs, qq_lw=qq_lw_obs,
+                             N_color=N_color_obs, N_xlim=N_xlim,
                              alpha=hist_alpha_obs)
 
 
@@ -2535,8 +2557,11 @@ elif loc in ['pro', 'tur', 'umd', 'ess']:
 #%% CFTDs microphysics Plot (microphysics from ICON-EMVORADO simulations vs observations)
 # We assume that everything above ML is frozen and everything below is liquid
 
+# ML tolerance
+ML_tolerance = 300 # add this many meters around the ML to reduce contamination
+
 # In case the ML top and bottom variables are not available, use this isotherms
-TEMP_ML_top = 0
+TEMP_ML_top = -1
 TEMP_ML_bottom = 4
 
 # If auto_plot is True, then produce and save the plots automatically based on
@@ -2615,12 +2640,12 @@ selseas = selseaslist[0]
 selmonths = selseas[1]
 
 # Select which retrievals to plot (only works if auto_plot=False)
-IWC = "vol_qtot" # iwc_zh_t_hogan2006, iwc_zh_t_hogan2006_model, iwc_zh_t_hogan2006_combined, iwc_zdr_zh_kdp_carlin2021
-LWC = "vol_qtot" # lwc_zh_zdr_reimann2021, lwc_zh_zdr_rhyzkov2022, lwc_kdp_reimann2021, lwc_ah_reimann2021, lwc_hybrid_reimann2021
-Dm_ice = "D0_tot" # Dm_ice_zh_matrosov2019, Dm_ice_zh_kdp_carlin2021, Dm_ice_zdp_kdp_carlin2021, Dm_hybrid_blanke2023
-Dm_rain = "D0_tot" # Dm_rain_zdr_chen, Dm_rain_zdr_hu2022, Dm_rain_zdr_bringi2009
-Nt_ice = "vol_qntot" # Nt_ice_iwc_zh_t_hu2022, Nt_ice_iwc_zh_t_carlin2021, Nt_ice_iwc_zh_t_combined_hu2022, Nt_ice_iwc_zh_t_combined_carlin2021, Nt_ice_iwc_zdr_zh_kdp_hu2022, Nt_ice_iwc_zdr_zh_kdp_carlin2021
-Nt_rain = "vol_qntot" # Nt_rain_zh_zdr_rhyzkov2020
+IWC = "vol_qtotice" # iwc_zh_t_hogan2006, iwc_zh_t_hogan2006_model, iwc_zh_t_hogan2006_combined, iwc_zdr_zh_kdp_carlin2021
+LWC = "vol_qtotliq" # lwc_zh_zdr_reimann2021, lwc_zh_zdr_rhyzkov2022, lwc_kdp_reimann2021, lwc_ah_reimann2021, lwc_hybrid_reimann2021
+Dm_ice = "D0_totice" # Dm_ice_zh_matrosov2019, Dm_ice_zh_kdp_carlin2021, Dm_ice_zdp_kdp_carlin2021, Dm_hybrid_blanke2023
+Dm_rain = "D0_totliq" # Dm_rain_zdr_chen, Dm_rain_zdr_hu2022, Dm_rain_zdr_bringi2009
+Nt_ice = "vol_qntotice" # Nt_ice_iwc_zh_t_hu2022, Nt_ice_iwc_zh_t_carlin2021, Nt_ice_iwc_zh_t_combined_hu2022, Nt_ice_iwc_zh_t_combined_carlin2021, Nt_ice_iwc_zdr_zh_kdp_hu2022, Nt_ice_iwc_zdr_zh_kdp_carlin2021
+Nt_rain = "vol_qntotliq" # Nt_rain_zh_zdr_rhyzkov2020
 
 IWC_obs = "iwc_zdr_zh_kdp_carlin2021" # iwc_zh_t_hogan2006, iwc_zh_t_hogan2006_model, iwc_zh_t_hogan2006_combined, iwc_zdr_zh_kdp_carlin2021
 LWC_obs = "lwc_hybrid_reimann2021" # lwc_zh_zdr_reimann2021, lwc_zh_zdr_rhyzkov2022, lwc_kdp_reimann2021, lwc_ah_reimann2021, lwc_hybrid_reimann2021
@@ -2679,12 +2704,12 @@ for sn, savepath in enumerate(savepath_list):
         try:
             if ds_to_plot.height_ml_new_gia.notnull().all():
                 retreivals_merged = xr.Dataset({
-                                                "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].z > ds_to_plot.height_ml_new_gia,
-                                                                                  ds_to_plot[LWC].where(ds_to_plot[LWC].z < ds_to_plot.height_ml_bottom_new_gia ) ),
-                                                "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].z > ds_to_plot.height_ml_new_gia,
-                                                                                  ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ),
-                                                "Nt [log10(1/L)]": (ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].z > ds_to_plot.height_ml_new_gia,
-                                                                                  ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ) ),
+                                                "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].z > ds_to_plot.height_ml_new_gia+ML_tolerance,
+                                                                                  ds_to_plot[LWC].where(ds_to_plot[LWC].z < ds_to_plot.height_ml_bottom_new_gia-ML_tolerance ) ),
+                                                "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].z > ds_to_plot.height_ml_new_gia+ML_tolerance,
+                                                                                  ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].z < ds_to_plot.height_ml_bottom_new_gia-ML_tolerance ) ),
+                                                "Nt [log10(1/L)]": (ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].z > ds_to_plot.height_ml_new_gia+ML_tolerance,
+                                                                                  ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].z < ds_to_plot.height_ml_bottom_new_gia-ML_tolerance ) ) ),
                     })
             else:
                 # if ML is not valid at all timesteps, we filter with 0-4 degrees isotherms
@@ -2703,12 +2728,12 @@ for sn, savepath in enumerate(savepath_list):
 
         try:
             retreivals_merged_obs = xr.Dataset({
-                                            "IWC/LWC [g/m^{3}]": ds_to_plot_obs[IWC_obs].where(ds_to_plot_obs[IWC_obs].z > ds_to_plot_obs.height_ml_new_gia,
-                                                                              ds_to_plot_obs[LWC_obs].where(ds_to_plot_obs[LWC_obs].z < ds_to_plot_obs.height_ml_bottom_new_gia ) ),
-                                            "Dm [mm]": ds_to_plot_obs[Dm_ice_obs].where(ds_to_plot_obs[Dm_ice_obs].z > ds_to_plot_obs.height_ml_new_gia,
-                                                                              ds_to_plot_obs[Dm_rain_obs].where(ds_to_plot_obs[Dm_rain_obs].z < ds_to_plot_obs.height_ml_bottom_new_gia ) ),
-                                            "Nt [log10(1/L)]": (ds_to_plot_obs[Nt_ice_obs].where(ds_to_plot_obs[Nt_ice_obs].z > ds_to_plot_obs.height_ml_new_gia,
-                                                                              ds_to_plot_obs[Nt_rain_obs].where(ds_to_plot_obs[Nt_rain_obs].z < ds_to_plot_obs.height_ml_bottom_new_gia ) ) ),
+                                            "IWC/LWC [g/m^{3}]": ds_to_plot_obs[IWC_obs].where(ds_to_plot_obs[IWC_obs].z > ds_to_plot_obs.height_ml_new_gia+ML_tolerance,
+                                                                              ds_to_plot_obs[LWC_obs].where(ds_to_plot_obs[LWC_obs].z < ds_to_plot_obs.height_ml_bottom_new_gia-ML_tolerance ) ),
+                                            "Dm [mm]": ds_to_plot_obs[Dm_ice_obs].where(ds_to_plot_obs[Dm_ice_obs].z > ds_to_plot_obs.height_ml_new_gia+ML_tolerance,
+                                                                              ds_to_plot_obs[Dm_rain_obs].where(ds_to_plot_obs[Dm_rain_obs].z < ds_to_plot_obs.height_ml_bottom_new_gia-ML_tolerance ) ),
+                                            "Nt [log10(1/L)]": (ds_to_plot_obs[Nt_ice_obs].where(ds_to_plot_obs[Nt_ice_obs].z > ds_to_plot_obs.height_ml_new_gia+ML_tolerance,
+                                                                              ds_to_plot_obs[Nt_rain_obs].where(ds_to_plot_obs[Nt_rain_obs].z < ds_to_plot_obs.height_ml_bottom_new_gia-ML_tolerance ) ) ),
                 })
         except KeyError:
             print("Unable to plot "+savename+". Some retrieval is not present in the dataset.")
@@ -2745,7 +2770,8 @@ for sn, savepath in enumerate(savepath_list):
                          fsize=20, mincounts=mincounts, cblim=cblim,
                          N=[(nn+1)/len(vars_to_plot) if N_sim else False][0],
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                         mq_color=mq_color_sim, qq_color=qq_color_sim, N_color=N_color_sim, N_xlim=N_xlim,
+                         mq_color=mq_color_sim, qq_color=qq_color_sim, mq_lw=mq_lw_sim, qq_lw=qq_lw_sim,
+                         N_color=N_color_sim, N_xlim=N_xlim,
                          alpha=hist_alpha_sim)
 
 
@@ -2759,7 +2785,8 @@ for sn, savepath in enumerate(savepath_list):
                          fsize=20, mincounts=mincounts, cblim=cblim,
                          N=[(nn+1)/len(vars_to_plot) if N_obs else False][0],
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                         mq_color=mq_color_obs, qq_color=qq_color_obs, N_color=N_color_obs, N_xlim=N_xlim,
+                         mq_color=mq_color_obs, qq_color=qq_color_obs, mq_lw=mq_lw_obs, qq_lw=qq_lw_obs,
+                         N_color=N_color_obs, N_xlim=N_xlim,
                          alpha=hist_alpha_obs)
 
 
