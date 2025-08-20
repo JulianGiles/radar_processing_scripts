@@ -1346,8 +1346,11 @@ elif loc in ['pro', 'tur', 'umd', 'ess']:
 #%% CFTDs microphysics Plot (microphysics from ICON-EMVORADO)
 # We assume that everything above ML is frozen and everything below is liquid
 
+# ML tolerance
+ML_tolerance = 300 # add this many meters around the ML to reduce contamination
+
 # In case the ML top and bottom variables are not available, use this isotherms
-TEMP_ML_top = 0
+TEMP_ML_top = -1
 TEMP_ML_bottom = 4
 
 # If auto_plot is True, then produce and save the plots automatically based on
@@ -1467,12 +1470,12 @@ for sn, savepath in enumerate(savepath_list):
         try:
             if ds_to_plot.height_ml_new_gia.notnull().all():
                 retreivals_merged = xr.Dataset({
-                                                "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].z > ds_to_plot.height_ml_new_gia,
-                                                                                  ds_to_plot[LWC].where(ds_to_plot[LWC].z < ds_to_plot.height_ml_bottom_new_gia ) ),
-                                                "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].z > ds_to_plot.height_ml_new_gia,
-                                                                                  ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ),
-                                                "Nt [log10(1/L)]": (ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].z > ds_to_plot.height_ml_new_gia,
-                                                                                  ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ) ),
+                                                "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].z > ds_to_plot.height_ml_new_gia+ML_tolerance,
+                                                                                  ds_to_plot[LWC].where(ds_to_plot[LWC].z < ds_to_plot.height_ml_bottom_new_gia-ML_tolerance ) ),
+                                                "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].z > ds_to_plot.height_ml_new_gia+ML_tolerance,
+                                                                                  ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].z < ds_to_plot.height_ml_bottom_new_gia-ML_tolerance ) ),
+                                                "Nt [log10(1/L)]": (ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].z > ds_to_plot.height_ml_new_gia+ML_tolerance,
+                                                                                  ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].z < ds_to_plot.height_ml_bottom_new_gia-ML_tolerance ) ) ),
                     })
             else:
                 # if ML is not valid at all timesteps, we filter with 0-4 degrees isotherms
@@ -1532,8 +1535,11 @@ for sn, savepath in enumerate(savepath_list):
 # SEPARATED BY HYDROMETEOR CLASS
 # We assume that everything above ML is frozen and everything below is liquid
 
+# ML tolerance
+ML_tolerance = 300 # add this many meters around the ML to reduce contamination
+
 # In case the ML top and bottom variables are not available, use this isotherms
-TEMP_ML_top = 0
+TEMP_ML_top = -1
 TEMP_ML_bottom = 0
 
 # If auto_plot is True, then produce and save the plots automatically based on
@@ -1646,12 +1652,12 @@ for sn, savepath in enumerate(savepath_list):
         try:
             if ds_to_plot.height_ml_new_gia.notnull().all():
                 retreivals_merged = xr.Dataset({
-                                                "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].z > ds_to_plot.height_ml_new_gia,
-                                                                                  ds_to_plot[LWC].where(ds_to_plot[LWC].z < ds_to_plot.height_ml_bottom_new_gia ) ),
-                                                "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].z > ds_to_plot.height_ml_new_gia,
-                                                                                  ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ),
-                                                "Nt [log10(1/L)]": (ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].z > ds_to_plot.height_ml_new_gia,
-                                                                                  ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ) ),
+                                                "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].z > ds_to_plot.height_ml_new_gia+ML_tolerance,
+                                                                                  ds_to_plot[LWC].where(ds_to_plot[LWC].z < ds_to_plot.height_ml_bottom_new_gia-ML_tolerance ) ),
+                                                "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].z > ds_to_plot.height_ml_new_gia+ML_tolerance,
+                                                                                  ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].z < ds_to_plot.height_ml_bottom_new_gia-ML_tolerance ) ),
+                                                "Nt [log10(1/L)]": (ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].z > ds_to_plot.height_ml_new_gia+ML_tolerance,
+                                                                                  ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].z < ds_to_plot.height_ml_bottom_new_gia-ML_tolerance ) ) ),
                     })
             else:
                 # if ML is not valid at all timesteps, we filter with 0-4 degrees isotherms
@@ -1710,8 +1716,11 @@ for sn, savepath in enumerate(savepath_list):
 #%% CFTDs retrievals Plot (retrievals from formulas)
 # We assume that everything above ML is frozen and everything below is liquid
 
+# ML tolerance
+ML_tolerance = 300 # add this many meters around the ML to reduce contamination
+
 # In case the ML top and bottom variables are not available, use this isotherms
-TEMP_ML_top = 0
+TEMP_ML_top = -1
 TEMP_ML_bottom = 4
 
 # If auto_plot is True, then produce and save the plots automatically based on
@@ -1825,12 +1834,12 @@ for sn, savepath in enumerate(savepath_list):
         try:
             if ds_to_plot.height_ml_new_gia.notnull().all():
                 retreivals_merged = xr.Dataset({
-                                                "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].z > ds_to_plot.height_ml_new_gia,
-                                                                                  ds_to_plot[LWC].where(ds_to_plot[LWC].z < ds_to_plot.height_ml_bottom_new_gia ) ),
-                                                "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].z > ds_to_plot.height_ml_new_gia,
-                                                                                  ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ),
-                                                "Nt [log10(1/L)]": (ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].z > ds_to_plot.height_ml_new_gia,
-                                                                                  ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ) ),
+                                                "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].z > ds_to_plot.height_ml_new_gia+ML_tolerance,
+                                                                                  ds_to_plot[LWC].where(ds_to_plot[LWC].z < ds_to_plot.height_ml_bottom_new_gia-ML_tolerance ) ),
+                                                "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].z > ds_to_plot.height_ml_new_gia+ML_tolerance,
+                                                                                  ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].z < ds_to_plot.height_ml_bottom_new_gia-ML_tolerance ) ),
+                                                "Nt [log10(1/L)]": (ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].z > ds_to_plot.height_ml_new_gia+ML_tolerance,
+                                                                                  ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].z < ds_to_plot.height_ml_bottom_new_gia-ML_tolerance ) ) ),
                     })
             else:
                 # if ML is not valid at all timesteps, we filter with 0-4 degrees isotherms
