@@ -841,6 +841,9 @@ colsteps=10
 
 cmaphist="Oranges"
 
+mq_lw=3
+qq_lw=2
+
 savedict = {"custom": None} # placeholder for the for loop below, not important
 
 # Plot horizontally
@@ -918,6 +921,7 @@ if country=="dmi":
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                          cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
                          fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         mq_lw=mq_lw, qq_lw=qq_lw,
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
             ax[nn].set_ylim(15,ytlim)
             ax[nn].set_xlabel(vv, fontsize=10)
@@ -994,6 +998,7 @@ if country=="dmi":
                              binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                              cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
                              fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                             mq_lw=mq_lw, qq_lw=qq_lw,
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
                 ax[nn].set_ylim(15,ytlim)
                 ax[nn].set_xlabel(vv, fontsize=10)
@@ -1065,6 +1070,7 @@ if country=="dwd" or country=="boxpol":
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                          cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
                          fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         mq_lw=mq_lw, qq_lw=qq_lw,
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
             ax[nn].set_ylim(15,ytlim)
             ax[nn].set_xlabel(vv, fontsize=10)
@@ -1140,6 +1146,7 @@ if country=="dwd" or country=="boxpol":
                              binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                              cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
                              fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                             mq_lw=mq_lw, qq_lw=qq_lw,
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
                 ax[nn].set_ylim(15,ytlim)
                 ax[nn].set_xlabel(vv, fontsize=10)
@@ -1157,6 +1164,9 @@ if country=="dwd" or country=="boxpol":
                 print("AUTO PLOT: saved "+savename)
 #%% CFTDs retrievals Plot
 # We assume that everything above ML is frozen and everything below is liquid
+
+# ML tolerance
+ML_tolerance = 300 # add this many meters around the ML to reduce contamination
 
 # If auto_plot is True, then produce and save the plots automatically based on
 # default configurations (only change savepath and ds_to_plot accordingly).
@@ -1274,12 +1284,12 @@ for sn, savepath in enumerate(savepath_list):
 
         try:
             retreivals_merged = xr.Dataset({
-                                            "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].z > ds_to_plot.height_ml_new_gia,
-                                                                              ds_to_plot[LWC].where(ds_to_plot[LWC].z < ds_to_plot.height_ml_bottom_new_gia ) ),
-                                            "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].z > ds_to_plot.height_ml_new_gia,
-                                                                              ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ),
-                                            "Nt [log10(1/L)]": (ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].z > ds_to_plot.height_ml_new_gia,
-                                                                              ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ) ),
+                                            "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].z > ds_to_plot.height_ml_new_gia+ML_tolerance,
+                                                                              ds_to_plot[LWC].where(ds_to_plot[LWC].z < ds_to_plot.height_ml_bottom_new_gia-ML_tolerance ) ),
+                                            "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].z > ds_to_plot.height_ml_new_gia+ML_tolerance,
+                                                                              ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].z < ds_to_plot.height_ml_bottom_new_gia-ML_tolerance ) ),
+                                            "Nt [log10(1/L)]": (ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].z > ds_to_plot.height_ml_new_gia+ML_tolerance,
+                                                                              ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].z < ds_to_plot.height_ml_bottom_new_gia-ML_tolerance ) ) ),
                 })
         except KeyError:
             print("Unable to plot "+savename+". Some retrieval is not present in the dataset.")
@@ -1303,6 +1313,7 @@ for sn, savepath in enumerate(savepath_list):
                          binsx=vars_to_plot[vv], binsy=[ytlim,16,tb], mode='rel_y', qq=0.2,
                          cb_mode=(nn+1)/len(vars_to_plot), cmap=cmaphist, colsteps=colsteps,
                          fsize=20, mincounts=mincounts, cblim=cblim, N=(nn+1)/len(vars_to_plot),
+                         mq_lw=mq_lw, qq_lw=qq_lw,
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2)
             ax[nn].set_ylim(15,ytlim)
             ax[nn].set_xlabel(vv, fontsize=10)
@@ -1373,6 +1384,8 @@ cmaphist_r="Oranges"
 mq_color_r="black"
 qq_color_r="black"
 N_color_r="#800420"
+mq_lw_r=3
+qq_lw_r=2
 hist_alpha_r=1
 plot_cb_r = True
 N_r = False
@@ -1381,6 +1394,8 @@ cmaphist_nr="Purples"
 mq_color_nr="#40BAFF" # indianred
 qq_color_nr="#40BAFF" # indianred
 N_color_nr="cornflowerblue"
+mq_lw_nr=3
+qq_lw_nr=2
 hist_alpha_nr=0.
 plot_cb_nr = False
 N_nr = False
@@ -1489,7 +1504,8 @@ if country=="dmi":
                          fsize=20, mincounts=mincounts, cblim=cblim,
                          N=[(nn+1)/len(vars_to_plot) if N_nr else False][0],
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                         mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr, N_xlim=N_xlim,
+                         mq_color=mq_color_nr, qq_color=qq_color_nr, mq_lw=mq_lw_nr, qq_lw=qq_lw_nr,
+                         N_color=N_color_nr, N_xlim=N_xlim,
                          alpha=hist_alpha_nr)
 
             # Plot the histogram of rimed QVPs
@@ -1504,7 +1520,8 @@ if country=="dmi":
                          fsize=20, mincounts=mincounts, cblim=cblim,
                          N=[(nn+1)/len(vars_to_plot) if N_r else False][0],
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                         mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r, N_xlim=N_xlim,
+                         mq_color=mq_color_r, qq_color=qq_color_r, mq_lw=mq_lw_r, qq_lw=qq_lw_r,
+                         N_color=N_color_r, N_xlim=N_xlim,
                          alpha=hist_alpha_r)
 
             ax[nn].set_ylim(15,ytlim)
@@ -1617,7 +1634,8 @@ if country=="dmi":
                              fsize=20, mincounts=mincounts, cblim=cblim,
                              N=[(nn+1)/len(vars_to_plot) if N_nr else False][0],
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                             mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr, N_xlim=N_xlim,
+                             mq_color=mq_color_nr, qq_color=qq_color_nr, mq_lw=mq_lw_nr, qq_lw=qq_lw_nr,
+                             N_color=N_color_nr, N_xlim=N_xlim,
                              alpha=hist_alpha_nr)
 
                 # Plot the histogram of rimed QVPs
@@ -1641,7 +1659,8 @@ if country=="dmi":
                              fsize=20, mincounts=mincounts, cblim=cblim,
                              N=[(nn+1)/len(vars_to_plot) if N_r else False][0],
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                             mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r, N_xlim=N_xlim,
+                             mq_color=mq_color_r, qq_color=qq_color_r, mq_lw=mq_lw_r, qq_lw=qq_lw_r,
+                             N_color=N_color_r, N_xlim=N_xlim,
                              alpha=hist_alpha_r)
 
                 ax[nn].set_ylim(15,ytlim)
@@ -1742,7 +1761,8 @@ if country=="dwd":
                          fsize=20, mincounts=mincounts, cblim=cblim,
                          N=[(nn+1)/len(vars_to_plot) if N_nr else False][0],
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                         mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr, N_xlim=N_xlim,
+                         mq_color=mq_color_nr, qq_color=qq_color_nr, mq_lw=mq_lw_nr, qq_lw=qq_lw_nr,
+                         N_color=N_color_nr, N_xlim=N_xlim,
                          alpha=hist_alpha_nr)
 
             # Plot the histogram of rimed QVPs
@@ -1757,7 +1777,8 @@ if country=="dwd":
                          fsize=20, mincounts=mincounts, cblim=cblim,
                          N=[(nn+1)/len(vars_to_plot) if N_r else False][0],
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                         mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r, N_xlim=N_xlim,
+                         mq_color=mq_color_r, qq_color=qq_color_r, mq_lw=mq_lw_r, qq_lw=qq_lw_r,
+                         N_color=N_color_r, N_xlim=N_xlim,
                          alpha=hist_alpha_r)
 
             ax[nn].set_ylim(15,ytlim)
@@ -1869,7 +1890,8 @@ if country=="dwd":
                              fsize=20, mincounts=mincounts, cblim=cblim,
                              N=[(nn+1)/len(vars_to_plot) if N_nr else False][0],
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                             mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr, N_xlim=N_xlim,
+                             mq_color=mq_color_nr, qq_color=qq_color_nr, mq_lw=mq_lw_nr, qq_lw=qq_lw_nr,
+                             N_color=N_color_nr, N_xlim=N_xlim,
                              alpha=hist_alpha_nr)
 
                 # Plot the histogram of rimed QVPs
@@ -1892,7 +1914,8 @@ if country=="dwd":
                              fsize=20, mincounts=mincounts, cblim=cblim,
                              N=[(nn+1)/len(vars_to_plot) if N_r else False][0],
                              cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                             mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r, N_xlim=N_xlim,
+                             mq_color=mq_color_r, qq_color=qq_color_r, mq_lw=mq_lw_r, qq_lw=qq_lw_r,
+                             N_color=N_color_r, N_xlim=N_xlim,
                              alpha=hist_alpha_r)
 
                 ax[nn].set_ylim(15,ytlim)
@@ -1912,6 +1935,9 @@ if country=="dwd":
 
 #%% CFTDs retrievals Plot riming vs no riming
 # We assume that everything above ML is frozen and everything below is liquid
+
+# ML tolerance
+ML_tolerance = 300 # add this many meters around the ML to reduce contamination
 
 # If auto_plot is True, then produce and save the plots automatically based on
 # default configurations (only change savepath and ds_to_plot accordingly).
@@ -2053,12 +2079,12 @@ for sn, savepath in enumerate(savepath_list):
 
         try:
             retreivals_merged = xr.Dataset({
-                                            "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].z > ds_to_plot.height_ml_new_gia,
-                                                                              ds_to_plot[LWC].where(ds_to_plot[LWC].z < ds_to_plot.height_ml_bottom_new_gia ) ),
-                                            "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].z > ds_to_plot.height_ml_new_gia,
-                                                                              ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ),
-                                            "Nt [log10(1/L)]": (ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].z > ds_to_plot.height_ml_new_gia,
-                                                                              ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].z < ds_to_plot.height_ml_bottom_new_gia ) ) ),
+                                            "IWC/LWC [g/m^{3}]": ds_to_plot[IWC].where(ds_to_plot[IWC].z > ds_to_plot.height_ml_new_gia+ML_tolerance,
+                                                                              ds_to_plot[LWC].where(ds_to_plot[LWC].z < ds_to_plot.height_ml_bottom_new_gia-ML_tolerance ) ),
+                                            "Dm [mm]": ds_to_plot[Dm_ice].where(ds_to_plot[Dm_ice].z > ds_to_plot.height_ml_new_gia+ML_tolerance,
+                                                                              ds_to_plot[Dm_rain].where(ds_to_plot[Dm_rain].z < ds_to_plot.height_ml_bottom_new_gia-ML_tolerance ) ),
+                                            "Nt [log10(1/L)]": (ds_to_plot[Nt_ice].where(ds_to_plot[Nt_ice].z > ds_to_plot.height_ml_new_gia+ML_tolerance,
+                                                                              ds_to_plot[Nt_rain].where(ds_to_plot[Nt_rain].z < ds_to_plot.height_ml_bottom_new_gia-ML_tolerance ) ) ),
                 })
         except KeyError:
             print("Unable to plot "+savename+". Some retrieval is not present in the dataset.")
@@ -2110,7 +2136,8 @@ for sn, savepath in enumerate(savepath_list):
                          fsize=20, mincounts=mincounts, cblim=cblim,
                          N=[(nn+1)/len(vars_to_plot) if N_nr else False][0],
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                         mq_color=mq_color_nr, qq_color=qq_color_nr, N_color=N_color_nr, N_xlim=N_xlim,
+                         mq_color=mq_color_nr, qq_color=qq_color_nr, mq_lw=mq_lw_nr, qq_lw=qq_lw_nr,
+                         N_color=N_color_nr, N_xlim=N_xlim,
                          alpha=hist_alpha_nr)
 
             # Plot the histogram of rimed QVPs
@@ -2125,7 +2152,8 @@ for sn, savepath in enumerate(savepath_list):
                          fsize=20, mincounts=mincounts, cblim=cblim,
                          N=[(nn+1)/len(vars_to_plot) if N_r else False][0],
                          cborientation="vertical", shading="nearest", smooth_out=so, binsx_out=binsx2,
-                         mq_color=mq_color_r, qq_color=qq_color_r, N_color=N_color_r, N_xlim=N_xlim,
+                         mq_color=mq_color_r, qq_color=qq_color_r, mq_lw=mq_lw_r, qq_lw=qq_lw_r,
+                         N_color=N_color_r, N_xlim=N_xlim,
                          alpha=hist_alpha_r)
 
             ax[nn].set_ylim(15,ytlim)
