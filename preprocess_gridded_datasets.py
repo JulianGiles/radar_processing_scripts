@@ -12,11 +12,11 @@ import matplotlib
 
 import matplotlib.pyplot as plt
 import cartopy
-import cartopy.crs as ccrs	
-import cartopy.feature 	
+import cartopy.crs as ccrs
+import cartopy.feature
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 import numpy as np
-from numpy import ma 
+from numpy import ma
 import pandas as pd
 import xarray as xr
 from datetime import datetime
@@ -60,7 +60,7 @@ except ModuleNotFoundError:
 proj = ccrs.PlateCarree(central_longitude=0.0)
 
 # Set rotated pole
-# Euro-CORDEX rotated pole coordinates RotPole (198.0; 39.25) 
+# Euro-CORDEX rotated pole coordinates RotPole (198.0; 39.25)
 rp = ccrs.RotatedPole(pole_longitude=198.0,
                       pole_latitude=39.25,
                       globe=ccrs.Globe(semimajor_axis=6370000,
@@ -76,13 +76,13 @@ ds_to_load = [
     # "IMERG-V06B-30min", # do not load this unless necessary, currently the calculations are done with cdo
     # "CMORPH-daily",
     # "TSMP-old",
-    # "TSMP-DETECT-Baseline",
+    "TSMP-DETECT-Baseline",
     # "TSMP-Ben",
     # "ERA5-monthly",
     # "ERA5-hourly",
     # "RADKLIM",
     # "RADOLAN",
-    "EURADCLIM",
+    # "EURADCLIM",
     # "GPCC-monthly",
     # "GPCC-daily",
     # "E-OBS",
@@ -98,8 +98,10 @@ ds_to_load = [
 
 # Choose only 1 variable at a time to process
 var_to_load =[ # this are mock up variable names, not the actual variable names from the datasets
-    "precipitation",
-    # "tws" # terrestrial water storage
+    # "precipitation",
+    # "tws", # terrestrial water storage
+    "subsurfstor",
+    # "surfstor",
     ]
 
 # check that only 1 variable was selected
@@ -121,9 +123,9 @@ if "GRACE-GDO" in ds_to_load:
 #### GRACE GSFC
 # GSFC.glb.200204_202207_RL06v2.0_OBP-ICE6GD_HALFDEGREE.nc
 # For mascons, the difference between OBP and SLA is basically only over the ocean,
-# where some people prefer to compare to ocean bottom pressure installations, i.e. include 
-# atmospheric effects on the total vertical column. I am writing this because 
-# the .5° grid is only available in the OBP variant, but SLA makes more sense for mass 
+# where some people prefer to compare to ocean bottom pressure installations, i.e. include
+# atmospheric effects on the total vertical column. I am writing this because
+# the .5° grid is only available in the OBP variant, but SLA makes more sense for mass
 # budgets. Over continents, you should be fine with both variants, though.
 # Grid: 0.5x0.5 degrees (the resolution on this one is because of the processing but the raw data has 1 degree res.)
 # https://earth.gsfc.nasa.gov/geo/data/grace-mascons
@@ -136,8 +138,8 @@ if "GRACE-GSFC" in ds_to_load:
 # Ben: I recommend to use ITSG, it is the longest GRACE series from spherical harmonics that
 # we currently have processed there (181 months over 2003-01/2020-09). Be warned that there
 # are missing months in all versions of GRACE data, as the batteries started degrading after 2011,
-# and mid-of-2016 until GRACE's end in 2017 is very noisy (many people do not even touch those). 
-# GRACE-FO starts in 2018, some missing months in the beginning, but very robust since then. 
+# and mid-of-2016 until GRACE's end in 2017 is very noisy (many people do not even touch those).
+# GRACE-FO starts in 2018, some missing months in the beginning, but very robust since then.
 # No inter-sat calibration necessary, just treat all months as one data set.
 if "GRACE-ITSG" in ds_to_load:
     print("Loading GRACE-ITSG...")
@@ -149,7 +151,7 @@ if "GRACE-ITSG" in ds_to_load:
     def preprocess_grace_itsg(ds): # reshape dataset according to coordinates
         lats = np.unique(ds.lat)*-1
         lons = np.unique(ds.lon)
-        
+
         ewh_reshaped = ds["ewh"].data.reshape(len(lons), len(lats)).T
         ds0 = ds.drop_vars(["lon", "lat"])
         ds0['ewh'] = xr.DataArray(ewh_reshaped, coords={"lon":lons, "lat":lats}, dims=('lat', 'lon')).isel(lat=slice(None, None, -1))
@@ -159,7 +161,7 @@ if "GRACE-ITSG" in ds_to_load:
     if "tws" in var_to_load:
         data["GRACE-ITSG"] = xr.open_mfdataset('/automount/ags/jgiles/4BenCharlotte/ITSG_UB/ewh/*', combine="nested",
                                        preprocess= preprocess_grace_itsg, concat_dim = "time")
-        
+
         data["GRACE-ITSG"].coords["time"] = datetimes
 
 
@@ -187,7 +189,7 @@ if "IMERG-V07B-monthly" in ds_to_load:
             ds["precipitation"] = ds["precipitation"]*days_in_month[ds.time.values[0].month-1]*24
             ds["precipitation"] = ds["precipitation"].assign_attrs(units="mm", Units="mm")
             return ds
-    
+
         data["IMERG-V07B-monthly"] = xr.open_mfdataset('/automount/agradar/jgiles/IMERG_V07B/global_monthly/3B-MO.MS.MRG.3IMERG.*.V07B.HDF5.nc4', preprocess=preprocess_imerg)\
                         .transpose('time', 'lat', 'lon', ...) # * 24*30 # convert to mm/month (approx)
 
@@ -238,7 +240,7 @@ if "ERA5-monthly" in ds_to_load:
         data["ERA5-monthly"] = data["ERA5-monthly"].assign_coords(longitude=(((data["ERA5-monthly"].longitude + 180) % 360) - 180)).sortby('longitude')
         data["ERA5-monthly"] = data["ERA5-monthly"]['swvl1']*0.07 + data["ERA5-monthly"]['swvl2']*0.21 + \
                                     data["ERA5-monthly"]['swvl3']*0.72 + data["ERA5-monthly"]['swvl4']*1.89
-    
+
     ## precipitation
     if "precipitation" in var_to_load:
         def preprocess_era5_totprec(ds):
@@ -247,7 +249,7 @@ if "ERA5-monthly" in ds_to_load:
             ds["tp"] = ds["tp"]*days_in_month[pd.Timestamp(ds.time.values[0]).month-1]*1000
             ds["tp"] = ds["tp"].assign_attrs(units="mm", Units="mm")
             return ds
-        data["ERA5-monthly"] = xr.open_mfdataset('/automount/ags/jgiles/ERA5/monthly_averaged/single_level_vars/total_precipitation/total_precipitation_*', 
+        data["ERA5-monthly"] = xr.open_mfdataset('/automount/ags/jgiles/ERA5/monthly_averaged/single_level_vars/total_precipitation/total_precipitation_*',
                                          preprocess=preprocess_era5_totprec)
         data["ERA5-monthly"] = data["ERA5-monthly"].assign_coords(longitude=(((data["ERA5-monthly"].longitude + 180) % 360) - 180)).sortby('longitude')
         data["ERA5-monthly"] = data["ERA5-monthly"].isel(latitude=slice(None, None, -1))
@@ -261,14 +263,14 @@ if "ERA5-hourly" in ds_to_load:
         data["ERA5-hourly"] = data["ERA5-hourly"].assign_coords(longitude=(((data["ERA5-hourly"].longitude + 180) % 360) - 180)).sortby('longitude')
         data["ERA5-hourly"] = data["ERA5-hourly"]['swvl1']*0.07 + data["ERA5-hourly"]['swvl2']*0.21 + \
                                     data["ERA5-hourly"]['swvl3']*0.72 + data["ERA5-hourly"]['swvl4']*1.89
-    
+
     ## precipitation
     if "precipitation" in var_to_load:
         def preprocess_era5_totprec(ds):
             ds["tp"] = ds["tp"]*1000
             ds["tp"] = ds["tp"].assign_attrs(units="mm", Units="mm")
             return ds
-        data["ERA5-hourly"] = xr.open_mfdataset('/automount/ags/jgiles/ERA5/hourly/europe/single_level_vars/total_precipitation/total_precipitation_*', 
+        data["ERA5-hourly"] = xr.open_mfdataset('/automount/ags/jgiles/ERA5/hourly/europe/single_level_vars/total_precipitation/total_precipitation_*',
                                          preprocess=preprocess_era5_totprec, chunks={"time":100})
         data["ERA5-hourly"] = data["ERA5-hourly"].assign_coords(longitude=(((data["ERA5-hourly"].longitude + 180) % 360) - 180)).sortby('longitude')
         data["ERA5-hourly"] = data["ERA5-hourly"].isel(latitude=slice(None, None, -1))
@@ -276,7 +278,7 @@ if "ERA5-hourly" in ds_to_load:
 
 #### TSMP
 # The timestamps of accumulated P are located at the center of the corresponding interval (1:30, 4:30, ...)
-# Also, every monthly file has the last timestep from the previous month because of how the data is outputted by 
+# Also, every monthly file has the last timestep from the previous month because of how the data is outputted by
 # the model, so some data are overlapped. The overlaped data are negligible different (around the 5th decimal)
 
 def preprocess_tsmp(ds): # discard the first timestep of every monthly file (discard overlapping data)
@@ -285,7 +287,7 @@ def preprocess_tsmp(ds): # discard the first timestep of every monthly file (dis
 if "TSMP-old" in ds_to_load:
     print("Loading TSMP-old...")
     ## precipitation
-    if "precipitation" in var_to_load:    
+    if "precipitation" in var_to_load:
         data["TSMP-old"] = xr.open_mfdataset('/automount/ags/jgiles/TSMP/rcsm_TSMP-ERA5-eval_IBG3/o.data_v01/*/*TOT_PREC*',
                                      preprocess=preprocess_tsmp, chunks={"time":1000})
 
@@ -297,23 +299,33 @@ if "TSMP-old" in ds_to_load:
 if "TSMP-DETECT-Baseline" in ds_to_load:
     print("Loading TSMP-DETECT-Baseline...")
     ## precipitation
-    if "precipitation" in var_to_load:    
+    if "precipitation" in var_to_load:
         data["TSMP-DETECT-Baseline"] = xr.open_mfdataset('/automount/ags/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/postpro/ProductionV1/*/cosmo/TOT_PREC_ts.nc',
                                      preprocess=preprocess_tsmp, chunks={"time":1000})
 
         data["TSMP-DETECT-Baseline"]["time"] = data["TSMP-DETECT-Baseline"].get_index("time").shift(-0.5, "h") # shift the values forward to the start of the interval
+    if "surfstor" in var_to_load:
+        data["TSMP-DETECT-Baseline"] = xr.open_mfdataset('/automount/ags/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/postpro/ProductionV1/*/parflow/surfStor.nc',
+                                     preprocess=preprocess_tsmp, chunks={"time":1000})
+
+        data["TSMP-DETECT-Baseline"]["time"] = data["TSMP-DETECT-Baseline"].get_index("time").shift(-0.25, "h") # shift the values forward to the start of the interval
+    if "subsurfstor" in var_to_load:
+        data["TSMP-DETECT-Baseline"] = xr.open_mfdataset('/automount/ags/jgiles/DETECT_sim/DETECT_EUR-11_ECMWF-ERA5_evaluation_r1i1p1_FZJ-COSMO5-01-CLM3-5-0-ParFlow3-12-0_v1Baseline/postpro/ProductionV1/*/parflow/subSurfStor.nc',
+                                     preprocess=preprocess_tsmp, chunks={"time":1000})
+
+        data["TSMP-DETECT-Baseline"]["time"] = data["TSMP-DETECT-Baseline"].get_index("time").shift(-0.25, "h") # shift the values forward to the start of the interval
 
 
 if "TSMP-Ben" in ds_to_load:
     print("Loading TSMP-Ben...")
     ## tws
-    if "tws" in var_to_load:    
+    if "tws" in var_to_load:
         data["TSMP-Ben"] = xr.open_mfdataset('/automount/ags/jgiles/4BenCharlotte/TSMP/twsa_tsmp_europe_era5_1990_2021.nc')
 
 #### EURADCLIM
 if "EURADCLIM" in ds_to_load:
     print("Loading EURADCLIM...")
-    if "precipitation" in var_to_load:    
+    if "precipitation" in var_to_load:
         data["EURADCLIM"] = xr.open_mfdataset("/automount/ags/jgiles/EURADCLIM_v2/concat_files/RAD_OPERA_HOURLY_RAINFALL_*.nc")
         data["EURADCLIM"] = data["EURADCLIM"].set_coords(("lon", "lat"))
         data["EURADCLIM"]["lon"] = data["EURADCLIM"]["lon"][0]
@@ -322,7 +334,7 @@ if "EURADCLIM" in ds_to_load:
 #### RADKLIM
 if "RADKLIM" in ds_to_load:
     print("Loading RADKLIM...")
-    if "precipitation" in var_to_load:    
+    if "precipitation" in var_to_load:
         data["RADKLIM"] = xr.open_mfdataset("/automount/ags/jgiles/RADKLIM/20*/*.nc")
 
 #### RADOLAN
@@ -334,7 +346,7 @@ if "RADOLAN" in ds_to_load:
         #     warnings.simplefilter('ignore')
         #     data["RADOLAN"] = wrl.io.open_radolan_mfdataset("/automount/ags/jgiles/RADOLAN/hourly/radolan/historical/bin/20*/RW*/raa01-rw_10000-*-dwd---bin*")
         #     data["RADOLAN"]["RW"].attrs["unit"] = "mm"
-        
+
         # load concatenated netcdf-transformed data
         data["RADOLAN"] = xr.open_mfdataset("/automount/ags/jgiles/RADOLAN/hourly/radolan/historical/concat_files/20*/*.nc")
         data["RADOLAN"]["RW"].attrs["unit"] = "mm"
@@ -342,27 +354,27 @@ if "RADOLAN" in ds_to_load:
 #### HYRAS
 if "HYRAS" in ds_to_load:
     print("Loading HYRAS...")
-    if "precipitation" in var_to_load:    
+    if "precipitation" in var_to_load:
         data["HYRAS"] = xr.open_mfdataset("/automount/ags/jgiles/HYRAS-PRE-DE/daily/hyras_de/precipitation/pr_hyras_1_1931_2020_v5-0_de.nc")
 
 #### TWS reanalysis (Anne Springer)
 if "Springer-Rean" in ds_to_load:
     print("Loading Springer-Rean...")
-    if "tws" in var_to_load:    
+    if "tws" in var_to_load:
         data["Springer-Rean"] = xr.open_mfdataset("/automount/ags/jgiles/springer_reanalysis/clmoas_scenario0033_ensMean.TWS.updateMat.200301-201908_monthly.nc")
         data["Springer-Rean-grid"] = xr.open_mfdataset("/automount/ags/jgiles/springer_reanalysis/CORDEX0.11_grid_424x412.nc")
 
 #### GPCC
 if "GPCC-monthly" in ds_to_load:
     print("Loading GPCC-monthly...")
-    if "precipitation" in var_to_load:    
+    if "precipitation" in var_to_load:
         data["GPCC-monthly"] = xr.open_mfdataset("/automount/ags/jgiles/GPCC/full_data_monthly_v2022/025/*.nc")
         data["GPCC-monthly"] = data["GPCC-monthly"].isel(lat=slice(None, None, -1))
         data["GPCC-monthly"]["precip"] = data["GPCC-monthly"]["precip"].assign_attrs(units="mm", Units="mm")
 
 if "GPCC-daily" in ds_to_load:
     print("Loading GPCC-daily...")
-    if "precipitation" in var_to_load:    
+    if "precipitation" in var_to_load:
         data["GPCC-daily"] = xr.open_mfdataset("/automount/ags/jgiles/GPCC/full_data_daily_v2022/10/*.nc")
         data["GPCC-daily"] = data["GPCC-daily"].isel(lat=slice(None, None, -1))
         data["GPCC-daily"]["precip"] = data["GPCC-daily"]["precip"].assign_attrs(units="mm", Units="mm")
@@ -370,13 +382,13 @@ if "GPCC-daily" in ds_to_load:
 #### E-OBS
 if "E-OBS" in ds_to_load:
     print("Loading E-OBS...")
-    if "precipitation" in var_to_load:    
+    if "precipitation" in var_to_load:
         data["E-OBS"] = xr.open_mfdataset("/automount/ags/jgiles/E-OBS/RR/rr_ens_mean_0.25deg_reg_v29.0e.nc")
 
 #### CPC
 if "CPC" in ds_to_load:
     print("Loading CPC...")
-    if "precipitation" in var_to_load:    
+    if "precipitation" in var_to_load:
         data["CPC"] = xr.open_mfdataset("/automount/ags/jgiles/CPC_global_precip/precip.????.nc")
         data["CPC"] = data["CPC"].isel(lat=slice(None, None, -1))
         data["CPC"] = data["CPC"].assign_coords(lon=(((data["CPC"].lon + 180) % 360) - 180)).sortby('lon')
@@ -384,66 +396,66 @@ if "CPC" in ds_to_load:
 #### GPROF
 if "GPROF" in ds_to_load:
     print("Loading GPROF...")
-    if "precipitation" in var_to_load:    
+    if "precipitation" in var_to_load:
 
         gprof_files = sorted(glob.glob("/automount/ags/jgiles/GPM_L3/GPM_3GPROFGPMGMI.07/20*/*HDF5"))
-        
+
         # We need to extract the time dimension from the metadata on each file
         # we create a function for that
         def extract_time(ds):
             # Split the string into key-value pairs
             pairs = [pair.split('=') for pair in ds.FileHeader.strip().split(';\n') if pair]
-            
+
             # Create a dictionary from the key-value pairs
             result_dict = dict((key, value) for key, value in pairs)
-            
+
             # Extract time and set as dim
             date_time = pd.to_datetime(result_dict["StartGranuleDateTime"])
-            
+
             # Add it to ds as dimension
             ds = ds.assign_coords(time=date_time).expand_dims("time")
-            
+
             return ds
-        
+
         gprof_attrs= xr.open_mfdataset(gprof_files, engine="h5netcdf", phony_dims='sort', preprocess=extract_time)
-        
+
         # We create another function for adding the time dim to the dataset
         def add_tdim(ds):
             return ds.expand_dims("time")
-        data["GPROF"] = xr.open_mfdataset(gprof_files, engine="h5netcdf", group="Grid", 
+        data["GPROF"] = xr.open_mfdataset(gprof_files, engine="h5netcdf", group="Grid",
                                           concat_dim="time", combine="nested", preprocess=add_tdim)
-        
+
         data["GPROF"] = data["GPROF"].assign_coords({"time": gprof_attrs.time})
-        
+
         # We need to transform the data from mm/h to mm/month
         days_in_month = [31,28,31,30,31,30,31,31,30,31,30,31]
         days_in_month_ds = xr.DataArray([ days_in_month[mindex] for mindex in data["GPROF"].time.dt.month.values-1], dims=["time"], coords= data["GPROF"].time.coords)
-        for vv in ["surfacePrecipitation", "convectivePrecipitation", "frozenPrecipitation"]:    
+        for vv in ["surfacePrecipitation", "convectivePrecipitation", "frozenPrecipitation"]:
             data["GPROF"][vv] = data["GPROF"][vv]*days_in_month_ds*24
             data["GPROF"][vv] = data["GPROF"][vv].assign_attrs(units="mm", Units="mm")
 
 #### GSMaP
 if "GSMaP" in ds_to_load:
     print("Loading GSMaP...")
-    
+
     def build_time_dim_gsmap(ds):
         # Extract the time variable and its units
         time_var = ds['Time']
         time_units = time_var.attrs['units']
-        
+
         # Parse the units attribute to get the reference time
         time_origin = pd.to_datetime(time_units.split('since')[1].strip())
-        
+
         # Decode the time dimension
         decoded_time = time_origin + pd.to_timedelta(time_var.values, unit='H')
-        
+
         # Replace the original Time variable with the decoded time
         ds = ds.assign_coords(Time=decoded_time).rename({"Time": "time", "Longitude": "lon", "Latitude": "lat"})
-        
+
         return ds
     print("... Loading skipped because of inefficiency.")
-    # if "precipitation" in var_to_load:    
-    #     data["GSMaP"] = xr.open_mfdataset("/automount/ags/jgiles/GSMaP/standard/v8/netcdf/*/*/*/gsmap_mvk.*.v8.*.nc", 
+    # if "precipitation" in var_to_load:
+    #     data["GSMaP"] = xr.open_mfdataset("/automount/ags/jgiles/GSMaP/standard/v8/netcdf/*/*/*/gsmap_mvk.*.v8.*.nc",
     #                                       decode_times=False, preprocess=build_time_dim_gsmap)
 
 #%% DAILY SUM
@@ -459,7 +471,7 @@ else:
 
 def define_encoding(data):
     encoding = {}
-    
+
     # Define the desired chunk sizes
     desired_chunks = {dim: size for dim, size in data.dims.items()}
     desired_chunks["time"] = 1  # Set time to chunk size 1
@@ -467,17 +479,17 @@ def define_encoding(data):
     for var_name, var in data.data_vars.items():
         # Determine the chunk sizes specific to the variable
         var_chunks = {dim: desired_chunks[dim] for dim in var.dims}
-    
+
         # Combine compression and chunking settings
         encoding[var_name] = {"zlib": True, "complevel": 6, "chunksizes": tuple(var_chunks[dim] for dim in var.dims)}
-        
+
     return encoding
 
 # accumulate to daily values
 print("Calculating daily sums ...")
 data_dailysum = {}
 for dsname in ds_to_load:
-    if dsname not in ["IMERG-V07B-30min", "IMERG-V06B-30min", "HYRAS", 
+    if dsname not in ["IMERG-V07B-30min", "IMERG-V06B-30min", "HYRAS",
                       "EURADCLIM", "GPCC-monthly", "GPCC-daily", 'GPROF',
                       "GSMaP"]:
         print("... "+dsname)
@@ -491,7 +503,7 @@ for dsname in ds_to_load:
     savepath_dsname = savepath+"/daily/"+dsname
     if not os.path.exists(savepath_dsname):
         os.makedirs(savepath_dsname)
-    if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "HYRAS", 
+    if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "HYRAS",
                   "EURADCLIM", "GPCC-monthly", "GPCC-daily", 'GPROF', "GSMaP"]:
         # special treatment for these datasets, otherwise it will crash
         if dsname in ["HYRAS", "GPCC-daily"]:
@@ -509,13 +521,13 @@ for dsname in ds_to_load:
                 data[dsname].loc[{"time":str(yy)}].resample({"time": "D"}).sum().to_netcdf(savepath_dsname+"/temp/"+dsname+"_"+vname+"_dailysum_"+str(yy)+".nc",
                                                  encoding=define_encoding(data[dsname]))
         if dsname in ["EURADCLIM"]:
-            Cdo().daysum(input="-shifttime,-1hour -cat /automount/ags/jgiles/EURADCLIM_v2/concat_files/RAD_OPERA_HOURLY_RAINFALL_*.nc", 
+            Cdo().daysum(input="-shifttime,-1hour -cat /automount/ags/jgiles/EURADCLIM_v2/concat_files/RAD_OPERA_HOURLY_RAINFALL_*.nc",
                          output="/automount/agradar/jgiles/gridded_data/daily/EURADCLIM_v2/EURADCLIM_precipitation_dailysum_2013-2020.nc", options="-z zip_6")
         if dsname in ["GSMaP"]:
             # We will make daily files one by one
             dayfolders = glob.glob("/automount/ags/jgiles/GSMaP/standard/v8/netcdf/*/*/*")
             for dayfolder in dayfolders:
-                gsmap = xr.open_mfdataset(dayfolder+"/gsmap_mvk.*.v8.*.nc", 
+                gsmap = xr.open_mfdataset(dayfolder+"/gsmap_mvk.*.v8.*.nc",
                                                   decode_times=False, preprocess=build_time_dim_gsmap)
                 daysdim = gsmap['time'].resample(time="D").first()["time"]
                 day = str(daysdim.values[0])[0:10]
@@ -543,7 +555,7 @@ else:
 print("Calculating monthly sums ...")
 data_monthlysum = {}
 for dsname in ds_to_load:
-    if dsname not in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
+    if dsname not in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS",
                       "EURADCLIM", "GPCC-monthly", 'GPROF']:
         print("... "+dsname)
         data_monthlysum[dsname] = data[dsname].resample({"time": "MS"}).sum().compute()
@@ -559,18 +571,18 @@ for dsname in ds_to_load:
     savepath_dsname = savepath+"/monthly/"+dsname
     if not os.path.exists(savepath_dsname):
         os.makedirs(savepath_dsname)
-    if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
+    if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS",
                   "EURADCLIM", "GPCC-monthly"]:
         # special treatment for these datasets, otherwise it will crash
         if dsname == "HYRAS":
-            Cdo().monsum(input="/automount/ags/jgiles/HYRAS-PRE-DE/daily/hyras_de/precipitation/pr_hyras_1_1931_2020_v5-0_de.nc", 
+            Cdo().monsum(input="/automount/ags/jgiles/HYRAS-PRE-DE/daily/hyras_de/precipitation/pr_hyras_1_1931_2020_v5-0_de.nc",
                           output="/automount/agradar/jgiles/gridded_data/monthly/HYRAS/HYRAS_precipitation_monthlysum_1931-2020.nc", options="-z zip_6")
         if dsname in ["GPCC-monthly", "ERA5-monthly"]:
             warnings.warn(dsname+" is already monthly!")
         if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly"]:
             warnings.warn("Do not compute monthly sums from "+dsname+". Use the monthly version.")
         if dsname in ["EURADCLIM"]:
-            Cdo().monsum(input="/automount/agradar/jgiles/gridded_data/daily/EURADCLIM_v2/EURADCLIM_precipitation_dailysum_2013-2020.nc", 
+            Cdo().monsum(input="/automount/agradar/jgiles/gridded_data/daily/EURADCLIM_v2/EURADCLIM_precipitation_dailysum_2013-2020.nc",
                          output="/automount/agradar/jgiles/gridded_data/monthly/EURADCLIM_v2/EURADCLIM_precipitation_monthlysum_2013-2020.nc", options="-z zip_6")
     else:
         sd = str(data_monthlysum[dsname].time[0].values)[0:4]
@@ -593,7 +605,7 @@ else:
 print("Calculating seasonal sums ...")
 data_seasonsum = {}
 for dsname in ds_to_load:
-    if dsname not in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
+    if dsname not in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS",
                       "EURADCLIM", 'GPROF']:
         print("... "+dsname)
         #!!! Resampling with QE does not work but apparently it has been fixed in the latest xarray version. Check again later
@@ -627,16 +639,16 @@ for dsname in ds_to_load:
     savepath_dsname = savepath+"/seasonal/"+dsname
     if not os.path.exists(savepath_dsname):
         os.makedirs(savepath_dsname)
-    if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
+    if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS",
                   "EURADCLIM"]:
         # special treatment for these datasets, otherwise it will crash
         if dsname == "HYRAS":
-            Cdo().seassum(input="/automount/ags/jgiles/HYRAS-PRE-DE/daily/hyras_de/precipitation/pr_hyras_1_1931_2020_v5-0_de.nc", 
+            Cdo().seassum(input="/automount/ags/jgiles/HYRAS-PRE-DE/daily/hyras_de/precipitation/pr_hyras_1_1931_2020_v5-0_de.nc",
                           output="/automount/agradar/jgiles/gridded_data/seasonal/HYRAS/HYRAS_precipitation_seasonalsum_1931-2020.nc", options="-z zip_6")
         if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly"]:
             warnings.warn("Do not compute seasonal sums from "+dsname+". Use the monthly version.")
         if dsname in ["EURADCLIM"]:
-            Cdo().seassum(input="/automount/agradar/jgiles/gridded_data/daily/EURADCLIM_v2/EURADCLIM_precipitation_dailysum_2013-2020.nc", 
+            Cdo().seassum(input="/automount/agradar/jgiles/gridded_data/daily/EURADCLIM_v2/EURADCLIM_precipitation_dailysum_2013-2020.nc",
                          output="/automount/agradar/jgiles/gridded_data/seasonal/EURADCLIM_v2/EURADCLIM_precipitation_seasonalsum_2013-2020.nc", options="-z zip_6")
     else:
         sd = str(data_seasonsum[dsname].time[0].values)[0:4]
@@ -658,14 +670,25 @@ else:
 # accumulate to yearly values
 print("Calculating yearly sums ...")
 data_yearlysum = {}
-for dsname in ds_to_load:
-    if dsname not in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
-                      "EURADCLIM", "GPROF", "GSMaP"]:
-        print("... "+dsname)
-        data_yearlysum[dsname] = data[dsname].resample({"time": "YS"}).sum().compute()
-    if dsname in ["GPROF"]:
-        print("... "+dsname)
-        data_yearlysum[dsname] = data[dsname][["surfacePrecipitation", "convectivePrecipitation", "frozenPrecipitation", "npixPrecipitation", "npixTotal"]].resample({"time": "YS"}).sum().compute()
+if vname not in ["surfstor", "subsurfstor"]:
+    savename = "_yearlysum_"
+    for dsname in ds_to_load:
+        if dsname not in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS",
+                          "EURADCLIM", "GPROF", "GSMaP"]:
+            print("... "+dsname)
+            data_yearlysum[dsname] = data[dsname].resample({"time": "YS"}).sum().compute()
+        if dsname in ["GPROF"]:
+            print("... "+dsname)
+            data_yearlysum[dsname] = data[dsname][["surfacePrecipitation", "convectivePrecipitation", "frozenPrecipitation", "npixPrecipitation", "npixTotal"]].resample({"time": "YS"}).sum().compute()
+else:
+    # average to yearly values
+    print(vname+" is not accumulated, calculating yearly means instead ...")
+    savename = "_yearlymean_"
+    for dsname in ds_to_load:
+        if dsname not in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS",
+                          "EURADCLIM", "GPROF", "GSMaP"]:
+            print("... "+dsname)
+            data_yearlysum[dsname] = data[dsname].resample({"time": "YS"}).mean().compute()
 
 # save the processed datasets
 print("Saving file ...")
@@ -674,16 +697,16 @@ for dsname in ds_to_load:
     savepath_dsname = savepath+"/yearly/"+dsname
     if not os.path.exists(savepath_dsname):
         os.makedirs(savepath_dsname)
-    if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS", 
+    if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly", "HYRAS",
                   "EURADCLIM", "GSMaP"]:
         # special treatment for these datasets, otherwise it will crash
         if dsname == "HYRAS":
-            Cdo().yearsum(input="/automount/ags/jgiles/HYRAS-PRE-DE/daily/hyras_de/precipitation/pr_hyras_1_1931_2020_v5-0_de.nc", 
+            Cdo().yearsum(input="/automount/ags/jgiles/HYRAS-PRE-DE/daily/hyras_de/precipitation/pr_hyras_1_1931_2020_v5-0_de.nc",
                           output="/automount/agradar/jgiles/gridded_data/yearly/HYRAS/HYRAS_precipitation_yearlysum_1931-2020.nc", options="-z zip_6")
         if dsname in ["IMERG-V07B-30min", "IMERG-V06B-30min", "ERA5-hourly"]:
             warnings.warn("Do not compute yearly sums from "+dsname+". Use the monthly version.")
         if dsname in ["EURADCLIM"]:
-            Cdo().yearsum(input="/automount/agradar/jgiles/gridded_data/monthly/EURADCLIM_v2/EURADCLIM_precipitation_monthlysum_2013-2020.nc", 
+            Cdo().yearsum(input="/automount/agradar/jgiles/gridded_data/monthly/EURADCLIM_v2/EURADCLIM_precipitation_monthlysum_2013-2020.nc",
                          output="/automount/agradar/jgiles/gridded_data/yearly/EURADCLIM_v2/EURADCLIM_precipitation_yearlysum_2013-2020.nc", options="-z zip_6")
         if dsname in "GSMaP":
             print("... ... from daily files")
@@ -692,18 +715,18 @@ for dsname in ds_to_load:
             for year in range(1998, 2024):  # Adjust the range as needed
                 # Filter the files that correspond to the current year
                 year_files = [f for f in gsmap_daily_files if f"_{year}-" in f]
-                
+
                 # Load the files for this year into an xarray dataset
                 if year_files:  # Only process if there are files for the current year
                     gsmap_year = xr.open_mfdataset(year_files)
-                    gsmap_year.resample({"time": "YS"}).sum().to_netcdf(savepath_dsname+"/"+dsname+"_"+vname+"_yearlysum_"+str(year)+".nc", 
+                    gsmap_year.resample({"time": "YS"}).sum().to_netcdf(savepath_dsname+"/"+dsname+"_"+vname+"_yearlysum_"+str(year)+".nc",
                                                                         encoding=dict([(vv,{"zlib":True, "complevel":6}) for vv in gsmap_year.data_vars]))
                 else:
-                    print(f'No files found for the year {year}')            
+                    print(f'No files found for the year {year}')
     else:
         sd = str(data_yearlysum[dsname].time[0].values)[0:4]
         ed = str(data_yearlysum[dsname].time[-1].values)[0:4]
-        data_yearlysum[dsname].to_netcdf(savepath_dsname+"/"+dsname+"_"+vname+"_yearlysum_"+sd+"-"+ed+".nc",
+        data_yearlysum[dsname].to_netcdf(savepath_dsname+"/"+dsname+"_"+vname+savename+sd+"-"+ed+".nc",
                                          encoding=dict([(vv,{"zlib":True, "complevel":6}) for vv in data_yearlysum[dsname].data_vars]))
 
 #%% Regrid files
@@ -722,9 +745,9 @@ except: # rechunking may fail due to some not unified chunks, then try again
 
 # Define target grid
 grid_out = xe.util.cf_grid_2d(-49.746,70.655,0.01,19.854,74.654,0.01) # manually recreate the EURregLonLat001deg grid
-grid_out_cut = grid_out.loc[{"lon": slice(float(dataset.lon.min().values), 
-                                          float(dataset.lon.max().values)), 
-                             "lat": slice(float(dataset.lat.min().values), 
+grid_out_cut = grid_out.loc[{"lon": slice(float(dataset.lon.min().values),
+                                          float(dataset.lon.max().values)),
+                             "lat": slice(float(dataset.lat.min().values),
                                           float(dataset.lat.max().values))}]
 
 # Define a function to set the encoding compression
@@ -738,8 +761,8 @@ def define_encoding(data):
 
     return encoding
 
-regridder = xe.Regridder(dataset.cf.add_bounds(["lon", "lat"]), 
-                         grid_out_cut, 
+regridder = xe.Regridder(dataset.cf.add_bounds(["lon", "lat"]),
+                         grid_out_cut,
                          "conservative")
 dataset_regridded = regridder(dataset, skipna=True, na_thres=1)
 
