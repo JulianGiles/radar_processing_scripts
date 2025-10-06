@@ -5891,6 +5891,294 @@ def calc_microphys_retrievals(ds, Lambda = 53.1, mu=0.33,
 For an example of the full workflow see plot_ppis_qvps_etc.py
 """
 
+#### Volume matching two radars
+
+def get_common_projection(*datasets):
+    """
+    Return a common OSR SpatialReference object for multiple radar datasets.
+
+    Chooses UTM if all radars lie in the same UTM zone,
+    otherwise falls back to an Azimuthal Equidistant (AEQD)
+    projection centered between them.
+
+    Parameters
+    ----------
+    *datasets : xarray.Dataset
+        Radar datasets, each containing `latitude` and `longitude`
+        (either as scalar, 1D, or 2D coordinates).
+
+    Returns
+    -------
+    proj : osr.SpatialReference
+        Common spatial reference to use with wradlib.georeference().
+    """
+    if len(datasets) < 2:
+        raise ValueError("Provide at least two radar datasets.")
+
+    def get_latlon(ds):
+        """Extract representative latitude and longitude from dataset."""
+        lat = ds['latitude']
+        lon = ds['longitude']
+        # Reduce to scalar if necessary
+        if hasattr(lat, "values"):
+            lat = np.nanmean(lat.values)
+            lon = np.nanmean(lon.values)
+        return float(lat), float(lon)
+
+    # Collect all radar positions
+    lats, lons = zip(*(get_latlon(ds) for ds in datasets))
+    lats = np.array(lats)
+    lons = np.array(lons)
+
+    # Determine UTM zone for each
+    def utm_zone(lat, lon):
+        zone = int(np.floor((lon + 180) / 6) + 1)
+        hemisphere = "north" if lat >= 0 else "south"
+        epsg = 32600 + zone if hemisphere == "north" else 32700 + zone
+        return zone, epsg, hemisphere
+
+    zones, epsgs, hemispheres = zip(*(utm_zone(lat, lon) for lat, lon in zip(lats, lons)))
+
+    # Check if all radars are in the same UTM zone & hemisphere
+    same_zone = len(set(zones)) == 1 and len(set(hemispheres)) == 1
+
+    if same_zone:
+        # All in the same UTM zone
+        zone = zones[0]
+        hemisphere = hemispheres[0]
+        epsg = epsgs[0]
+        proj = osr.SpatialReference()
+        proj.ImportFromEPSG(epsg)
+        print(f"Using UTM zone {zone} ({hemisphere}), EPSG:{epsg}")
+    else:
+        # Different zones → use AEQD centered at mean location
+        proj = osr.SpatialReference()
+        proj.SetAE(
+            np.mean(lats),
+            np.mean(lons),
+            0,0
+        )
+        proj.SetWellKnownGeogCS("WGS84")
+        print(f"Using Azimuthal Equidistant projection centered at "
+              f"({np.mean(lats):.2f}°, {np.mean(lons):.2f}°)")
+
+    return proj
+
+
+def find_radar_overlap(ds1, ds2, tolerance=1000.0, tolerance_time=None):
+    """
+    Return boolean overlap masks for two radar xarray Datasets based on 3D (x,y,z)
+    distance and optional time tolerance. Uses scipy.spatial.cKDTree to look for
+    overlapping points.
+
+    Parameters
+    ----------
+    ds1, ds2 : xarray.Dataset
+        Must contain coordinates/variables 'x', 'y', 'z' in a common coordinate system
+        in meters with shape (azimuth, range) or (time, azimuth, range). 'azimuth'
+        and 'range' coords must exist.
+    tolerance : float
+        Spatial tolerance in meters for counting bins as overlapping.
+    tolerance_time : float or None
+        Temporal tolerance in seconds. If None, time is ignored (volumes matched
+        by index or single-volume logic).
+
+    Returns
+    -------
+    mask1, mask2 : xarray.DataArray (dtype=bool)
+        Masks have dims ('time','azimuth','range') if the corresponding dataset
+        has a time dimension (len>1); otherwise dims ('azimuth','range').
+        True = overlapping bin (within tolerance to at least one bin of the other radar).
+
+    Notes
+    -----
+    If the x,y,z coordinates are static in time in both datasets the computation
+    of overlapping points is done only once and then propagated, resulting in
+    great time savings. If the x,y,z coordinates are not static but they change
+    only a few times, it is recommended to subdivide the datasets into timespans
+    with static coordinates and process them separately.
+
+    Example
+    -------
+    proj = get_common_projection(ds1, ds2)
+    ds1 = wrl.georef.georeference(ds1, crs=proj)
+    ds2 = wrl.georef.georeference(ds2, crs=proj)
+    mask1, mask2 = find_radar_overlap(ds1, ds2, tolerance_time=60*4)
+
+    """
+    # --- basic checks ---
+    for c in ('x', 'y', 'z'):
+        if c not in ds1.coords and c not in ds1:
+            raise ValueError(f"Coordinate '{c}' missing from ds1")
+        if c not in ds2.coords and c not in ds2:
+            raise ValueError(f"Coordinate '{c}' missing from ds2")
+
+    # helpers to safely extract a (azimuth,range) numpy array of a coordinate
+    def coord_slice(ds, coord, time_index):
+        arr = ds[coord]
+        if 'time' in arr.dims and arr.sizes.get('time', 0) > 0:
+            # if time dimension exists but has length 1, isel works fine and returns 2D
+            if arr.sizes.get('time', 0) >= 1:
+                return arr.isel(time=time_index).values
+        # no time dim -> return the 2D array
+        return arr.values
+
+    # detect whether ds coordinates vary with time (static geometry optimization)
+    def is_static(ds, coord):
+        arr = ds[coord]
+        if 'time' not in arr.dims:
+            return True
+        if arr.sizes.get('time', 0) <= 1:
+            return True
+        # compare the first time-slice to the rest
+        first = arr.isel(time=0).values
+        # compare each slice (using allclose for floats). If very large, this will compute arrays.
+        for t in range(arr.sizes['time']):
+            if not np.allclose(arr.isel(time=t).values, first, atol=1e-6, rtol=1e-6):
+                return False
+        return True
+
+    static1 = all(is_static(ds1, c) for c in ('x', 'y', 'z'))
+    static2 = all(is_static(ds2, c) for c in ('x', 'y', 'z'))
+
+    has_time1 = ('time' in ds1.dims) and ds1.sizes.get('time', 0) > 1
+    has_time2 = ('time' in ds2.dims) and ds2.sizes.get('time', 0) > 1
+
+    # --- determine matched time pairs ---
+    matched_pairs = []
+
+    if has_time1 and has_time2 and (tolerance_time is not None):
+        # compute representative times (mean over azimuth if rtime is 2D)
+        t1 = ds1['time'].values
+        t2 = ds2['time'].values
+        # convert to integer seconds since epoch
+        t1s = np.array([np.datetime64(tt, 's').astype('int64') for tt in t1])
+        t2s = np.array([np.datetime64(tt, 's').astype('int64') for tt in t2])
+        for i, tsi in enumerate(t1s):
+            diffs = np.abs(t2s - tsi)
+            cand = np.where(diffs <= tolerance_time)[0]
+            if cand.size > 0:
+                j = cand[np.argmin(diffs[cand])]
+                matched_pairs.append((i, int(j)))
+    else:
+        # fallback / simpler matching rules
+        if has_time1 and not has_time2:
+            matched_pairs = [(i, 0) for i in range(ds1.sizes['time'])]
+        elif has_time2 and not has_time1:
+            matched_pairs = [(0, j) for j in range(ds2.sizes['time'])]
+        elif has_time1 and has_time2 and (tolerance_time is None):
+            # match by index up to min length
+            n = min(ds1.sizes['time'], ds2.sizes['time'])
+            matched_pairs = [(i, i) for i in range(n)]
+        else:
+            # neither has meaningful time -> single pair
+            matched_pairs = [(0, 0)]
+
+    if len(matched_pairs) == 0:
+        warnings.warn("No matched time pairs found within tolerance_time. Returning all-False masks.")
+
+    # --- prepare empty masks with correct dims & coords ---
+    def make_mask_template(ds):
+        if 'time' in ds.dims and ds.sizes.get('time', 0) > 1:
+            coords = {'time': ds['time'], 'azimuth': ds['azimuth'], 'range': ds['range']}
+            dims = ('time', 'azimuth', 'range')
+            shape = (ds.sizes['time'], ds.sizes['azimuth'], ds.sizes['range'])
+        else:
+            coords = {'azimuth': ds['azimuth'], 'range': ds['range']}
+            dims = ('azimuth', 'range')
+            shape = (ds.sizes['azimuth'], ds.sizes['range'])
+        return xr.DataArray(np.zeros(shape, dtype=bool), coords=coords, dims=dims)
+
+    mask1 = make_mask_template(ds1)
+    mask2 = make_mask_template(ds2)
+
+    # caches for static coords / already computed coord slices
+    coords_cache = {}
+
+    def get_coords(ds, coord_name, t_index):
+        key = (id(ds), coord_name, None if ('time' not in ds[coord_name].dims) else int(t_index))
+        if key in coords_cache:
+            return coords_cache[key]
+        arr2d = coord_slice(ds, coord_name, int(t_index))
+        coords_cache[key] = arr2d
+        return arr2d
+
+    # --- compute pairwise spatial overlap for a single i1,i2 pair ---
+    def compute_pair_mask(i1, i2):
+        x1 = get_coords(ds1, 'x', i1)
+        y1 = get_coords(ds1, 'y', i1)
+        z1 = get_coords(ds1, 'z', i1)
+
+        x2 = get_coords(ds2, 'x', i2)
+        y2 = get_coords(ds2, 'y', i2)
+        z2 = get_coords(ds2, 'z', i2)
+
+        shape1 = x1.shape
+        shape2 = x2.shape
+
+        # flatten into (N,3)
+        pts1 = np.vstack((x1.ravel(), y1.ravel(), z1.ravel())).T
+        pts2 = np.vstack((x2.ravel(), y2.ravel(), z2.ravel())).T
+
+        # remove invalid coordinates (NaN/inf)
+        valid1 = np.all(np.isfinite(pts1), axis=1)
+        valid2 = np.all(np.isfinite(pts2), axis=1)
+
+        mask_flat1 = np.zeros(pts1.shape[0], dtype=bool)
+        mask_flat2 = np.zeros(pts2.shape[0], dtype=bool)
+
+        if valid1.sum() == 0 or valid2.sum() == 0:
+            return mask_flat1.reshape(shape1), mask_flat2.reshape(shape2)
+
+        pts1_valid = pts1[valid1]
+        pts2_valid = pts2[valid2]
+
+        # build tree on radar2 valid points
+        tree = cKDTree(pts2_valid)
+        idxs = tree.query_ball_point(pts1_valid, r=tolerance)
+
+        # mark mask1 entries that have any neighbor
+        valid1_idx = np.nonzero(valid1)[0]
+        valid2_idx = np.nonzero(valid2)[0]
+
+        nonempty_k = [k for k, lst in enumerate(idxs) if len(lst) > 0]
+        if nonempty_k:
+            mask_flat1[valid1_idx[nonempty_k]] = True
+            # all matched indices in pts2_valid; map back to flat2 indices
+            matched2_in_valid = np.concatenate([idxs[k] for k in nonempty_k])
+            if matched2_in_valid.size > 0:
+                mask_flat2[valid2_idx[matched2_in_valid]] = True
+
+        return mask_flat1.reshape(shape1), mask_flat2.reshape(shape2)
+
+    # --- loop matched pairs and assemble masks (use OR accumulation where needed) ---
+    if static1 and static2:
+        mask_once_1, mask_once_2 = compute_pair_mask(0, 0)
+        if has_time1:
+            mask1[:] = mask_once_1
+        if has_time2:
+            mask2[:] = mask_once_2
+    else:
+        for (i1, i2) in matched_pairs:
+            m1pair, m2pair = compute_pair_mask(i1, i2)
+
+            # assign/accumulate into mask1
+            if ('time' in mask1.dims) and mask1.sizes.get('time', 0) > 1:
+                # i1 is a time index in ds1 (if ds1 has time), otherwise i1 is 0 (no-op)
+                mask1.values[int(i1), :, :] |= m1pair
+            else:
+                # no time dim on mask1: OR the pair result (so any match at any paired time is kept)
+                mask1.values[:, :] |= m1pair
+
+            # assign/accumulate into mask2
+            if ('time' in mask2.dims) and mask2.sizes.get('time', 0) > 1:
+                mask2.values[int(i2), :, :] |= m2pair
+            else:
+                mask2.values[:, :] |= m2pair
+
+    return mask1, mask2
+
+
 #### Plotting helping functions
 
 def get_discrete_cmap(ticks, colors, bad="white", over=None, under=None):
