@@ -6048,7 +6048,7 @@ def find_radar_overlap(ds1, ds2, tolerance=1000.0, tolerance_time=None):
     matched_pairs = []
 
     if has_time1 and has_time2 and (tolerance_time is not None):
-        # compute representative times (mean over azimuth if rtime is 2D)
+        # get representative times
         t1 = ds1['time'].values
         t2 = ds2['time'].values
         # convert to integer seconds since epoch
@@ -6135,7 +6135,7 @@ def find_radar_overlap(ds1, ds2, tolerance=1000.0, tolerance_time=None):
 
         # build tree on radar2 valid points
         tree = cKDTree(pts2_valid)
-        idxs = tree.query_ball_point(pts1_valid, r=tolerance)
+        idxs = tree.query_ball_point(pts1_valid, r=tolerance, workers=-1)
 
         # mark mask1 entries that have any neighbor
         valid1_idx = np.nonzero(valid1)[0]
@@ -6178,6 +6178,251 @@ def find_radar_overlap(ds1, ds2, tolerance=1000.0, tolerance_time=None):
 
     return mask1, mask2
 
+def find_refined_radar_overlap(
+    ds1,
+    ds2,
+    mask1=None,
+    mask2=None,
+    var_name="DBZH",
+    tolerance=1000.0,
+    tolerance_time=None,
+    compute_masks_if_missing=True
+):
+    """
+    Refine two geometric overlap masks so that a bin is kept only if it has at
+    least one matched neighbour in the other dataset with finite var_name value.
+
+    Parameters
+    ----------
+    ds1, ds2 : xarray.Dataset
+        Radar datasets (must contain coords 'x','y','z' and variable `var_name`).
+    mask1, mask2 : xarray.DataArray or None
+        Geometric overlap masks returned by `find_radar_overlap`. If None and
+        compute_masks_if_missing==True, the function will call find_radar_overlap.
+    var_name : str
+        Variable name to test for NaN (e.g., "DBZH").
+    tolerance : float
+        Spatial tolerance in meters used when deciding neighbours (should match the
+        tolerance used to produce the geometric masks).
+    tolerance_time : float or None
+        Temporal tolerance in seconds (used to pair volumes). If None, pairing is
+        done by index (or single-volume rules).
+    compute_masks_if_missing : bool
+        If True and masks are not provided, call find_radar_overlap(ds1, ds2,...)
+        to obtain geometric masks (this may be expensive).
+
+    Returns
+    -------
+    new_mask1, new_mask2 : xarray.DataArray (bool)
+        Refined masks with same dims & coords as input masks (or masks produced
+        by find_radar_overlap). True = keep (has at least one valid match).
+    """
+
+    # ---- helper: obtain geometric masks if not provided ----
+    if mask1 is None or mask2 is None:
+        if not compute_masks_if_missing:
+            raise ValueError("mask1/mask2 missing and compute_masks_if_missing=False")
+        # find_radar_overlap must exist in the namespace (your function)
+        mask1_comp, mask2_comp = find_radar_overlap(ds1, ds2, tolerance=tolerance, tolerance_time=tolerance_time)
+        if mask1 is None:
+            mask1 = mask1_comp
+        if mask2 is None:
+            mask2 = mask2_comp
+
+    # ---- basic checks ----
+    for c in ('x', 'y', 'z'):
+        if c not in ds1.coords and c not in ds1:
+            raise ValueError(f"Coordinate '{c}' missing from ds1")
+        if c not in ds2.coords and c not in ds2:
+            raise ValueError(f"Coordinate '{c}' missing from ds2")
+    if var_name not in ds1.data_vars:
+        raise ValueError(f"{var_name} not found in ds1")
+    if var_name not in ds2.data_vars:
+        raise ValueError(f"{var_name} not found in ds2")
+
+    # ---- helpers to safely extract 2D coordinate arrays (azimuth, range) ----
+    def coord_slice(ds, coord, time_index):
+        arr = ds[coord]
+        if 'time' in arr.dims and arr.sizes.get('time', 0) >= 1:
+            return arr.isel(time=time_index).values
+        return arr.values
+
+    def var_slice(ds, var, time_index):
+        arr = ds[var]
+        if 'time' in arr.dims and arr.sizes.get('time', 0) >= 1:
+            return arr.isel(time=time_index).values
+        return arr.values
+
+    # ---- determine presence of time dims ----
+    has_time1 = ('time' in ds1.dims) and ds1.sizes.get('time', 0) > 1
+    has_time2 = ('time' in ds2.dims) and ds2.sizes.get('time', 0) > 1
+
+    # ---- recompute matched time pairs (mirror logic used in find_radar_overlap) ----
+    matched_pairs = []
+    if has_time1 and has_time2 and (tolerance_time is not None):
+        t1 = ds1['time'].values
+        t2 = ds2['time'].values
+        t1s = np.array([np.datetime64(tt, 's').astype('int64') for tt in t1])
+        t2s = np.array([np.datetime64(tt, 's').astype('int64') for tt in t2])
+        for i, tsi in enumerate(t1s):
+            diffs = np.abs(t2s - tsi)
+            cand = np.where(diffs <= tolerance_time)[0]
+            if cand.size > 0:
+                j = cand[np.argmin(diffs[cand])]
+                matched_pairs.append((i, int(j)))
+    else:
+        if has_time1 and not has_time2:
+            matched_pairs = [(i, 0) for i in range(ds1.sizes['time'])]
+        elif has_time2 and not has_time1:
+            matched_pairs = [(0, j) for j in range(ds2.sizes['time'])]
+        elif has_time1 and has_time2 and (tolerance_time is None):
+            n = min(ds1.sizes['time'], ds2.sizes['time'])
+            matched_pairs = [(i, i) for i in range(n)]
+        else:
+            matched_pairs = [(0, 0)]
+
+    if len(matched_pairs) == 0:
+        warnings.warn("No matched time pairs found; returning input masks unchanged.")
+        return mask1.copy(), mask2.copy()
+
+    # ---- prepare output masks (copies, keep dims/coords) ----
+    new_mask1 = mask1.copy()
+    new_mask2 = mask2.copy()
+
+    # We'll accumulate "keep" results per time (or across pairs for no-time dims)
+    # For mask with time dim: keep_map shape = mask.values shape (time,az,rg)
+    # For mask without time dim: keep_map_flat shape = (az*rg,)
+    if 'time' in mask1.dims and mask1.sizes.get('time', 0) > 1:
+        keep1 = np.zeros_like(mask1.values, dtype=bool)
+    else:
+        keep1_flat = np.zeros(mask1.values.size, dtype=bool)
+
+    if 'time' in mask2.dims and mask2.sizes.get('time', 0) > 1:
+        keep2 = np.zeros_like(mask2.values, dtype=bool)
+    else:
+        keep2_flat = np.zeros(mask2.values.size, dtype=bool)
+
+    # ---- main loop over matched time pairs ----
+    for (i1, i2) in matched_pairs:
+        # get 2D coords for this pair
+        x1 = coord_slice(ds1, 'x', i1)
+        y1 = coord_slice(ds1, 'y', i1)
+        z1 = coord_slice(ds1, 'z', i1)
+
+        x2 = coord_slice(ds2, 'x', i2)
+        y2 = coord_slice(ds2, 'y', i2)
+        z2 = coord_slice(ds2, 'z', i2)
+
+        # shapes and flat arrays
+        shape1 = x1.shape
+        shape2 = x2.shape
+        n1 = shape1[0] * shape1[1]
+        n2 = shape2[0] * shape2[1]
+
+        pts1 = np.vstack((x1.ravel(), y1.ravel(), z1.ravel())).T
+        pts2 = np.vstack((x2.ravel(), y2.ravel(), z2.ravel())).T
+
+        coords1_finite = np.all(np.isfinite(pts1), axis=1)
+        coords2_finite = np.all(np.isfinite(pts2), axis=1)
+
+        # get geometric mask flattened for this time
+        if ('time' in mask1.dims) and mask1.sizes.get('time', 0) > 1:
+            mask1_flat = mask1.isel(time=i1).values.ravel()
+        else:
+            mask1_flat = mask1.values.ravel()
+
+        if ('time' in mask2.dims) and mask2.sizes.get('time', 0) > 1:
+            mask2_flat = mask2.isel(time=i2).values.ravel()
+        else:
+            mask2_flat = mask2.values.ravel()
+
+        # candidate indices: those geometric-overlap bins that also have finite coords
+        cand1 = np.nonzero(mask1_flat & coords1_finite)[0]
+        cand2 = np.nonzero(mask2_flat & coords2_finite)[0]
+
+        if cand1.size == 0 or cand2.size == 0:
+            # nothing to do for this pair (but do not zero masks; keep default False in keep maps)
+            continue
+
+        pts1_c = pts1[cand1]
+        pts2_c = pts2[cand2]
+
+        # build KDTree on pts2_c (candidates only)
+        tree2 = cKDTree(pts2_c)
+        neighbours = tree2.query_ball_point(pts1_c, r=tolerance, workers=-1)
+
+        # if no neighbour relationships at all, skip
+        total_pairs = sum(len(n) for n in neighbours)
+        if total_pairs == 0:
+            continue
+
+        # build flattened pair list: rows = idx in [0..M-1] referencing cand1, cols = idx in [0..K-1] referencing cand2
+        lens = np.array([len(n) for n in neighbours], dtype=int)
+        row_idx = np.repeat(np.arange(len(neighbours)), lens)
+        col_idx = np.concatenate([np.array(n, dtype=int) for n in neighbours])  # indices into pts2_c
+
+        # var_name flattened arrays for candidates
+        db1_flat = var_slice(ds1, var_name, i1).ravel()
+        db2_flat = var_slice(ds2, var_name, i2).ravel()
+
+        db1_c = db1_flat[cand1]
+        db2_c = db2_flat[cand2]
+
+        db1_valid = np.isfinite(db1_c)
+        db2_valid = np.isfinite(db2_c)
+
+        M = len(cand1)
+        K = len(cand2)
+
+        # compute per-candidate keep flags:
+        # - keep1[k] = any(neighbouring db2 candidate is finite)
+        # - keep2[j] = any(neighbouring db1 candidate is finite)
+        keep1_c = np.zeros(M, dtype=bool)
+        keep2_c = np.zeros(K, dtype=bool)
+
+        # use vectorized accumulation:
+        if row_idx.size > 0:
+            # For keep1: map db2_valid[col_idx] to rows -> any per row
+            np.logical_or.at(keep1_c, row_idx, db2_valid[col_idx])
+            # For keep2: map db1_valid[row_idx] to cols -> any per col
+            np.logical_or.at(keep2_c, col_idx, db1_valid[row_idx])
+        # Note: rows with no neighbours remain False (they have no valid partner)
+
+        # accumulate into global keep maps
+        if ('time' in mask1.dims) and mask1.sizes.get('time', 0) > 1:
+            # update the 2D slice of keep1 for time i1
+            view = keep1[int(i1)].ravel()
+            view[cand1] |= keep1_c.copy()
+        else:
+            keep1_flat[cand1] |= keep1_c.copy()
+
+        if ('time' in mask2.dims) and mask2.sizes.get('time', 0) > 1:
+            view2 = keep2[int(i2)].ravel()
+            view2[cand2] |= keep2_c.copy()
+        else:
+            keep2_flat[cand2] |= keep2_c.copy()
+
+    # ---- apply accumulated keep maps to original masks ----
+    if ('time' in mask1.dims) and mask1.sizes.get('time', 0) > 1:
+        # keep1 is array shaped (time,az,rg)
+        # ensure we only change True->False where keep1 is False
+        new_mask1.values = new_mask1.values & keep1
+    else:
+        # reshape keep1_flat to (az,rg)
+        shape1 = mask1.values.shape
+        if keep1_flat.size != mask1.values.size:
+            raise RuntimeError("Internal shape mismatch for mask1")
+        new_mask1.values = new_mask1.values & keep1_flat.reshape(shape1)
+
+    if ('time' in mask2.dims) and mask2.sizes.get('time', 0) > 1:
+        new_mask2.values = new_mask2.values & keep2
+    else:
+        shape2 = mask2.values.shape
+        if keep2_flat.size != mask2.values.size:
+            raise RuntimeError("Internal shape mismatch for mask2")
+        new_mask2.values = new_mask2.values & keep2_flat.reshape(shape2)
+
+    return new_mask1, new_mask2
 
 #### Plotting helping functions
 
