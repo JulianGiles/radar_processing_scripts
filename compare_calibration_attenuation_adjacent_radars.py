@@ -430,7 +430,7 @@ plt.title("DBZH "+tsel)
 tsel = "2016-10-28T05"
 vv = "DBZH"
 SNRH_min = 15
-RHOHV_min = 0.9
+RHOHV_min = 0.95
 TEMP_min = 3
 
 # We need to use the nearest neighbors mask with the less amount of valid values to avoid duplicates
@@ -441,46 +441,80 @@ dsx = utils.apply_min_max_thresh(dsx_, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
 dsy = utils.apply_min_max_thresh(dsy_, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
                                         "SNRHC":SNRH_min,"SQIH":0.5, "TEMP":TEMP_min}, {})[vv]
 
+dsx_flat = dsx.values.flatten()
+dsy_flat = dsy.values.flatten()
+
 if mask1_nn.sel(time=tsel, method="nearest").count() < mask2_nn.sel(time=tsel, method="nearest").count():
     mask_nn = mask1_nn.sel(time=tsel, method="nearest").copy()
 
     mask_nn_flat = mask_nn.values.flatten()
 
-    dsx_p = dsx.values.flatten()[np.isfinite(mask_nn_flat)]
-    dsy_p = dsy.values.flatten()[mask_nn_flat[np.isfinite(mask_nn_flat)].astype(int)]
+    mask_nn_flat_valid = np.isfinite(mask_nn_flat)
+    mask_nn_flat = mask_nn_flat[mask_nn_flat_valid].astype(int)
 
-    # also create a new mask with these values (for use later)
+    # Remove out-of-bounds
+    mask_nn_flat = mask_nn_flat[mask_nn_flat < len(dsy_flat)]
 
-    mask_nn_flat_ = mask_nn_flat[np.isfinite(mask_nn_flat)]
-    mask_nn_flat_[~np.isfinite(dsy_p)] = np.nan
-    mask_nn_flat[np.isfinite(mask_nn_flat)] = mask_nn_flat_
+    # unique target indices (to ensure 1-to-1)
+    _, unique_idx = np.unique(mask_nn_flat, return_index=True)
+    dsx_indices = np.nonzero(mask_nn_flat_valid)[0][unique_idx]
+    dsy_indices = mask_nn_flat[unique_idx]
 
-    mask1_ = mask1.sel(time=tsel, method="nearest").copy()
-    mask1_.values[:] = np.isfinite(mask_nn_flat.reshape(mask1_.shape))
+    # --- extract pairs ---
+    dsx_p = dsx_flat[dsx_indices]
+    dsy_p = dsy_flat[dsy_indices]
 
+    # --- drop pairs where either value is NaN ---
+    valid_pairs = np.isfinite(dsx_p) & np.isfinite(dsy_p)
+    dsx_p = dsx_p[valid_pairs]
+    dsy_p = dsy_p[valid_pairs]
+
+    # Create masks to reflect the results
     mask2_ = xr.zeros_like(mask2.sel(time=tsel, method="nearest"))
     mask2_flat = mask2_.values.flatten()
-    mask2_flat[mask_nn_flat[np.isfinite(mask_nn_flat)].astype(int)] = True
+    mask2_flat[dsy_indices[valid_pairs]] = True
     mask2_.values[:] = mask2_flat.reshape(mask2_.shape)
 
+    mask1_ = xr.zeros_like(mask1.sel(time=tsel, method="nearest"))
+    mask1_flat = mask1_.values.flatten()
+    mask1_flat[dsx_indices[valid_pairs]] = True
+    mask1_.values[:] = mask1_flat.reshape(mask1_.shape)
+
 else:
+    # ds2 → ds1 mapping
     mask_nn = mask2_nn.sel(time=tsel, method="nearest").copy()
 
     mask_nn_flat = mask_nn.values.flatten()
 
-    dsx_p = dsx.values.flatten()[mask_nn_flat[np.isfinite(mask_nn_flat)].astype(int)]
-    dsy_p = dsy.values.flatten()[np.isfinite(mask_nn_flat)]
+    mask_nn_flat_valid = np.isfinite(mask_nn_flat)
+    mask_nn_flat = mask_nn_flat[mask_nn_flat_valid].astype(int)
 
-    mask_nn_flat_ = mask_nn_flat[np.isfinite(mask_nn_flat)]
-    mask_nn_flat_[~np.isfinite(dsx_p)] = np.nan
-    mask_nn_flat[np.isfinite(mask_nn_flat)] = mask_nn_flat_
+    # Remove out-of-bounds
+    mask_nn_flat = mask_nn_flat[mask_nn_flat < len(dsx_flat)]
 
-    mask2_ = mask2.sel(time=tsel, method="nearest").copy()
-    mask2_.values[:] = np.isfinite(mask_nn_flat.reshape(mask2_.shape))
+    # unique target indices (to ensure 1-to-1)
+    _, unique_idx = np.unique(mask_nn_flat, return_index=True)
+    dsy_indices = np.nonzero(mask_nn_flat_valid)[0][unique_idx]
+    dsx_indices = mask_nn_flat[unique_idx]
+
+    # --- extract pairs ---
+    dsx_p = dsx_flat[dsx_indices]
+    dsy_p = dsy_flat[dsy_indices]
+
+    # --- drop pairs where either value is NaN ---
+    valid_pairs = np.isfinite(dsx_p) & np.isfinite(dsy_p)
+    dsx_p = dsx_p[valid_pairs]
+    dsy_p = dsy_p[valid_pairs]
+
+    # Create masks to reflect the results
+    mask2_ = xr.zeros_like(mask2.sel(time=tsel, method="nearest"))
+    mask2_flat = mask2_.values.flatten()
+    mask2_flat[dsy_indices[valid_pairs]] = True
+    mask2_.values[:] = mask2_flat.reshape(mask2_.shape)
 
     mask1_ = xr.zeros_like(mask1.sel(time=tsel, method="nearest"))
     mask1_flat = mask1_.values.flatten()
-    mask1_flat[mask_nn_flat[np.isfinite(mask_nn_flat)].astype(int)] = True
+    mask1_flat[dsx_indices[valid_pairs]] = True
     mask1_.values[:] = mask1_flat.reshape(mask1_.shape)
 
 plt.scatter(dsx_p, dsy_p)
@@ -491,15 +525,15 @@ plt.title(vv+" "+tsel)
 
 #%% Plot matched volumes with valid matched 1-to-1 pixels
 
-ds1[vv].sel(time=tsel, method="nearest").where(mask1_).wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
+dsx.where(mask1_).wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
 ax = plt.gca()
-ds2[vv].sel(time=tsel, method="nearest").where(mask2_).wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-10000, 10000), ylim=(-20000, 0))
+dsy.where(mask2_).wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-10000, 10000), ylim=(-20000, 0))
 
-x1 = ds1.sel(time=tsel, method="nearest").x.where(mask1_).values.flatten()
-y1 = ds1.sel(time=tsel, method="nearest").y.where(mask1_).values.flatten()
+x1 = dsx.x.where(mask1_).values.flatten()
+y1 = dsx.y.where(mask1_).values.flatten()
 
-x2 = ds2.sel(time=tsel, method="nearest").x.where(mask2_).values.flatten()
-y2 = ds2.sel(time=tsel, method="nearest").y.where(mask2_).values.flatten()
+x2 = dsy.x.where(mask2_).values.flatten()
+y2 = dsy.y.where(mask2_).values.flatten()
 
 ax.scatter(x1, y1, s=1, marker="o")
 ax.scatter(x2, y2, s=1, c="r", marker="x")
