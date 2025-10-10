@@ -5969,7 +5969,8 @@ def find_radar_overlap(ds1, ds2, tolerance=1000.0, tolerance_time=None):
     """
     Return boolean overlap masks for two radar xarray Datasets based on 3D (x,y,z)
     distance and optional time tolerance. Uses scipy.spatial.cKDTree to look for
-    overlapping points.
+    overlapping points. Returns also masks with flattened nearest neighbour indeces from
+    the opposite dataset, per timestep.
 
     Parameters
     ----------
@@ -5989,6 +5990,10 @@ def find_radar_overlap(ds1, ds2, tolerance=1000.0, tolerance_time=None):
         Masks have dims ('time','azimuth','range') if the corresponding dataset
         has a time dimension (len>1); otherwise dims ('azimuth','range').
         True = overlapping bin (within tolerance to at least one bin of the other radar).
+    mask1_nn, mask2_nn: xarray.DataArray (dtype=float)
+        Analogous to mask1, mask2 but containing the indeces of the closest neighbour
+        for the opposite flattened array. That is, mask1_nn contains the flattened
+        indeces of ds2 for the closest neighbour (per timestep), and viceversa.
 
     Notes
     -----
@@ -6003,7 +6008,7 @@ def find_radar_overlap(ds1, ds2, tolerance=1000.0, tolerance_time=None):
     proj = get_common_projection(ds1, ds2)
     ds1 = wrl.georef.georeference(ds1, crs=proj)
     ds2 = wrl.georef.georeference(ds2, crs=proj)
-    mask1, mask2 = find_radar_overlap(ds1, ds2, tolerance_time=60*4)
+    mask1, mask2, mask1_nn, mask2_nn = find_radar_overlap(ds1, ds2, tolerance_time=60*4)
 
     """
     # --- basic checks ---
@@ -6091,6 +6096,8 @@ def find_radar_overlap(ds1, ds2, tolerance=1000.0, tolerance_time=None):
 
     mask1 = make_mask_template(ds1)
     mask2 = make_mask_template(ds2)
+    mask1_nn = mask1.astype(float)
+    mask2_nn = mask2.astype(float)
 
     # caches for static coords / already computed coord slices
     coords_cache = {}
@@ -6137,6 +6144,18 @@ def find_radar_overlap(ds1, ds2, tolerance=1000.0, tolerance_time=None):
         tree = cKDTree(pts2_valid)
         idxs = tree.query_ball_point(pts1_valid, r=tolerance, workers=-1)
 
+        # Do we want also just the unique 1-to-1 nearest neighbours?
+        # For this, we need to build the tree with the array that has the most points
+        # in the intersect area, we assume that it has more points because it is
+        # higher resolution over there. A priori we don't know so we compute both
+        tree_alt = cKDTree(pts1_valid)
+        _, nneighbours_pairs_2 = tree_alt.query(pts2_valid, distance_upper_bound=tolerance, workers=-1)
+
+        _, nneighbours_pairs_1 = tree.query(pts1_valid, distance_upper_bound=tolerance, workers=-1)
+
+        mask_flat1_nn = np.where(nneighbours_pairs_1 != len(nneighbours_pairs_2), nneighbours_pairs_1, np.nan)
+        mask_flat2_nn = np.where(nneighbours_pairs_2 != len(nneighbours_pairs_1), nneighbours_pairs_2, np.nan)
+
         # mark mask1 entries that have any neighbor
         valid1_idx = np.nonzero(valid1)[0]
         valid2_idx = np.nonzero(valid2)[0]
@@ -6144,39 +6163,46 @@ def find_radar_overlap(ds1, ds2, tolerance=1000.0, tolerance_time=None):
         nonempty_k = [k for k, lst in enumerate(idxs) if len(lst) > 0]
         if nonempty_k:
             mask_flat1[valid1_idx[nonempty_k]] = True
+
             # all matched indices in pts2_valid; map back to flat2 indices
             matched2_in_valid = np.concatenate([idxs[k] for k in nonempty_k])
             if matched2_in_valid.size > 0:
                 mask_flat2[valid2_idx[matched2_in_valid]] = True
 
-        return mask_flat1.reshape(shape1), mask_flat2.reshape(shape2)
+        return mask_flat1.reshape(shape1), mask_flat2.reshape(shape2), mask_flat1_nn.reshape(shape1), mask_flat2_nn.reshape(shape2)
 
     # --- loop matched pairs and assemble masks (use OR accumulation where needed) ---
     if static1 and static2:
-        mask_once_1, mask_once_2 = compute_pair_mask(0, 0)
+        mask_once_1, mask_once_2, mask_once_1_nn, mask_once_2_nn = compute_pair_mask(0, 0)
         if has_time1:
             mask1[:] = mask_once_1
+            mask1_nn[:] = mask_once_1_nn
         if has_time2:
             mask2[:] = mask_once_2
+            mask2_nn[:] = mask_once_2_nn
     else:
         for (i1, i2) in matched_pairs:
-            m1pair, m2pair = compute_pair_mask(i1, i2)
+            m1pair, m2pair, m1pair_nn, m2pair_nn = compute_pair_mask(i1, i2)
 
             # assign/accumulate into mask1
             if ('time' in mask1.dims) and mask1.sizes.get('time', 0) > 1:
                 # i1 is a time index in ds1 (if ds1 has time), otherwise i1 is 0 (no-op)
                 mask1.values[int(i1), :, :] |= m1pair
+                mask1_nn.values[int(i1), :, :] = m1pair_nn
             else:
                 # no time dim on mask1: OR the pair result (so any match at any paired time is kept)
                 mask1.values[:, :] |= m1pair
+                mask1_nn.values[:, :] = m1pair_nn
 
             # assign/accumulate into mask2
             if ('time' in mask2.dims) and mask2.sizes.get('time', 0) > 1:
                 mask2.values[int(i2), :, :] |= m2pair
+                mask2_nn.values[int(i2), :, :] = m2pair_nn
             else:
                 mask2.values[:, :] |= m2pair
+                mask2_nn.values[:, :] = m2pair_nn
 
-    return mask1, mask2
+    return mask1, mask2, mask1_nn, mask2_nn
 
 def find_refined_radar_overlap(
     ds1,
