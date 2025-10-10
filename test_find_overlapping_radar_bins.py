@@ -84,7 +84,7 @@ ds2.sel(time=tsel, method="nearest")["DBZH"].wrl.vis.plot(ax=ax, alpha=0.4, xlim
 
 #%% Get matching volumes
 
-mask1, mask2 = utils.find_radar_overlap(ds1, ds2, tolerance=500, tolerance_time=4*60)
+mask1, mask2, mask1_nn, mask2_nn = utils.find_radar_overlap(ds1, ds2, tolerance=500, tolerance_time=4*60)
 
 #%% Plot matched volumes
 
