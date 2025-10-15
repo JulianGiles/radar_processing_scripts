@@ -30,7 +30,7 @@ import pandas as pd
 import time
 try: import pyinterp
 except: None
-from scipy.spatial import cKDTree
+from scipy.spatial import KDTree
 import re
 
 #### Helper functions and definitions
@@ -5968,7 +5968,7 @@ def get_common_projection(*datasets):
 def find_radar_overlap(ds1, ds2, tolerance=1000.0, tolerance_time=None):
     """
     Return boolean overlap masks for two radar xarray Datasets based on 3D (x,y,z)
-    distance and optional time tolerance. Uses scipy.spatial.cKDTree to look for
+    distance and optional time tolerance. Uses scipy.spatial.KDTree to look for
     overlapping points. Returns also masks with flattened nearest neighbour indeces from
     the opposite dataset, per timestep.
 
@@ -6141,14 +6141,14 @@ def find_radar_overlap(ds1, ds2, tolerance=1000.0, tolerance_time=None):
         pts2_valid = pts2[valid2]
 
         # build tree on radar2 valid points
-        tree = cKDTree(pts2_valid)
+        tree = KDTree(pts2_valid)
         idxs = tree.query_ball_point(pts1_valid, r=tolerance, workers=-1)
 
         # Do we want also just the unique 1-to-1 nearest neighbours?
         # For this, we need to build the tree with the array that has the most points
         # in the intersect area, we assume that it has more points because it is
         # higher resolution over there. A priori we don't know so we compute both
-        tree_alt = cKDTree(pts1_valid)
+        tree_alt = KDTree(pts1_valid)
         _, nneighbours_pairs_2 = tree_alt.query(pts2_valid, distance_upper_bound=tolerance, workers=-1)
 
         _, nneighbours_pairs_1 = tree.query(pts1_valid, distance_upper_bound=tolerance, workers=-1)
@@ -6374,7 +6374,7 @@ def find_refined_radar_overlap(
         pts2_c = pts2[cand2]
 
         # build KDTree on pts2_c (candidates only)
-        tree2 = cKDTree(pts2_c)
+        tree2 = KDTree(pts2_c)
         neighbours = tree2.query_ball_point(pts1_c, r=tolerance, workers=-1)
 
         # if no neighbour relationships at all, skip
@@ -6449,6 +6449,481 @@ def find_refined_radar_overlap(
         new_mask2.values = new_mask2.values & keep2_flat.reshape(shape2)
 
     return new_mask1, new_mask2
+
+# helpers to safely extract a (azimuth,range) numpy array of a coordinate
+def coord_slice(ds, coord, time_index):
+    arr = ds[coord]
+    if 'time' in arr.dims and arr.sizes.get('time', 0) > 0:
+        # if time dimension exists but has length 1, isel works fine and returns 2D
+        if arr.sizes.get('time', 0) >= 1:
+            return arr.isel(time=time_index).values
+    # no time dim -> return the 2D array
+    return arr.values
+
+# detect whether ds coordinates vary with time (static geometry optimization)
+def is_static(ds, coord):
+    arr = ds[coord]
+    if 'time' not in arr.dims:
+        return True
+    if arr.sizes.get('time', 0) <= 1:
+        return True
+    # compare the first time-slice to the rest
+    first = arr.isel(time=0).values
+    # compare each slice (using allclose for floats). If very large, this will compute arrays.
+    for t in range(arr.sizes['time']):
+        if not np.allclose(arr.isel(time=t).values, first, atol=1e-6, rtol=1e-6):
+            return False
+    return True
+
+# prepare empty masks with correct dims & coords
+def make_mask_template(ds):
+    if 'time' in ds.dims and ds.sizes.get('time', 0) > 1:
+        coords = {'time': ds['time'], 'azimuth': ds['azimuth'], 'range': ds['range']}
+        dims = ('time', 'azimuth', 'range')
+        shape = (ds.sizes['time'], ds.sizes['azimuth'], ds.sizes['range'])
+    else:
+        coords = {'azimuth': ds['azimuth'], 'range': ds['range']}
+        dims = ('azimuth', 'range')
+        shape = (ds.sizes['azimuth'], ds.sizes['range'])
+    return xr.DataArray(np.zeros(shape, dtype=bool), coords=coords, dims=dims)
+
+def find_radar_overlap_unique_NN_pairs(ds1, ds2, tolerance=1000.0, tolerance_time=None):
+    """
+    Finds mutual nearest neighbors bins for two radar xarray Datasets based on 3D (x,y,z)
+    distance and optional time tolerance. That is, looks for the nearest neighbors pairs
+    between ds1 and ds2, where the distance between the bins is the closest both ways and
+    it is shorter than tolerance. Uses scipy.spatial.KDTree.
+
+    Parameters
+    ----------
+    ds1, ds2 : xarray.Dataset
+        Must contain coordinates/variables 'x', 'y', 'z' in a common coordinate system
+        in meters with shape (azimuth, range) or (time, azimuth, range). 'azimuth'
+        and 'range' coords must exist.
+    tolerance : float
+        Spatial tolerance in meters for looking for neighbors.
+    tolerance_time : float or None
+        Temporal tolerance in seconds. If None, time is ignored (volumes matched
+        by index or single-volume logic).
+
+    Returns
+    -------
+    mask1, mask2 : xarray.DataArray (dtype=bool)
+        Masks have dims ('time','azimuth','range') if the corresponding dataset
+        has a time dimension (len>1); otherwise dims ('azimuth','range').
+        True = matching bin (nearest neighbor and closer than tolerance).
+    idx_1, idx_2: xarray.DataArray (dtype=float)
+        Analogous to mask1, mask2 but containing the indeces of the selected values
+        in the flattened array (per timestep). This is meant to extract the values
+        from the (azimuth, range) array into a 1D array.
+
+    Notes
+    -----
+    If the x,y,z coordinates are static in time in both datasets the computation
+    of overlapping points is done only once and then propagated, resulting in
+    great time savings. If the x,y,z coordinates are not static but they change
+    only a few times, it is recommended to subdivide the datasets into timespans
+    with static coordinates and process them separately.
+
+    Example
+    -------
+    proj = get_common_projection(ds1, ds2)
+    ds1 = wrl.georef.georeference(ds1, crs=proj)
+    ds2 = wrl.georef.georeference(ds2, crs=proj)
+    mask1, mask2, idx1, idx2 = utils.find_radar_overlap_unique_NN_pairs(ds1, ds2,
+                                                                        tolerance=500.,
+                                                                        tolerance_time=60*4)
+
+    """
+    # --- basic checks ---
+    for c in ('x', 'y', 'z'):
+        if c not in ds1.coords and c not in ds1:
+            raise ValueError(f"Coordinate '{c}' missing from ds1")
+        if c not in ds2.coords and c not in ds2:
+            raise ValueError(f"Coordinate '{c}' missing from ds2")
+
+    static1 = all(is_static(ds1, c) for c in ('x', 'y', 'z'))
+    static2 = all(is_static(ds2, c) for c in ('x', 'y', 'z'))
+
+    has_time1 = ('time' in ds1.dims) and ds1.sizes.get('time', 0) > 1
+    has_time2 = ('time' in ds2.dims) and ds2.sizes.get('time', 0) > 1
+
+    # --- determine matched time pairs ---
+    matched_pairs = []
+
+    if has_time1 and has_time2 and (tolerance_time is not None):
+        # get representative times
+        t1 = ds1['time'].values
+        t2 = ds2['time'].values
+        # convert to integer seconds since epoch
+        t1s = np.array([np.datetime64(tt, 's').astype('int64') for tt in t1])
+        t2s = np.array([np.datetime64(tt, 's').astype('int64') for tt in t2])
+        for i, tsi in enumerate(t1s):
+            diffs = np.abs(t2s - tsi)
+            cand = np.where(diffs <= tolerance_time)[0]
+            if cand.size > 0:
+                j = cand[np.argmin(diffs[cand])]
+                matched_pairs.append((i, int(j)))
+    else:
+        # fallback / simpler matching rules
+        if has_time1 and not has_time2:
+            matched_pairs = [(i, 0) for i in range(ds1.sizes['time'])]
+        elif has_time2 and not has_time1:
+            matched_pairs = [(0, j) for j in range(ds2.sizes['time'])]
+        elif has_time1 and has_time2 and (tolerance_time is None):
+            # match by index up to min length
+            n = min(ds1.sizes['time'], ds2.sizes['time'])
+            matched_pairs = [(i, i) for i in range(n)]
+        else:
+            # neither has meaningful time -> single pair
+            matched_pairs = [(0, 0)]
+
+    if len(matched_pairs) == 0:
+        warnings.warn("No matched time pairs found within tolerance_time. Returning all-False masks.")
+
+    # Initialize masks
+    mask1 = make_mask_template(ds1)
+    mask2 = make_mask_template(ds2)
+    idx_1 = mask1.astype(float)*np.nan
+    idx_2 = mask2.astype(float)*np.nan
+
+    # caches for static coords / already computed coord slices
+    coords_cache = {}
+
+    def get_coords(ds, coord_name, t_index):
+        key = (id(ds), coord_name, None if ('time' not in ds[coord_name].dims) else int(t_index))
+        if key in coords_cache:
+            return coords_cache[key]
+        arr2d = coord_slice(ds, coord_name, int(t_index))
+        coords_cache[key] = arr2d
+        return arr2d
+
+    # --- compute pairwise spatial overlap for a single i1,i2 pair ---
+    def compute_pair_mask(ds1, ds2, i1, i2):
+        # -------------------------
+        # 1) Build flattened coordinate arrays (Nx3, Mx3)
+        # -------------------------
+        x1 = get_coords(ds1, 'x', i1)
+        y1 = get_coords(ds1, 'y', i1)
+        z1 = get_coords(ds1, 'z', i1)
+
+        x2 = get_coords(ds2, 'x', i2)
+        y2 = get_coords(ds2, 'y', i2)
+        z2 = get_coords(ds2, 'z', i2)
+
+        shape1 = x1.shape
+        shape2 = x2.shape
+
+        coords_1 = np.column_stack([x1.ravel(),
+                                    y1.ravel(),
+                                    z1.ravel()])
+        coords_2 = np.column_stack([x2.ravel(),
+                                    y2.ravel(),
+                                    z2.ravel()])
+
+        # -------------------------
+        # 2) Remove invalid points (NaNs/inf) but keep mapping to original indices
+        # -------------------------
+        def _valid_mask(coords):
+            return np.isfinite(coords).all(axis=1)
+
+        valid_1 = _valid_mask(coords_1)
+        valid_2 = _valid_mask(coords_2)
+
+        coords_1_valid = coords_1[valid_1]
+        coords_2_valid = coords_2[valid_2]
+
+        # Keep index maps back to flattened original arrays
+        indices_1_orig = np.nonzero(valid_1)[0]   # length N1_valid
+        indices_2_orig = np.nonzero(valid_2)[0]   # length N2_valid
+
+        # -------------------------
+        # 3) KD-trees and nearest neighbor queries
+        # -------------------------
+
+        tree_2 = KDTree(coords_2_valid)
+        d_12, idx_2_for_1_valid = tree_2.query(coords_1_valid, k=1, workers=-1)   # for every 1 -> index in coords_2_valid
+
+        tree_1 = KDTree(coords_1_valid)
+        d_21, idx_1_for_2_valid = tree_1.query(coords_2_valid, k=1, workers=-1)   # for every 2 -> index in coords_1_valid
+
+        # -------------------------
+        # 4) Find mutual pairs (use indices in the VALID arrays)
+        # -------------------------
+
+        # For 1 index i (in coords_1_valid), its nearest 2 is j = idx_2_for_1_valid[i].
+        # We want those i such that idx_1_for_2_valid[j] == i
+        idx_2_for_1_valid = np.asarray(idx_2_for_1_valid, dtype=np.int64)[idx_2_for_1_valid<len(d_21)]
+        idx_1_for_2_valid = np.asarray(idx_1_for_2_valid, dtype=np.int64)[idx_1_for_2_valid<len(d_12)]
+
+        # boolean mask over 1-valid indices
+        mutual_mask_valid_1 = idx_1_for_2_valid[idx_2_for_1_valid] == np.arange(len(coords_1_valid))
+
+        # Get valid indices (in coords_1_valid and coords_2_valid)
+        matched_idx_1_valid = np.nonzero(mutual_mask_valid_1)[0]       # indices into coords_1_valid
+        matched_idx_2_valid = idx_2_for_1_valid[matched_idx_1_valid]   # corresponding indices into coords_2_valid
+
+        # distances for mutual pairs
+        matched_distances = d_12[matched_idx_1_valid]
+
+        # Reduce according to tolerance
+        matched_idx_1_valid = matched_idx_1_valid[matched_distances <= tolerance]
+        matched_idx_2_valid = matched_idx_2_valid[matched_distances <= tolerance]
+        # matched_distances = matched_distances[matched_distances <= tolerance]
+
+        # -------------------------
+        # 5) Map back to original flattened indices (and then to (azimuth,range)
+        # -------------------------
+        matched_1_flat = indices_1_orig[matched_idx_1_valid]  # indices into ds1.ravel() ordering
+        matched_2_flat = indices_2_orig[matched_idx_2_valid]  # indices into ds2.ravel() ordering
+
+        # Build (azimuth, range) tuples:
+        matched_1_az, matched_1_rg = np.unravel_index(matched_1_flat, shape1)
+        matched_2_az, matched_2_rg = np.unravel_index(matched_2_flat, shape2)
+
+        # -------------------------
+        # 6) Generate masks
+        # -------------------------
+        mask1 = np.zeros(shape1, dtype=bool)
+        mask2 = np.zeros(shape2, dtype=bool)
+
+        mask1[matched_1_az, matched_1_rg] = True
+        mask2[matched_2_az, matched_2_rg] = True
+
+        # -------------------------
+        # 6) Generate arrays of matched flattened indeces
+        # -------------------------
+        idx_1 = np.zeros(shape1, dtype=float)*np.nan
+        idx_2 = np.zeros(shape2, dtype=float)*np.nan
+
+        idx_1[matched_1_az, matched_1_rg] = np.arange(len(matched_1_flat)) # matched_1_flat
+        idx_2[matched_2_az, matched_2_rg] = np.arange(len(matched_2_flat)) # matched_2_flat
+
+        return mask1, mask2, idx_1, idx_2
+
+    # --- loop matched pairs and assemble masks (use OR accumulation where needed) ---
+    if static1 and static2:
+        mask_once_1, mask_once_2, idx_once_1, idx_once_2 = compute_pair_mask(ds1, ds2, 0, 0)
+
+        mask1[:] = mask_once_1
+        idx_1[:] = idx_once_1
+
+        mask2[:] = mask_once_2
+        idx_2[:] = idx_once_2
+    else:
+        for (i1, i2) in matched_pairs:
+            m1pair, m2pair, idx1pair, idx2pair = compute_pair_mask(ds1, ds2, i1, i2)
+
+            # assign/accumulate into mask1
+            if ('time' in mask1.dims) and mask1.sizes.get('time', 0) > 1:
+                # i1 is a time index in ds1 (if ds1 has time), otherwise i1 is 0 (no-op)
+                mask1.values[int(i1), :, :] |= m1pair
+                idx_1.values[int(i1), :, :] = idx1pair
+            else:
+                # no time dim on mask1: OR the pair result (so any match at any paired time is kept)
+                mask1.values[:, :] |= m1pair
+                idx_1.values[:, :] = idx1pair
+
+            # assign/accumulate into mask2
+            if ('time' in mask2.dims) and mask2.sizes.get('time', 0) > 1:
+                mask2.values[int(i2), :, :] |= m2pair
+                idx_2.values[int(i2), :, :] = idx2pair
+            else:
+                mask2.values[:, :] |= m2pair
+                idx_2.values[:, :] = idx2pair
+
+    return mask1, mask2, idx_1, idx_2
+
+def refine_radar_overlap_unique_NN_pairs(ds1, ds2, idx_1, idx_2, var_name, tolerance_time=None):
+    """
+    Finds mutual nearest neighbors bins for two radar xarray Datasets based on 3D (x,y,z)
+    distance and optional time tolerance. That is, looks for the nearest neighbors pairs
+    between ds1 and ds2, where the distance between the bins is the closest both ways and
+    it is shorter than tolerance. Uses scipy.spatial.KDTree.
+
+    Parameters
+    ----------
+    ds1, ds2 : xarray.Dataset
+        Must contain coordinates/variables 'x', 'y', 'z' in a common coordinate system
+        in meters with shape (azimuth, range) or (time, azimuth, range). 'azimuth'
+        and 'range' coords must exist.
+    idx_1, idx_2 : xarray.Dataset
+        Arrays containing the indeces of the selected values in the flattened array
+        (per timestep). It should be the output of find_radar_overlap_unique_NN_pairs
+    var_name: str
+        Name of the variable of ds1 and ds2 to use to filter out non valid values.
+    tolerance_time : float or None
+        Temporal tolerance in seconds. If None, time is ignored (volumes matched
+        by index or single-volume logic).
+
+    Returns
+    -------
+    mask1_ref, mask2_ref : xarray.DataArray (dtype=bool)
+        Analogous to mask1 and mask2 from find_radar_overlap_unique_NN_pairs but
+        with pairs containing non-valid values removed.
+    idx_1_ref, idx_2_ref: xarray.DataArray (dtype=float)
+        Analogous to idx_1 and idx_2 from find_radar_overlap_unique_NN_pairs but
+        with pairs containing non-valid values removed.
+
+    """
+    # --- basic checks ---
+    for c in ('x', 'y', 'z'):
+        if c not in ds1.coords and c not in ds1:
+            raise ValueError(f"Coordinate '{c}' missing from ds1")
+        if c not in ds2.coords and c not in ds2:
+            raise ValueError(f"Coordinate '{c}' missing from ds2")
+
+    static1 = all(is_static(ds1, c) for c in ('x', 'y', 'z'))
+    static2 = all(is_static(ds2, c) for c in ('x', 'y', 'z'))
+
+    has_time1 = ('time' in ds1.dims) and ds1.sizes.get('time', 0) > 1
+    has_time2 = ('time' in ds2.dims) and ds2.sizes.get('time', 0) > 1
+
+    # --- determine matched time pairs ---
+    matched_pairs = []
+
+    if has_time1 and has_time2 and (tolerance_time is not None):
+        # get representative times
+        t1 = ds1['time'].values
+        t2 = ds2['time'].values
+        # convert to integer seconds since epoch
+        t1s = np.array([np.datetime64(tt, 's').astype('int64') for tt in t1])
+        t2s = np.array([np.datetime64(tt, 's').astype('int64') for tt in t2])
+        for i, tsi in enumerate(t1s):
+            diffs = np.abs(t2s - tsi)
+            cand = np.where(diffs <= tolerance_time)[0]
+            if cand.size > 0:
+                j = cand[np.argmin(diffs[cand])]
+                matched_pairs.append((i, int(j)))
+    else:
+        # fallback / simpler matching rules
+        if has_time1 and not has_time2:
+            matched_pairs = [(i, 0) for i in range(ds1.sizes['time'])]
+        elif has_time2 and not has_time1:
+            matched_pairs = [(0, j) for j in range(ds2.sizes['time'])]
+        elif has_time1 and has_time2 and (tolerance_time is None):
+            # match by index up to min length
+            n = min(ds1.sizes['time'], ds2.sizes['time'])
+            matched_pairs = [(i, i) for i in range(n)]
+        else:
+            # neither has meaningful time -> single pair
+            matched_pairs = [(0, 0)]
+
+    if len(matched_pairs) == 0:
+        warnings.warn("No matched time pairs found within tolerance_time. Returning all-False masks.")
+
+    # Initialize masks
+    mask1_ref = make_mask_template(ds1)
+    mask2_ref = make_mask_template(ds2)
+    idx_1_ref = mask1_ref.astype(float)*np.nan
+    idx_2_ref = mask2_ref.astype(float)*np.nan
+
+    # caches for static coords / already computed coord slices
+    coords_cache = {}
+
+    def get_coords(ds, coord_name, t_index):
+        key = (id(ds), coord_name, None if ('time' not in ds[coord_name].dims) else int(t_index))
+        if key in coords_cache:
+            return coords_cache[key]
+        arr2d = coord_slice(ds, coord_name, int(t_index))
+        coords_cache[key] = arr2d
+        return arr2d
+
+    # --- compute pairwise spatial overlap for a single i1,i2 pair ---
+    def refine_pair_mask(ds1, ds2, idx_1, idx_2, i1, i2, var_name):
+        # -------------------------
+        # Refine by removing pairs with NaN var_name
+        # -------------------------
+        shape_1 = get_coords(ds1, "x", i1).shape              # (azimuth_x, range_x)
+        shape_2 = get_coords(ds2, "x", i2).shape              # (azimuth_y, range_y)
+
+        ds1_flat = coord_slice(ds1, var_name, i1).flatten()
+        ds2_flat = coord_slice(ds2, var_name, i2).flatten()
+
+        # this will extract the order in which the values should be paired
+        idx_1_flat_order = coord_slice(idx_1.to_dataset(name="idx_1"), "idx_1", i1).flatten()
+        idx_2_flat_order = coord_slice(idx_2.to_dataset(name="idx_2"), "idx_2", i2).flatten()
+
+        # Find valid (finite) pair indices
+        valid_1 = np.isfinite(idx_1_flat_order)
+        valid_2 = np.isfinite(idx_2_flat_order)
+
+        # Extract pair indices
+        pair_idx_1 = idx_1_flat_order[valid_1].astype(int)
+        pair_idx_2 = idx_2_flat_order[valid_2].astype(int)
+
+        # Sort by pair index to get consistent order
+        order_1 = np.argsort(pair_idx_1)
+        order_2 = np.argsort(pair_idx_2)
+
+        # Flattened positions of ds1/ds2 matched bins (in consistent order)
+        idx_1_flat = np.nonzero(valid_1)[0][order_1]
+        idx_2_flat = np.nonzero(valid_2)[0][order_2]
+
+        # # and this will extract the indices themselves
+        # idx_1_flat = np.argwhere(np.isfinite(idx_1_flat_order)).flatten() # indeces of each valid value in 1
+        # idx_2_flat = np.argwhere(np.isfinite(idx_2_flat_order)).flatten() # indeces of each valid value in 2
+
+        # # Now get the valid indices in the correct order
+        # idx_1_flat = idx_1_flat[idx_1_flat_order[np.isfinite(idx_1_flat_order)].astype(int)]
+        # idx_2_flat = idx_2_flat[idx_2_flat_order[np.isfinite(idx_2_flat_order)].astype(int)]
+
+        # --- extract pairs ---
+        ds1_p = ds1_flat[idx_1_flat]
+        ds2_p = ds2_flat[idx_2_flat]
+
+        # --- drop pairs where either value is NaN ---
+        valid_pairs = np.isfinite(ds1_p) & np.isfinite(ds2_p)
+        idx_1_flat = idx_1_flat[valid_pairs]
+        idx_2_flat = idx_2_flat[valid_pairs]
+
+        matched_1_az, matched_1_rg = np.unravel_index(idx_1_flat, shape_1)
+        matched_2_az, matched_2_rg = np.unravel_index(idx_2_flat, shape_2)
+
+        mask1_ref = np.zeros(shape_1, dtype=bool)
+        mask2_ref = np.zeros(shape_2, dtype=bool)
+        idx_1_ref = np.full(shape_1, np.nan, dtype=float)
+        idx_2_ref = np.full(shape_2, np.nan, dtype=float)
+
+        mask1_ref[matched_1_az, matched_1_rg] = True
+        mask2_ref[matched_2_az, matched_2_rg] = True
+        idx_1_ref[matched_1_az, matched_1_rg] = np.arange(len(idx_1_flat)) # idx_1_flat
+        idx_2_ref[matched_2_az, matched_2_rg] = np.arange(len(idx_2_flat)) # idx_2_flat
+
+        return mask1_ref, mask2_ref, idx_1_ref, idx_2_ref
+
+    # --- loop matched pairs and assemble masks (use OR accumulation where needed) ---
+    if static1 and static2:
+        mask_once_1, mask_once_2, idx_once_1, idx_once_2 = refine_pair_mask(ds1, ds2, idx_1, idx_2, 0, 0, var_name)
+
+        mask1_ref[:] = mask_once_1
+        idx_1_ref[:] = idx_once_1
+
+        mask2_ref[:] = mask_once_2
+        idx_2_ref[:] = idx_once_2
+    else:
+        for (i1, i2) in matched_pairs:
+            m1pair, m2pair, idx1pair, idx2pair = refine_pair_mask(ds1, ds2, idx_1, idx_2, i1, i2, var_name)
+
+            # assign/accumulate into mask1_ref
+            if ('time' in mask1_ref.dims) and mask1_ref.sizes.get('time', 0) > 1:
+                # i1 is a time index in ds1 (if ds1 has time), otherwise i1 is 0 (no-op)
+                mask1_ref.values[int(i1), :, :] |= m1pair
+                idx_1_ref.values[int(i1), :, :] = idx1pair
+            else:
+                # no time dim on mask1_ref: OR the pair result (so any match at any paired time is kept)
+                mask1_ref.values[:, :] |= m1pair
+                idx_1_ref.values[:, :] = idx1pair
+
+            # assign/accumulate into mask2_ref
+            if ('time' in mask2_ref.dims) and mask2_ref.sizes.get('time', 0) > 1:
+                mask2_ref.values[int(i2), :, :] |= m2pair
+                idx_2_ref.values[int(i2), :, :] = idx2pair
+            else:
+                mask2_ref.values[:, :] |= m2pair
+                idx_2_ref.values[:, :] = idx2pair
+
+    return mask1_ref, mask2_ref, idx_1_ref, idx_2_ref
 
 #### Plotting helping functions
 
@@ -7305,7 +7780,7 @@ def icon_to_radar_volume(icon_field, radar_volume):
         mesh.packing(src, data0)
         coords, values = mesh.value(trg, k=1, within=False)
 
-        tree = cKDTree(src)
+        tree = KDTree(src)
         _, indices = tree.query(coords[:,0,:], k=1)  # Find nearest neighbor indices
 
     if len(vars_to_compute_hl)>0:
@@ -7314,7 +7789,7 @@ def icon_to_radar_volume(icon_field, radar_volume):
         mesh.packing(src_hl, data0_hl)
         coords_hl, values_hl = mesh.value(trg, k=1, within=False)
 
-        tree = cKDTree(src_hl)
+        tree = KDTree(src_hl)
         _, indices_hl = tree.query(coords_hl[:,0,:], k=1)  # Find nearest neighbor indices
 
     # Define functions to select the indices
