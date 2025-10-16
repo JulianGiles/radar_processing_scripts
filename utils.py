@@ -6738,7 +6738,7 @@ def find_radar_overlap_unique_NN_pairs(ds1, ds2, tolerance=1000.0, tolerance_tim
 
     return mask1, mask2, idx_1, idx_2, matched_timesteps
 
-def refine_radar_overlap_unique_NN_pairs(ds1, ds2, idx_1, idx_2, var_name, tolerance_time=None):
+def refine_radar_overlap_unique_NN_pairs(ds1, ds2, idx_1, idx_2, var_name, tolerance_time=None, z_tolerance=None):
     """
     Refines the masks and indices-order from find_radar_overlap_unique_NN_pairs
     to keep only value-pairs where var_name is a valid value in both datasets, for
@@ -6759,6 +6759,9 @@ def refine_radar_overlap_unique_NN_pairs(ds1, ds2, idx_1, idx_2, var_name, toler
     tolerance_time : float or None
         Temporal tolerance in seconds. If None, time is ignored (volumes matched
         by index or single-volume logic).
+    z_tolerance : float or None
+        Tolerance in the z coordinate. If a pair of points is separated by more than
+        z_tolerance in the vertical, they are removed.
 
     Returns
     -------
@@ -6834,7 +6837,7 @@ def refine_radar_overlap_unique_NN_pairs(ds1, ds2, idx_1, idx_2, var_name, toler
         return arr2d
 
     # --- compute pairwise spatial overlap for a single i1,i2 pair ---
-    def refine_pair_mask(ds1, ds2, idx_1, idx_2, i1, i2, var_name):
+    def refine_pair_mask(ds1, ds2, idx_1, idx_2, i1, i2, var_name, z_tolerance):
         # -------------------------
         # Refine by removing pairs with NaN var_name
         # -------------------------
@@ -6870,9 +6873,23 @@ def refine_radar_overlap_unique_NN_pairs(ds1, ds2, idx_1, idx_2, var_name, toler
 
         # --- drop pairs where either value is NaN ---
         valid_pairs = np.isfinite(ds1_p) & np.isfinite(ds2_p)
+
+        if z_tolerance is not None:
+            # in this case drop pairs that are separated more than z_tolerance in the vertical
+            z1_flat = coord_slice(ds1, "z", i1).flatten()
+            z2_flat = coord_slice(ds2, "z", i2).flatten()
+
+            z1_p = z1_flat[idx_1_flat]
+            z2_p = z2_flat[idx_1_flat]
+
+            delta_z = abs(z1_p - z2_p)
+
+            valid_pairs = valid_pairs & (delta_z <= z_tolerance)
+
         idx_1_flat = idx_1_flat[valid_pairs]
         idx_2_flat = idx_2_flat[valid_pairs]
 
+        # Put results into final arrays
         matched_1_az, matched_1_rg = np.unravel_index(idx_1_flat, shape_1)
         matched_2_az, matched_2_rg = np.unravel_index(idx_2_flat, shape_2)
 
@@ -6890,7 +6907,7 @@ def refine_radar_overlap_unique_NN_pairs(ds1, ds2, idx_1, idx_2, var_name, toler
 
     # --- loop matched pairs and assemble masks (use OR accumulation where needed) ---
     for (i1, i2) in matched_timesteps:
-        m1pair, m2pair, idx1pair, idx2pair = refine_pair_mask(ds1, ds2, idx_1, idx_2, i1, i2, var_name)
+        m1pair, m2pair, idx1pair, idx2pair = refine_pair_mask(ds1, ds2, idx_1, idx_2, i1, i2, var_name, z_tolerance)
 
         # assign/accumulate into mask1_ref
         if ('time' in mask1_ref.dims) and mask1_ref.sizes.get('time', 0) > 1:
