@@ -6513,9 +6513,12 @@ def find_radar_overlap_unique_NN_pairs(ds1, ds2, tolerance=1000.0, tolerance_tim
         has a time dimension (len>1); otherwise dims ('azimuth','range').
         True = matching bin (nearest neighbor and closer than tolerance).
     idx_1, idx_2: xarray.DataArray (dtype=float)
-        Analogous to mask1, mask2 but containing the indeces of the selected values
+        Analogous to mask1, mask2 but containing the order of the selected values
         in the flattened array (per timestep). This is meant to extract the values
-        from the (azimuth, range) array into a 1D array.
+        from the (azimuth, range) array into a 1D array and compare them as pairs.
+    matched_timesteps: list
+        List with matched time indices. In case any dataset has no time dimension
+        or the time dimension is of size 1, the index for that dataset will be zero.
 
     Notes
     -----
@@ -6530,7 +6533,8 @@ def find_radar_overlap_unique_NN_pairs(ds1, ds2, tolerance=1000.0, tolerance_tim
     proj = get_common_projection(ds1, ds2)
     ds1 = wrl.georef.georeference(ds1, crs=proj)
     ds2 = wrl.georef.georeference(ds2, crs=proj)
-    mask1, mask2, idx1, idx2 = utils.find_radar_overlap_unique_NN_pairs(ds1, ds2,
+    mask1, mask2, idx1, idx2, matched_timesteps = utils.find_radar_overlap_unique_NN_pairs(
+                                                                        ds1, ds2,
                                                                         tolerance=500.,
                                                                         tolerance_time=60*4)
 
@@ -6549,7 +6553,7 @@ def find_radar_overlap_unique_NN_pairs(ds1, ds2, tolerance=1000.0, tolerance_tim
     has_time2 = ('time' in ds2.dims) and ds2.sizes.get('time', 0) > 1
 
     # --- determine matched time pairs ---
-    matched_pairs = []
+    matched_timesteps = []
 
     if has_time1 and has_time2 and (tolerance_time is not None):
         # get representative times
@@ -6563,22 +6567,22 @@ def find_radar_overlap_unique_NN_pairs(ds1, ds2, tolerance=1000.0, tolerance_tim
             cand = np.where(diffs <= tolerance_time)[0]
             if cand.size > 0:
                 j = cand[np.argmin(diffs[cand])]
-                matched_pairs.append((i, int(j)))
+                matched_timesteps.append((i, int(j)))
     else:
         # fallback / simpler matching rules
         if has_time1 and not has_time2:
-            matched_pairs = [(i, 0) for i in range(ds1.sizes['time'])]
+            matched_timesteps = [(i, 0) for i in range(ds1.sizes['time'])]
         elif has_time2 and not has_time1:
-            matched_pairs = [(0, j) for j in range(ds2.sizes['time'])]
+            matched_timesteps = [(0, j) for j in range(ds2.sizes['time'])]
         elif has_time1 and has_time2 and (tolerance_time is None):
             # match by index up to min length
             n = min(ds1.sizes['time'], ds2.sizes['time'])
-            matched_pairs = [(i, i) for i in range(n)]
+            matched_timesteps = [(i, i) for i in range(n)]
         else:
             # neither has meaningful time -> single pair
-            matched_pairs = [(0, 0)]
+            matched_timesteps = [(0, 0)]
 
-    if len(matched_pairs) == 0:
+    if len(matched_timesteps) == 0:
         warnings.warn("No matched time pairs found within tolerance_time. Returning all-False masks.")
 
     # Initialize masks
@@ -6711,7 +6715,7 @@ def find_radar_overlap_unique_NN_pairs(ds1, ds2, tolerance=1000.0, tolerance_tim
         mask2[:] = mask_once_2
         idx_2[:] = idx_once_2
     else:
-        for (i1, i2) in matched_pairs:
+        for (i1, i2) in matched_timesteps:
             m1pair, m2pair, idx1pair, idx2pair = compute_pair_mask(ds1, ds2, i1, i2)
 
             # assign/accumulate into mask1
@@ -6732,14 +6736,14 @@ def find_radar_overlap_unique_NN_pairs(ds1, ds2, tolerance=1000.0, tolerance_tim
                 mask2.values[:, :] |= m2pair
                 idx_2.values[:, :] = idx2pair
 
-    return mask1, mask2, idx_1, idx_2
+    return mask1, mask2, idx_1, idx_2, matched_timesteps
 
 def refine_radar_overlap_unique_NN_pairs(ds1, ds2, idx_1, idx_2, var_name, tolerance_time=None):
     """
-    Finds mutual nearest neighbors bins for two radar xarray Datasets based on 3D (x,y,z)
-    distance and optional time tolerance. That is, looks for the nearest neighbors pairs
-    between ds1 and ds2, where the distance between the bins is the closest both ways and
-    it is shorter than tolerance. Uses scipy.spatial.KDTree.
+    Refines the masks and indices-order from find_radar_overlap_unique_NN_pairs
+    to keep only value-pairs where var_name is a valid value in both datasets, for
+    each matched timestep. That is, checks for validity of both values for each
+    value-pair and discards those that have any missing value or non-finite value.
 
     Parameters
     ----------
@@ -6764,6 +6768,9 @@ def refine_radar_overlap_unique_NN_pairs(ds1, ds2, idx_1, idx_2, var_name, toler
     idx_1_ref, idx_2_ref: xarray.DataArray (dtype=float)
         Analogous to idx_1 and idx_2 from find_radar_overlap_unique_NN_pairs but
         with pairs containing non-valid values removed.
+    matched_timesteps: list
+        List with matched time indices. In case any dataset has no time dimension
+        or the time dimension is of size 1, the index for that dataset will be zero.
 
     """
     # --- basic checks ---
@@ -6773,14 +6780,11 @@ def refine_radar_overlap_unique_NN_pairs(ds1, ds2, idx_1, idx_2, var_name, toler
         if c not in ds2.coords and c not in ds2:
             raise ValueError(f"Coordinate '{c}' missing from ds2")
 
-    static1 = all(is_static(ds1, c) for c in ('x', 'y', 'z'))
-    static2 = all(is_static(ds2, c) for c in ('x', 'y', 'z'))
-
     has_time1 = ('time' in ds1.dims) and ds1.sizes.get('time', 0) > 1
     has_time2 = ('time' in ds2.dims) and ds2.sizes.get('time', 0) > 1
 
     # --- determine matched time pairs ---
-    matched_pairs = []
+    matched_timesteps = []
 
     if has_time1 and has_time2 and (tolerance_time is not None):
         # get representative times
@@ -6794,22 +6798,22 @@ def refine_radar_overlap_unique_NN_pairs(ds1, ds2, idx_1, idx_2, var_name, toler
             cand = np.where(diffs <= tolerance_time)[0]
             if cand.size > 0:
                 j = cand[np.argmin(diffs[cand])]
-                matched_pairs.append((i, int(j)))
+                matched_timesteps.append((i, int(j)))
     else:
         # fallback / simpler matching rules
         if has_time1 and not has_time2:
-            matched_pairs = [(i, 0) for i in range(ds1.sizes['time'])]
+            matched_timesteps = [(i, 0) for i in range(ds1.sizes['time'])]
         elif has_time2 and not has_time1:
-            matched_pairs = [(0, j) for j in range(ds2.sizes['time'])]
+            matched_timesteps = [(0, j) for j in range(ds2.sizes['time'])]
         elif has_time1 and has_time2 and (tolerance_time is None):
             # match by index up to min length
             n = min(ds1.sizes['time'], ds2.sizes['time'])
-            matched_pairs = [(i, i) for i in range(n)]
+            matched_timesteps = [(i, i) for i in range(n)]
         else:
             # neither has meaningful time -> single pair
-            matched_pairs = [(0, 0)]
+            matched_timesteps = [(0, 0)]
 
-    if len(matched_pairs) == 0:
+    if len(matched_timesteps) == 0:
         warnings.warn("No matched time pairs found within tolerance_time. Returning all-False masks.")
 
     # Initialize masks
@@ -6860,14 +6864,6 @@ def refine_radar_overlap_unique_NN_pairs(ds1, ds2, idx_1, idx_2, var_name, toler
         idx_1_flat = np.nonzero(valid_1)[0][order_1]
         idx_2_flat = np.nonzero(valid_2)[0][order_2]
 
-        # # and this will extract the indices themselves
-        # idx_1_flat = np.argwhere(np.isfinite(idx_1_flat_order)).flatten() # indeces of each valid value in 1
-        # idx_2_flat = np.argwhere(np.isfinite(idx_2_flat_order)).flatten() # indeces of each valid value in 2
-
-        # # Now get the valid indices in the correct order
-        # idx_1_flat = idx_1_flat[idx_1_flat_order[np.isfinite(idx_1_flat_order)].astype(int)]
-        # idx_2_flat = idx_2_flat[idx_2_flat_order[np.isfinite(idx_2_flat_order)].astype(int)]
-
         # --- extract pairs ---
         ds1_p = ds1_flat[idx_1_flat]
         ds2_p = ds2_flat[idx_2_flat]
@@ -6893,37 +6889,117 @@ def refine_radar_overlap_unique_NN_pairs(ds1, ds2, idx_1, idx_2, var_name, toler
         return mask1_ref, mask2_ref, idx_1_ref, idx_2_ref
 
     # --- loop matched pairs and assemble masks (use OR accumulation where needed) ---
-    if static1 and static2:
-        mask_once_1, mask_once_2, idx_once_1, idx_once_2 = refine_pair_mask(ds1, ds2, idx_1, idx_2, 0, 0, var_name)
+    for (i1, i2) in matched_timesteps:
+        m1pair, m2pair, idx1pair, idx2pair = refine_pair_mask(ds1, ds2, idx_1, idx_2, i1, i2, var_name)
 
-        mask1_ref[:] = mask_once_1
-        idx_1_ref[:] = idx_once_1
+        # assign/accumulate into mask1_ref
+        if ('time' in mask1_ref.dims) and mask1_ref.sizes.get('time', 0) > 1:
+            # i1 is a time index in ds1 (if ds1 has time), otherwise i1 is 0 (no-op)
+            mask1_ref.values[int(i1), :, :] |= m1pair
+            idx_1_ref.values[int(i1), :, :] = idx1pair
+        else:
+            # no time dim on mask1_ref: OR the pair result (so any match at any paired time is kept)
+            mask1_ref.values[:, :] |= m1pair
+            idx_1_ref.values[:, :] = idx1pair
 
-        mask2_ref[:] = mask_once_2
-        idx_2_ref[:] = idx_once_2
+        # assign/accumulate into mask2_ref
+        if ('time' in mask2_ref.dims) and mask2_ref.sizes.get('time', 0) > 1:
+            mask2_ref.values[int(i2), :, :] |= m2pair
+            idx_2_ref.values[int(i2), :, :] = idx2pair
+        else:
+            mask2_ref.values[:, :] |= m2pair
+            idx_2_ref.values[:, :] = idx2pair
+
+    return mask1_ref, mask2_ref, idx_1_ref, idx_2_ref, matched_timesteps
+
+def return_unique_NN_value_pairs(ds1, ds2, mask1, mask2, idx_1, idx_2, matched_timesteps, var_name):
+    """
+    Takes two datasets and the output from find_radar_overlap_unique_NN_pairs or
+    refine_radar_overlap_unique_NN_pairs and returns the identified value pairs
+    from variable var_name.
+
+    Parameters
+    ----------
+    ds1, ds2 : xarray.Dataset
+        The same ds1 and ds2 that were used in find_radar_overlap_unique_NN_pairs
+        or refine_radar_overlap_unique_NN_pairs
+    mask1, mask2: xarray.Dataset
+        Arrays containing the masks of the selected values
+    idx_1, idx_2 : xarray.Dataset
+        Arrays containing the indeces of the selected values in the flattened array
+        (per timestep).
+    matched_timesteps: list
+        List with matched time indices.
+    var_name: str
+        Name of the variable of ds1 and ds2 from which values are requested
+
+    Returns
+    -------
+    ds1_values, ds2_values:
+        Arrays with the flattened selected values for each timestep
+
+    """
+    # Check if ds1 and ds2 have time dimension
+    has_time1 = ('time' in ds1.dims) and ds1.sizes.get('time', 0) > 1
+    has_time2 = ('time' in ds2.dims) and ds2.sizes.get('time', 0) > 1
+
+    if not has_time1:
+        ds1_ = ds1.expand_dims("time")
+        mask1_ = mask1.expand_dims("time")
+        idx_1_ = idx_1.expand_dims("time")
     else:
-        for (i1, i2) in matched_pairs:
-            m1pair, m2pair, idx1pair, idx2pair = refine_pair_mask(ds1, ds2, idx_1, idx_2, i1, i2, var_name)
+        ds1_ = ds1
+        mask1_ = mask1
+        idx_1_ = idx_1
 
-            # assign/accumulate into mask1_ref
-            if ('time' in mask1_ref.dims) and mask1_ref.sizes.get('time', 0) > 1:
-                # i1 is a time index in ds1 (if ds1 has time), otherwise i1 is 0 (no-op)
-                mask1_ref.values[int(i1), :, :] |= m1pair
-                idx_1_ref.values[int(i1), :, :] = idx1pair
-            else:
-                # no time dim on mask1_ref: OR the pair result (so any match at any paired time is kept)
-                mask1_ref.values[:, :] |= m1pair
-                idx_1_ref.values[:, :] = idx1pair
+    if not has_time2:
+        ds2_ = ds2.expand_dims("time")
+        mask2_ = mask2.expand_dims("time")
+        idx_2_ = idx_2.expand_dims("time")
+    else:
+        ds2_ = ds2
+        mask2_ = mask2
+        idx_2_ = idx_2
 
-            # assign/accumulate into mask2_ref
-            if ('time' in mask2_ref.dims) and mask2_ref.sizes.get('time', 0) > 1:
-                mask2_ref.values[int(i2), :, :] |= m2pair
-                idx_2_ref.values[int(i2), :, :] = idx2pair
-            else:
-                mask2_ref.values[:, :] |= m2pair
-                idx_2_ref.values[:, :] = idx2pair
+    # Apply the masks
+    ds1_m = ds1_[var_name].where(mask1_)
+    ds2_m = ds2_[var_name].where(mask2_)
 
-    return mask1_ref, mask2_ref, idx_1_ref, idx_2_ref
+    # Create template arrays to save the results
+    ds1_values = np.full(( len(matched_timesteps), int(idx_1_.max().values+1) ), np.nan)
+    ds2_values = np.full(( len(matched_timesteps), int(idx_2_.max().values+1) ), np.nan)
+
+    # Loop matched time pairs and assemble results
+    for n, (i1, i2) in enumerate(matched_timesteps):
+
+        ds1_flat = ds1_m.isel(time=i1).values.flatten()
+        ds2_flat = ds2_m.isel(time=i2).values.flatten()
+
+        idx_1_flat_ = idx_1_.isel(time=i1).values.flatten()
+        idx_2_flat_ = idx_2_.isel(time=i2).values.flatten()
+
+        valid_1 = np.isfinite(idx_1_flat_)
+        valid_2 = np.isfinite(idx_2_flat_)
+
+        idx_1_flat = idx_1_flat_[np.isfinite(idx_1_flat_)].astype(int)
+        idx_2_flat = idx_2_flat_[np.isfinite(idx_2_flat_)].astype(int)
+
+        # Sort by pair index to get consistent order
+        order_1 = np.argsort(idx_1_flat)
+        order_2 = np.argsort(idx_2_flat)
+
+        # Flattened positions of ds1/ds2 matched bins (in consistent order)
+        idx_1_flat_ordered = np.nonzero(valid_1)[0][order_1]
+        idx_2_flat_ordered = np.nonzero(valid_2)[0][order_2]
+
+        ds1_values_ = ds1_flat[idx_1_flat_ordered]
+        ds2_values_ = ds2_flat[idx_2_flat_ordered]
+
+        # Expand the array of values to the length of the template array and fill the template
+        ds1_values[n] = np.pad(ds1_values_, (0,ds1_values.shape[-1]-len(ds1_values_)), mode='constant', constant_values=np.nan)
+        ds2_values[n] = np.pad(ds2_values_, (0,ds2_values.shape[-1]-len(ds2_values_)), mode='constant', constant_values=np.nan)
+
+    return ds1_values, ds2_values
 
 #### Plotting helping functions
 
