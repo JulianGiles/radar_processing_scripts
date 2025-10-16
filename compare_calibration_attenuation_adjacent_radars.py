@@ -401,32 +401,9 @@ ax.text(ds2.x[0,0], ds2.y[0,0]-30000, "GZT")
 
 plt.title("DBZH "+tsel)
 
-#%% Get matching volumes
+#%% Preselect timesteps and filters
+tolerance = 500.
 
-mask1, mask2, mask1_nn, mask2_nn = utils.find_radar_overlap(ds1, ds2, tolerance=500, tolerance_time=4*60)
-
-#%% Plot matched volumes
-
-tsel = "2016-10-28T05"
-xylim = 110000
-vmin = -40
-vmax = 50
-
-mask1_ = mask1.sel(time=tsel, method="nearest")
-mask2_ = mask2.sel(time=tsel, method="nearest")
-ds1_ = ds1.sel(time=tsel, method="nearest")
-ds2_ = ds2.sel(time=tsel, method="nearest")
-
-ds1_["DBZH"].where(mask1_).wrl.vis.plot(alpha=0.5, vmin=vmin, vmax=vmax)
-ax = plt.gca()
-ds2_["DBZH"].where(mask2_).wrl.vis.plot(ax=ax, alpha=0.2, xlim=(-xylim, xylim), ylim=(-xylim, xylim), vmin=vmin, vmax=vmax)
-ax.scatter([ds1.x[0,0], ds2.x[0,0]], [ds1.y[0,0], ds2.y[0,0]])
-ax.text(ds1.x[0,0], ds1.y[0,0]-30000, "HTY")
-ax.text(ds2.x[0,0], ds2.y[0,0]-30000, "GZT")
-
-plt.title("DBZH "+tsel)
-
-#%% Plot histogram of matched 1-to-1 pixels
 tsel = "2016-10-28T05"
 vv = "DBZH"
 SNRH_min = 15
@@ -437,118 +414,58 @@ TEMP_min = 3
 dsx_ = ds1.sel(time=tsel, method="nearest").copy()
 dsy_ = ds2.sel(time=tsel, method="nearest").copy()
 dsx = utils.apply_min_max_thresh(dsx_, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
-                                        "SNRHC":SNRH_min,"SQIH":0.5, "TEMP":TEMP_min}, {})[vv]
+                                        "SNRHC":SNRH_min,"SQIH":0.5, "TEMP":TEMP_min}, {})
 dsy = utils.apply_min_max_thresh(dsy_, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
-                                        "SNRHC":SNRH_min,"SQIH":0.5, "TEMP":TEMP_min}, {})[vv]
+                                        "SNRHC":SNRH_min,"SQIH":0.5, "TEMP":TEMP_min}, {})
+#%% Generate masks
+mask1, mask2, idx1, idx2, matched_timesteps = utils.find_radar_overlap_unique_NN_pairs(dsx, dsy,
+                                                                    tolerance=500.,
+                                                                    tolerance_time=60*4)
 
-dsx_flat = dsx.values.flatten()
-dsy_flat = dsy.values.flatten()
+mask1_ref, mask2_ref, idx1_ref, idx2_ref, matched_timesteps = utils.refine_radar_overlap_unique_NN_pairs(dsx, dsy,
+                                                                                      idx1, idx2,
+                                                                                      vv,
+                                                                    tolerance_time=60*4)
 
-if mask1_nn.sel(time=tsel, method="nearest").count() < mask2_nn.sel(time=tsel, method="nearest").count():
-    mask_nn = mask1_nn.sel(time=tsel, method="nearest").copy()
-
-    mask_nn_flat = mask_nn.values.flatten()
-
-    mask_nn_flat_valid = np.isfinite(mask_nn_flat)
-    mask_nn_flat = mask_nn_flat[mask_nn_flat_valid].astype(int)
-
-    # Remove out-of-bounds
-    mask_nn_flat = mask_nn_flat[mask_nn_flat < len(dsy_flat)]
-
-    # unique target indices (to ensure 1-to-1)
-    _, unique_idx = np.unique(mask_nn_flat, return_index=True)
-    dsx_indices = np.nonzero(mask_nn_flat_valid)[0][unique_idx]
-    dsy_indices = mask_nn_flat[unique_idx]
-
-    # --- extract pairs ---
-    dsx_p = dsx_flat[dsx_indices]
-    dsy_p = dsy_flat[dsy_indices]
-
-    # --- drop pairs where either value is NaN ---
-    valid_pairs = np.isfinite(dsx_p) & np.isfinite(dsy_p)
-    dsx_p = dsx_p[valid_pairs]
-    dsy_p = dsy_p[valid_pairs]
-
-    # Create masks to reflect the results
-    mask2_ = xr.zeros_like(mask2.sel(time=tsel, method="nearest"))
-    mask2_flat = mask2_.values.flatten()
-    mask2_flat[dsy_indices[valid_pairs]] = True
-    mask2_.values[:] = mask2_flat.reshape(mask2_.shape)
-
-    mask1_ = xr.zeros_like(mask1.sel(time=tsel, method="nearest"))
-    mask1_flat = mask1_.values.flatten()
-    mask1_flat[dsx_indices[valid_pairs]] = True
-    mask1_.values[:] = mask1_flat.reshape(mask1_.shape)
-
-else:
-    # ds2 → ds1 mapping
-    mask_nn = mask2_nn.sel(time=tsel, method="nearest").copy()
-
-    mask_nn_flat = mask_nn.values.flatten()
-
-    mask_nn_flat_valid = np.isfinite(mask_nn_flat)
-    mask_nn_flat = mask_nn_flat[mask_nn_flat_valid].astype(int)
-
-    # Remove out-of-bounds
-    mask_nn_flat = mask_nn_flat[mask_nn_flat < len(dsx_flat)]
-
-    # unique target indices (to ensure 1-to-1)
-    _, unique_idx = np.unique(mask_nn_flat, return_index=True)
-    dsy_indices = np.nonzero(mask_nn_flat_valid)[0][unique_idx]
-    dsx_indices = mask_nn_flat[unique_idx]
-
-    # --- extract pairs ---
-    dsx_p = dsx_flat[dsx_indices]
-    dsy_p = dsy_flat[dsy_indices]
-
-    # --- drop pairs where either value is NaN ---
-    valid_pairs = np.isfinite(dsx_p) & np.isfinite(dsy_p)
-    dsx_p = dsx_p[valid_pairs]
-    dsy_p = dsy_p[valid_pairs]
-
-    # Create masks to reflect the results
-    mask2_ = xr.zeros_like(mask2.sel(time=tsel, method="nearest"))
-    mask2_flat = mask2_.values.flatten()
-    mask2_flat[dsy_indices[valid_pairs]] = True
-    mask2_.values[:] = mask2_flat.reshape(mask2_.shape)
-
-    mask1_ = xr.zeros_like(mask1.sel(time=tsel, method="nearest"))
-    mask1_flat = mask1_.values.flatten()
-    mask1_flat[dsx_indices[valid_pairs]] = True
-    mask1_.values[:] = mask1_flat.reshape(mask1_.shape)
-
-plt.scatter(dsx_p, dsy_p)
-plt.plot([0,40], [0,40], c="red")
-plt.xlabel("HTY")
-plt.ylabel("GZT")
-plt.title(vv+" "+tsel)
-
-#%% Plot matched volumes with valid matched 1-to-1 pixels
-
-dsx.where(mask1_).wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
+#%% Plot initial mask
+dsx[vv].where(mask1).wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
 ax = plt.gca()
-dsy.where(mask2_).wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-10000, 10000), ylim=(-20000, 0))
+dsy[vv].where(mask2).wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-10000, 10000), ylim=(-20000, 0))
 
-x1 = dsx.x.where(mask1_).values.flatten()
-y1 = dsx.y.where(mask1_).values.flatten()
+x1 = dsx.x.where(mask1).values.flatten()
+y1 = dsx.y.where(mask1).values.flatten()
 
-x2 = dsy.x.where(mask2_).values.flatten()
-y2 = dsy.y.where(mask2_).values.flatten()
+x2 = dsy.x.where(mask2).values.flatten()
+y2 = dsy.y.where(mask2).values.flatten()
 
 ax.scatter(x1, y1, s=1, marker="o")
 ax.scatter(x2, y2, s=1, c="r", marker="x")
 
 plt.title(vv+" "+tsel)
 
-#%% Refine the mask to valid-valid DBZH values
-
-mask1_ref, mask2_ref = utils.find_refined_radar_overlap(ds1, ds2, mask1, mask2, var_name="DBZH",
-                                                             tolerance=500, tolerance_time=4*60)
-
-#%% Plot matched volumes with refinement
-
-tsel = "2016-10-28T05"
-
-ds1["DBZH"].where(mask1_ref).sel(time=tsel, method="nearest").wrl.vis.plot(alpha=0.5, vmin=-30, vmax=50)
+#%% Plot refined masks
+dsx[vv].where(mask1_ref).wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
 ax = plt.gca()
-ds2["DBZH"].where(mask2_ref).sel(time=tsel, method="nearest").wrl.vis.plot(ax=ax, alpha=0.5, vmin=-30, vmax=50, xlim=(-10000, 10000), ylim=(-20000, 0))
+dsy[vv].where(mask2_ref).wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-10000, 10000), ylim=(-20000, 0))
+
+x1 = dsx.x.where(mask1_ref).values.flatten()
+y1 = dsx.y.where(mask1_ref).values.flatten()
+
+x2 = dsy.x.where(mask2_ref).values.flatten()
+y2 = dsy.y.where(mask2_ref).values.flatten()
+
+ax.scatter(x1, y1, s=1, marker="o")
+ax.scatter(x2, y2, s=1, c="r", marker="x")
+
+plt.title(vv+" "+tsel)
+
+#%% Plot scatterplot
+var_name="DBZH"
+dsx_p, dsy_p = utils.return_unique_NN_value_pairs(dsx, dsy, mask1_ref, mask2_ref,
+                                           idx1_ref, idx2_ref, matched_timesteps, var_name)
+
+plt.scatter(dsx_p, dsy_p)
+plt.plot([0,40], [0,40], c="red")
+plt.xlabel("HTY")
+plt.ylabel("GZT")
+plt.title(vv+" "+tsel)
