@@ -381,8 +381,8 @@ wrl.vis.plot_scan_strategy(
 ff1 = "/automount/realpep/upload/jgiles/dmi/final_ppis/2016/2016-10/2016-10-28/HTY/MON_YAZ_B/1.5/MON_YAZ_B-allmoms-1.5-20162016-102016-10-28-HTY-h5netcdf.nc"
 ff2 = "/automount/realpep/upload/jgiles/dmi/final_ppis/2016/2016-10/2016-10-28/GZT/VOL_A/0.5/VOL_A-allmoms-0.5-2016-10-28-GZT-h5netcdf.nc"
 
-ds1 = xr.open_dataset(ff1)
-ds2 = xr.open_dataset(ff2)
+ds1 = xr.open_mfdataset(ff1)
+ds2 = xr.open_mfdataset(ff2)
 
 # Get PPIs into the same reference system
 proj = utils.get_common_projection(ds1, ds2)
@@ -429,9 +429,29 @@ mask1_ref, mask2_ref, idx1_ref, idx2_ref, matched_timesteps = utils.refine_radar
                                                                     z_tolerance=200.)
 
 #%% Plot initial mask
-dsx[vv].where(mask1).wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
+dsx_[vv].where(mask1).wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
 ax = plt.gca()
-dsy[vv].where(mask2).wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-10000, 10000), ylim=(-20000, 0))
+dsy_[vv].where(mask2).wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-100000, 100000), ylim=(-100000, 100000))
+
+x1 = dsx.x.where(mask1).values.flatten()
+y1 = dsx.y.where(mask1).values.flatten()
+
+x2 = dsy.x.where(mask2).values.flatten()
+y2 = dsy.y.where(mask2).values.flatten()
+
+# ax.scatter(x1, y1, s=1, marker="o")
+# ax.scatter(x2, y2, s=1, c="r", marker="x")
+
+ax.scatter([ds1.x[0,0], ds2.x[0,0]], [ds1.y[0,0], ds2.y[0,0]])
+ax.text(ds1.x[0,0], ds1.y[0,0]-30000, "HTY")
+ax.text(ds2.x[0,0], ds2.y[0,0]-30000, "GZT")
+
+plt.title(vv+" "+tsel)
+
+#%% Plot initial mask (with zoom and scatter of points)
+dsx_[vv].where(mask1).wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
+ax = plt.gca()
+dsy_[vv].where(mask2).wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-10000, 10000), ylim=(-20000, 0))
 
 x1 = dsx.x.where(mask1).values.flatten()
 y1 = dsx.y.where(mask1).values.flatten()
@@ -445,6 +465,26 @@ ax.scatter(x2, y2, s=1, c="r", marker="x")
 plt.title(vv+" "+tsel)
 
 #%% Plot refined masks
+dsx[vv].where(mask1_ref).wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
+ax = plt.gca()
+dsy[vv].where(mask2_ref).wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-100000, 100000), ylim=(-100000, 100000))
+
+x1 = dsx.x.where(mask1_ref).values.flatten()
+y1 = dsx.y.where(mask1_ref).values.flatten()
+
+x2 = dsy.x.where(mask2_ref).values.flatten()
+y2 = dsy.y.where(mask2_ref).values.flatten()
+
+# ax.scatter(x1, y1, s=1, marker="o")
+# ax.scatter(x2, y2, s=1, c="r", marker="x")
+
+ax.scatter([ds1.x[0,0], ds2.x[0,0]], [ds1.y[0,0], ds2.y[0,0]])
+ax.text(ds1.x[0,0], ds1.y[0,0]-30000, "HTY")
+ax.text(ds2.x[0,0], ds2.y[0,0]-30000, "GZT")
+
+plt.title(vv+" "+tsel)
+
+#%% Plot refined masks (with zoom and scatter of points)
 dsx[vv].where(mask1_ref).wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
 ax = plt.gca()
 dsy[vv].where(mask2_ref).wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-10000, 10000), ylim=(-20000, 0))
@@ -469,4 +509,4 @@ plt.scatter(dsx_p, dsy_p)
 plt.plot([0,40], [0,40], c="red")
 plt.xlabel("HTY")
 plt.ylabel("GZT")
-plt.title(vv+" "+tsel)
+plt.title(var_name+" "+tsel)
