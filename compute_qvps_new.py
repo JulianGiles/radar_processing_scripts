@@ -43,6 +43,7 @@ start_time = time.time()
 # path0 = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/" # For testing
 path0 = sys.argv[1] # read path from console
 overwrite = False # overwrite existing files?
+save_processed_ppi = False # Save PPIs after processing?
 save_retrievals_ppi = False # Save PPIs of microphysical retrievals? (this is pretty slow and uses substantial storage)
 
 # ZDR offset loading parameters
@@ -613,6 +614,21 @@ for ff in files:
 #%% Save a text file to register that the work finished correctly
     with open( os.path.dirname(savepath)+'/DONE.txt', 'w') as f:
         f.write('')
+
+#%% Save PPI
+    if save_processed_ppi:
+        savepath_ppi = make_savedir(ff, "final_ppis")
+        if os.path.exists(os.path.dirname(savepath_ppi)+"/DONE.txt") and not overwrite:
+            continue
+
+        for vv in ds.data_vars:
+            if ds[vv].dtype == "float" or ds[vv].dtype == "float32" or ds[vv].dtype == "float64":
+                ds[vv].encoding = {'zlib': True, 'complevel': 6}
+
+        ds.to_netcdf(savepath_ppi)
+
+        with open( os.path.dirname(savepath_ppi)+'/DONE.txt', 'w') as f:
+            f.write('')
 
 #%% print how much time did it take
 total_time = time.time() - start_time
