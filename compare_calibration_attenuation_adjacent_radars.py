@@ -425,7 +425,8 @@ mask1, mask2, idx1, idx2, matched_timesteps = utils.find_radar_overlap_unique_NN
 mask1_ref, mask2_ref, idx1_ref, idx2_ref, matched_timesteps = utils.refine_radar_overlap_unique_NN_pairs(dsx, dsy,
                                                                                       idx1, idx2,
                                                                                       vv,
-                                                                    tolerance_time=60*4)
+                                                                    tolerance_time=60*4,
+                                                                    z_tolerance=200.)
 
 #%% Plot initial mask
 dsx[vv].where(mask1).wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
