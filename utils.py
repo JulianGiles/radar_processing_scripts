@@ -6738,6 +6738,90 @@ def find_radar_overlap_unique_NN_pairs(ds1, ds2, tolerance=1000.0, tolerance_tim
 
     return mask1, mask2, idx_1, idx_2, matched_timesteps
 
+# Numpy based function to compute pairwise spatial overlap for a single i1,i2 pair ---
+def refine_pair_mask(arr1, arr2, idx_1, idx_2, z1, z2, z_tolerance):
+    # The arrays need to be passed with a variable and timestep selected, only with
+    # azimuth and range dimensions
+    # -------------------------
+    # Refine by removing pairs with NaN var_name
+    # -------------------------
+    shape_1 = z1.shape              # (azimuth_1, range_2)
+    shape_2 = z2.shape              # (azimuth_1, range_2)
+
+    ds1_flat = arr1.flatten()
+    ds2_flat = arr2.flatten()
+
+    # this will extract the order in which the values should be paired
+    idx_1_flat_order = idx_1.flatten()
+    idx_2_flat_order = idx_2.flatten()
+
+    # Find valid (finite) pair indices
+    valid_1 = np.isfinite(idx_1_flat_order)
+    valid_2 = np.isfinite(idx_2_flat_order)
+
+    # Extract pair indices
+    pair_idx_1 = idx_1_flat_order[valid_1].astype(int)
+    pair_idx_2 = idx_2_flat_order[valid_2].astype(int)
+
+    # Sort by pair index to get consistent order
+    order_1 = np.argsort(pair_idx_1)
+    order_2 = np.argsort(pair_idx_2)
+
+    # Flattened positions of arr1/arr2 matched bins (in consistent order)
+    idx_1_flat = np.nonzero(valid_1)[0][order_1]
+    idx_2_flat = np.nonzero(valid_2)[0][order_2]
+
+    # --- extract pairs ---
+    ds1_p = ds1_flat[idx_1_flat]
+    ds2_p = ds2_flat[idx_2_flat]
+
+    # --- drop pairs where either value is NaN ---
+    valid_pairs = np.isfinite(ds1_p) & np.isfinite(ds2_p)
+
+    if z_tolerance is not None:
+        # in this case drop pairs that are separated more than z_tolerance in the vertical
+        z1_flat = z1.flatten()
+        z2_flat = z2.flatten()
+
+        z1_p = z1_flat[idx_1_flat]
+        z2_p = z2_flat[idx_2_flat]
+
+        delta_z = abs(z1_p - z2_p)
+
+        valid_pairs = valid_pairs & (delta_z <= z_tolerance)
+
+    idx_1_flat = idx_1_flat[valid_pairs]
+    idx_2_flat = idx_2_flat[valid_pairs]
+
+    # Put results into final arrays
+    matched_1_az, matched_1_rg = np.unravel_index(idx_1_flat, shape_1)
+    matched_2_az, matched_2_rg = np.unravel_index(idx_2_flat, shape_2)
+
+    mask1_ref = np.zeros(shape_1, dtype=bool)
+    mask2_ref = np.zeros(shape_2, dtype=bool)
+    idx_1_ref = np.full(shape_1, np.nan, dtype=float)
+    idx_2_ref = np.full(shape_2, np.nan, dtype=float)
+
+    mask1_ref[matched_1_az, matched_1_rg] = True
+    mask2_ref[matched_2_az, matched_2_rg] = True
+    idx_1_ref[matched_1_az, matched_1_rg] = np.arange(len(idx_1_flat)) # idx_1_flat
+    idx_2_ref[matched_2_az, matched_2_rg] = np.arange(len(idx_2_flat)) # idx_2_flat
+
+    return mask1_ref, mask2_ref, idx_1_ref, idx_2_ref
+
+# Define a wrapper function to process faster in parallel
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from tqdm import tqdm
+def refine_pair_mask_wrapper(args):
+    """Worker-safe wrapper that uses pre-extracted numpy arrays."""
+    arr1, arr2, idx_1, idx_2, i1, i2, z1, z2, z_tolerance = args
+    # Call refine_pair_mask
+    m1pair, m2pair, idx1pair, idx2pair = refine_pair_mask(
+        arr1, arr2, idx_1, idx_2, z1, z2, z_tolerance
+    )
+    return (i1, i2, m1pair, m2pair, idx1pair, idx2pair)
+
+
 def refine_radar_overlap_unique_NN_pairs(ds1, ds2, idx_1, idx_2, var_name, tolerance_time=None, z_tolerance=None):
     """
     Refines the masks and indices-order from find_radar_overlap_unique_NN_pairs
@@ -6836,79 +6920,126 @@ def refine_radar_overlap_unique_NN_pairs(ds1, ds2, idx_1, idx_2, var_name, toler
         coords_cache[key] = arr2d
         return arr2d
 
-    # --- compute pairwise spatial overlap for a single i1,i2 pair ---
-    def refine_pair_mask(ds1, ds2, idx_1, idx_2, i1, i2, var_name, z_tolerance):
-        # -------------------------
-        # Refine by removing pairs with NaN var_name
-        # -------------------------
-        shape_1 = get_coords(ds1, "x", i1).shape              # (azimuth_x, range_x)
-        shape_2 = get_coords(ds2, "x", i2).shape              # (azimuth_y, range_y)
+    # LEGACY, SLOWER VERSION (#!!! will be removed in the future)
+    # # --- compute pairwise spatial overlap for a single i1,i2 pair ---
+    # def refine_pair_mask(ds1, ds2, idx_1, idx_2, i1, i2, var_name, z_tolerance):
+    #     # -------------------------
+    #     # Refine by removing pairs with NaN var_name
+    #     # -------------------------
+    #     shape_1 = get_coords(ds1, "x", i1).shape              # (azimuth_x, range_x)
+    #     shape_2 = get_coords(ds2, "x", i2).shape              # (azimuth_y, range_y)
 
-        ds1_flat = coord_slice(ds1, var_name, i1).flatten()
-        ds2_flat = coord_slice(ds2, var_name, i2).flatten()
+    #     ds1_flat = coord_slice(ds1, var_name, i1).flatten()
+    #     ds2_flat = coord_slice(ds2, var_name, i2).flatten()
 
-        # this will extract the order in which the values should be paired
-        idx_1_flat_order = coord_slice(idx_1.to_dataset(name="idx_1"), "idx_1", i1).flatten()
-        idx_2_flat_order = coord_slice(idx_2.to_dataset(name="idx_2"), "idx_2", i2).flatten()
+    #     # this will extract the order in which the values should be paired
+    #     idx_1_flat_order = coord_slice(idx_1.to_dataset(name="idx_1"), "idx_1", i1).flatten()
+    #     idx_2_flat_order = coord_slice(idx_2.to_dataset(name="idx_2"), "idx_2", i2).flatten()
 
-        # Find valid (finite) pair indices
-        valid_1 = np.isfinite(idx_1_flat_order)
-        valid_2 = np.isfinite(idx_2_flat_order)
+    #     # Find valid (finite) pair indices
+    #     valid_1 = np.isfinite(idx_1_flat_order)
+    #     valid_2 = np.isfinite(idx_2_flat_order)
 
-        # Extract pair indices
-        pair_idx_1 = idx_1_flat_order[valid_1].astype(int)
-        pair_idx_2 = idx_2_flat_order[valid_2].astype(int)
+    #     # Extract pair indices
+    #     pair_idx_1 = idx_1_flat_order[valid_1].astype(int)
+    #     pair_idx_2 = idx_2_flat_order[valid_2].astype(int)
 
-        # Sort by pair index to get consistent order
-        order_1 = np.argsort(pair_idx_1)
-        order_2 = np.argsort(pair_idx_2)
+    #     # Sort by pair index to get consistent order
+    #     order_1 = np.argsort(pair_idx_1)
+    #     order_2 = np.argsort(pair_idx_2)
 
-        # Flattened positions of ds1/ds2 matched bins (in consistent order)
-        idx_1_flat = np.nonzero(valid_1)[0][order_1]
-        idx_2_flat = np.nonzero(valid_2)[0][order_2]
+    #     # Flattened positions of ds1/ds2 matched bins (in consistent order)
+    #     idx_1_flat = np.nonzero(valid_1)[0][order_1]
+    #     idx_2_flat = np.nonzero(valid_2)[0][order_2]
 
-        # --- extract pairs ---
-        ds1_p = ds1_flat[idx_1_flat]
-        ds2_p = ds2_flat[idx_2_flat]
+    #     # --- extract pairs ---
+    #     ds1_p = ds1_flat[idx_1_flat]
+    #     ds2_p = ds2_flat[idx_2_flat]
 
-        # --- drop pairs where either value is NaN ---
-        valid_pairs = np.isfinite(ds1_p) & np.isfinite(ds2_p)
+    #     # --- drop pairs where either value is NaN ---
+    #     valid_pairs = np.isfinite(ds1_p) & np.isfinite(ds2_p)
 
-        if z_tolerance is not None:
-            # in this case drop pairs that are separated more than z_tolerance in the vertical
-            z1_flat = coord_slice(ds1, "z", i1).flatten()
-            z2_flat = coord_slice(ds2, "z", i2).flatten()
+    #     if z_tolerance is not None:
+    #         # in this case drop pairs that are separated more than z_tolerance in the vertical
+    #         z1_flat = coord_slice(ds1, "z", i1).flatten()
+    #         z2_flat = coord_slice(ds2, "z", i2).flatten()
 
-            z1_p = z1_flat[idx_1_flat]
-            z2_p = z2_flat[idx_2_flat]
+    #         z1_p = z1_flat[idx_1_flat]
+    #         z2_p = z2_flat[idx_2_flat]
 
-            delta_z = abs(z1_p - z2_p)
+    #         delta_z = abs(z1_p - z2_p)
 
-            valid_pairs = valid_pairs & (delta_z <= z_tolerance)
+    #         valid_pairs = valid_pairs & (delta_z <= z_tolerance)
 
-        idx_1_flat = idx_1_flat[valid_pairs]
-        idx_2_flat = idx_2_flat[valid_pairs]
+    #     idx_1_flat = idx_1_flat[valid_pairs]
+    #     idx_2_flat = idx_2_flat[valid_pairs]
 
-        # Put results into final arrays
-        matched_1_az, matched_1_rg = np.unravel_index(idx_1_flat, shape_1)
-        matched_2_az, matched_2_rg = np.unravel_index(idx_2_flat, shape_2)
+    #     # Put results into final arrays
+    #     matched_1_az, matched_1_rg = np.unravel_index(idx_1_flat, shape_1)
+    #     matched_2_az, matched_2_rg = np.unravel_index(idx_2_flat, shape_2)
 
-        mask1_ref = np.zeros(shape_1, dtype=bool)
-        mask2_ref = np.zeros(shape_2, dtype=bool)
-        idx_1_ref = np.full(shape_1, np.nan, dtype=float)
-        idx_2_ref = np.full(shape_2, np.nan, dtype=float)
+    #     mask1_ref = np.zeros(shape_1, dtype=bool)
+    #     mask2_ref = np.zeros(shape_2, dtype=bool)
+    #     idx_1_ref = np.full(shape_1, np.nan, dtype=float)
+    #     idx_2_ref = np.full(shape_2, np.nan, dtype=float)
 
-        mask1_ref[matched_1_az, matched_1_rg] = True
-        mask2_ref[matched_2_az, matched_2_rg] = True
-        idx_1_ref[matched_1_az, matched_1_rg] = np.arange(len(idx_1_flat)) # idx_1_flat
-        idx_2_ref[matched_2_az, matched_2_rg] = np.arange(len(idx_2_flat)) # idx_2_flat
+    #     mask1_ref[matched_1_az, matched_1_rg] = True
+    #     mask2_ref[matched_2_az, matched_2_rg] = True
+    #     idx_1_ref[matched_1_az, matched_1_rg] = np.arange(len(idx_1_flat)) # idx_1_flat
+    #     idx_2_ref[matched_2_az, matched_2_rg] = np.arange(len(idx_2_flat)) # idx_2_flat
 
-        return mask1_ref, mask2_ref, idx_1_ref, idx_2_ref
+    #     return mask1_ref, mask2_ref, idx_1_ref, idx_2_ref
+
+    # # --- loop matched pairs and assemble masks (use OR accumulation where needed) ---
+    # for (i1, i2) in matched_timesteps:
+    #     m1pair, m2pair, idx1pair, idx2pair = refine_pair_mask(ds1, ds2, idx_1, idx_2, i1, i2, var_name, z_tolerance)
+
+    #     # assign/accumulate into mask1_ref
+    #     if ('time' in mask1_ref.dims) and mask1_ref.sizes.get('time', 0) > 1:
+    #         # i1 is a time index in ds1 (if ds1 has time), otherwise i1 is 0 (no-op)
+    #         mask1_ref.values[int(i1), :, :] |= m1pair
+    #         idx_1_ref.values[int(i1), :, :] = idx1pair
+    #     else:
+    #         # no time dim on mask1_ref: OR the pair result (so any match at any paired time is kept)
+    #         mask1_ref.values[:, :] |= m1pair
+    #         idx_1_ref.values[:, :] = idx1pair
+
+    #     # assign/accumulate into mask2_ref
+    #     if ('time' in mask2_ref.dims) and mask2_ref.sizes.get('time', 0) > 1:
+    #         mask2_ref.values[int(i2), :, :] |= m2pair
+    #         idx_2_ref.values[int(i2), :, :] = idx2pair
+    #     else:
+    #         mask2_ref.values[:, :] |= m2pair
+    #         idx_2_ref.values[:, :] = idx2pair
+
 
     # --- loop matched pairs and assemble masks (use OR accumulation where needed) ---
-    for (i1, i2) in matched_timesteps:
-        m1pair, m2pair, idx1pair, idx2pair = refine_pair_mask(ds1, ds2, idx_1, idx_2, i1, i2, var_name, z_tolerance)
+    # Pre-extract minimal arrays for each pair
+    print("Extracting necessary values")
 
+    # Preload the full variable arrays into memory (NumPy)
+    arr1_all = ds1[var_name].values  # entire 3D array
+    arr2_all = ds2[var_name].values
+
+    tasks = []
+    for (i1, i2) in matched_timesteps:
+        arr1 = arr1_all[i1] if "time" in ds1.dims else arr1_all.values
+        arr2 = arr2_all[i2] if "time" in ds2.dims else arr2_all.values
+        idx1 = idx_1.isel(time=i1).values if "time" in idx_1.dims else idx_1.values
+        idx2 = idx_2.isel(time=i2).values if "time" in idx_2.dims else idx_2.values
+        z1 = get_coords(ds1, "z", i1)
+        z2 = get_coords(ds2, "z", i2)
+        tasks.append((arr1, arr2, idx1, idx2, i1, i2, z1, z2, z_tolerance))
+
+    # Run in parallel
+    print("Running calculations in parallel")
+    results = []
+    with ProcessPoolExecutor(max_workers=os.cpu_count() - 1) as executor:
+        futures = [executor.submit(refine_pair_mask_wrapper, t) for t in tasks]
+        for f in tqdm(as_completed(futures), total=len(futures), desc="Refining pairs"):
+            results.append(f.result())
+
+    for (i1, i2, m1pair, m2pair, idx1pair, idx2pair) in results:
         # assign/accumulate into mask1_ref
         if ('time' in mask1_ref.dims) and mask1_ref.sizes.get('time', 0) > 1:
             # i1 is a time index in ds1 (if ds1 has time), otherwise i1 is 0 (no-op)
