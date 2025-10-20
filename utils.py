@@ -7023,8 +7023,8 @@ def refine_radar_overlap_unique_NN_pairs(ds1, ds2, idx_1, idx_2, var_name, toler
 
     tasks = []
     for (i1, i2) in matched_timesteps:
-        arr1 = arr1_all[i1] if "time" in ds1.dims else arr1_all.values
-        arr2 = arr2_all[i2] if "time" in ds2.dims else arr2_all.values
+        arr1 = arr1_all[i1] if "time" in ds1.dims else arr1_all
+        arr2 = arr2_all[i2] if "time" in ds2.dims else arr2_all
         idx1 = idx_1.isel(time=i1).values if "time" in idx_1.dims else idx_1.values
         idx2 = idx_2.isel(time=i2).values if "time" in idx_2.dims else idx_2.values
         z1 = get_coords(ds1, "z", i1)
