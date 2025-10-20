@@ -372,7 +372,7 @@ wrl.vis.plot_scan_strategy(
     ds2_ranges, ds2_elevs, ds2_site, units="km", terrain=True, az=233
 )
 
-#%%% Load the selected elevations to check
+#%% Load the selected elevations and check
 
 # Suitable matching elevations:
 # HTY: 1.5, 3.0 and above
@@ -401,6 +401,137 @@ ax.text(ds2.x[0,0], ds2.y[0,0]-30000, "GZT")
 
 plt.title("DBZH "+tsel)
 
+#%% Add beam blockage
+
+# Define a function to calculate the beam blockage
+def beam_blockage_from_radar_ds(ds,
+                                sitecoords,
+                                dem_resolution=3,
+                                bw=1.0,
+                                wradlib_token: str = None):
+    """
+    Compute PBB and CBB for a polar radar dataset `ds`.
+
+    Parameters
+    ----------
+    ds : xarray.Dataset or xarray.DataArray
+        Radar data in polar coordinates. Must have dims (azimuth, range) (for one elevation)
+        or (time, azimuth, range) etc  but we only consider one elevation sweep at a time.
+        It must have range, azimuth, and should allow georeferencing via wradlib.
+    sitecoords : tuple (lon, lat, height_m)
+        The radar site location in geographic coords and altitude (m).
+    dem_resolution : int, default 3
+        Resolution (arc-seconds) for SRTM fetch (1, 3, or 30).
+    bw : float, default 1.0
+        Beam-width scaling (for half power radius).
+    wradlib_token : str, optional
+        WRADLIB Earthdata bearer token (if needed for DEM access).
+
+    Returns
+    -------
+    pbb_da : xarray.DataArray
+      Partial beam blockage fraction (dims: azimuth × range)
+    cbb_da : xarray.DataArray
+      Cumulative beam blockage fraction, same dims
+    """
+
+    # If token is given, set environment (for remote DEM fetch)
+    if wradlib_token is not None:
+        os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = wradlib_token
+
+    # 1. Georeference the radar sweep
+    # Let ds be a 2D sweep (azimuth × range). If it has extra dims, you may select one slice.
+    # Use wradlib’s xarray accessor if available:
+    # e.g., if ds is a Wradlib-xarray object:
+    wgs84 = osr.SpatialReference()
+    wgs84.ImportFromEPSG(4326)
+    ds_geo = ds.pipe(wrl.georef.georeference, crs=wgs84)  # this gives ds with x, y, z coords attached
+
+    # After georeferencing, ds_geo should have coords: x (az, range), y, z (altitude of beam center)
+    # E.g., ds_geo.x.values, ds_geo.y.values, ds_geo.z.values
+
+    xs = ds_geo.x.values     # shape (az, range)
+    ys = ds_geo.y.values
+    zs = ds_geo.z.values     # same shape or broadcastable (beam center altitudes)
+
+    # 2. Determine DEM bounding box from radar footprint
+    # Use wradlib.zonalstats.get_bbox which returns a dict-like:
+    bbox = wrl.zonalstats.get_bbox(xs, ys)
+    # bbox has keys "left", "bottom", "right", "top"
+    left, bottom, right, top = bbox["left"], bbox["bottom"], bbox["right"], bbox["top"]
+
+    # 3. Fetch DEM (SRTM) over that bounding box
+    dem = wrl.io.dem.get_srtm([left, right, bottom, top], resolution=dem_resolution, merge=True)
+
+    # 4. Extract DEM raster arrays and coords
+    rastervalues, rastercoords, dem_proj = wrl.georef.extract_raster_dataset(dem, nodata=-32768.0)
+
+    # 5. Clip DEM to radar bounding box
+    rlimits = (left, bottom, right, top)
+    ind = wrl.util.find_bbox_indices(rastercoords, rlimits)
+    rastercoords_clip = rastercoords[ind[1]:ind[3], ind[0]:ind[2], :]
+    rastervalues_clip = rastervalues[ind[1]:ind[3], ind[0]:ind[2]]
+
+    # 6. Prepare polar grid (x,y) as points for interpolation
+    polcoords = np.dstack((xs, ys))  # shape (az, range, 2)
+
+    # 7. Interpolate DEM heights to the polar coords
+    # The result is the “terrain height under each bin” (shape az × range)
+    polar_terrain = wrl.ipol.cart_to_irregular_spline(
+        rastercoords_clip, rastervalues_clip, polcoords,
+        order=3, prefilter=False
+    )
+
+    # 8. Compute beam radius (half power) for each range bin
+    r = ds_geo.range.values   # 1D array (range)
+    beamradius = wrl.util.half_power_radius(r, bw)  # gives 1D array (range,)
+
+    # Broadcast to 2D: for each azimuth replicate beamradius
+    beamradius2d = np.broadcast_to(beamradius, xs.shape)
+
+    # 9. Compute partial beam blockage
+    PBB = wrl.qual.beam_block_frac(polar_terrain, zs, beamradius2d)
+    PBB = np.ma.masked_invalid(PBB)
+
+    # 10. Compute cumulative beam blockage
+    CBB = wrl.qual.cum_beam_block_frac(PBB)
+
+    # 11. Wrap as xarray DataArrays
+    pbb_da = xr.DataArray(PBB.filled(np.nan),
+                          dims=("azimuth", "range"),
+                          coords={"azimuth": ds_geo.azimuth, "range": ds_geo.range},
+                          name="PBB")
+    cbb_da = xr.DataArray(CBB,
+                          dims=("azimuth", "range"),
+                          coords={"azimuth": ds_geo.azimuth, "range": ds_geo.range},
+                          name="CBB")
+
+    return pbb_da, cbb_da
+
+token = "eyJ0eXAiOiJKV1QiLCJvcmlnaW4iOiJFYXJ0aGRhdGEgTG9naW4iLCJzaWciOiJlZGxqd3RwdWJrZXlfb3BzIiwiYWxnIjoiUlMyNTYifQ.eyJ0eXBlIjoiVXNlciIsInVpZCI6ImpnaWxlcyIsImV4cCI6MTc2NTg4MjQyNiwiaWF0IjoxNzYwNjk4NDI2LCJpc3MiOiJodHRwczovL3Vycy5lYXJ0aGRhdGEubmFzYS5nb3YiLCJpZGVudGl0eV9wcm92aWRlciI6ImVkbF9vcHMiLCJhY3IiOiJlZGwiLCJhc3N1cmFuY2VfbGV2ZWwiOjN9.UvbHo78icjYzHBJxtW4KxgrJ97dULLiCJFeT41ylakwLkRYEc7_xlRGLbZ_gkIAwY6H0tvSDdQHUX-as2pBOSEB8QsYS7aL7RGqzupSVXUhEHFk74rLUwKNUT22ftB_iQoKkS1KNoU6-9xiGoIg2eACPEbzg9qMc6hdRCBZKUYDY8pqPkfx2PT7fSwb2-0Jj2sk6wORnE4jk6O6nXnOMEC6ZNnH8FHnLb4PzW6U8Ig1iTkNiR3MzETI1SNo5v5pdGXT_GJcnCur4RvwBZoqBtXA60LW5XBwFW5cBOt-rCv_N3mXRJerCkgje6ikqpv-L1kYeufzBvRvgNroCfGy_dQ"
+
+ds1_pbb, ds1_cbb = beam_blockage_from_radar_ds(ds1.isel(time=0),
+                                               (ds1.longitude, ds1.latitude, ds1.altitude),
+                                               wradlib_token = token)
+
+ds1 = ds1.assign({"PBB": ds1_pbb, "CBB": ds1_cbb})
+
+ds2_pbb, ds2_cbb = beam_blockage_from_radar_ds(ds2.isel(time=0),
+                                               (ds2.longitude, ds2.latitude, ds2.altitude),
+                                               wradlib_token = token)
+
+ds2 = ds2.assign({"PBB": ds2_pbb, "CBB": ds2_cbb})
+
+# Plot beam blockage
+ds1["CBB"].wrl.vis.plot(alpha=0.2, vmin=0, vmax=1, cmap=mpl.cm.PuRd)
+ax = plt.gca()
+ds2["CBB"].wrl.vis.plot(ax=ax, alpha=0.2, vmin=0, vmax=1, cmap=mpl.cm.PuRd)
+ax.scatter([ds1.x[0,0], ds2.x[0,0]], [ds1.y[0,0], ds2.y[0,0]])
+ax.text(ds1.x[0,0], ds1.y[0,0]-30000, "HTY")
+ax.text(ds2.x[0,0], ds2.y[0,0]-30000, "GZT")
+
+plt.title("CBB "+tsel)
+
 #%% Preselect timesteps and filters
 tolerance = 500.
 
@@ -409,14 +540,17 @@ vv = "DBZH"
 SNRH_min = 15
 RHOHV_min = 0.95
 TEMP_min = 3
+CBB_max = 0.05
 
 # We need to use the nearest neighbors mask with the less amount of valid values to avoid duplicates
 dsx_ = ds1.sel(time=tsel, method="nearest").copy()
 dsy_ = ds2.sel(time=tsel, method="nearest").copy()
 dsx = utils.apply_min_max_thresh(dsx_, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
-                                        "SNRHC":SNRH_min,"SQIH":0.5, "TEMP":TEMP_min}, {})
+                                        "SNRHC":SNRH_min, "SQIH":0.5,
+                                        "TEMP":TEMP_min}, {"CBB": CBB_max})
 dsy = utils.apply_min_max_thresh(dsy_, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
-                                        "SNRHC":SNRH_min,"SQIH":0.5, "TEMP":TEMP_min}, {})
+                                        "SNRHC":SNRH_min, "SQIH":0.5,
+                                        "TEMP":TEMP_min}, {"CBB": CBB_max})
 #%% Generate masks
 mask1, mask2, idx1, idx2, matched_timesteps = utils.find_radar_overlap_unique_NN_pairs(dsx, dsy,
                                                                     tolerance=500.,
