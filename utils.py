@@ -7060,6 +7060,35 @@ def refine_radar_overlap_unique_NN_pairs(ds1, ds2, idx_1, idx_2, var_name, toler
 
     return mask1_ref, mask2_ref, idx_1_ref, idx_2_ref, matched_timesteps
 
+def extract_unique_pairs(args):
+    """Helper worker to extract unique NN value pairs for a 2D array."""
+    ds1_m_arr, ds2_m_arr, idx_1_arr, idx_2_arr, n = args
+
+    # Flatten slices for this time pair
+    ds1_flat = ds1_m_arr.flatten()
+    ds2_flat = ds2_m_arr.flatten()
+    idx_1_flat_ = idx_1_arr.flatten()
+    idx_2_flat_ = idx_2_arr.flatten()
+
+    valid_1 = np.isfinite(idx_1_flat_)
+    valid_2 = np.isfinite(idx_2_flat_)
+
+    idx_1_flat = idx_1_flat_[valid_1].astype(int)
+    idx_2_flat = idx_2_flat_[valid_2].astype(int)
+
+    # Sort by pair index for consistent order
+    order_1 = np.argsort(idx_1_flat)
+    order_2 = np.argsort(idx_2_flat)
+
+    # Flattened positions of ds1/ds2 matched bins (in consistent order)
+    idx_1_flat_ordered = np.nonzero(valid_1)[0][order_1]
+    idx_2_flat_ordered = np.nonzero(valid_2)[0][order_2]
+
+    ds1_values_ = ds1_flat[idx_1_flat_ordered]
+    ds2_values_ = ds2_flat[idx_2_flat_ordered]
+
+    return (n, ds1_values_, ds2_values_)
+
 def return_unique_NN_value_pairs(ds1, ds2, mask1, mask2, idx_1, idx_2, matched_timesteps, var_name):
     """
     Takes two datasets and the output from find_radar_overlap_unique_NN_pairs or
@@ -7091,61 +7120,41 @@ def return_unique_NN_value_pairs(ds1, ds2, mask1, mask2, idx_1, idx_2, matched_t
     has_time1 = ('time' in ds1.dims) and ds1.sizes.get('time', 0) > 1
     has_time2 = ('time' in ds2.dims) and ds2.sizes.get('time', 0) > 1
 
-    if not has_time1:
-        ds1_ = ds1.expand_dims("time")
-        mask1_ = mask1.expand_dims("time")
-        idx_1_ = idx_1.expand_dims("time")
-    else:
-        ds1_ = ds1
-        mask1_ = mask1
-        idx_1_ = idx_1
-
-    if not has_time2:
-        ds2_ = ds2.expand_dims("time")
-        mask2_ = mask2.expand_dims("time")
-        idx_2_ = idx_2.expand_dims("time")
-    else:
-        ds2_ = ds2
-        mask2_ = mask2
-        idx_2_ = idx_2
+    # expand dims if needed
+    ds1_ = ds1.expand_dims("time") if not has_time1 else ds1
+    ds2_ = ds2.expand_dims("time") if not has_time2 else ds2
+    mask1_ = mask1.expand_dims("time") if not has_time1 else mask1
+    mask2_ = mask2.expand_dims("time") if not has_time2 else mask2
+    idx_1_ = idx_1.expand_dims("time") if not has_time1 else idx_1
+    idx_2_ = idx_2.expand_dims("time") if not has_time2 else idx_2
 
     # Apply the masks
-    ds1_m = ds1_[var_name].where(mask1_)
-    ds2_m = ds2_[var_name].where(mask2_)
+    ds1_m_arr = ds1_[var_name].where(mask1_).values
+    ds2_m_arr = ds2_[var_name].where(mask2_).values
+    idx_1_arr = idx_1_.values
+    idx_2_arr = idx_2_.values
 
     # Create template arrays to save the results
     ds1_values = np.full(( len(matched_timesteps), int(idx_1_.max().values+1) ), np.nan)
     ds2_values = np.full(( len(matched_timesteps), int(idx_2_.max().values+1) ), np.nan)
 
+    # Build argument list
+    tasks = [
+        (ds1_m_arr[i1], ds2_m_arr[i2], idx_1_arr[i1], idx_2_arr[i2], n)
+        for n, (i1, i2) in enumerate(matched_timesteps)
+    ]
+
+    # Run in parallel
+    results = []
+    with ProcessPoolExecutor(max_workers=os.cpu_count() - 1) as executor:
+        futures = [executor.submit(extract_unique_pairs, t) for t in tasks]
+        for f in tqdm(as_completed(futures), total=len(futures)):
+            results.append(f.result())
+
     # Loop matched time pairs and assemble results
-    for n, (i1, i2) in enumerate(matched_timesteps):
-
-        ds1_flat = ds1_m.isel(time=i1).values.flatten()
-        ds2_flat = ds2_m.isel(time=i2).values.flatten()
-
-        idx_1_flat_ = idx_1_.isel(time=i1).values.flatten()
-        idx_2_flat_ = idx_2_.isel(time=i2).values.flatten()
-
-        valid_1 = np.isfinite(idx_1_flat_)
-        valid_2 = np.isfinite(idx_2_flat_)
-
-        idx_1_flat = idx_1_flat_[np.isfinite(idx_1_flat_)].astype(int)
-        idx_2_flat = idx_2_flat_[np.isfinite(idx_2_flat_)].astype(int)
-
-        # Sort by pair index to get consistent order
-        order_1 = np.argsort(idx_1_flat)
-        order_2 = np.argsort(idx_2_flat)
-
-        # Flattened positions of ds1/ds2 matched bins (in consistent order)
-        idx_1_flat_ordered = np.nonzero(valid_1)[0][order_1]
-        idx_2_flat_ordered = np.nonzero(valid_2)[0][order_2]
-
-        ds1_values_ = ds1_flat[idx_1_flat_ordered]
-        ds2_values_ = ds2_flat[idx_2_flat_ordered]
-
-        # Expand the array of values to the length of the template array and fill the template
-        ds1_values[n] = np.pad(ds1_values_, (0,ds1_values.shape[-1]-len(ds1_values_)), mode='constant', constant_values=np.nan)
-        ds2_values[n] = np.pad(ds2_values_, (0,ds2_values.shape[-1]-len(ds2_values_)), mode='constant', constant_values=np.nan)
+    for n, ds1_values_, ds2_values_ in results:
+        ds1_values[n, :len(ds1_values_)] = ds1_values_
+        ds2_values[n, :len(ds2_values_)] = ds2_values_
 
     return ds1_values, ds2_values
 
