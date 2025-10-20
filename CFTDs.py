@@ -4550,7 +4550,7 @@ for ff in files:
     if "dmi" in files[0]:
         swpx = xr.open_dataset(ff).DBZH[0]
 
-    swpx = swpx.pipe(wrl.georef.georeference, proj=wgs84)
+    swpx = swpx.pipe(wrl.georef.georeference, crs=wgs84)
 
     # Download DEM data
 
