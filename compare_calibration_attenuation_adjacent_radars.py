@@ -140,8 +140,8 @@ def plot_dual_scan_strategy(
     terrain=True,
     dem=None,
     npts=400,
-    cmap1="tab10",
-    cmap2="tab10",
+    cmap1="PuBu_r",
+    cmap2="OrRd_r",
     pad_deg=0.02,
     show=True,
     figsize=(12, 5),
@@ -340,8 +340,8 @@ def plot_dual_scan_strategy(
 
 plot_dual_scan_strategy(
     ds1, ds2,
-    elevs1=[0.0, 0.7, 1.5, 3.0, 5.0, 7.0, 8.0, 10.0, 12.0, 15.0, 18.0, 25.0],
-    elevs2=[0.5, 1.3, 4.0, 7.0, 10.0, 15.0, 25.0, 359.8],
+    elevs1=[0.2, 0.4, 0.7, 1.0, 1.5, 2.2, 3.0, 4.5, 6.0, 8.0, 12.0, 18.0, 27.0, 38.0],
+    elevs2=[0.5, 1.3, 4.0, 10.0, 15.0],
     terrain=True
 )
 
@@ -365,7 +365,7 @@ ds2_site = (float(ds2.longitude.values), float(ds2.latitude.values), float(ds2.a
 ds2_beamwidth = 1.0
 
 ax = wrl.vis.plot_scan_strategy(
-    ds1_ranges, ds1_elevs, ds1_site, units="km", terrain=True, az=52
+    ds1_ranges, ds1_elevs, ds1_site, units="km", terrain=True, az=53
 )
 
 wrl.vis.plot_scan_strategy(
@@ -390,7 +390,7 @@ proj = utils.get_common_projection(ds1, ds2)
 ds1 = wrl.georef.georeference(ds1, crs=proj)
 ds2 = wrl.georef.georeference(ds2, crs=proj)
 
-tsel = "2016-10-28T05"
+tsel = "2016-10-28T06"
 
 ds1.sel(time=tsel, method="nearest")["DBZH"].wrl.vis.plot(alpha=0.5)
 ax = plt.gca()
@@ -523,9 +523,9 @@ ds2_pbb, ds2_cbb = beam_blockage_from_radar_ds(ds2.isel(time=0),
 ds2 = ds2.assign({"PBB": ds2_pbb, "CBB": ds2_cbb})
 
 # Plot beam blockage
-ds1["CBB"].wrl.vis.plot(alpha=0.2, vmin=0, vmax=1, cmap=mpl.cm.PuRd)
+ds1["CBB"].where(ds1["CBB"]>0.).wrl.vis.plot(alpha=0.5, vmin=0, vmax=1, cmap=mpl.cm.PuRd)
 ax = plt.gca()
-ds2["CBB"].wrl.vis.plot(ax=ax, alpha=0.2, vmin=0, vmax=1, cmap=mpl.cm.PuRd)
+ds2["CBB"].where(ds2["CBB"]>0.).wrl.vis.plot(ax=ax, alpha=0.5, vmin=0, vmax=1, cmap=mpl.cm.PuRd,  xlim=(-100000, 100000), ylim=(-100000, 100000))
 ax.scatter([ds1.x[0,0], ds2.x[0,0]], [ds1.y[0,0], ds2.y[0,0]])
 ax.text(ds1.x[0,0], ds1.y[0,0]-30000, "HTY")
 ax.text(ds2.x[0,0], ds2.y[0,0]-30000, "GZT")
@@ -535,22 +535,21 @@ plt.title("CBB "+tsel)
 #%% Preselect timesteps and filters
 tolerance = 500.
 
-tsel = "2016-10-28T05"
+tsel = "2016-10-28T06" # for plots
 vv = "DBZH"
 SNRH_min = 15
 RHOHV_min = 0.95
 TEMP_min = 3
 CBB_max = 0.05
 
-# We need to use the nearest neighbors mask with the less amount of valid values to avoid duplicates
-dsx_ = ds1.sel(time=tsel, method="nearest").copy()
-dsy_ = ds2.sel(time=tsel, method="nearest").copy()
-dsx = utils.apply_min_max_thresh(dsx_, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
+# Apply thresholds before computing masks
+dsx = utils.apply_min_max_thresh(ds1, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
                                         "SNRHC":SNRH_min, "SQIH":0.5,
                                         "TEMP":TEMP_min}, {"CBB": CBB_max})
-dsy = utils.apply_min_max_thresh(dsy_, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
+dsy = utils.apply_min_max_thresh(ds2, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
                                         "SNRHC":SNRH_min, "SQIH":0.5,
                                         "TEMP":TEMP_min}, {"CBB": CBB_max})
+
 #%% Generate masks
 mask1, mask2, idx1, idx2, matched_timesteps = utils.find_radar_overlap_unique_NN_pairs(dsx, dsy,
                                                                     tolerance=500.,
@@ -563,15 +562,15 @@ mask1_ref, mask2_ref, idx1_ref, idx2_ref, matched_timesteps = utils.refine_radar
                                                                     z_tolerance=200.)
 
 #%% Plot initial mask
-dsx_[vv].where(mask1).wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
+dsx[vv].where(mask1).sel(time=tsel, method="nearest").wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
 ax = plt.gca()
-dsy_[vv].where(mask2).wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-100000, 100000), ylim=(-100000, 100000))
+dsy[vv].where(mask2).sel(time=tsel, method="nearest").wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-100000, 100000), ylim=(-100000, 100000))
 
-x1 = dsx.x.where(mask1).values.flatten()
-y1 = dsx.y.where(mask1).values.flatten()
+x1 = dsx.x.where(mask1).sel(time=tsel, method="nearest").values.flatten()
+y1 = dsx.y.where(mask1).sel(time=tsel, method="nearest").values.flatten()
 
-x2 = dsy.x.where(mask2).values.flatten()
-y2 = dsy.y.where(mask2).values.flatten()
+x2 = dsy.x.where(mask2).sel(time=tsel, method="nearest").values.flatten()
+y2 = dsy.y.where(mask2).sel(time=tsel, method="nearest").values.flatten()
 
 # ax.scatter(x1, y1, s=1, marker="o")
 # ax.scatter(x2, y2, s=1, c="r", marker="x")
@@ -583,15 +582,15 @@ ax.text(ds2.x[0,0], ds2.y[0,0]-30000, "GZT")
 plt.title(vv+" "+tsel)
 
 #%% Plot initial mask (with zoom and scatter of points)
-dsx_[vv].where(mask1).wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
+dsx[vv].where(mask1).sel(time=tsel, method="nearest").wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
 ax = plt.gca()
-dsy_[vv].where(mask2).wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-10000, 10000), ylim=(-20000, 0))
+dsy[vv].where(mask2).sel(time=tsel, method="nearest").wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-10000, 10000), ylim=(-20000, 0))
 
-x1 = dsx.x.where(mask1).values.flatten()
-y1 = dsx.y.where(mask1).values.flatten()
+x1 = dsx.x.where(mask1).sel(time=tsel, method="nearest").values.flatten()
+y1 = dsx.y.where(mask1).sel(time=tsel, method="nearest").values.flatten()
 
-x2 = dsy.x.where(mask2).values.flatten()
-y2 = dsy.y.where(mask2).values.flatten()
+x2 = dsy.x.where(mask2).sel(time=tsel, method="nearest").values.flatten()
+y2 = dsy.y.where(mask2).sel(time=tsel, method="nearest").values.flatten()
 
 ax.scatter(x1, y1, s=1, marker="o")
 ax.scatter(x2, y2, s=1, c="r", marker="x")
@@ -599,15 +598,15 @@ ax.scatter(x2, y2, s=1, c="r", marker="x")
 plt.title(vv+" "+tsel)
 
 #%% Plot refined masks
-dsx[vv].where(mask1_ref).wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
+dsx[vv].where(mask1_ref).sel(time=tsel, method="nearest").wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
 ax = plt.gca()
-dsy[vv].where(mask2_ref).wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-100000, 100000), ylim=(-100000, 100000))
+dsy[vv].where(mask2_ref).sel(time=tsel, method="nearest").wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-100000, 100000), ylim=(-100000, 100000))
 
-x1 = dsx.x.where(mask1_ref).values.flatten()
-y1 = dsx.y.where(mask1_ref).values.flatten()
+x1 = dsx.x.where(mask1_ref).sel(time=tsel, method="nearest").values.flatten()
+y1 = dsx.y.where(mask1_ref).sel(time=tsel, method="nearest").values.flatten()
 
-x2 = dsy.x.where(mask2_ref).values.flatten()
-y2 = dsy.y.where(mask2_ref).values.flatten()
+x2 = dsy.x.where(mask2_ref).sel(time=tsel, method="nearest").values.flatten()
+y2 = dsy.y.where(mask2_ref).sel(time=tsel, method="nearest").values.flatten()
 
 # ax.scatter(x1, y1, s=1, marker="o")
 # ax.scatter(x2, y2, s=1, c="r", marker="x")
@@ -619,15 +618,15 @@ ax.text(ds2.x[0,0], ds2.y[0,0]-30000, "GZT")
 plt.title(vv+" "+tsel)
 
 #%% Plot refined masks (with zoom and scatter of points)
-dsx[vv].where(mask1_ref).wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
+dsx[vv].where(mask1_ref).sel(time=tsel, method="nearest").wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
 ax = plt.gca()
-dsy[vv].where(mask2_ref).wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-10000, 10000), ylim=(-20000, 0))
+dsy[vv].where(mask2_ref).sel(time=tsel, method="nearest").wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-10000, 10000), ylim=(-20000, 0))
 
-x1 = dsx.x.where(mask1_ref).values.flatten()
-y1 = dsx.y.where(mask1_ref).values.flatten()
+x1 = dsx.x.where(mask1_ref).sel(time=tsel, method="nearest").values.flatten()
+y1 = dsx.y.where(mask1_ref).sel(time=tsel, method="nearest").values.flatten()
 
-x2 = dsy.x.where(mask2_ref).values.flatten()
-y2 = dsy.y.where(mask2_ref).values.flatten()
+x2 = dsy.x.where(mask2_ref).sel(time=tsel, method="nearest").values.flatten()
+y2 = dsy.y.where(mask2_ref).sel(time=tsel, method="nearest").values.flatten()
 
 ax.scatter(x1, y1, s=1, marker="o")
 ax.scatter(x2, y2, s=1, c="r", marker="x")
@@ -639,8 +638,11 @@ var_name="DBZH"
 dsx_p, dsy_p = utils.return_unique_NN_value_pairs(dsx, dsy, mask1_ref, mask2_ref,
                                            idx1_ref, idx2_ref, matched_timesteps, var_name)
 
-plt.scatter(dsx_p, dsy_p)
+plt.scatter(dsx_p, dsy_p, alpha=0.1)
 plt.plot([0,40], [0,40], c="red")
 plt.xlabel("HTY")
 plt.ylabel("GZT")
+
+cc = round(np.corrcoef(dsx_p[np.isfinite(dsx_p)],dsy_p[np.isfinite(dsy_p)])[0,1],2).astype(str)
+plt.text(0.5,0.1,"Corr coef (Pearson): "+cc, transform=ax.transAxes)
 plt.title(var_name+" "+tsel)
