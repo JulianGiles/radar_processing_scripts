@@ -6880,7 +6880,7 @@ def refine_radar_overlap_unique_NN_pairs(ds1, ds2, idx_1, idx_2, var_name, toler
             z2_flat = coord_slice(ds2, "z", i2).flatten()
 
             z1_p = z1_flat[idx_1_flat]
-            z2_p = z2_flat[idx_1_flat]
+            z2_p = z2_flat[idx_2_flat]
 
             delta_z = abs(z1_p - z2_p)
 
