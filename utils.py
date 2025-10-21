@@ -7148,7 +7148,7 @@ def return_unique_NN_value_pairs(ds1, ds2, mask1, mask2, idx_1, idx_2, matched_t
     results = []
     with ProcessPoolExecutor(max_workers=os.cpu_count() - 1) as executor:
         futures = [executor.submit(extract_unique_pairs, t) for t in tasks]
-        for f in tqdm(as_completed(futures), total=len(futures)):
+        for f in tqdm(as_completed(futures), total=len(futures), desc="Extracting unique pairs"):
             results.append(f.result())
 
     # Loop matched time pairs and assemble results
