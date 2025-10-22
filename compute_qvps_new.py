@@ -622,8 +622,21 @@ for ff in files:
             continue
 
         for vv in ds.data_vars:
+            # set the encoding, try to copy original encodings
             if ds[vv].dtype == "float" or ds[vv].dtype == "float32" or ds[vv].dtype == "float64":
-                ds[vv].encoding = {'zlib': True, 'complevel': 6}
+                if len(ds[vv].encoding) == 0:
+                    try:
+                        enc = ds[vv.split("_")[0]].encoding.copy()
+                        if len(enc) != 0:
+                            ds[vv].encoding = enc.copy()
+                        else:
+                            ds[vv].encoding = {'zlib': True, 'complevel': 6}
+                            if ds[vv].dims == ds["DBZH"].dims:
+                                ds[vv].encoding.update({k: ds["DBZH"].encoding[k] for k in ("chunksizes", "preferred_chunks", "original_shape")})
+                    except:
+                        ds[vv].encoding = {'zlib': True, 'complevel': 6}
+                        if ds[vv].dims == ds["DBZH"].dims:
+                            ds[vv].encoding.update({k: ds["DBZH"].encoding[k] for k in ("chunksizes", "preferred_chunks", "original_shape")})
 
         ds.to_netcdf(savepath_ppi)
 
