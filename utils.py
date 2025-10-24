@@ -7158,6 +7158,141 @@ def return_unique_NN_value_pairs(ds1, ds2, mask1, mask2, idx_1, idx_2, matched_t
 
     return ds1_values, ds2_values
 
+#!!! I tried to remove loops and make the functions more efficient and faster but
+# so far they are not really faster and they fill up the memory. The issue seems
+# to be when extracting all variables even before the call to extract_unique_pairs_faster
+def extract_unique_pairs_faster(args):
+    """Helper worker to extract unique NN value pairs for stacked variable arrays."""
+    ds1_m_stack, ds2_m_stack, idx_1_arr, idx_2_arr, n, var_names = args
+    n_vars = ds1_m_stack.shape[0]
+
+    # Flatten indices once
+    idx_1_flat_ = idx_1_arr.flatten()
+    idx_2_flat_ = idx_2_arr.flatten()
+
+    valid_1 = np.isfinite(idx_1_flat_)
+    valid_2 = np.isfinite(idx_2_flat_)
+
+    idx_1_flat = idx_1_flat_[valid_1].astype(int)
+    idx_2_flat = idx_2_flat_[valid_2].astype(int)
+
+    # Sort by pair index for consistent order
+    order_1 = np.argsort(idx_1_flat)
+    order_2 = np.argsort(idx_2_flat)
+
+    # Flattened positions of ds1/ds2 matched bins (in consistent order)
+    idx_1_flat_ordered = np.nonzero(valid_1)[0][order_1]
+    idx_2_flat_ordered = np.nonzero(valid_2)[0][order_2]
+
+    # Vectorized extraction for all variables
+    ds1_values_dict = {}
+    ds2_values_dict = {}
+
+    # Flatten entire 3D stack: shape (n_vars, ny*nx)
+    ds1_flat = ds1_m_stack.reshape(n_vars, -1)
+    ds2_flat = ds2_m_stack.reshape(n_vars, -1)
+
+    # Index once for all variables using advanced indexing
+    ds1_values_sel = ds1_flat[:, idx_1_flat_ordered]
+    ds2_values_sel = ds2_flat[:, idx_2_flat_ordered]
+
+    # Store back as dicts per variable name
+    for vi, vname in enumerate(var_names):
+        ds1_values_dict[vname] = ds1_values_sel[vi]
+        ds2_values_dict[vname] = ds2_values_sel[vi]
+
+    return (n, ds1_values_dict, ds2_values_dict)
+
+def return_unique_NN_value_pairs_faster(ds1, ds2, mask1, mask2, idx_1, idx_2, matched_timesteps, var_names):
+    """
+    Takes two datasets and the output from find_radar_overlap_unique_NN_pairs or
+    refine_radar_overlap_unique_NN_pairs and returns the identified value pairs
+    from variables var_names.
+
+    Parameters
+    ----------
+    ds1, ds2 : xarray.Dataset
+        The same ds1 and ds2 that were used in find_radar_overlap_unique_NN_pairs
+        or refine_radar_overlap_unique_NN_pairs
+    mask1, mask2: xarray.Dataset
+        Arrays containing the masks of the selected values
+    idx_1, idx_2 : xarray.Dataset
+        Arrays containing the indeces of the selected values in the flattened array
+        (per timestep).
+    matched_timesteps: list
+        List with matched time indices.
+    var_names: list
+        List of names of the variables of ds1 and ds2 from which values are requested
+
+    Returns
+    -------
+    ds1_values, ds2_values:
+        Arrays with the flattened selected values for each timestep
+
+    """
+    # If var_names is a str, conver to list
+    if type(var_names) is str:
+        var_names = [var_names]
+
+    # Check if ds1 and ds2 have time dimension
+    has_time1 = ('time' in ds1.dims) and ds1.sizes.get('time', 0) > 1
+    has_time2 = ('time' in ds2.dims) and ds2.sizes.get('time', 0) > 1
+
+    # expand dims if needed
+    ds1_ = ds1.expand_dims("time") if not has_time1 else ds1
+    ds2_ = ds2.expand_dims("time") if not has_time2 else ds2
+    mask1_ = mask1.expand_dims("time") if not has_time1 else mask1
+    mask2_ = mask2.expand_dims("time") if not has_time2 else mask2
+    idx_1_ = idx_1.expand_dims("time") if not has_time1 else idx_1
+    idx_2_ = idx_2.expand_dims("time") if not has_time2 else idx_2
+
+    # Apply the masks (once for all variables)
+    ds1_m_arrs = [ds1_[v].where(mask1_).values for v in var_names]
+    ds2_m_arrs = [ds2_[v].where(mask2_).values for v in var_names]
+    idx_1_arr = idx_1_.values
+    idx_2_arr = idx_2_.values
+
+    # Create template arrays to save the results
+    max_len1 = int(idx_1_.max().values + 1)
+    max_len2 = int(idx_2_.max().values + 1)
+    nt = len(matched_timesteps)
+
+    ds1_values_dict = {v: np.full((nt, max_len1), np.nan) for v in var_names}
+    ds2_values_dict = {v: np.full((nt, max_len2), np.nan) for v in var_names}
+
+    # Build argument list with stacked arrays
+    tasks = []
+    for n, (i1, i2) in enumerate(matched_timesteps):
+        ds1_stack = np.stack([arr[i1] for arr in ds1_m_arrs], axis=0)
+        ds2_stack = np.stack([arr[i2] for arr in ds2_m_arrs], axis=0)
+        tasks.append((ds1_stack, ds2_stack, idx_1_arr[i1], idx_2_arr[i2], n, var_names))
+
+    # Run in parallel
+    results = []
+    with ProcessPoolExecutor(max_workers=os.cpu_count() - 1) as executor:
+        futures = [executor.submit(extract_unique_pairs_faster, t) for t in tasks]
+        for f in tqdm(as_completed(futures), total=len(futures), desc="Extracting unique pairs"):
+            results.append(f.result())
+
+    # Assemble results
+    indices, arrs1, arrs2 = zip(*results)
+
+    for v in var_names:
+        padded_ds1 = np.vstack([
+            np.pad(a[v], (0, max_len1 - len(a[v])), constant_values=np.nan)
+            for a in arrs1
+        ])
+        padded_ds2 = np.vstack([
+            np.pad(a[v], (0, max_len2 - len(a[v])), constant_values=np.nan)
+            for a in arrs2
+        ])
+
+        ds1_values_dict[v][np.array(indices)] = padded_ds1.copy()
+        ds2_values_dict[v][np.array(indices)] = padded_ds2.copy()
+
+    return ds1_values_dict, ds2_values_dict
+
+
 #### Plotting helping functions
 
 def get_discrete_cmap(ticks, colors, bad="white", over=None, under=None):
