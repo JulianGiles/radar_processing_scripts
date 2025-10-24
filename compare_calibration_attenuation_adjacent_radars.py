@@ -372,14 +372,61 @@ wrl.vis.plot_scan_strategy(
     ds2_ranges, ds2_elevs, ds2_site, units="km", terrain=True, az=233
 )
 
+#%% List of dates and available elevs
+"""
+ML high:
+2016-05-14 ONLY GZT SURV 0.0
+2016-05-15 ONLY GZT SURV 0.0
+2016-05-16 ONLY GZT SURV 0.0
+2016-05-31
+2016-10-28
+2016-09-22
+2016-11-01
+2016-12-01
+2017-04-13
+2018-03-28 NO POLARIMETRY OR RHOHV IN HTY
+2019-02-06 NO POLARIMETRY OR RHOHV IN HTY
+2019-05-06 NO POLARIMETRY OR RHOHV IN HTY
+2019-10-17
+2019-10-20
+2020-03-13
+
+ML in between radars:
+2016-02-06 ONLY GZT 0.4,0.7 AND SURV 0.5 (SURV seems to not be useful because of range res 5km)
+2016-02-21 ONLY GZT 0.4,0.7 AND SURV 0.5 (SURV seems to not be useful because of range res 5km)
+2016-04-12 ONLY GZT 0.4,0.7 AND SURV 0.5 (SURV seems to not be useful because of range res 5km)
+2016-05-28
+2016-11-30
+2016-12-26
+2016-12-29
+2017-01-02
+2017-11-28
+2017-12-31
+2018-01-04
+2018-01-05
+2019-11-27
+2019-12-09
+2019-12-13
+2019-12-14
+2019-12-24
+2019-12-25
+2020-01-02
+2020-01-03
+2020-01-06
+2020-03-17
+2020-11-04
+2020-11-20
+2020-12-14
+"""
+
 #%% Load the selected elevations and check
 
 # Suitable matching elevations:
-# HTY: 1.5, 3.0 and above
+# HTY: 1.5, 2.2, 3.0 and above
 # GZT: 0.5, 1.3
 
-ff1 = "/automount/realpep/upload/jgiles/dmi/final_ppis/2016/2016-10/2016-10-28/HTY/MON_YAZ_B/1.5/MON_YAZ_B-allmoms-1.5-20162016-102016-10-28-HTY-h5netcdf.nc"
-ff2 = "/automount/realpep/upload/jgiles/dmi/final_ppis/2016/2016-10/2016-10-28/GZT/VOL_A/0.5/VOL_A-allmoms-0.5-2016-10-28-GZT-h5netcdf.nc"
+ff1 = "/automount/realpep/upload/jgiles/dmi/final_ppis/2017/2017-04/2017-04-13/HTY/MON_YAZ_B/2.2/MON_YAZ_B-allmoms-2.2-2017-04-13-HTY-h5netcdf.nc"
+ff2 = "/automount/realpep/upload/jgiles/dmi/final_ppis/2017/2017-04/2017-04-13/GZT/VOL_A/0.5/VOL_A-allmoms-0.5-2017-04-13-GZT-h5netcdf.nc"
 
 ds1 = xr.open_mfdataset(ff1)
 ds2 = xr.open_mfdataset(ff2)
@@ -390,7 +437,7 @@ proj = utils.get_common_projection(ds1, ds2)
 ds1 = wrl.georef.georeference(ds1, crs=proj)
 ds2 = wrl.georef.georeference(ds2, crs=proj)
 
-tsel = "2016-10-28T06"
+tsel = "2016-12-01T14"
 
 ds1.sel(time=tsel, method="nearest")["DBZH"].wrl.vis.plot(alpha=0.5)
 ax = plt.gca()
@@ -532,34 +579,47 @@ ax.text(ds2.x[0,0], ds2.y[0,0]-30000, "GZT")
 
 plt.title("CBB "+tsel)
 
-#%% Preselect timesteps and filters
-tolerance = 500.
+#%% Set parameters and filters
 
-tsel = "2016-10-28T06" # for plots
+tsel = "2016-12-01T14" # for plots
 vv = "DBZH"
 SNRH_min = 15
 RHOHV_min = 0.95
 TEMP_min = 3
+DBZH_min = 10
 CBB_max = 0.05
 
 # Apply thresholds before computing masks
 dsx = utils.apply_min_max_thresh(ds1, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
                                         "SNRHC":SNRH_min, "SQIH":0.5,
-                                        "TEMP":TEMP_min}, {"CBB": CBB_max})
+                                        "TEMP":TEMP_min},
+                                     {"CBB": CBB_max})
 dsy = utils.apply_min_max_thresh(ds2, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
                                         "SNRHC":SNRH_min, "SQIH":0.5,
-                                        "TEMP":TEMP_min}, {"CBB": CBB_max})
+                                        "TEMP":TEMP_min},
+                                     {"CBB": CBB_max})
+
+# They consider that there is rain above the radar by looking at the
+# median reflectivity in a circle 5km aroud each radar. Let's add this variable
+dsx = dsx.assign_coords({"Zm": dsx["DBZH"].sel(range=slice(0,5000)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
+dsy = dsy.assign_coords({"Zm": dsy["DBZH"].sel(range=slice(0,5000)).compute().median(("azimuth", "range")).broadcast_like(dsy["DBZH"]) })
+
+# Add the additional DBZH threshold
+dsx = utils.apply_min_max_thresh(dsx, {"DBZH":DBZH_min},
+                                     {})
+dsy = utils.apply_min_max_thresh(dsy, {"DBZH":DBZH_min},
+                                     {})
 
 #%% Generate masks
 mask1, mask2, idx1, idx2, matched_timesteps = utils.find_radar_overlap_unique_NN_pairs(dsx, dsy,
-                                                                    tolerance=500.,
+                                                                    tolerance=250.,
                                                                     tolerance_time=60*4)
 
 mask1_ref, mask2_ref, idx1_ref, idx2_ref, matched_timesteps = utils.refine_radar_overlap_unique_NN_pairs(dsx, dsy,
                                                                                       idx1, idx2,
                                                                                       vv,
                                                                     tolerance_time=60*4,
-                                                                    z_tolerance=200.)
+                                                                    z_tolerance=100.)
 
 #%% Plot initial mask
 dsx[vv].where(mask1).sel(time=tsel, method="nearest").wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
@@ -584,7 +644,7 @@ plt.title(vv+" "+tsel)
 #%% Plot initial mask (with zoom and scatter of points)
 dsx[vv].where(mask1).sel(time=tsel, method="nearest").wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
 ax = plt.gca()
-dsy[vv].where(mask2).sel(time=tsel, method="nearest").wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-10000, 10000), ylim=(-20000, 0))
+dsy[vv].where(mask2).sel(time=tsel, method="nearest").wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-20000, 0), ylim=(-20000, 0))
 
 x1 = dsx.x.where(mask1).sel(time=tsel, method="nearest").values.flatten()
 y1 = dsx.y.where(mask1).sel(time=tsel, method="nearest").values.flatten()
@@ -620,7 +680,7 @@ plt.title(vv+" "+tsel)
 #%% Plot refined masks (with zoom and scatter of points)
 dsx[vv].where(mask1_ref).sel(time=tsel, method="nearest").wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
 ax = plt.gca()
-dsy[vv].where(mask2_ref).sel(time=tsel, method="nearest").wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-10000, 10000), ylim=(-20000, 0))
+dsy[vv].where(mask2_ref).sel(time=tsel, method="nearest").wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-20000, 0), ylim=(-20000, 0))
 
 x1 = dsx.x.where(mask1_ref).sel(time=tsel, method="nearest").values.flatten()
 y1 = dsx.y.where(mask1_ref).sel(time=tsel, method="nearest").values.flatten()
@@ -646,3 +706,522 @@ plt.ylabel("GZT")
 cc = round(np.corrcoef(dsx_p[np.isfinite(dsx_p)],dsy_p[np.isfinite(dsy_p)])[0,1],2).astype(str)
 plt.text(0.5,0.1,"Corr coef (Pearson): "+cc, transform=ax.transAxes)
 plt.title(var_name+" "+tsel)
+
+#%% Rain path attenuation check
+
+# One radar has to be the reference and the other must be the target, both below the ML
+# Let's take GZT as reference
+
+# Apply additional conditions
+dsx_tg = dsx.where(dsx.Zm.fillna(0.) < 15)
+dsy_rf = utils.apply_min_max_thresh(dsy.where(dsy.Zm.fillna(0.) < 15), {},
+                                     {"PHIDP_OC_MASKED": 2})
+
+vv = "DBZH" # Used to locate NaNs
+
+mask_tg, mask_rf, idx_tg, idx_rf, matched_timesteps = utils.find_radar_overlap_unique_NN_pairs(dsx_tg,
+                                                                                               dsy_rf,
+                                                                    tolerance=250.,
+                                                                    tolerance_time=60*4)
+
+mask_tg_ref, mask_rf_ref, idx_tg_ref, idx_rf_ref, matched_timesteps = utils.refine_radar_overlap_unique_NN_pairs(
+                                                                        dsx_tg, dsy_rf,
+                                                                        idx_tg, idx_rf,
+                                                                        vv,
+                                                                    tolerance_time=60*4,
+                                                                    z_tolerance=100.)
+
+# First look at the values
+var_name="DBZH"
+dsx_p_tg, dsy_p_rf = utils.return_unique_NN_value_pairs(dsx_tg, dsy_rf, mask_tg_ref, mask_rf_ref,
+                                           idx_tg_ref, idx_rf_ref, matched_timesteps, var_name)
+
+plt.scatter(dsx_p_tg, dsy_p_rf, alpha=0.1)
+plt.plot([0,40], [0,40], c="red")
+plt.xlabel("HTY")
+plt.ylabel("GZT")
+
+cc = round(np.corrcoef(dsx_p_tg[np.isfinite(dsx_p_tg)],dsy_p_rf[np.isfinite(dsy_p_rf)])[0,1],2).astype(str)
+plt.text(0.5,0.1,"Corr coef (Pearson): "+cc, transform=ax.transAxes)
+plt.title(var_name)
+
+#%%% Plot scatter and boxplot of delta DBZH vs target PHI
+vv = "PHIDP_OC_MASKED"
+
+# build delta DBZH
+delta_dbzh = dsx_p_tg-dsy_p_rf
+delta_dbzh_flat = delta_dbzh.flatten()
+
+dsx_p_tg_phi, dsy_p_rf_phi = utils.return_unique_NN_value_pairs(dsx_tg, dsy_rf, mask_tg_ref, mask_rf_ref,
+                                           idx_tg_ref, idx_rf_ref, matched_timesteps, vv)
+
+dsx_p_tg_phi_flat = dsx_p_tg_phi.flatten()
+
+# Scatterplot
+plt.scatter(dsx_p_tg_phi_flat, delta_dbzh_flat, alpha=0.1)
+#plt.plot([0,40], [0,40], c="red")
+plt.xlabel(vv)
+plt.ylabel("delta DBZH")
+
+cc = round(np.corrcoef(dsx_p_tg_phi_flat[np.isfinite(dsx_p_tg_phi_flat)],
+                       delta_dbzh_flat[np.isfinite(delta_dbzh_flat)])[0,1],2).astype(str)
+plt.text(0.5,0.1,"Corr coef (Pearson): "+cc, transform=ax.transAxes)
+plt.title(var_name)
+
+# Box plots like in the paper
+# Define bins
+bins = np.arange(0, 6, 1)  # 0,1,2,3,4,5
+bin_centers = bins[:-1] + 0.5
+
+# Digitize dsx_p_tg_phi_flat into bins
+bin_indices = np.digitize(dsx_p_tg_phi_flat, bins) - 1
+
+# Prepare data for boxplot
+box_data = [delta_dbzh_flat[bin_indices == i] for i in range(len(bins) - 1)]
+
+# Compute counts per bin
+counts = [len(vals) for vals in box_data]
+
+# Plot
+plt.figure(figsize=(8, 5))
+plt.boxplot(box_data, positions=bin_centers, widths=0.6)
+plt.xlabel("dsx_p_tg_phi_flat (binned, 1° intervals)")
+plt.ylabel("delta_dbzh_flat")
+plt.title("Boxplots of delta_dbzh_flat vs dsx_p_tg_phi_flat bins")
+plt.grid(True, linestyle="--", alpha=0.5)
+plt.xticks(bin_centers, [f"{b}-{b+1}" for b in bins[:-1]])
+
+# Add counts above x-tick labels (inside the plot area)
+for x, n in zip(bin_centers, counts):
+    plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
+             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
+
+plt.tight_layout()
+plt.show()
+
+#%% Wet radome attenuation check
+
+# One radar has to be the reference and the other must be the target, both below the ML
+# Let's take GZT as reference
+
+# Apply additional conditions
+dsx_tg = dsx.where(dsx["PHIDP_OC_MASKED"] < 15)
+dsy_rf = utils.apply_min_max_thresh(dsy.where(dsy.Zm.fillna(0.) < 5), {},
+                                     {"PHIDP_OC_MASKED": 5})
+
+vv = "DBZH" # Used to locate NaNs
+
+mask_tg, mask_rf, idx_tg, idx_rf, matched_timesteps = utils.find_radar_overlap_unique_NN_pairs(dsx_tg,
+                                                                                               dsy_rf,
+                                                                    tolerance=250.,
+                                                                    tolerance_time=60*4)
+
+mask_tg_ref, mask_rf_ref, idx_tg_ref, idx_rf_ref, matched_timesteps = utils.refine_radar_overlap_unique_NN_pairs(
+                                                                        dsx_tg, dsy_rf,
+                                                                        idx_tg, idx_rf,
+                                                                        vv,
+                                                                    tolerance_time=60*4,
+                                                                    z_tolerance=100.)
+
+# First look at the values
+var_name="DBZH"
+dsx_p_tg, dsy_p_rf = utils.return_unique_NN_value_pairs(dsx_tg, dsy_rf, mask_tg_ref, mask_rf_ref,
+                                           idx_tg_ref, idx_rf_ref, matched_timesteps, var_name)
+
+plt.scatter(dsx_p_tg, dsy_p_rf, alpha=0.1)
+plt.plot([0,40], [0,40], c="red")
+plt.xlabel("HTY")
+plt.ylabel("GZT")
+
+cc = round(np.corrcoef(dsx_p_tg[np.isfinite(dsx_p_tg)],dsy_p_rf[np.isfinite(dsy_p_rf)])[0,1],2).astype(str)
+plt.text(0.5,0.1,"Corr coef (Pearson): "+cc, transform=ax.transAxes)
+plt.title(var_name)
+
+#%%% Plot scatter and boxplot of delta DBZH vs target PHI
+vv = "PHIDP_OC_MASKED"
+
+# build delta DBZH
+delta_dbzh = dsx_p_tg-dsy_p_rf
+delta_dbzh_flat = delta_dbzh.flatten()
+
+dsx_p_tg_phi, dsy_p_rf_phi = utils.return_unique_NN_value_pairs(dsx_tg, dsy_rf, mask_tg_ref, mask_rf_ref,
+                                           idx_tg_ref, idx_rf_ref, matched_timesteps, vv)
+
+dsx_p_tg_phi_flat = dsx_p_tg_phi.flatten()
+
+# Scatterplot
+plt.scatter(dsx_p_tg_phi_flat, delta_dbzh_flat, alpha=0.1)
+#plt.plot([0,40], [0,40], c="red")
+plt.xlabel(vv)
+plt.ylabel("delta DBZH")
+
+cc = round(np.corrcoef(dsx_p_tg_phi_flat[np.isfinite(dsx_p_tg_phi_flat)],
+                       delta_dbzh_flat[np.isfinite(delta_dbzh_flat)])[0,1],2).astype(str)
+plt.text(0.5,0.1,"Corr coef (Pearson): "+cc, transform=ax.transAxes)
+plt.title(var_name)
+
+# Box plots like in the paper
+# Define bins
+bins = np.arange(0, 6, 1)  # 0,1,2,3,4,5
+bin_centers = bins[:-1] + 0.5
+
+# Digitize dsx_p_tg_phi_flat into bins
+bin_indices = np.digitize(dsx_p_tg_phi_flat, bins) - 1
+
+# Prepare data for boxplot
+box_data = [delta_dbzh_flat[bin_indices == i] for i in range(len(bins) - 1)]
+
+# Compute counts per bin
+counts = [len(vals) for vals in box_data]
+
+# Plot
+plt.figure(figsize=(8, 5))
+plt.boxplot(box_data, positions=bin_centers, widths=0.6)
+plt.xlabel("dsx_p_tg_phi_flat (binned, 1° intervals)")
+plt.ylabel("delta_dbzh_flat")
+plt.title("Boxplots of delta_dbzh_flat vs dsx_p_tg_phi_flat bins")
+plt.grid(True, linestyle="--", alpha=0.5)
+plt.xticks(bin_centers, [f"{b}-{b+1}" for b in bins[:-1]])
+
+# Add counts above x-tick labels (inside the plot area)
+for x, n in zip(bin_centers, counts):
+    plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
+             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
+
+plt.tight_layout()
+plt.show()
+
+#%% ML layer attenuation check
+
+# One radar has to be the reference above the ML and the other must be the target below the ML
+# Take GZT as reference
+
+# We need to re-do the initial thresholding changing the temperatures to negatives
+# Apply thresholds before computing masks
+TEMP_max = -2
+dsx = utils.apply_min_max_thresh(ds1, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
+                                        "SNRHC":SNRH_min, "SQIH":0.5,
+                                        },
+                                     {"CBB": CBB_max})
+dsy = utils.apply_min_max_thresh(ds2, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
+                                        "SNRHC":SNRH_min, "SQIH":0.5,
+                                        },
+                                     {"CBB": CBB_max})
+
+# They consider that there is rain above the radar by looking at the
+# median reflectivity in a circle 5km aroud each radar. Let's add this variable
+dsx = dsx.assign_coords({"Zm": dsx["DBZH"].sel(range=slice(0,5000)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
+dsy = dsy.assign_coords({"Zm": dsy["DBZH"].sel(range=slice(0,5000)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
+
+# Let's also add the temperature value close to the radar as a coordinate
+dsx = dsx.assign_coords({"Tm": ds1["TEMP"].sel(range=slice(0,5000)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
+dsy = dsy.assign_coords({"Tm": ds2["TEMP"].sel(range=slice(0,5000)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
+
+# Add the additional DBZH threshold
+dsx = utils.apply_min_max_thresh(dsx, {"DBZH":DBZH_min},
+                                     {"TEMP":TEMP_max})
+dsy = utils.apply_min_max_thresh(dsy, {"DBZH":DBZH_min},
+                                     {"TEMP":TEMP_max})
+
+
+# Apply additional conditions
+#!!! Since we are not sure yet about the wet radome attenuation, we keep that filter
+dsx_tg = dsx.where(dsx.Zm.fillna(0.) < 15).where(dsx.Tm>=3)
+dsy_rf = dsy.where(dsy.Zm.fillna(0.) < 15).where(dsy.Tm<=TEMP_max)
+
+vv = "DBZH" # Used to locate NaNs
+
+mask_tg, mask_rf, idx_tg, idx_rf, matched_timesteps = utils.find_radar_overlap_unique_NN_pairs(dsx_tg,
+                                                                                               dsy_rf,
+                                                                    tolerance=250.,
+                                                                    tolerance_time=60*4)
+
+mask_tg_ref, mask_rf_ref, idx_tg_ref, idx_rf_ref, matched_timesteps = utils.refine_radar_overlap_unique_NN_pairs(
+                                                                        dsx_tg, dsy_rf,
+                                                                        idx_tg, idx_rf,
+                                                                        vv,
+                                                                    tolerance_time=60*4,
+                                                                    z_tolerance=100.)
+
+# First look at the values
+var_name="DBZH"
+dsx_p_tg, dsy_p_rf = utils.return_unique_NN_value_pairs(dsx_tg, dsy_rf, mask_tg_ref, mask_rf_ref,
+                                           idx_tg_ref, idx_rf_ref, matched_timesteps, var_name)
+
+plt.scatter(dsx_p_tg, dsy_p_rf, alpha=0.1)
+plt.plot([0,40], [0,40], c="red")
+plt.xlabel("HTY")
+plt.ylabel("GZT")
+
+cc = round(np.corrcoef(dsx_p_tg[np.isfinite(dsx_p_tg)],dsy_p_rf[np.isfinite(dsy_p_rf)])[0,1],2).astype(str)
+plt.text(0.5,0.1,"Corr coef (Pearson): "+cc, transform=ax.transAxes)
+plt.title(var_name)
+
+#%%% Plot scatter and boxplot of delta DBZH vs target PHI
+vv = "PHIDP_OC_MASKED"
+
+# build delta DBZH
+delta_dbzh = dsx_p_tg-dsy_p_rf
+delta_dbzh_flat = delta_dbzh.flatten()
+
+dsx_p_tg_phi, dsy_p_rf_phi = utils.return_unique_NN_value_pairs(dsx_tg, dsy_rf, mask_tg_ref, mask_rf_ref,
+                                           idx_tg_ref, idx_rf_ref, matched_timesteps, vv)
+
+dsx_p_tg_phi_flat = dsx_p_tg_phi.flatten()
+
+# Scatterplot
+plt.scatter(dsx_p_tg_phi_flat, delta_dbzh_flat, alpha=0.1)
+#plt.plot([0,40], [0,40], c="red")
+plt.xlabel(vv)
+plt.ylabel("delta DBZH")
+
+cc = round(np.corrcoef(dsx_p_tg_phi_flat[np.isfinite(dsx_p_tg_phi_flat)],
+                       delta_dbzh_flat[np.isfinite(delta_dbzh_flat)])[0,1],2).astype(str)
+plt.text(0.5,0.1,"Corr coef (Pearson): "+cc, transform=ax.transAxes)
+plt.title(var_name)
+
+# Box plots like in the paper
+# Define bins
+bins = np.arange(0, 6, 1)  # 0,1,2,3,4,5
+bin_centers = bins[:-1] + 0.5
+
+# Digitize dsx_p_tg_phi_flat into bins
+bin_indices = np.digitize(dsx_p_tg_phi_flat, bins) - 1
+
+# Prepare data for boxplot
+box_data = [delta_dbzh_flat[bin_indices == i] for i in range(len(bins) - 1)]
+
+# Compute counts per bin
+counts = [len(vals) for vals in box_data]
+
+# Plot
+plt.figure(figsize=(8, 5))
+plt.boxplot(box_data, positions=bin_centers, widths=0.6)
+plt.xlabel("dsx_p_tg_phi_flat (binned, 1° intervals)")
+plt.ylabel("delta_dbzh_flat")
+plt.title("Boxplots of delta_dbzh_flat vs dsx_p_tg_phi_flat bins")
+plt.grid(True, linestyle="--", alpha=0.5)
+plt.xticks(bin_centers, [f"{b}-{b+1}" for b in bins[:-1]])
+
+# Add counts above x-tick labels (inside the plot area)
+for x, n in zip(bin_centers, counts):
+    plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
+             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
+
+plt.tight_layout()
+plt.show()
+
+#%% Let's repeat for all events
+#%%% Make a dictionary with paths for each event
+
+# First let's get all files
+HTY_files = glob.glob("/automount/realpep/upload/jgiles/dmi/final_ppis/*/*/*/HTY/*/*/*allm*")
+GZT_files = glob.glob("/automount/realpep/upload/jgiles/dmi/final_ppis/*/*/*/GZT/*/*/*allm*")
+
+# Keep elevations that we want
+def get_elev(path):
+    return path.split("/")[-2]
+
+HTY_elevs = ["1.5", "2.2", "3.0"]
+HTY_files = [ff for ff in HTY_files if get_elev(ff) in HTY_elevs]
+
+GZT_elevs = ["0.4", "0.5", "0.7"]
+GZT_files = [ff for ff in GZT_files if get_elev(ff) in GZT_elevs]
+
+# Define dates
+ML_high_dates = [
+    "2016-05-31",
+    "2016-10-28",
+    "2016-09-22",
+    "2016-11-01",
+    "2016-12-01",
+    "2017-04-13",
+    "2019-10-17",
+    "2019-10-20",
+    "2020-03-13",
+]
+
+ML_low_dates = [
+    "2016-02-06",
+    "2016-02-21",
+    "2016-04-12",
+    "2016-05-28",
+    "2016-11-30",
+    "2016-12-26",
+    "2016-12-29",
+    "2017-01-02",
+    "2017-11-28",
+    "2017-12-31",
+    "2018-01-04",
+    "2018-01-05",
+    "2019-11-27",
+    "2019-12-09",
+    "2019-12-13",
+    "2019-12-14",
+    "2019-12-24",
+    "2019-12-25",
+    "2020-01-02",
+    "2020-01-03",
+    "2020-01-06",
+    "2020-03-17",
+    "2020-11-04",
+    "2020-11-20",
+    "2020-12-14",
+    ]
+
+#%%% Start the loop for dates for rain attenuation and wet radome analyses
+import time
+token = "eyJ0eXAiOiJKV1QiLCJvcmlnaW4iOiJFYXJ0aGRhdGEgTG9naW4iLCJzaWciOiJlZGxqd3RwdWJrZXlfb3BzIiwiYWxnIjoiUlMyNTYifQ.eyJ0eXBlIjoiVXNlciIsInVpZCI6ImpnaWxlcyIsImV4cCI6MTc2NTg4MjQyNiwiaWF0IjoxNzYwNjk4NDI2LCJpc3MiOiJodHRwczovL3Vycy5lYXJ0aGRhdGEubmFzYS5nb3YiLCJpZGVudGl0eV9wcm92aWRlciI6ImVkbF9vcHMiLCJhY3IiOiJlZGwiLCJhc3N1cmFuY2VfbGV2ZWwiOjN9.UvbHo78icjYzHBJxtW4KxgrJ97dULLiCJFeT41ylakwLkRYEc7_xlRGLbZ_gkIAwY6H0tvSDdQHUX-as2pBOSEB8QsYS7aL7RGqzupSVXUhEHFk74rLUwKNUT22ftB_iQoKkS1KNoU6-9xiGoIg2eACPEbzg9qMc6hdRCBZKUYDY8pqPkfx2PT7fSwb2-0Jj2sk6wORnE4jk6O6nXnOMEC6ZNnH8FHnLb4PzW6U8Ig1iTkNiR3MzETI1SNo5v5pdGXT_GJcnCur4RvwBZoqBtXA60LW5XBwFW5cBOt-rCv_N3mXRJerCkgje6ikqpv-L1kYeufzBvRvgNroCfGy_dQ"
+
+tsel = "2016-12-01T14" # for plots
+
+tolerance = 500.
+vv = "DBZH" # Used to locate and discard NaNs
+SNRH_min = 15
+RHOHV_min = 0.95
+TEMP_min = 3
+DBZH_min = 10
+CBB_max = 0.05
+
+vv_to_extract = ["DBZH", "DBZH_AC", "DBTH", "ZDR", "ZDR_EC_OC", "ZDR_EC_OC_AC", "ZDR_EC_AC",
+                 "PHIDP_OC", "PHIDP_OC_SMOOTH", "PHIDP_OC_MASKED", "KDP_ML_corrected",
+                 "TEMP", "Zm"] # all variables to extract from the datasets, DBZH must be the first
+
+selected_ML_high = {vi:[] for vi in vv_to_extract}
+
+start_time = time.time()
+
+for date in ML_high_dates:
+    print("Processing "+date)
+    HTY_files0 = [ff for ff in HTY_files if date in ff]
+    GZT_files0 = [ff for ff in GZT_files if date in ff]
+
+    for HTY_file in HTY_files0:
+        for GZT_file in GZT_files0:
+
+            # Load the data
+            ds1 = xr.open_mfdataset(HTY_file)
+            ds2 = xr.open_mfdataset(GZT_file)
+
+            # Get PPIs into the same reference system
+            proj = utils.get_common_projection(ds1, ds2)
+
+            ds1 = wrl.georef.georeference(ds1, crs=proj)
+            ds2 = wrl.georef.georeference(ds2, crs=proj)
+
+            # Add beam blockage
+            ds1_pbb, ds1_cbb = beam_blockage_from_radar_ds(ds1.isel(time=0),
+                                                           (ds1.longitude, ds1.latitude, ds1.altitude),
+                                                           wradlib_token = token)
+
+            ds1 = ds1.assign({"PBB": ds1_pbb, "CBB": ds1_cbb})
+
+            ds2_pbb, ds2_cbb = beam_blockage_from_radar_ds(ds2.isel(time=0),
+                                                           (ds2.longitude, ds2.latitude, ds2.altitude),
+                                                           wradlib_token = token)
+
+            ds2 = ds2.assign({"PBB": ds2_pbb, "CBB": ds2_cbb})
+
+            # Apply thresholds before computing masks
+            dsx = utils.apply_min_max_thresh(ds1, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
+                                                    "SNRHC":SNRH_min, "SQIH":0.5,
+                                                    "TEMP":TEMP_min},
+                                                 {"CBB": CBB_max})
+            dsy = utils.apply_min_max_thresh(ds2, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
+                                                    "SNRHC":SNRH_min, "SQIH":0.5,
+                                                    "TEMP":TEMP_min},
+                                                 {"CBB": CBB_max})
+
+            # They consider that there is rain above the radar by looking at the
+            # median reflectivity in a circle 5km aroud each radar. Let's add this variable
+            dsx = dsx.assign_coords({"Zm": dsx["DBZH"].sel(range=slice(0,5000)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
+            dsy = dsy.assign_coords({"Zm": dsy["DBZH"].sel(range=slice(0,5000)).compute().median(("azimuth", "range")).broadcast_like(dsy["DBZH"]) })
+
+            # Add the additional DBZH threshold
+            dsx = utils.apply_min_max_thresh(dsx, {"DBZH":DBZH_min},
+                                                 {})
+            dsy = utils.apply_min_max_thresh(dsy, {"DBZH":DBZH_min},
+                                                 {})
+
+            # One radar has to be the reference and the other must be the target, both below the ML
+            # Let's take GZT as reference
+
+            # We will not apply additional Zm or PHIDP conditions now so we can use
+            # the extracted values for both rain atten and wet radome analyses
+            dsx_tg = dsx[vv_to_extract].compute() # if we pre compute the variables that we want
+            dsy_rf = dsy[vv_to_extract].compute() # we save a lot of time (~3 times faster)
+
+            mask_tg, mask_rf, idx_tg, idx_rf, matched_timesteps = utils.find_radar_overlap_unique_NN_pairs(dsx_tg,
+                                                                                                           dsy_rf,
+                                                                                tolerance=250.,
+                                                                                tolerance_time=60*4)
+
+            mask_tg_ref, mask_rf_ref, idx_tg_ref, idx_rf_ref, matched_timesteps = utils.refine_radar_overlap_unique_NN_pairs(
+                                                                                    dsx_tg, dsy_rf,
+                                                                                    idx_tg, idx_rf,
+                                                                                    vv,
+                                                                                tolerance_time=60*4,
+                                                                                z_tolerance=100.)
+
+            if mask_tg_ref.sum() == 0: continue # jump to next iteration if no pairs are found
+
+            for vi in vv_to_extract:
+                if vi in dsx_tg and vi in dsy_rf:
+                    dsx_p_tg, dsy_p_rf = utils.return_unique_NN_value_pairs(dsx_tg, dsy_rf,
+                                                                            mask_tg_ref, mask_rf_ref,
+                                                               idx_tg_ref, idx_rf_ref,
+                                                               matched_timesteps, vi)
+
+                    selected_ML_high[vi].append( (dsx_p_tg.copy(), dsy_p_rf.copy()) )
+                else:
+                    print(vi+" not found in one of the ds, filling with NaNs")
+                    selected_ML_high[vi].append( (np.full_like(selected_ML_high['DBZH'][-1][0], fill_value=np.nan),
+                                            np.full_like(selected_ML_high['DBZH'][-1][1], fill_value=np.nan))
+                                          )
+
+total_time = time.time() - start_time
+print(f"took {total_time/60:.2f} minutes.")
+
+#%%% Plot boxplot of delta DBZH/ZDR vs target PHI (rain attenuation)
+phi = "PHIDP_OC"
+dbzh = "DBZH"
+
+# build delta DBZH
+delta_dbzh = np.concat([ (d1-d2).flatten() for d1,d2 in selected_ML_high[dbzh] ])
+
+tg_phi = np.concat([ d1.flatten() for d1,d2 in selected_ML_high[phi] ])
+
+# filter by valid PHI values
+delta_dbzh = delta_dbzh[np.isfinite(tg_phi)]
+tg_phi = tg_phi[np.isfinite(tg_phi)]
+
+# Box plots like in the paper
+# Define bins
+bins = np.arange(0, 18, 1)  # 0,1,2,3,4,5
+bin_centers = bins[:-1] + 0.5
+
+# Digitize tg_phi into bins
+bin_indices = np.digitize(tg_phi, bins) - 1
+
+# Prepare data for boxplot
+box_data = [delta_dbzh[bin_indices == i] for i in range(len(bins) - 1)]
+
+# Compute counts per bin
+counts = [len(vals) for vals in box_data]
+
+# Plot
+plt.figure(figsize=(8, 5))
+plt.boxplot(box_data, positions=bin_centers, widths=0.6)
+plt.xlabel(phi+" (binned, 1° intervals)")
+plt.ylabel("delta "+dbzh)
+plt.title("Boxplots of delta "+dbzh+" vs "+phi+" bins")
+plt.grid(True, linestyle="--", alpha=0.5)
+plt.xticks(bin_centers, [f"{b}-{b+1}" for b in bins[:-1]])
+
+# Add counts above x-tick labels (inside the plot area)
+for x, n in zip(bin_centers, counts):
+    plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
+             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
+
+plt.tight_layout()
+plt.show()
