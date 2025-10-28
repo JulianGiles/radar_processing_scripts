@@ -35,6 +35,7 @@ import hvplot
 import hvplot.xarray
 import holoviews as hv
 # hv.extension("bokeh", "matplotlib") # better to put this each time this kind of plot is needed
+import time
 
 import panel as pn
 from bokeh.resources import INLINE
@@ -59,11 +60,13 @@ os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = "eyJ0eXAiOiJKV1QiLCJvcmlnaW4iOiJF
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
+realpep_path = "/automount/realpep/"
+
 #%% Check which elevations would be better suited for volume matching
 
 #%%% Load two example files
-ff1 = "/automount/realpep/upload/jgiles/dmi/final_ppis/2016/2016-10/2016-10-28/HTY/MON_YAZ_B/1.5/MON_YAZ_B-allmoms-1.5-20162016-102016-10-28-HTY-h5netcdf.nc"
-ff2 = "/automount/realpep/upload/jgiles/dmi/final_ppis/2016/2016-10/2016-10-28/GZT/VOL_A/0.5/VOL_A-allmoms-0.5-2016-10-28-GZT-h5netcdf.nc"
+ff1 = realpep_path+"/upload/jgiles/dmi/final_ppis/2016/2016-10/2016-10-28/HTY/MON_YAZ_B/1.5/MON_YAZ_B-allmoms-1.5-20162016-102016-10-28-HTY-h5netcdf.nc"
+ff2 = realpep_path+"/upload/jgiles/dmi/final_ppis/2016/2016-10/2016-10-28/GZT/VOL_A/0.5/VOL_A-allmoms-0.5-2016-10-28-GZT-h5netcdf.nc"
 
 ds1 = xr.open_dataset(ff1)
 ds2 = xr.open_dataset(ff2)
@@ -425,8 +428,8 @@ ML in between radars:
 # HTY: 1.5, 2.2, 3.0 and above
 # GZT: 0.5, 1.3
 
-ff1 = "/automount/realpep/upload/jgiles/dmi/final_ppis/2017/2017-04/2017-04-13/HTY/MON_YAZ_B/2.2/MON_YAZ_B-allmoms-2.2-2017-04-13-HTY-h5netcdf.nc"
-ff2 = "/automount/realpep/upload/jgiles/dmi/final_ppis/2017/2017-04/2017-04-13/GZT/VOL_A/0.5/VOL_A-allmoms-0.5-2017-04-13-GZT-h5netcdf.nc"
+ff1 = realpep_path+"/upload/jgiles/dmi/final_ppis/2017/2017-04/2017-04-13/HTY/MON_YAZ_B/2.2/MON_YAZ_B-allmoms-2.2-2017-04-13-HTY-h5netcdf.nc"
+ff2 = realpep_path+"/upload/jgiles/dmi/final_ppis/2017/2017-04/2017-04-13/GZT/VOL_A/0.5/VOL_A-allmoms-0.5-2017-04-13-GZT-h5netcdf.nc"
 
 ds1 = xr.open_mfdataset(ff1)
 ds2 = xr.open_mfdataset(ff2)
@@ -450,7 +453,7 @@ plt.title("DBZH "+tsel)
 
 #%% Add beam blockage
 
-# Define a function to calculate the beam blockage
+#%%% Define a function to calculate the beam blockage
 def beam_blockage_from_radar_ds(ds,
                                 sitecoords,
                                 dem_resolution=3,
@@ -555,6 +558,7 @@ def beam_blockage_from_radar_ds(ds,
 
     return pbb_da, cbb_da
 
+#%%% Calculate beam blockage
 token = "eyJ0eXAiOiJKV1QiLCJvcmlnaW4iOiJFYXJ0aGRhdGEgTG9naW4iLCJzaWciOiJlZGxqd3RwdWJrZXlfb3BzIiwiYWxnIjoiUlMyNTYifQ.eyJ0eXBlIjoiVXNlciIsInVpZCI6ImpnaWxlcyIsImV4cCI6MTc2NTg4MjQyNiwiaWF0IjoxNzYwNjk4NDI2LCJpc3MiOiJodHRwczovL3Vycy5lYXJ0aGRhdGEubmFzYS5nb3YiLCJpZGVudGl0eV9wcm92aWRlciI6ImVkbF9vcHMiLCJhY3IiOiJlZGwiLCJhc3N1cmFuY2VfbGV2ZWwiOjN9.UvbHo78icjYzHBJxtW4KxgrJ97dULLiCJFeT41ylakwLkRYEc7_xlRGLbZ_gkIAwY6H0tvSDdQHUX-as2pBOSEB8QsYS7aL7RGqzupSVXUhEHFk74rLUwKNUT22ftB_iQoKkS1KNoU6-9xiGoIg2eACPEbzg9qMc6hdRCBZKUYDY8pqPkfx2PT7fSwb2-0Jj2sk6wORnE4jk6O6nXnOMEC6ZNnH8FHnLb4PzW6U8Ig1iTkNiR3MzETI1SNo5v5pdGXT_GJcnCur4RvwBZoqBtXA60LW5XBwFW5cBOt-rCv_N3mXRJerCkgje6ikqpv-L1kYeufzBvRvgNroCfGy_dQ"
 
 ds1_pbb, ds1_cbb = beam_blockage_from_radar_ds(ds1.isel(time=0),
@@ -1014,9 +1018,14 @@ plt.show()
 #%% Let's repeat for all events
 #%%% Make a dictionary with paths for each event
 
+# Set a temporary folder where the selected values will be saved
+savefolder = realpep_path+"/upload/jgiles/temp_compare_calibration_attenuation_adjacent_radars/"
+
+reload = True # try to reload previous calculations?
+
 # First let's get all files
-HTY_files = glob.glob("/automount/realpep/upload/jgiles/dmi/final_ppis/*/*/*/HTY/*/*/*allm*")
-GZT_files = glob.glob("/automount/realpep/upload/jgiles/dmi/final_ppis/*/*/*/GZT/*/*/*allm*")
+HTY_files = glob.glob(realpep_path+"/upload/jgiles/dmi/final_ppis/*/*/*/HTY/*/*/*allm*")
+GZT_files = glob.glob(realpep_path+"/upload/jgiles/dmi/final_ppis/*/*/*/GZT/*/*/*allm*")
 
 # Keep elevations that we want
 def get_elev(path):
@@ -1070,18 +1079,19 @@ ML_low_dates = [
     ]
 
 #%%% Start the loop for dates for rain attenuation and wet radome analyses
-import time
 token = "eyJ0eXAiOiJKV1QiLCJvcmlnaW4iOiJFYXJ0aGRhdGEgTG9naW4iLCJzaWciOiJlZGxqd3RwdWJrZXlfb3BzIiwiYWxnIjoiUlMyNTYifQ.eyJ0eXBlIjoiVXNlciIsInVpZCI6ImpnaWxlcyIsImV4cCI6MTc2NTg4MjQyNiwiaWF0IjoxNzYwNjk4NDI2LCJpc3MiOiJodHRwczovL3Vycy5lYXJ0aGRhdGEubmFzYS5nb3YiLCJpZGVudGl0eV9wcm92aWRlciI6ImVkbF9vcHMiLCJhY3IiOiJlZGwiLCJhc3N1cmFuY2VfbGV2ZWwiOjN9.UvbHo78icjYzHBJxtW4KxgrJ97dULLiCJFeT41ylakwLkRYEc7_xlRGLbZ_gkIAwY6H0tvSDdQHUX-as2pBOSEB8QsYS7aL7RGqzupSVXUhEHFk74rLUwKNUT22ftB_iQoKkS1KNoU6-9xiGoIg2eACPEbzg9qMc6hdRCBZKUYDY8pqPkfx2PT7fSwb2-0Jj2sk6wORnE4jk6O6nXnOMEC6ZNnH8FHnLb4PzW6U8Ig1iTkNiR3MzETI1SNo5v5pdGXT_GJcnCur4RvwBZoqBtXA60LW5XBwFW5cBOt-rCv_N3mXRJerCkgje6ikqpv-L1kYeufzBvRvgNroCfGy_dQ"
 
 tsel = "2016-12-01T14" # for plots
 
-tolerance = 500.
+tolerance = 250.
 vv = "DBZH" # Used to locate and discard NaNs
 SNRH_min = 15
 RHOHV_min = 0.95
 TEMP_min = 3
 DBZH_min = 10
 CBB_max = 0.05
+
+Zm_range = 1000. # range in m for the computation of Zm (DBZH close to radar)
 
 vv_to_extract = ["DBZH", "DBZH_AC", "DBTH", "ZDR", "ZDR_EC_OC", "ZDR_EC_OC_AC", "ZDR_EC_AC",
                  "PHIDP_OC", "PHIDP_OC_SMOOTH", "PHIDP_OC_MASKED", "KDP_ML_corrected",
@@ -1098,6 +1108,25 @@ for date in ML_high_dates:
 
     for HTY_file in HTY_files0:
         for GZT_file in GZT_files0:
+
+            # Create save folder
+            sf = savefolder+"ML_high_dates/"
+            if not os.path.exists(sf):
+                os.makedirs(sf)
+
+            if reload:
+                dbzh_loaded = False
+                for vi in vv_to_extract:
+                    sfp_tg = sf+"_".join([vi, "tg", os.path.basename(HTY_file), os.path.basename(GZT_file)])
+                    sfp_ref = sf+"_".join([vi, "ref", os.path.basename(HTY_file), os.path.basename(GZT_file)])
+                    try:
+                        selected_ML_high[vi].append( (np.load(sfp_tg+".npy"), np.load(sfp_ref+".npy") ) )
+                        if vi == "DBZH": dbzh_loaded = True
+                    except:
+                        print(vi+": reloading \n "+sfp_tg+".npy \n or \n "+sfp_ref+".npy \n failed")
+                if dbzh_loaded:
+                    continue
+                print("Total fail reloading \n "+sfp_tg+".npy \n or \n "+sfp_ref+".npy \n attempting to calculate")
 
             # Load the data
             ds1 = xr.open_mfdataset(HTY_file)
@@ -1134,8 +1163,8 @@ for date in ML_high_dates:
 
             # They consider that there is rain above the radar by looking at the
             # median reflectivity in a circle 5km aroud each radar. Let's add this variable
-            dsx = dsx.assign_coords({"Zm": dsx["DBZH"].sel(range=slice(0,5000)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
-            dsy = dsy.assign_coords({"Zm": dsy["DBZH"].sel(range=slice(0,5000)).compute().median(("azimuth", "range")).broadcast_like(dsy["DBZH"]) })
+            dsx = dsx.assign_coords({"Zm": dsx["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
+            dsy = dsy.assign_coords({"Zm": dsy["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsy["DBZH"]) })
 
             # Add the additional DBZH threshold
             dsx = utils.apply_min_max_thresh(dsx, {"DBZH":DBZH_min},
@@ -1148,12 +1177,12 @@ for date in ML_high_dates:
 
             # We will not apply additional Zm or PHIDP conditions now so we can use
             # the extracted values for both rain atten and wet radome analyses
-            dsx_tg = dsx[vv_to_extract].compute() # if we pre compute the variables that we want
-            dsy_rf = dsy[vv_to_extract].compute() # we save a lot of time (~3 times faster)
+            dsx_tg = dsx[[vv for vv in vv_to_extract if vv in dsx]].compute() # if we pre compute the variables that we want
+            dsy_rf = dsy[[vv for vv in vv_to_extract if vv in dsy]].compute() # we save a lot of time (~3 times faster)
 
             mask_tg, mask_rf, idx_tg, idx_rf, matched_timesteps = utils.find_radar_overlap_unique_NN_pairs(dsx_tg,
                                                                                                            dsy_rf,
-                                                                                tolerance=250.,
+                                                                                tolerance=tolerance,
                                                                                 tolerance_time=60*4)
 
             mask_tg_ref, mask_rf_ref, idx_tg_ref, idx_rf_ref, matched_timesteps = utils.refine_radar_overlap_unique_NN_pairs(
@@ -1163,7 +1192,10 @@ for date in ML_high_dates:
                                                                                 tolerance_time=60*4,
                                                                                 z_tolerance=100.)
 
-            if mask_tg_ref.sum() == 0: continue # jump to next iteration if no pairs are found
+            if mask_tg_ref.sum() == 0:
+                print("No matches found")
+                continue # jump to next iteration if no pairs are found
+
 
             for vi in vv_to_extract:
                 if vi in dsx_tg and vi in dsy_rf:
@@ -1179,25 +1211,49 @@ for date in ML_high_dates:
                                             np.full_like(selected_ML_high['DBZH'][-1][1], fill_value=np.nan))
                                           )
 
+                # Save to temporary file
+                sfp_tg = sf+"_".join([vi, "tg", os.path.basename(HTY_file), os.path.basename(GZT_file)])
+                sfp_ref = sf+"_".join([vi, "ref", os.path.basename(HTY_file), os.path.basename(GZT_file)])
+                np.save(sfp_tg,
+                    selected_ML_high[vi][-1][0], allow_pickle=False)
+                np.save(sfp_ref,
+                    selected_ML_high[vi][-1][1], allow_pickle=False)
+
 total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
 
 #%%% Plot boxplot of delta DBZH/ZDR vs target PHI (rain attenuation)
-phi = "PHIDP_OC"
+phi = "PHIDP_OC_MASKED"
 dbzh = "DBZH"
 
-# build delta DBZH
+# we need to apply additional filters that we did not apply in the previous step
+Zm_max = 15
+ref_phi_max = 2
+
+# extract/build necessary variables
 delta_dbzh = np.concat([ (d1-d2).flatten() for d1,d2 in selected_ML_high[dbzh] ])
 
 tg_phi = np.concat([ d1.flatten() for d1,d2 in selected_ML_high[phi] ])
 
-# filter by valid PHI values
-delta_dbzh = delta_dbzh[np.isfinite(tg_phi)]
-tg_phi = tg_phi[np.isfinite(tg_phi)]
+ref_phi = np.concat([ d2.flatten() for d1,d2 in selected_ML_high[phi] ])
+
+tg_Zm = np.nan_to_num(np.concat([ d1.flatten() for d1,d2 in selected_ML_high["Zm"] ]))
+
+ref_Zm = np.nan_to_num(np.concat([ d2.flatten() for d1,d2 in selected_ML_high["Zm"] ]))
+
+# filter by valid values according to conditions
+valid = np.isfinite(delta_dbzh) & (ref_phi<ref_phi_max) & (np.isfinite(tg_phi)) & (ref_Zm<Zm_max) & (tg_Zm<Zm_max)
+
+delta_dbzh = delta_dbzh[valid]
+tg_phi = tg_phi[valid]
+
+# Calculate best linear fit
+lfit = np.polynomial.Polynomial.fit(tg_phi, delta_dbzh, 1, domain=[0, 18])
+lfit_str = str(lfit.convert()).replace("x", "Phi")
 
 # Box plots like in the paper
 # Define bins
-bins = np.arange(0, 18, 1)  # 0,1,2,3,4,5
+bins = np.arange(0, 19, 1)  # 0,1,2,3,4,5
 bin_centers = bins[:-1] + 0.5
 
 # Digitize tg_phi into bins
@@ -1210,13 +1266,27 @@ box_data = [delta_dbzh[bin_indices == i] for i in range(len(bins) - 1)]
 counts = [len(vals) for vals in box_data]
 
 # Plot
-plt.figure(figsize=(8, 5))
-plt.boxplot(box_data, positions=bin_centers, widths=0.6)
+plt.figure(figsize=(9, 5))
+bp = plt.boxplot(box_data, positions=bin_centers, widths=0.6, showmeans=True)
 plt.xlabel(phi+" (binned, 1° intervals)")
 plt.ylabel("delta "+dbzh)
 plt.title("Boxplots of delta "+dbzh+" vs "+phi+" bins")
 plt.grid(True, linestyle="--", alpha=0.5)
 plt.xticks(bin_centers, [f"{b}-{b+1}" for b in bins[:-1]])
+
+# add linear fit
+plt.plot([0,18], [lfit(0), lfit(18)])
+plt.text(0.95, 0.9, "Linear fit: "+lfit_str, transform=plt.gca().transAxes, c="blue",
+         horizontalalignment="right")
+
+# add a second linear fit using the medians
+medians = [line.get_ydata()[0] for line in bp['medians']]
+lfit_m = np.polynomial.Polynomial.fit(bin_centers, medians, 1, domain=[0, 18])
+lfit_m_str = str(lfit_m.convert()).replace("x", "Phi")
+plt.plot([0,18], [lfit_m(0), lfit_m(18)], c="red")
+plt.text(0.95, 0.85, "Linear fit (medians): "+lfit_m_str, transform=plt.gca().transAxes, c="red",
+         horizontalalignment="right")
+
 
 # Add counts above x-tick labels (inside the plot area)
 for x, n in zip(bin_centers, counts):
@@ -1225,3 +1295,224 @@ for x, n in zip(bin_centers, counts):
 
 plt.tight_layout()
 plt.show()
+
+#%%% Plot boxplot of delta DBZH/ZDR vs target PHI (wet radome attenuation)
+phi = "PHIDP_OC_MASKED"
+dbzh = "DBZH"
+
+# we need to apply additional filters that we did not apply in the previous step
+ref_Zm_max = 5
+ref_phi_max = 5
+tg_phi_max = 15
+
+# extract/build necessary variables
+delta_dbzh = np.concat([ (d1-d2).flatten() for d1,d2 in selected_ML_high[dbzh] ])
+
+tg_phi = np.concat([ d1.flatten() for d1,d2 in selected_ML_high[phi] ])
+
+ref_phi = np.concat([ d2.flatten() for d1,d2 in selected_ML_high[phi] ])
+
+tg_phi = np.concat([ d1.flatten() for d1,d2 in selected_ML_high[phi] ])
+
+tg_Zm = np.nan_to_num(np.concat([ d1.flatten() for d1,d2 in selected_ML_high["Zm"] ]))
+
+ref_Zm = np.nan_to_num(np.concat([ d2.flatten() for d1,d2 in selected_ML_high["Zm"] ]))
+
+# filter by valid values according to conditions
+valid = np.isfinite(delta_dbzh) & (ref_phi<ref_phi_max) & (tg_phi<tg_phi_max) & (ref_Zm<ref_Zm_max)
+
+delta_dbzh = delta_dbzh[valid]
+tg_Zm = tg_Zm[valid]
+
+# Calculate best cuadratic fit
+lfit = np.polynomial.Polynomial.fit(tg_Zm, delta_dbzh, 2, domain=[0, 40])
+lfit_str = str(lfit.convert()).replace("x", "Zm")
+
+# Box plots like in the paper
+# Define bins
+bins = np.arange(0, 45, 5)
+bin_centers = (bins[:-1] + bins[1:])/2
+
+# Digitize tg_Zm into bins
+bin_indices = np.digitize(tg_Zm, bins) - 1
+
+# Prepare data for boxplot
+box_data = [delta_dbzh[bin_indices == i] for i in range(len(bins) - 1)]
+
+# Compute counts per bin
+counts = [len(vals) for vals in box_data]
+
+# Plot
+plt.figure(figsize=(9, 5))
+bp = plt.boxplot(box_data, positions=bin_centers, widths=0.6, showmeans=True)
+plt.xlabel("Zm target (binned, 5 dBZ intervals)")
+plt.ylabel("delta "+dbzh)
+plt.title("Boxplots of delta "+dbzh+" vs Zm bins")
+plt.grid(True, linestyle="--", alpha=0.5)
+plt.xticks(bin_centers, [f"{b}-{b+5}" for b in bins[:-1]])
+
+# add cuadratic fit
+plt.plot([0,40], [lfit(0), lfit(40)])
+plt.text(0.95, 0.9, "Cuadratic fit: "+lfit_str, transform=plt.gca().transAxes, c="blue",
+         horizontalalignment="right")
+
+# add a second cuadratic fit using the medians
+medians = [line.get_ydata()[0] for line in bp['medians']]
+lfit_m = np.polynomial.Polynomial.fit(bin_centers, medians, 2, domain=[0, 40])
+lfit_m_str = str(lfit_m.convert()).replace("x", "Zm")
+plt.plot([0,40], [lfit_m(0), lfit_m(40)], c="red")
+plt.text(0.95, 0.85, "Cuadratic fit (medians): "+lfit_m_str, transform=plt.gca().transAxes, c="red",
+         horizontalalignment="right")
+
+
+# Add counts above x-tick labels (inside the plot area)
+for x, n in zip(bin_centers, counts):
+    plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
+             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
+
+plt.tight_layout()
+plt.show()
+
+#%%% Start the loop for dates for ML attenuation
+token = "eyJ0eXAiOiJKV1QiLCJvcmlnaW4iOiJFYXJ0aGRhdGEgTG9naW4iLCJzaWciOiJlZGxqd3RwdWJrZXlfb3BzIiwiYWxnIjoiUlMyNTYifQ.eyJ0eXBlIjoiVXNlciIsInVpZCI6ImpnaWxlcyIsImV4cCI6MTc2NTg4MjQyNiwiaWF0IjoxNzYwNjk4NDI2LCJpc3MiOiJodHRwczovL3Vycy5lYXJ0aGRhdGEubmFzYS5nb3YiLCJpZGVudGl0eV9wcm92aWRlciI6ImVkbF9vcHMiLCJhY3IiOiJlZGwiLCJhc3N1cmFuY2VfbGV2ZWwiOjN9.UvbHo78icjYzHBJxtW4KxgrJ97dULLiCJFeT41ylakwLkRYEc7_xlRGLbZ_gkIAwY6H0tvSDdQHUX-as2pBOSEB8QsYS7aL7RGqzupSVXUhEHFk74rLUwKNUT22ftB_iQoKkS1KNoU6-9xiGoIg2eACPEbzg9qMc6hdRCBZKUYDY8pqPkfx2PT7fSwb2-0Jj2sk6wORnE4jk6O6nXnOMEC6ZNnH8FHnLb4PzW6U8Ig1iTkNiR3MzETI1SNo5v5pdGXT_GJcnCur4RvwBZoqBtXA60LW5XBwFW5cBOt-rCv_N3mXRJerCkgje6ikqpv-L1kYeufzBvRvgNroCfGy_dQ"
+
+tsel = "2016-12-01T14" # for plots
+
+tolerance = 250.
+vv = "DBZH" # Used to locate and discard NaNs
+SNRH_min = 15
+RHOHV_min = 0.95
+TEMP_max = -1 # for this we need a max temp, we want to select above the ML
+DBZH_min = 10
+CBB_max = 0.05
+
+Zm_range = 1000. # range in m for the computation of Zm (DBZH close to radar)
+
+vv_to_extract = ["DBZH", "DBZH_AC", "DBTH", "ZDR", "ZDR_EC_OC", "ZDR_EC_OC_AC",
+                 "PHIDP_OC", "PHIDP_OC_MASKED", "KDP_ML_corrected",
+                 "TEMP", "Zm", "TEMPm"] # all variables to extract from the datasets, DBZH must be the first
+
+selected_ML_low = {vi:[] for vi in vv_to_extract}
+
+start_time = time.time()
+
+for date in ML_low_dates:
+    print("Processing "+date)
+    HTY_files0 = [ff for ff in HTY_files if date in ff]
+    GZT_files0 = [ff for ff in GZT_files if date in ff]
+
+    for HTY_file in HTY_files0:
+        for GZT_file in GZT_files0:
+
+            # Create save folder
+            sf = savefolder+"ML_low_dates/"
+            if not os.path.exists(sf):
+                os.makedirs(sf)
+
+            if reload:
+                dbzh_loaded = False
+                for vi in vv_to_extract:
+                    sfp_tg = sf+"_".join([vi, "tg", os.path.basename(HTY_file), os.path.basename(GZT_file)])
+                    sfp_ref = sf+"_".join([vi, "ref", os.path.basename(HTY_file), os.path.basename(GZT_file)])
+                    try:
+                        selected_ML_low[vi].append( (np.load(sfp_tg+".npy"), np.load(sfp_ref+".npy") ) )
+                        if vi == "DBZH": dbzh_loaded = True
+                    except:
+                        print(vi+": reloading \n "+sfp_tg+".npy \n or \n "+sfp_ref+".npy \n failed")
+                if dbzh_loaded:
+                    continue
+                print("Total fail reloading \n "+sfp_tg+".npy \n or \n "+sfp_ref+".npy \n attempting to calculate")
+
+            # Load the data
+            ds1 = xr.open_mfdataset(HTY_file)
+            ds2 = xr.open_mfdataset(GZT_file)
+
+            # Get PPIs into the same reference system
+            proj = utils.get_common_projection(ds1, ds2)
+
+            ds1 = wrl.georef.georeference(ds1, crs=proj)
+            ds2 = wrl.georef.georeference(ds2, crs=proj)
+
+            # Add beam blockage
+            ds1_pbb, ds1_cbb = beam_blockage_from_radar_ds(ds1.isel(time=0),
+                                                           (ds1.longitude, ds1.latitude, ds1.altitude),
+                                                           wradlib_token = token)
+
+            ds1 = ds1.assign({"PBB": ds1_pbb, "CBB": ds1_cbb})
+
+            ds2_pbb, ds2_cbb = beam_blockage_from_radar_ds(ds2.isel(time=0),
+                                                           (ds2.longitude, ds2.latitude, ds2.altitude),
+                                                           wradlib_token = token)
+
+            ds2 = ds2.assign({"PBB": ds2_pbb, "CBB": ds2_cbb})
+
+            # Apply thresholds before computing masks
+            dsx = utils.apply_min_max_thresh(ds1, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
+                                                    "SNRHC":SNRH_min, "SQIH":0.5},
+                                                 {"CBB": CBB_max})
+            dsy = utils.apply_min_max_thresh(ds2, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
+                                                    "SNRHC":SNRH_min, "SQIH":0.5},
+                                                 {"CBB": CBB_max})
+
+            # They consider that there is rain above the radar by looking at the
+            # median reflectivity in a circle 5km aroud each radar. Let's add this variable
+            dsx = dsx.assign_coords({"Zm": dsx["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
+            dsy = dsy.assign_coords({"Zm": dsy["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsy["DBZH"]) })
+
+            # Analogously, add the TEMP close to the radar as a measure of below/above ML
+            dsx = dsx.assign_coords({"TEMPm": dsx["TEMP"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsx["TEMP"]) })
+            dsy = dsy.assign_coords({"TEMPm": dsy["TEMP"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsy["TEMP"]) })
+
+            # Add the additional DBZH and TEMP thresholds
+            dsx = utils.apply_min_max_thresh(dsx, {"DBZH":DBZH_min},
+                                                 {"TEMP": TEMP_max})
+            dsy = utils.apply_min_max_thresh(dsy, {"DBZH":DBZH_min},
+                                                 {"TEMP": TEMP_max})
+
+            # One radar has to be the reference and the other must be the target, both below the ML
+            # Let's take GZT as reference
+
+            # We will not apply additional Zm or PHIDP conditions now so we can use
+            # the extracted values for both rain atten and wet radome analyses
+            dsx_tg = dsx[[vv for vv in vv_to_extract if vv in dsx]].compute() # if we pre compute the variables that we want
+            dsy_rf = dsy[[vv for vv in vv_to_extract if vv in dsy]].compute() # we save a lot of time (~3 times faster)
+
+            mask_tg, mask_rf, idx_tg, idx_rf, matched_timesteps = utils.find_radar_overlap_unique_NN_pairs(dsx_tg,
+                                                                                                           dsy_rf,
+                                                                                tolerance=tolerance,
+                                                                                tolerance_time=60*4)
+
+            mask_tg_ref, mask_rf_ref, idx_tg_ref, idx_rf_ref, matched_timesteps = utils.refine_radar_overlap_unique_NN_pairs(
+                                                                                    dsx_tg, dsy_rf,
+                                                                                    idx_tg, idx_rf,
+                                                                                    vv,
+                                                                                tolerance_time=60*4,
+                                                                                z_tolerance=100.)
+
+            if mask_tg_ref.sum() == 0:
+                print("No matches found")
+                continue # jump to next iteration if no pairs are found
+
+            for vi in vv_to_extract:
+                if vi in dsx_tg and vi in dsy_rf:
+                    dsx_p_tg, dsy_p_rf = utils.return_unique_NN_value_pairs(dsx_tg, dsy_rf,
+                                                                            mask_tg_ref, mask_rf_ref,
+                                                               idx_tg_ref, idx_rf_ref,
+                                                               matched_timesteps, vi)
+
+                    selected_ML_low[vi].append( (dsx_p_tg.copy(), dsy_p_rf.copy()) )
+                else:
+                    print(vi+" not found in one of the ds, filling with NaNs")
+                    selected_ML_low[vi].append( (np.full_like(selected_ML_low['DBZH'][-1][0], fill_value=np.nan),
+                                            np.full_like(selected_ML_low['DBZH'][-1][1], fill_value=np.nan))
+                                          )
+
+                sfp_tg = sf+"_".join([vi, "tg", os.path.basename(HTY_file), os.path.basename(GZT_file)])
+                sfp_ref = sf+"_".join([vi, "ref", os.path.basename(HTY_file), os.path.basename(GZT_file)])
+                np.save(sfp_tg,
+                    selected_ML_low[vi][-1][0], allow_pickle=False)
+                np.save(sfp_ref,
+                    selected_ML_low[vi][-1][1], allow_pickle=False)
+
+total_time = time.time() - start_time
+print(f"took {total_time/60:.2f} minutes.")
