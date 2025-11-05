@@ -1039,39 +1039,81 @@ GZT_files = [ff for ff in GZT_files if get_elev(ff) in GZT_elevs]
 
 # Define dates
 ML_high_dates = [
+    "2016-04-09", #### # ONLY GZT 0.4,0.7 AND SURV 0.5 (SURV seems to not be useful because of range res 5km)
+    "2016-05-14",# ONLY GZT SURV 0.0
+    "2016-05-15",# ONLY GZT SURV 0.0
+    "2016-05-16",# ONLY GZT SURV 0.0
     "2016-05-31",
+    "2016-09-22", # Wet radome in GZT
+    "2016-10-18", ####
     "2016-10-28",
-    "2016-09-22",
     "2016-11-01",
     "2016-12-01",
+    "2017-04-12", ####
     "2017-04-13",
+    "2017-05-18", ####
+    "2017-05-22", ####
+    # "2018-03-28",# NO POLARIMETRY OR RHOHV IN HTY
+    # "2019-02-06",# NO POLARIMETRY OR RHOHV IN HTY
+    # "2019-05-06",# NO POLARIMETRY OR RHOHV IN HTY
     "2019-10-17",
     "2019-10-20",
+    "2019-10-21", ####
+    "2019-10-22", ####
+    "2019-10-28", ####
+    "2020-03-12", ####
     "2020-03-13",
+    "2020-05-01", ####
 ]
 
 ML_low_dates = [
-    "2016-02-06",
-    "2016-02-21",
-    "2016-04-12",
+    "2016-02-06", # ONLY GZT 0.4,0.7 AND SURV 0.5 (SURV seems to not be useful because of range res 5km)
+    "2016-02-21", # ONLY GZT 0.4,0.7 AND SURV 0.5 (SURV seems to not be useful because of range res 5km)
+    "2016-04-12", # ONLY GZT 0.4,0.7 AND SURV 0.5 (SURV seems to not be useful because of range res 5km)
     "2016-05-28",
     "2016-11-30",
+    "2016-12-01",
+    "2016-12-14", ####
+    "2016-12-16", ####
+    "2016-12-20", ####
+    "2016-12-21", ####
+    "2016-12-22", ####
     "2016-12-26",
+    "2016-12-27", ####
     "2016-12-29",
+    "2016-12-30", ####
+    "2016-12-31", ####
+    "2017-01-01", ####
     "2017-01-02",
-    "2017-11-28",
+    "2017-01-08", ####
+    "2017-01-11", ####
+    "2017-01-20", ####
+    "2017-03-04", ####
+    "2017-03-16", ####
+    "2017-03-17", ####
+    "2017-12-24", ####
     "2017-12-31",
     "2018-01-04",
     "2018-01-05",
+    "2018-01-14", ####
     "2019-11-27",
     "2019-12-09",
     "2019-12-13",
     "2019-12-14",
     "2019-12-24",
     "2019-12-25",
+    "2019-12-26", ####
+    "2019-12-28", ####
+    "2019-12-30", ####
+    "2019-12-31", ####
     "2020-01-02",
     "2020-01-03",
+    "2020-01-04", ####
     "2020-01-06",
+    "2020-01-07", ####
+    "2020-01-19", ####
+    "2020-02-22", ####
+    "2020-02-29", ####
     "2020-03-17",
     "2020-11-04",
     "2020-11-20",
@@ -1296,7 +1338,7 @@ for x, n in zip(bin_centers, counts):
 plt.tight_layout()
 plt.show()
 
-#%%% Plot boxplot of delta DBZH/ZDR vs target PHI (wet radome attenuation)
+#%%% Plot boxplot of delta DBZH/ZDR vs target Zm (wet radome attenuation)
 phi = "PHIDP_OC_MASKED"
 dbzh = "DBZH"
 
@@ -1311,8 +1353,6 @@ delta_dbzh = np.concat([ (d1-d2).flatten() for d1,d2 in selected_ML_high[dbzh] ]
 tg_phi = np.concat([ d1.flatten() for d1,d2 in selected_ML_high[phi] ])
 
 ref_phi = np.concat([ d2.flatten() for d1,d2 in selected_ML_high[phi] ])
-
-tg_phi = np.concat([ d1.flatten() for d1,d2 in selected_ML_high[phi] ])
 
 tg_Zm = np.nan_to_num(np.concat([ d1.flatten() for d1,d2 in selected_ML_high["Zm"] ]))
 
@@ -1348,6 +1388,112 @@ bp = plt.boxplot(box_data, positions=bin_centers, widths=0.6, showmeans=True)
 plt.xlabel("Zm target (binned, 5 dBZ intervals)")
 plt.ylabel("delta "+dbzh)
 plt.title("Boxplots of delta "+dbzh+" vs Zm bins")
+plt.grid(True, linestyle="--", alpha=0.5)
+plt.xticks(bin_centers, [f"{b}-{b+5}" for b in bins[:-1]])
+
+# add cuadratic fit
+plt.plot([0,40], [lfit(0), lfit(40)])
+plt.text(0.95, 0.9, "Cuadratic fit: "+lfit_str, transform=plt.gca().transAxes, c="blue",
+         horizontalalignment="right")
+
+# add a second cuadratic fit using the medians
+medians = [line.get_ydata()[0] for line in bp['medians']]
+lfit_m = np.polynomial.Polynomial.fit(bin_centers, medians, 2, domain=[0, 40])
+lfit_m_str = str(lfit_m.convert()).replace("x", "Zm")
+plt.plot([0,40], [lfit_m(0), lfit_m(40)], c="red")
+plt.text(0.95, 0.85, "Cuadratic fit (medians): "+lfit_m_str, transform=plt.gca().transAxes, c="red",
+         horizontalalignment="right")
+
+
+# Add counts above x-tick labels (inside the plot area)
+for x, n in zip(bin_centers, counts):
+    plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
+             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
+
+plt.tight_layout()
+plt.show()
+
+#%%% Special handling of ZDR. Plot boxplot of delta ZDR vs target Zm (wet radome attenuation.
+# same as before but we try to remove the offsets of ZDR when wet radome was affecting the radar
+phi = "PHIDP_OC_MASKED"
+zdr = "ZDR"
+zdr_to_plot = "ZDR_EC_OC_new"
+zdr_oc = zdr_to_plot.split("_new")[0]
+
+# we need to apply additional filters that we did not apply in the previous step
+ref_Zm_max = 5
+ref_phi_max = 5
+tg_phi_max = 15
+
+if "new" in zdr_to_plot:
+    # Remove the timestep-based ZDR offsets and replace with daily offsets ignore the
+    # wet-radome-affected timesteps (Zm high) for the target, leave the ref untouched
+
+    selected_ML_high[zdr_oc+"_new"] = []
+    for ti in range(len(selected_ML_high[zdr])):
+        # get offsets and select only valid ones (no wet radome)
+        tg_offsets_ti = selected_ML_high[zdr][ti][0] - selected_ML_high[zdr_oc][ti][0]
+        tg_offsets_ti_valid = np.where(np.nan_to_num(selected_ML_high["Zm"][ti][0]) < ref_Zm_max,
+                                       tg_offsets_ti, np.nan)
+        tg_offsets_ti_ts = np.nanmean(tg_offsets_ti_valid, 1) # reduce to one offset per timestep
+
+        # generate new ZDR offset by using a rolling mean
+        tg_new_offsets_ti = pd.Series(tg_offsets_ti_ts).rolling(5, min_periods=1).mean().to_numpy()
+
+        # fill any other remaining nan with a daily-mean offset
+        tg_new_offsets_ti = np.where(np.isfinite(tg_new_offsets_ti),
+                                     tg_new_offsets_ti,
+                                     np.nanmean(tg_offsets_ti_ts))
+
+        # use the new offsets where there is wet radome
+        tg_zdr_oc_new_ti = np.where(np.nan_to_num(selected_ML_high["Zm"][ti][0]) < ref_Zm_max,
+                                       selected_ML_high[zdr_oc][ti][0],
+                                       selected_ML_high[zdr][ti][0] - np.expand_dims(tg_new_offsets_ti, 1))
+
+        # add to the new variable
+        selected_ML_high[zdr_oc+"_new"].append((tg_zdr_oc_new_ti.copy(), selected_ML_high[zdr_oc][ti][1]))
+
+# extract/build necessary variables
+delta_zdr = np.concat([ (d1-d2).flatten() for d1,d2 in selected_ML_high[zdr_to_plot] ])
+
+tg_phi = np.concat([ d1.flatten() for d1,d2 in selected_ML_high[phi] ])
+
+ref_phi = np.concat([ d2.flatten() for d1,d2 in selected_ML_high[phi] ])
+
+tg_Zm = np.nan_to_num(np.concat([ d1.flatten() for d1,d2 in selected_ML_high["Zm"] ]))
+
+ref_Zm = np.nan_to_num(np.concat([ d2.flatten() for d1,d2 in selected_ML_high["Zm"] ]))
+
+# filter by valid values according to conditions
+valid = np.isfinite(delta_zdr) & (ref_phi<ref_phi_max) & (tg_phi<tg_phi_max) & (ref_Zm<ref_Zm_max)
+
+delta_zdr = delta_zdr[valid]
+tg_Zm = tg_Zm[valid]
+
+# Calculate best cuadratic fit
+lfit = np.polynomial.Polynomial.fit(tg_Zm, delta_zdr, 2, domain=[0, 40])
+lfit_str = str(lfit.convert()).replace("x", "Zm")
+
+# Box plots like in the paper
+# Define bins
+bins = np.arange(0, 45, 5)
+bin_centers = (bins[:-1] + bins[1:])/2
+
+# Digitize tg_Zm into bins
+bin_indices = np.digitize(tg_Zm, bins) - 1
+
+# Prepare data for boxplot
+box_data = [delta_zdr[bin_indices == i] for i in range(len(bins) - 1)]
+
+# Compute counts per bin
+counts = [len(vals) for vals in box_data]
+
+# Plot
+plt.figure(figsize=(9, 5))
+bp = plt.boxplot(box_data, positions=bin_centers, widths=0.6, showmeans=True)
+plt.xlabel("Zm target (binned, 5 dBZ intervals)")
+plt.ylabel("delta "+zdr_to_plot)
+plt.title("Boxplots of delta "+zdr_to_plot+" vs Zm bins")
 plt.grid(True, linestyle="--", alpha=0.5)
 plt.xticks(bin_centers, [f"{b}-{b+5}" for b in bins[:-1]])
 
@@ -1455,7 +1601,7 @@ for date in ML_low_dates:
                                                  {"CBB": CBB_max})
 
             # They consider that there is rain above the radar by looking at the
-            # median reflectivity in a circle 5km aroud each radar. Let's add this variable
+            # median reflectivity in a circle aroud each radar. Let's add this variable
             dsx = dsx.assign_coords({"Zm": dsx["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
             dsy = dsy.assign_coords({"Zm": dsy["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsy["DBZH"]) })
 
@@ -1516,3 +1662,172 @@ for date in ML_low_dates:
 
 total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
+
+#%%% Plot boxplot of DBZH/ZDR as vertical profiles (ML attenuation)
+phi = "PHIDP_OC_MASKED"
+dbzh = "DBZH"
+TEMPm = "TEMPm"
+TEMP = "TEMP"
+
+# We only need to check that TEMPm is appropriate for each radar
+
+# extract/build necessary variables
+tg_dbzh = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[dbzh] ])
+
+ref_dbzh = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[dbzh] ])
+
+tg_phi = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi] ])
+
+ref_phi = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi] ])
+
+tg_Zm = np.nan_to_num(np.concat([ d1.flatten() for d1,d2 in selected_ML_low["Zm"] ]))
+
+ref_Zm = np.nan_to_num(np.concat([ d2.flatten() for d1,d2 in selected_ML_low["Zm"] ]))
+
+tg_TEMPm = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[TEMPm] ])
+
+ref_TEMPm = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[TEMPm] ])
+
+tg_TEMP = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[TEMP] ])
+
+ref_TEMP = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[TEMP] ])
+
+# filter by valid values according to conditions
+#!!! The best filter would have ref_TEMPm < -1, but looks like no event so far
+# meets this condition. So let's use PHI and Zm as an alternative for now
+valid = (tg_TEMPm > 3) & (ref_phi < 5) & (ref_Zm < 5) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
+
+tg_dbzh = tg_dbzh[valid]
+ref_dbzh = ref_dbzh[valid]
+tg_TEMP = tg_TEMP[valid]
+ref_TEMP = ref_TEMP[valid]
+
+# Box plots like in the paper
+# Define bins
+bins = np.arange(-16, 0, 1)
+bin_centers = (bins[:-1] + bins[1:])/2
+
+# Digitize into bins
+bin_indices_tg = np.digitize(tg_TEMP, bins) - 1
+bin_indices_ref = np.digitize(ref_TEMP, bins) - 1
+
+# Prepare data for boxplot
+box_data_tg = [tg_dbzh[bin_indices_tg == i] for i in range(len(bins) - 1)]
+box_data_ref = [ref_dbzh[bin_indices_ref == i] for i in range(len(bins) - 1)]
+
+# Compute counts per bin
+counts = [len(vals) for vals in box_data_tg]
+
+# Plot
+plt.figure(figsize=(7, 9))
+bptg = plt.boxplot(box_data_tg, positions=bin_centers-0.15, widths=0.4, showmeans=True, vert=False, label="target")
+bpref = plt.boxplot(box_data_ref, positions=bin_centers+0.15, widths=0.4, showmeans=True, vert=False, label="reference")
+for box in bpref['boxes']:
+    # change outline color
+    box.set(color='red')
+plt.gca().yaxis.set_inverted(True)
+plt.xlabel(dbzh)
+plt.ylabel(TEMP+" (binned, 1° intervals)")
+plt.title("Boxplots of "+dbzh+" vs "+TEMP)
+plt.grid(True, linestyle="--", alpha=0.5)
+plt.yticks(bin_centers, [f"{b}-{b+1}" for b in bins[:-1]])
+
+custom_lines = [mpl.lines.Line2D([0], [0], color="black", lw=1),
+                mpl.lines.Line2D([0], [0], color="red", lw=1)]
+plt.legend(custom_lines, ['target', 'reference'])
+
+# Add counts above x-tick labels (inside the plot area)
+for x, n in zip(bin_centers, counts):
+    plt.text(plt.xlim()[0] + 0.01 * (plt.xlim()[1] - plt.xlim()[0]), x, # 5% above bottom
+             f"{n}", ha='center', va='center', fontsize=9, color='dimgray', rotation=90)
+
+plt.tight_layout()
+plt.show()
+
+#%%% Plot boxplot of delta DBZH/ZDR vs target PHI (ML attenuation)
+#!!! I need to, somehow, keep the atten corr below the ML and remove the one related to the ML
+
+phi = "PHIDP_OC_MASKED"
+dbzh = "DBZH"
+TEMPm = "TEMPm"
+TEMP = "TEMP"
+
+# We only need to check that TEMPm is appropriate for each radar
+
+# extract/build necessary variables
+tg_dbzh = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[dbzh] ])
+
+ref_dbzh = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[dbzh] ])
+
+tg_phi = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi] ])
+
+ref_phi = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi] ])
+
+tg_Zm = np.nan_to_num(np.concat([ d1.flatten() for d1,d2 in selected_ML_low["Zm"] ]))
+
+ref_Zm = np.nan_to_num(np.concat([ d2.flatten() for d1,d2 in selected_ML_low["Zm"] ]))
+
+tg_TEMPm = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[TEMPm] ])
+
+ref_TEMPm = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[TEMPm] ])
+
+tg_TEMP = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[TEMP] ])
+
+ref_TEMP = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[TEMP] ])
+
+# filter by valid values according to conditions
+#!!! The best filter would have ref_TEMPm < -1, but looks like no event so far
+# meets this condition. So let's use PHI and Zm as an alternative for now
+valid = (tg_TEMPm > 3) & (ref_phi < 5) & (ref_Zm < 5) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
+
+delta_dbzh = (tg_dbzh - ref_dbzh)[valid]
+tg_phi = tg_phi[valid]
+
+# Calculate best linear fit
+lfit = np.polynomial.Polynomial.fit(tg_phi, delta_dbzh, 1, domain=[0, 18])
+lfit_str = str(lfit.convert()).replace("x", "Phi")
+
+# Box plots like in the paper
+# Define bins
+bins = np.arange(0, 19, 1)  # 0,1,2,3,4,5
+bin_centers = bins[:-1] + 0.5
+
+# Digitize tg_phi into bins
+bin_indices = np.digitize(tg_phi, bins) - 1
+
+# Prepare data for boxplot
+box_data = [delta_dbzh[bin_indices == i] for i in range(len(bins) - 1)]
+
+# Compute counts per bin
+counts = [len(vals) for vals in box_data]
+
+# Plot
+plt.figure(figsize=(9, 5))
+bp = plt.boxplot(box_data, positions=bin_centers, widths=0.6, showmeans=True)
+plt.xlabel(phi+" (binned, 1° intervals)")
+plt.ylabel("delta "+dbzh)
+plt.title("Boxplots of delta "+dbzh+" vs "+phi+" bins")
+plt.grid(True, linestyle="--", alpha=0.5)
+plt.xticks(bin_centers, [f"{b}-{b+1}" for b in bins[:-1]])
+
+# add linear fit
+plt.plot([0,18], [lfit(0), lfit(18)])
+plt.text(0.95, 0.9, "Linear fit: "+lfit_str, transform=plt.gca().transAxes, c="blue",
+         horizontalalignment="right")
+
+# add a second linear fit using the medians
+medians = [line.get_ydata()[0] for line in bp['medians']]
+lfit_m = np.polynomial.Polynomial.fit(bin_centers, medians, 1, domain=[0, 18])
+lfit_m_str = str(lfit_m.convert()).replace("x", "Phi")
+plt.plot([0,18], [lfit_m(0), lfit_m(18)], c="red")
+plt.text(0.95, 0.85, "Linear fit (medians): "+lfit_m_str, transform=plt.gca().transAxes, c="red",
+         horizontalalignment="right")
+
+
+# Add counts above x-tick labels (inside the plot area)
+for x, n in zip(bin_centers, counts):
+    plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
+             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
+
+plt.tight_layout()
+plt.show()
