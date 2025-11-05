@@ -611,10 +611,6 @@ for ff in files:
     except:
         pass
 
-#%% Save a text file to register that the work finished correctly
-    with open( os.path.dirname(savepath)+'/DONE.txt', 'w') as f:
-        f.write('')
-
 #%% Save PPI
     if save_processed_ppi:
         savepath_ppi = make_savedir(ff, "final_ppis")
@@ -642,6 +638,10 @@ for ff in files:
 
         with open( os.path.dirname(savepath_ppi)+'/DONE.txt', 'w') as f:
             f.write('')
+
+#%% Save a text file to register that the work finished correctly
+    with open( os.path.dirname(savepath)+'/DONE.txt', 'w') as f:
+        f.write('')
 
 #%% print how much time did it take
 total_time = time.time() - start_time
