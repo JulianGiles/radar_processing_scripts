@@ -1536,7 +1536,7 @@ Zm_range = 1000. # range in m for the computation of Zm (DBZH close to radar)
 
 vv_to_extract = ["DBZH", "DBZH_AC", "DBTH", "ZDR", "ZDR_EC_OC", "ZDR_EC_OC_AC",
                  "PHIDP_OC", "PHIDP_OC_MASKED", "KDP_ML_corrected",
-                 "TEMP", "Zm", "TEMPm"] # all variables to extract from the datasets, DBZH must be the first
+                 "TEMP", "Zm", "TEMPm", "PHIDP_OC_MASKED_bump"] # all variables to extract from the datasets, DBZH must be the first
 
 selected_ML_low = {vi:[] for vi in vv_to_extract}
 
@@ -1570,14 +1570,44 @@ for date in ML_low_dates:
                 print("Total fail reloading \n "+sfp_tg+".npy \n or \n "+sfp_ref+".npy \n attempting to calculate")
 
             # Load the data
-            ds1 = xr.open_mfdataset(HTY_file)
-            ds2 = xr.open_mfdataset(GZT_file)
+            ds1 = xr.open_mfdataset(HTY_file).set_coords("TEMP") # make sure that TEMP is a coord
+            ds2 = xr.open_mfdataset(GZT_file).set_coords("TEMP")
 
             # Get PPIs into the same reference system
             proj = utils.get_common_projection(ds1, ds2)
 
             ds1 = wrl.georef.georeference(ds1, crs=proj)
             ds2 = wrl.georef.georeference(ds2, crs=proj)
+
+            # add bump variables
+            vv_bump = [vv for vv in vv_to_extract if "bump" in vv]
+            vv_nobump = [vv.split("_bump")[0] for vv in vv_to_extract if "bump" in vv]
+            if len(vv_bump) > 0:
+                # for ds1
+                below_ml = ds1[vv_nobump].where(ds1.z < ds1.height_ml_bottom_new_gia).where(ds1.z > ds1.height_ml_bottom_new_gia - 100)
+                above_ml = ds1[vv_nobump].where(ds1.z > ds1.height_ml_new_gia).where(ds1.z < ds1.height_ml_new_gia + 100)
+                below_ml_TEMP = ds1[vv_nobump].where(ds1.TEMP>3).where(ds1.TEMP<3.5).where(~ds1.height_ml_bottom_new_gia.notnull())
+                above_ml_TEMP = ds1[vv_nobump].where(ds1.TEMP<TEMP_max).where(ds1.TEMP>TEMP_max-0.5).where(~ds1.height_ml_new_gia.notnull())
+
+                bump_ml = above_ml.bfill("range").head(range=1).isel(range=0) - below_ml.ffill("range").tail(range=1).isel(range=0)
+                bump_ml_TEMP = above_ml_TEMP.bfill("range").head(range=1).isel(range=0) - below_ml_TEMP.ffill("range").tail(range=1).isel(range=0)
+
+                ds1 = ds1.assign( xr.where(ds1.height_ml_bottom_new_gia.notnull(),
+                                           bump_ml.rename(dict(zip(vv_nobump, vv_bump))),
+                                           bump_ml_TEMP.rename(dict(zip(vv_nobump, vv_bump))) ) )
+
+                # for ds2 (by definition this will be NaN for the cases we will select, but we still need the variable for completion)
+                below_ml = ds2[vv_nobump].where(ds2.z < ds2.height_ml_bottom_new_gia).where(ds2.z > ds2.height_ml_bottom_new_gia - 100)
+                above_ml = ds2[vv_nobump].where(ds2.z > ds2.height_ml_new_gia).where(ds2.z < ds2.height_ml_new_gia + 100)
+                below_ml_TEMP = ds2[vv_nobump].where(ds2.TEMP>3).where(ds2.TEMP<3.5).where(~ds2.height_ml_bottom_new_gia.notnull())
+                above_ml_TEMP = ds2[vv_nobump].where(ds2.TEMP<TEMP_max).where(ds2.TEMP>TEMP_max-0.5).where(~ds2.height_ml_new_gia.notnull())
+
+                bump_ml = above_ml.bfill("range").head(range=1).isel(range=0) - below_ml.ffill("range").tail(range=1).isel(range=0)
+                bump_ml_TEMP = above_ml_TEMP.bfill("range").head(range=1).isel(range=0) - below_ml_TEMP.ffill("range").tail(range=1).isel(range=0)
+
+                ds2 = ds2.assign( xr.where(ds2.height_ml_bottom_new_gia.notnull(),
+                                           bump_ml.rename(dict(zip(vv_nobump, vv_bump))),
+                                           bump_ml_TEMP.rename(dict(zip(vv_nobump, vv_bump))) ) )
 
             # Add beam blockage
             ds1_pbb, ds1_cbb = beam_blockage_from_radar_ds(ds1.isel(time=0),
@@ -1610,16 +1640,17 @@ for date in ML_low_dates:
             dsy = dsy.assign_coords({"TEMPm": dsy["TEMP"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsy["TEMP"]) })
 
             # Add the additional DBZH and TEMP thresholds
+            # (apply the TEMP threshold manually since it is not a variable but a coord)
             dsx = utils.apply_min_max_thresh(dsx, {"DBZH":DBZH_min},
-                                                 {"TEMP": TEMP_max})
+                                                 {}).where(dsx["TEMP"] < TEMP_max)
             dsy = utils.apply_min_max_thresh(dsy, {"DBZH":DBZH_min},
-                                                 {"TEMP": TEMP_max})
+                                                 {}).where(dsy["TEMP"] < TEMP_max)
 
             # One radar has to be the reference and the other must be the target, both below the ML
             # Let's take GZT as reference
 
             # We will not apply additional Zm or PHIDP conditions now so we can use
-            # the extracted values for both rain atten and wet radome analyses
+            # the extracted values for different comaparisons
             dsx_tg = dsx[[vv for vv in vv_to_extract if vv in dsx]].compute() # if we pre compute the variables that we want
             dsy_rf = dsy[[vv for vv in vv_to_extract if vv in dsy]].compute() # we save a lot of time (~3 times faster)
 
