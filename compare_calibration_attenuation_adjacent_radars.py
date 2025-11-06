@@ -1039,31 +1039,31 @@ GZT_files = [ff for ff in GZT_files if get_elev(ff) in GZT_elevs]
 
 # Define dates
 ML_high_dates = [
-    "2016-04-09", #### # ONLY GZT 0.4,0.7 AND SURV 0.5 (SURV seems to not be useful because of range res 5km)
+    "2016-04-09", #### no valid matches: 3.0-0.7 # ONLY GZT 0.4,0.7 AND SURV 0.5 (SURV seems to not be useful because of range res 5km)
     "2016-05-14",# ONLY GZT SURV 0.0
     "2016-05-15",# ONLY GZT SURV 0.0
     "2016-05-16",# ONLY GZT SURV 0.0
     "2016-05-31",
     "2016-09-22", # Wet radome in GZT
-    "2016-10-18", ####
+    "2016-10-18", #### no valid matches: 3.0-0.5
     "2016-10-28",
-    "2016-11-01",
-    "2016-12-01",
+    "2016-11-01", #### no valid matches: 2.2-0.5, 3.0-0.5
+    # "2016-12-01", #### no valid matches: 1.5-0.5, 2.2-0.5, 3.0-0.5 (all combinations)
     "2017-04-12", ####
     "2017-04-13",
     "2017-05-18", ####
-    "2017-05-22", ####
+    "2017-05-22", #### no valid matches: 2.2-0.5, 3.0-0.5
     # "2018-03-28",# NO POLARIMETRY OR RHOHV IN HTY
     # "2019-02-06",# NO POLARIMETRY OR RHOHV IN HTY
     # "2019-05-06",# NO POLARIMETRY OR RHOHV IN HTY
     "2019-10-17",
     "2019-10-20",
-    "2019-10-21", ####
-    "2019-10-22", ####
-    "2019-10-28", ####
-    "2020-03-12", ####
-    "2020-03-13",
-    "2020-05-01", ####
+    "2019-10-21", #### no valid matches: 3.0-0.5
+    "2019-10-22", #### no valid matches: 3.0-0.5
+    "2019-10-28", #### no valid matches: 3.0-0.5
+    "2020-03-12", #### no valid matches: 3.0-0.5
+    "2020-03-13", #### no valid matches: 3.0-0.5
+    # "2020-05-01", #### no valid matches: 1.5-0.5, 3.0-0.5 (all combinations)
 ]
 
 ML_low_dates = [
@@ -1086,11 +1086,11 @@ ML_low_dates = [
     "2017-01-01", ####
     "2017-01-02",
     "2017-01-08", ####
-    "2017-01-11", ####
-    "2017-01-20", ####
+    # "2017-01-11", #### no valid matches: 1.5-0.5, 2.2-0.5, 3.0-0.5 (all combinations)
+    "2017-01-20", #### no valid matches: 1.5-0.5,
     "2017-03-04", ####
-    "2017-03-16", ####
-    "2017-03-17", ####
+    # "2017-03-16", #### no valid matches: 1.5-0.5, 2.2-0.5, 3.0-0.5 (all combinations)
+    # "2017-03-17", #### no valid matches: 1.5-0.5, 2.2-0.5, 3.0-0.5 (all combinations)
     "2017-12-24", ####
     "2017-12-31",
     "2018-01-04",
@@ -1696,7 +1696,7 @@ print(f"took {total_time/60:.2f} minutes.")
 
 #%%% Plot boxplot of DBZH/ZDR as vertical profiles (ML attenuation)
 phi = "PHIDP_OC_MASKED"
-dbzh = "DBZH"
+dbzh = "ZDR_EC_OC"
 TEMPm = "TEMPm"
 TEMP = "TEMP"
 
@@ -1723,10 +1723,15 @@ tg_TEMP = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[TEMP] ])
 
 ref_TEMP = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[TEMP] ])
 
+tg_phi_bump = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi+"_bump"] ])
+
+ref_phi_bump = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi+"_bump"] ])
+
 # filter by valid values according to conditions
 #!!! The best filter would have ref_TEMPm < -1, but looks like no event so far
 # meets this condition. So let's use PHI and Zm as an alternative for now
-valid = (tg_TEMPm > 3) & (ref_phi < 5) & (ref_Zm < 5) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
+valid = (tg_TEMPm > 3) & (np.nan_to_num(ref_phi_bump) < 1)  & (ref_phi < 5) & (ref_Zm < 5) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
+# valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
 
 tg_dbzh = tg_dbzh[valid]
 ref_dbzh = ref_dbzh[valid]
@@ -1806,10 +1811,15 @@ tg_TEMP = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[TEMP] ])
 
 ref_TEMP = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[TEMP] ])
 
+tg_phi_bump = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi+"_bump"] ])
+
+ref_phi_bump = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi+"_bump"] ])
+
 # filter by valid values according to conditions
 #!!! The best filter would have ref_TEMPm < -1, but looks like no event so far
 # meets this condition. So let's use PHI and Zm as an alternative for now
-valid = (tg_TEMPm > 3) & (ref_phi < 5) & (ref_Zm < 5) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
+valid = (tg_TEMPm > 3) & (np.nan_to_num(ref_phi_bump) < 1)  & (ref_phi < 5) & (ref_Zm < 5) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
+# valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
 
 delta_dbzh = (tg_dbzh - ref_dbzh)[valid]
 tg_phi = tg_phi[valid]
@@ -1850,6 +1860,99 @@ plt.text(0.95, 0.9, "Linear fit: "+lfit_str, transform=plt.gca().transAxes, c="b
 medians = [line.get_ydata()[0] for line in bp['medians']]
 lfit_m = np.polynomial.Polynomial.fit(bin_centers, medians, 1, domain=[0, 18])
 lfit_m_str = str(lfit_m.convert()).replace("x", "Phi")
+plt.plot([0,18], [lfit_m(0), lfit_m(18)], c="red")
+plt.text(0.95, 0.85, "Linear fit (medians): "+lfit_m_str, transform=plt.gca().transAxes, c="red",
+         horizontalalignment="right")
+
+
+# Add counts above x-tick labels (inside the plot area)
+for x, n in zip(bin_centers, counts):
+    plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
+             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
+
+plt.tight_layout()
+plt.show()
+
+#%%% Plot boxplot of delta DBZH/ZDR vs target PHI bump (ML attenuation)
+#!!! I need to, somehow, keep the atten corr below the ML and remove the one related to the ML
+
+phi = "PHIDP_OC_MASKED"
+dbzh = "ZDR_EC_OC_AC"
+TEMPm = "TEMPm"
+TEMP = "TEMP"
+
+# We only need to check that TEMPm is appropriate for each radar
+
+# extract/build necessary variables
+tg_dbzh = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[dbzh] ])
+
+ref_dbzh = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[dbzh] ])
+
+tg_phi = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi] ])
+
+ref_phi = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi] ])
+
+tg_Zm = np.nan_to_num(np.concat([ d1.flatten() for d1,d2 in selected_ML_low["Zm"] ]))
+
+ref_Zm = np.nan_to_num(np.concat([ d2.flatten() for d1,d2 in selected_ML_low["Zm"] ]))
+
+tg_TEMPm = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[TEMPm] ])
+
+ref_TEMPm = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[TEMPm] ])
+
+tg_TEMP = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[TEMP] ])
+
+ref_TEMP = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[TEMP] ])
+
+tg_phi_bump = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi+"_bump"] ])
+
+ref_phi_bump = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi+"_bump"] ])
+
+# filter by valid values according to conditions
+#!!! The best filter would have ref_TEMPm < -1, but looks like no event so far
+# meets this condition. So let's use PHI and Zm as an alternative for now
+valid = (tg_TEMPm > 3) & (np.nan_to_num(ref_phi_bump) < 1)  & (ref_phi < 5) & (ref_Zm < 5) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh) & np.isfinite(tg_phi_bump)
+# valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
+
+delta_dbzh = (tg_dbzh - ref_dbzh)[valid]
+tg_phi_bump = tg_phi_bump[valid]
+
+# Calculate best linear fit
+lfit = np.polynomial.Polynomial.fit(tg_phi_bump, delta_dbzh, 1, domain=[0, 18])
+lfit_str = str(lfit.convert()).replace("x", "Phi bump")
+
+# Box plots like in the paper
+# Define bins
+bins = np.arange(0, 19, 1)  # 0,1,2,3,4,5
+bin_centers = bins[:-1] + 0.5
+
+# Digitize tg_phi_bump into bins
+bin_indices = np.digitize(tg_phi_bump, bins) - 1
+
+# Prepare data for boxplot
+box_data = [delta_dbzh[bin_indices == i] for i in range(len(bins) - 1)]
+
+# Compute counts per bin
+counts = [len(vals) for vals in box_data]
+
+# Plot
+plt.figure(figsize=(9, 5))
+bp = plt.boxplot(box_data, positions=bin_centers, widths=0.6, showmeans=True)
+plt.xlabel(phi+"_bump"+" (binned, 1° intervals)")
+plt.ylabel("delta "+dbzh)
+plt.title("Boxplots of delta "+dbzh+" vs "+phi+"_bump"+" bins")
+plt.grid(True, linestyle="--", alpha=0.5)
+plt.xticks(bin_centers, [f"{b}-{b+1}" for b in bins[:-1]])
+
+# add linear fit
+plt.plot([0,18], [lfit(0), lfit(18)])
+plt.text(0.95, 0.9, "Linear fit: "+lfit_str, transform=plt.gca().transAxes, c="blue",
+         horizontalalignment="right")
+
+# add a second linear fit using the medians
+medians = [line.get_ydata()[0] for line in bp['medians']]
+lfit_m = np.polynomial.Polynomial.fit(bin_centers, medians, 1, domain=[0, 18])
+lfit_m_str = str(lfit_m.convert()).replace("x", "Phi bump")
 plt.plot([0,18], [lfit_m(0), lfit_m(18)], c="red")
 plt.text(0.95, 0.85, "Linear fit (medians): "+lfit_m_str, transform=plt.gca().transAxes, c="red",
          horizontalalignment="right")
