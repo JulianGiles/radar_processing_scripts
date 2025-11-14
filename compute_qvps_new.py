@@ -434,16 +434,18 @@ for ff in files:
 #%% Compute QVP
     ## Only data with a cross-correlation coefficient ρHV above 0.7 are used to calculate their azimuthal median at all ranges (from Trömel et al 2019).
     ## Also added further filtering (TH>0, ZDR>-1)
-    ds_qvp_ra = utils.compute_qvp(ds, min_thresh={X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min, "SNRHC":SNRH_min, "SQIH":0.5} )
+    ds_qvp_ra, ds_qvp_ra_count = utils.compute_qvp(ds, min_thresh={X_RHO:0.7, X_TH:0, X_ZDR:-1,
+                                                  "SNRH":SNRH_min, "SNRHC":SNRH_min, "SQIH":0.5},
+                                  output_count=True)
 
-    # filter out values close to the ground
-    ds_qvp_ra2 = ds_qvp_ra.where(ds_qvp_ra["z"]>min_height)
+    # assign DBZH counts
+    ds_qvp_ra = ds_qvp_ra.assign({"DBZH_qvp_count": ds_qvp_ra_count["DBZH"]})
 
 #%% Detect melting layer
     if X_PHI in ds.data_vars:
         moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI: (-20, 180)}
 
-        ds_qvp_ra = utils.melting_layer_qvp_X_new(ds_qvp_ra2, moments=moments, dim="z", fmlh=0.3, grad_thresh=grad_thresh,
+        ds_qvp_ra = utils.melting_layer_qvp_X_new(ds_qvp_ra.where(ds_qvp_ra_count>20), moments=moments, dim="z", fmlh=0.3, grad_thresh=grad_thresh,
                  xwin=xwin0, ywin=ywin0, min_h=min_height, rhohv_thresh_gia=rhohv_thresh_gia, all_data=True, clowres=clowres0)
 
         #### Assign ML values to dataset
@@ -459,7 +461,7 @@ for ff in files:
 #%% Discard possible erroneous ML values
     if "height_ml_new_gia" in ds_qvp_ra:
         ## First, filter out ML heights that are too high (above selected isotherm)
-        isotherm = -1 # isotherm for the upper limit of possible ML values
+        isotherm = -5 # isotherm for the upper limit of possible ML values
         # we need to fill the nans of the TEMP qvp otherwise the argmin operation will fail
         ds_qvp_ra["TEMP"] = ds_qvp_ra["TEMP"].fillna(ds["TEMP"].median("azimuth", keep_attrs=True).assign_coords({"z": ds["z"].median("azimuth", keep_attrs=True)}).swap_dims({"range":"z"}))
         z_isotherm = ds_qvp_ra.TEMP.isel(z=((ds_qvp_ra["TEMP"].fillna(100.)-isotherm)**2).argmin("z").compute())["z"]
@@ -479,11 +481,22 @@ for ff in files:
 
 #%% Attenuation correction (NOT PROVED THAT IT WORKS NICELY ABOVE THE ML)
     if X_PHI in ds.data_vars:
+        # First we calculate atten correction only in rain, as backup
+        ds = utils.attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0, betaml = 0,
+                                           dbzh=X_DBZH, zdr=["ZDR", "ZDR_EC", "ZDR_OC", "ZDR_EC_OC"],
+                                           phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
+                                           ML_bot = "height_ml_bottom_new_gia", ML_top = "height_ml_new_gia",
+                                           temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
+                                           interpolate_deltabump = True )
+
+        ds = ds.rename({vv: vv+"_rain" for vv in ds.data_vars if "_AC" in vv})
+
+        # Then we calculate the atten correction both in rain and the ML (this are the final values used)
         ds = utils.attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.16, betaml = 0.022,
                                            dbzh=X_DBZH, zdr=["ZDR", "ZDR_EC", "ZDR_OC", "ZDR_EC_OC"],
                                            phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
                                            ML_bot = "height_ml_bottom_new_gia", ML_top = "height_ml_new_gia",
-                                           temp = "TEMP", temp_mlbot = 3, temp_mltop = 0, z_mlbot = 2000, dz_ml = 500,
+                                           temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
                                            interpolate_deltabump = True )
 
         ds_qvp_ra = ds_qvp_ra.assign( utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5})[[vv for vv in ds if "_AC" in vv]] )

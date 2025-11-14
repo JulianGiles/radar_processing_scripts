@@ -390,12 +390,16 @@ if isvolume:
     print("Computing RD-QVP")
     ds_qvp = utils.compute_rdqvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5},
                                  max_range=30000.)
+    ds_qvp_for_ml = ds_qvp.copy()
 else:
     print("Computing QVP")
-    ds_qvp = utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5} )
+    ds_qvp, ds_qvp_count = utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5},
+                               output_count=True)
+    ds_qvp = ds_qvp.assign({"DBZH_qvp_count": ds_qvp_count["DBZH"]})
+    ds_qvp_for_ml = ds_qvp.where(ds_qvp_count>20)
 
 # filter out values close to the ground
-ds_qvp = ds_qvp.where(ds_qvp["z"]>min_height)
+#ds_qvp = ds_qvp.where(ds_qvp["z"]>min_height)
 
 #### Detect melting layer
 
@@ -404,7 +408,7 @@ if X_PHI in ds.data_vars:
     moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI: (-20, 180)}
 
     # Calculate ML
-    ds_qvp = utils.melting_layer_qvp_X_new(ds_qvp, moments=moments, dim="z", fmlh=0.3, grad_thresh=grad_thresh,
+    ds_qvp = utils.melting_layer_qvp_X_new(ds_qvp_for_ml, moments=moments, dim="z", fmlh=0.3, grad_thresh=grad_thresh,
              xwin=xwin0, ywin=ywin0, min_h=min_height, rhohv_thresh_gia=rhohv_thresh_gia, all_data=True, clowres=clowres0)
 
     # Assign ML values to dataset
@@ -426,7 +430,7 @@ ds = ds.chunk({"time":10, "azimuth":-1, "range":-1})
 #### Discard possible erroneous ML values
 if "height_ml_new_gia" in ds_qvp:
     ## First, filter out ML heights that are too high (above selected isotherm)
-    isotherm = -1 # isotherm for the upper limit of possible ML values
+    isotherm = -5 # isotherm for the upper limit of possible ML values
     # we need to fill the nans of the TEMP qvp otherwise the argmin operation will fail
     ds_qvp["TEMP"] = ds_qvp["TEMP"].fillna(ds["TEMP"].median("azimuth", keep_attrs=True).assign_coords({"z": ds["z"].median("azimuth", keep_attrs=True)}).swap_dims({"range":"z"}))
     z_isotherm = ds_qvp.TEMP.isel(z=((ds_qvp["TEMP"].fillna(100.)-isotherm)**2).argmin("z").compute())["z"]
@@ -447,11 +451,22 @@ if "height_ml_new_gia" in ds_qvp:
 if not isvolume:
     #### Attenuation correction (NOT PROVED THAT IT WORKS NICELY ABOVE THE ML)
     if X_PHI in ds.data_vars:
+        # First we calculate atten correction only in rain, as backup
+        ds = utils.attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0, betaml = 0,
+                                           dbzh="DBZH", zdr=["ZDR", "ZDR_EC", "ZDR_OC", "ZDR_EC_OC"],
+                                           phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
+                                           ML_bot = "height_ml_bottom_new_gia", ML_top = "height_ml_new_gia",
+                                           temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
+                                           interpolate_deltabump = True )
+
+        ds = ds.rename({vv: vv+"_rain" for vv in ds.data_vars if "_AC" in vv})
+
+        # Then we calculate the atten correction both in rain and the ML (this are the final values used)
         ds = utils.attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.16, betaml = 0.022,
                                            dbzh="DBZH", zdr=["ZDR", "ZDR_EC", "ZDR_OC", "ZDR_EC_OC"],
                                            phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
                                            ML_bot = "height_ml_bottom_new_gia", ML_top = "height_ml_new_gia",
-                                           temp = "TEMP", temp_mlbot = 3, temp_mltop = 0, z_mlbot = 2000, dz_ml = 500,
+                                           temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
                                            interpolate_deltabump = True )
 
         ds_qvp = ds_qvp.assign( utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5})[[vv for vv in ds if "_AC" in vv]] )
