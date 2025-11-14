@@ -1959,7 +1959,7 @@ def ml_height_top_new(ds, moment='comb_dy', dim='height',skipna=True, drop=True)
 
 
 def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), PHIDP=(-90.,-70.)), dim='height',
-                            thres=0.02, xwin=5, ywin=5, fmlh=0.3, min_h=600, rhohv_thresh_gia=(0.97, 1),
+                            thres=0.02, xwin=5, ywin=5, fmlh=0.3, min_h=600, max_h=5000, rhohv_thresh_gia=(0.97, 1),
                             grad_thresh=0.0001, all_data=False, clowres=False):
     '''
     Function to detect the melting layer based on wolfensberger et al 2016 (https://doi.org/10.1002/qj.2672)
@@ -1996,6 +1996,10 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
         sea level and not relative to the altitude of the radar (in accordance to the "z" coordinate
         from wradlib.georef.georeference). The default is 600.
 
+    max_h: int, float
+        Maximum height of usable data within the polarimetric profiles, in m. Analogous to min_h.
+        This basically sets an upper limit for the melting layer detection.
+
     rhohv_thresh_gia : tuple or list
         Thresholds for filtering RHOHV in Giangrande refinement. Only data between the provided
         thresholds is used for the refinement.
@@ -2022,7 +2026,7 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
     phi = [k for k in moments if "phi" in k.lower()][0]
 
     # step 1: Filter values below min_h and normalize
-    ds0 = ml_normalise(ds.where(ds[dim]>min_h), moments=moments, dim=dim)
+    ds0 = ml_normalise(ds.where(ds[dim]>min_h).where(ds[dim]<max_h), moments=moments, dim=dim)
 
     # step 1a
     # removing profiles with too few data (>93% of array is nan)
@@ -2042,6 +2046,10 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
     # step 5
     ds2 = ml_height_bottom_new(ds1, dim=dim, drop=False)
     ds2 = ml_height_top_new(ds2, dim=dim, drop=False)
+    #!!! TO DO: add a filter in ml_height_top_new so that the preselected ML top must be
+    # above the ML bottom. I would have to check that the mlh_bottom exists and carefully
+    # deal with the NaNs. I cannot just filter ds2 in this line or it will broadcast the
+    # ML heights to the z coord.
 
     # step 6
     while xwin >1: # try: in case there are few timesteps reduce xwin until it is possible to compute
@@ -2164,8 +2172,10 @@ def melting_layer_qvp_X_new(ds, moments=dict(DBZH=(10., 60.), RHOHV=(0.65, 1.), 
     last_valid_height = notnull.where(notnull).isel({dim:slice(None, None, -1)}).where(ds_grad).idxmax(dim=dim) # get the first True value, i.e. first valid value (flipped)
 
     # assign new values
-    ds = ds.assign_coords(height_ml_new_gia = ("time",first_valid_height_after_ml.data))
-    ds = ds.assign_coords(height_ml_bottom_new_gia = ("time", last_valid_height.data))
+    ds = ds.assign_coords(height_ml_new_gia = (first_valid_height_after_ml.dims,
+                                               first_valid_height_after_ml.data))
+    ds = ds.assign_coords(height_ml_bottom_new_gia = (last_valid_height.dims,
+                                                      last_valid_height.data))
 
     return ds
 
@@ -5298,23 +5308,29 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.08, betam
     ZDR_corr_below = ZDR + beta*PHIDP
 
     In the melting layer:
-    ZH_corr_in = ZH + alphaml*PHIDP
-    ZDR_corr_in = ZDR + betaml*PHIDP
+    ZH_corr_in = ZH_corr_below + alphaml*ΔPHIDP_ML
+    ZDR_corr_in = ZDR_corr_below + betaml*ΔPHIDP_ML
 
     Above the ML: the last correction values in the ML are propagated
 
+    Reference values from Ryzhkov and Zrnic book 2019 Table 6.4
     X band:
     alpha = 0.28; beta = 0.05 #dB/deg
 
     C band:
     alpha = 0.08; beta = 0.02 #dB/deg
 
+    S band:
+    alpha = 0.02; beta = 0.004 #dB/deg
+
     For BoXPol and JuXPol:
     alpha = 0.25
 
     From https://doi.org/10.1002/qj.3366 (X-band):
-    alphaml = 0.6 (2 times the value below ML)
-    betaml = 0.06 (1.1 times the value below ML)
+    alpha = 0.276
+    beta = 0.032
+    alphaml = 0.6 (thus 2.17 times the value below ML)
+    betaml = 0.06 (thus 1.875 times the value below ML)
 
     Parameters
     ----------
@@ -5465,14 +5481,16 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.08, betam
         dbzh = [dbzh]
     for dbzhn in dbzh:
         if dbzhn in ds:
-            dbzh_corr = (alpha*ds_phidp_below).fillna(alphaml*ds_phidp_in).ffill(rdim).fillna(0.)
+            # dbzh_corr = (alpha*ds_phidp_below).fillna(alphaml*ds_phidp_in).ffill(rdim).fillna(0.)
+            dbzh_corr = (alpha*ds_phidp_below.ffill(rdim) + alphaml*(ds_phidp_in.ffill(rdim)-ds_phidp_below.ffill(rdim)).fillna(0.) ).fillna(0.)
             ds[dbzhn+"_AC"] = (ds[dbzhn] + dbzh_corr).assign_attrs(ds[dbzhn].attrs)
 
     if isinstance(zdr, str): # check zdr
         zdr = [zdr]
     for zdrn in zdr:
         if zdrn in ds:
-            zdr_corr = (beta*ds_phidp_below).fillna(betaml*ds_phidp_in).ffill(rdim).fillna(0.)
+            # zdr_corr = (beta*ds_phidp_below).fillna(betaml*ds_phidp_in).ffill(rdim).fillna(0.)
+            zdr_corr = (beta*ds_phidp_below.ffill(rdim) + betaml*(ds_phidp_in.ffill(rdim)-ds_phidp_below.ffill(rdim)).fillna(0.) ).fillna(0.)
             ds[zdrn+"_AC"] = (ds[zdrn] + zdr_corr).assign_attrs(ds[zdrn].attrs)
 
     return ds
