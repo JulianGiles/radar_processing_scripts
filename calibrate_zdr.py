@@ -357,9 +357,10 @@ for ff in files:
             try:
                 # Calculate ML
                 moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI+"_OC": (-20, 180)}
-                data_qvp = utils.compute_qvp(data, min_thresh={X_RHO:0.7, X_DBZH:0, X_ZDR:-1, "SNRH":10, "SNRHC":10, "SQIH":0.5} )
+                data_qvp, data_qvp_count = utils.compute_qvp(data, min_thresh={X_RHO:0.7, X_DBZH:0, X_ZDR:-1, "SNRH":10, "SNRHC":10, "SQIH":0.5},
+                                                             output_count=True)
 
-                data_qvp = utils.melting_layer_qvp_X_new(data_qvp, min_h=min_height, fmlh=0.3,
+                data_qvp = utils.melting_layer_qvp_X_new(data_qvp.where(data_qvp_count>20), min_h=min_height, fmlh=0.3,
                                                    dim="z", xwin=xwin0, ywin=ywin0, moments=moments,
                                                    rhohv_thresh_gia=rhohv_thresh_gia, all_data=True, clowres=clowres0)
 
