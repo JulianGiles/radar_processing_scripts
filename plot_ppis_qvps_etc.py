@@ -435,18 +435,18 @@ if "height_ml_new_gia" in ds_qvp:
     ds_qvp["TEMP"] = ds_qvp["TEMP"].fillna(ds["TEMP"].median("azimuth", keep_attrs=True).assign_coords({"z": ds["z"].median("azimuth", keep_attrs=True)}).swap_dims({"range":"z"}))
     z_isotherm = ds_qvp.TEMP.isel(z=((ds_qvp["TEMP"].fillna(100.)-isotherm)**2).argmin("z").compute())["z"]
 
-    ds_qvp.coords["height_ml_new_gia"] = ds_qvp["height_ml_new_gia"].where(ds_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
-    ds_qvp.coords["height_ml_bottom_new_gia"] = ds_qvp["height_ml_bottom_new_gia"].where(ds_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
+    ds_qvp.coords["height_ml_new_gia_clean"] = ds_qvp["height_ml_new_gia"].where(ds_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
+    ds_qvp.coords["height_ml_bottom_new_gia_clean"] = ds_qvp["height_ml_bottom_new_gia"].where(ds_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
 
     # Then, check that ML top is over ML bottom
-    cond_top_over_bottom = ds_qvp.coords["height_ml_new_gia"] > ds_qvp.coords["height_ml_bottom_new_gia"]
+    cond_top_over_bottom = ds_qvp.coords["height_ml_new_gia_clean"] > ds_qvp.coords["height_ml_bottom_new_gia_clean"]
 
     # Assign final values
-    ds_qvp.coords["height_ml_new_gia"] = ds_qvp["height_ml_new_gia"].where(cond_top_over_bottom).compute()
-    ds_qvp.coords["height_ml_bottom_new_gia"] = ds_qvp["height_ml_bottom_new_gia"].where(cond_top_over_bottom).compute()
+    ds_qvp.coords["height_ml_new_gia_clean"] = ds_qvp["height_ml_new_gia_clean"].where(cond_top_over_bottom).compute()
+    ds_qvp.coords["height_ml_bottom_new_gia_clean"] = ds_qvp["height_ml_bottom_new_gia_clean"].where(cond_top_over_bottom).compute()
 
-    ds = ds.assign_coords({'height_ml_new_gia': ds_qvp.height_ml_new_gia.where(cond_top_over_bottom)})
-    ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp.height_ml_bottom_new_gia.where(cond_top_over_bottom)})
+    ds = ds.assign_coords({'height_ml_new_gia_clean': ds_qvp["height_ml_new_gia_clean"].where(cond_top_over_bottom)})
+    ds = ds.assign_coords({'height_ml_bottom_new_gia_clean': ds_qvp["height_ml_bottom_new_gia_clean"].where(cond_top_over_bottom)})
 
 if not isvolume:
     #### Attenuation correction (NOT PROVED THAT IT WORKS NICELY ABOVE THE ML)
@@ -455,7 +455,7 @@ if not isvolume:
         ds = utils.attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0, betaml = 0,
                                            dbzh="DBZH", zdr=["ZDR", "ZDR_EC", "ZDR_OC", "ZDR_EC_OC"],
                                            phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
-                                           ML_bot = "height_ml_bottom_new_gia", ML_top = "height_ml_new_gia",
+                                           ML_bot = "height_ml_bottom_new_gia_clean", ML_top = "height_ml_new_gia_clean",
                                            temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
                                            interpolate_deltabump = True )
 
@@ -465,7 +465,7 @@ if not isvolume:
         ds = utils.attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.16, betaml = 0.022,
                                            dbzh="DBZH", zdr=["ZDR", "ZDR_EC", "ZDR_OC", "ZDR_EC_OC"],
                                            phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
-                                           ML_bot = "height_ml_bottom_new_gia", ML_top = "height_ml_new_gia",
+                                           ML_bot = "height_ml_bottom_new_gia_clean", ML_top = "height_ml_new_gia_clean",
                                            temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
                                            interpolate_deltabump = True )
 
@@ -479,13 +479,22 @@ if not isvolume:
         if isinstance(winlen0, list):
             # if winlen0 is a list, use the first value (small window) for strong rain (SR, DBZH>40) and
             # use the second value (large window) for light rain (LR, DBZH<=40)
-            ds_kdpSR_mlcorr = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen0[0], min_periods=max(3, int((winlen0[0] - 1) / 4)))[["KDP_ML_corrected"]]
-            ds_kdpLR_mlcorr = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen0[1], min_periods=max(3, int((winlen0[1] - 1) / 4)))[["KDP_ML_corrected"]]
+            ds_kdpSR_mlcorr = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen0[0],
+                                                      mlt="height_ml_new_gia_clean",
+                                                      mlb="height_ml_bottom_new_gia_clean",
+                                                      min_periods=max(3, int((winlen0[0] - 1) / 4)))[["KDP_ML_corrected"]]
+            ds_kdpLR_mlcorr = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen0[1],
+                                                      mlt="height_ml_new_gia_clean",
+                                                      mlb="height_ml_bottom_new_gia_clean",
+                                                      min_periods=max(3, int((winlen0[1] - 1) / 4)))[["KDP_ML_corrected"]]
             ds_kdp_mlcorr = xr.where(ds[X_DBZH]>40,
                               ds_kdpSR_mlcorr, ds_kdpLR_mlcorr)
             ds = ds.assign(ds_kdp_mlcorr)
         else:
-            ds = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen=winlen0, min_periods=max(3, int((winlen0 - 1) / 4)))
+            ds = utils.KDP_ML_correction(ds, X_PHI+"_MASKED", winlen=winlen0,
+                                        mlt="height_ml_new_gia_clean",
+                                        mlb="height_ml_bottom_new_gia_clean",
+                                         min_periods=max(3, int((winlen0 - 1) / 4)))
 
         # Mask KDP_ML_correction with PHIDP_OC_MASKED
         ds["KDP_ML_corrected"] = ds["KDP_ML_corrected"].where(ds[X_PHI+"_MASKED"].notnull())
