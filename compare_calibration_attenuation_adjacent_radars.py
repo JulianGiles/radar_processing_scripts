@@ -1022,6 +1022,7 @@ plt.show()
 savefolder = realpep_path+"/upload/jgiles/temp_compare_calibration_attenuation_adjacent_radars/"
 
 reload = True # try to reload previous calculations?
+calc = True # try to calculate if previous calculations failed?
 
 # First let's get all files
 HTY_files = glob.glob(realpep_path+"/upload/jgiles/dmi/final_ppis/*/*/*/HTY/*/*/*allm*")
@@ -1040,18 +1041,18 @@ GZT_files = [ff for ff in GZT_files if get_elev(ff) in GZT_elevs]
 # Define dates
 ML_high_dates = [
     "2016-04-09", #### no valid matches: 3.0-0.7 # ONLY GZT 0.4,0.7 AND SURV 0.5 (SURV seems to not be useful because of range res 5km)
-    "2016-05-14",# ONLY GZT SURV 0.0
-    "2016-05-15",# ONLY GZT SURV 0.0
-    "2016-05-16",# ONLY GZT SURV 0.0
+    "2016-05-14",# ONLY GZT SURV 0.0 # no valid matches
+    "2016-05-15",# ONLY GZT SURV 0.0 # no valid matches
+    "2016-05-16",# ONLY GZT SURV 0.0 # no valid matches
     "2016-05-31",
     "2016-09-22", # Wet radome in GZT
     "2016-10-18", #### no valid matches: 3.0-0.5
     "2016-10-28",
     "2016-11-01", #### no valid matches: 2.2-0.5, 3.0-0.5
     # "2016-12-01", #### no valid matches: 1.5-0.5, 2.2-0.5, 3.0-0.5 (all combinations)
-    "2017-04-12", ####
+    "2017-04-12",
     "2017-04-13",
-    "2017-05-18", ####
+    "2017-05-18",
     "2017-05-22", #### no valid matches: 2.2-0.5, 3.0-0.5
     # "2018-03-28",# NO POLARIMETRY OR RHOHV IN HTY
     # "2019-02-06",# NO POLARIMETRY OR RHOHV IN HTY
@@ -1073,47 +1074,47 @@ ML_low_dates = [
     "2016-05-28",
     "2016-11-30",
     "2016-12-01",
-    "2016-12-14", ####
-    "2016-12-16", ####
-    "2016-12-20", ####
-    "2016-12-21", ####
-    "2016-12-22", ####
+    "2016-12-14",
+    "2016-12-16",
+    "2016-12-20",
+    "2016-12-21",
+    "2016-12-22",
     "2016-12-26",
-    "2016-12-27", ####
+    "2016-12-27",
     "2016-12-29",
-    "2016-12-30", ####
-    "2016-12-31", ####
-    "2017-01-01", ####
+    "2016-12-30",
+    "2016-12-31",
+    "2017-01-01",
     "2017-01-02",
-    "2017-01-08", ####
+    "2017-01-08",
     # "2017-01-11", #### no valid matches: 1.5-0.5, 2.2-0.5, 3.0-0.5 (all combinations)
     "2017-01-20", #### no valid matches: 1.5-0.5,
-    "2017-03-04", ####
+    "2017-03-04",
     # "2017-03-16", #### no valid matches: 1.5-0.5, 2.2-0.5, 3.0-0.5 (all combinations)
     # "2017-03-17", #### no valid matches: 1.5-0.5, 2.2-0.5, 3.0-0.5 (all combinations)
-    "2017-12-24", ####
+    "2017-12-24",
     "2017-12-31",
     "2018-01-04",
     "2018-01-05",
-    "2018-01-14", ####
+    "2018-01-14",
     "2019-11-27",
     "2019-12-09",
     "2019-12-13",
     "2019-12-14",
     "2019-12-24",
     "2019-12-25",
-    "2019-12-26", ####
-    "2019-12-28", ####
-    "2019-12-30", ####
-    "2019-12-31", ####
+    "2019-12-26",
+    "2019-12-28",
+    "2019-12-30",
+    "2019-12-31",
     "2020-01-02",
     "2020-01-03",
-    "2020-01-04", ####
+    "2020-01-04",
     "2020-01-06",
-    "2020-01-07", ####
-    "2020-01-19", ####
-    "2020-02-22", ####
-    "2020-02-29", ####
+    "2020-01-07",
+    "2020-01-19",
+    "2020-02-22",
+    "2020-02-29",
     "2020-03-17",
     "2020-11-04",
     "2020-11-20",
@@ -1129,17 +1130,19 @@ tolerance = 250.
 vv = "DBZH" # Used to locate and discard NaNs
 SNRH_min = 15
 RHOHV_min = 0.95
-TEMP_min = 3
+TEMP_min = 0 # preliminary filter, we can use the actual ML height later
 DBZH_min = 10
 CBB_max = 0.05
 
 Zm_range = 1000. # range in m for the computation of Zm (DBZH close to radar)
 
-vv_to_extract = ["DBZH", "DBZH_AC", "DBTH", "ZDR", "ZDR_EC_OC", "ZDR_EC_OC_AC", "ZDR_EC_AC",
-                 "PHIDP_OC", "PHIDP_OC_SMOOTH", "PHIDP_OC_MASKED", "KDP_ML_corrected",
-                 "TEMP", "Zm"] # all variables to extract from the datasets, DBZH must be the first
+vv_to_extract = ["DBZH", "DBZH_AC", "DBTH", "ZDR_EC", "ZDR_EC_OC", "ZDR_EC_OC_AC",
+                 "PHIDP_OC", "PHIDP_OC_SMOOTH", "PHIDP_OC_MASKED",
+                 "TEMP", "Zm", "z", "height_ml_bottom_new_gia"] # all variables to extract from the datasets, DBZH must be the first
 
 selected_ML_high = {vi:[] for vi in vv_to_extract}
+
+selected_ML_high_dates = {} # to collect dates info and number of valid points
 
 start_time = time.time()
 
@@ -1147,6 +1150,8 @@ for date in ML_high_dates:
     print("Processing "+date)
     HTY_files0 = [ff for ff in HTY_files if date in ff]
     GZT_files0 = [ff for ff in GZT_files if date in ff]
+
+    selected_ML_high_dates[date] = []
 
     for HTY_file in HTY_files0:
         for GZT_file in GZT_files0:
@@ -1163,10 +1168,17 @@ for date in ML_high_dates:
                     sfp_ref = sf+"_".join([vi, "ref", os.path.basename(HTY_file), os.path.basename(GZT_file)])
                     try:
                         selected_ML_high[vi].append( (np.load(sfp_tg+".npy"), np.load(sfp_ref+".npy") ) )
-                        if vi == "DBZH": dbzh_loaded = True
+                        if vi == "DBZH":
+                            dbzh_loaded = True
+                            selected_ML_high_dates[date].append( ( "HTY "+HTY_file.split("/")[-2],
+                                                                  "GZT "+GZT_file.split("/")[-2],
+                                                                  np.isfinite(selected_ML_high[vi][-1][0]).sum()) )
                     except:
                         print(vi+": reloading \n "+sfp_tg+".npy \n or \n "+sfp_ref+".npy \n failed")
                 if dbzh_loaded:
+                    continue
+                if not calc:
+                    print("Total fail reloading \n "+sfp_tg+".npy \n or \n "+sfp_ref+".npy")
                     continue
                 print("Total fail reloading \n "+sfp_tg+".npy \n or \n "+sfp_ref+".npy \n attempting to calculate")
 
@@ -1204,9 +1216,17 @@ for date in ML_high_dates:
                                                  {"CBB": CBB_max})
 
             # They consider that there is rain above the radar by looking at the
-            # median reflectivity in a circle 5km aroud each radar. Let's add this variable
+            # median reflectivity in a circle around each radar. Let's add this variable
             dsx = dsx.assign_coords({"Zm": dsx["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
             dsy = dsy.assign_coords({"Zm": dsy["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsy["DBZH"]) })
+
+            # if we want z or ML heights we need to broadcast them
+            if "z" in vv_to_extract:
+                dsx["z"] = dsx["z"].broadcast_like(dsx["DBZH"])
+                dsy["z"] = dsy["z"].broadcast_like(dsy["DBZH"])
+            if "height_ml_bottom_new_gia" in vv_to_extract:
+                dsx["height_ml_bottom_new_gia"] = dsx["height_ml_bottom_new_gia"].broadcast_like(dsx["DBZH"])
+                dsy["height_ml_bottom_new_gia"] = dsy["height_ml_bottom_new_gia"].broadcast_like(dsy["DBZH"])
 
             # Add the additional DBZH threshold
             dsx = utils.apply_min_max_thresh(dsx, {"DBZH":DBZH_min},
@@ -1413,10 +1433,10 @@ for x, n in zip(bin_centers, counts):
 plt.tight_layout()
 plt.show()
 
-#%%% Special handling of ZDR. Plot boxplot of delta ZDR vs target Zm (wet radome attenuation.
+#%%% Special handling of ZDR. Plot boxplot of delta ZDR vs target Zm (wet radome attenuation).
 # same as before but we try to remove the offsets of ZDR when wet radome was affecting the radar
 phi = "PHIDP_OC_MASKED"
-zdr = "ZDR"
+zdr = "ZDR" # not OC ZDR
 zdr_to_plot = "ZDR_EC_OC_new"
 zdr_oc = zdr_to_plot.split("_new")[0]
 
@@ -1424,6 +1444,9 @@ zdr_oc = zdr_to_plot.split("_new")[0]
 ref_Zm_max = 5
 ref_phi_max = 5
 tg_phi_max = 15
+
+# custom atten corr based on the previous results
+beta_new = 0.04 # to ignore this step set beta_new = 0
 
 if "new" in zdr_to_plot:
     # Remove the timestep-based ZDR offsets and replace with daily offsets ignore the
@@ -1454,7 +1477,9 @@ if "new" in zdr_to_plot:
         selected_ML_high[zdr_oc+"_new"].append((tg_zdr_oc_new_ti.copy(), selected_ML_high[zdr_oc][ti][1]))
 
 # extract/build necessary variables
-delta_zdr = np.concat([ (d1-d2).flatten() for d1,d2 in selected_ML_high[zdr_to_plot] ])
+tg_zdr = np.concat([ d1.flatten() for d1,d2 in selected_ML_high[zdr_to_plot] ])
+
+ref_zdr = np.concat([ d2.flatten() for d1,d2 in selected_ML_high[zdr_to_plot] ])
 
 tg_phi = np.concat([ d1.flatten() for d1,d2 in selected_ML_high[phi] ])
 
@@ -1463,6 +1488,12 @@ ref_phi = np.concat([ d2.flatten() for d1,d2 in selected_ML_high[phi] ])
 tg_Zm = np.nan_to_num(np.concat([ d1.flatten() for d1,d2 in selected_ML_high["Zm"] ]))
 
 ref_Zm = np.nan_to_num(np.concat([ d2.flatten() for d1,d2 in selected_ML_high["Zm"] ]))
+
+if beta_new > 0:
+    zdr_to_plot = zdr_to_plot+"_AC"
+    delta_zdr = (tg_zdr + beta_new*tg_phi) - (ref_zdr + beta_new*ref_phi)
+else:
+    delta_zdr = tg_zdr - ref_zdr
 
 # filter by valid values according to conditions
 valid = np.isfinite(delta_zdr) & (ref_phi<ref_phi_max) & (tg_phi<tg_phi_max) & (ref_Zm<ref_Zm_max)
@@ -1528,17 +1559,23 @@ tolerance = 250.
 vv = "DBZH" # Used to locate and discard NaNs
 SNRH_min = 15
 RHOHV_min = 0.95
-TEMP_max = -1 # for this we need a max temp, we want to select above the ML
+TEMP_max = 1 # for this we need a max temp, we want to select above the ML (not very precise, just a rough first estimate)
 DBZH_min = 10
 CBB_max = 0.05
 
 Zm_range = 1000. # range in m for the computation of Zm (DBZH close to radar)
 
-vv_to_extract = ["DBZH", "DBZH_AC", "DBTH", "ZDR", "ZDR_EC_OC", "ZDR_EC_OC_AC",
-                 "PHIDP_OC", "PHIDP_OC_MASKED", "KDP_ML_corrected",
-                 "TEMP", "Zm", "TEMPm", "PHIDP_OC_MASKED_bump"] # all variables to extract from the datasets, DBZH must be the first
+vv_to_extract = ["DBZH", "DBZH_AC", "DBZH_AC_rain", "DBTH",
+                 "ZDR_EC", "ZDR_EC_OC", "ZDR_EC_OC_AC", "ZDR_EC_OC_AC_rain",
+                 "PHIDP_OC", "PHIDP_OC_MASKED",
+                 "TEMP", "Zm", "TEMPm", "z",
+                 "height_ml_bottom_new_gia", "height_ml_new_gia",
+                 "PHIDP_OC_MASKED_MLbump", "PHIDP_OC_SMOOTH_MLbump",
+                 "DBZH_AC_rain_MLmax", "RHOHV_MLmin"] # all variables to extract from the datasets, DBZH must be the first
 
 selected_ML_low = {vi:[] for vi in vv_to_extract}
+
+selected_ML_low_dates = {} # to collect dates info and number of valid points
 
 start_time = time.time()
 
@@ -1546,6 +1583,8 @@ for date in ML_low_dates:
     print("Processing "+date)
     HTY_files0 = [ff for ff in HTY_files if date in ff]
     GZT_files0 = [ff for ff in GZT_files if date in ff]
+
+    selected_ML_low_dates[date] = []
 
     for HTY_file in HTY_files0:
         for GZT_file in GZT_files0:
@@ -1562,10 +1601,17 @@ for date in ML_low_dates:
                     sfp_ref = sf+"_".join([vi, "ref", os.path.basename(HTY_file), os.path.basename(GZT_file)])
                     try:
                         selected_ML_low[vi].append( (np.load(sfp_tg+".npy"), np.load(sfp_ref+".npy") ) )
-                        if vi == "DBZH": dbzh_loaded = True
+                        if vi == "DBZH":
+                            dbzh_loaded = True
+                            selected_ML_low_dates[date].append( ( "HTY "+HTY_file.split("/")[-2],
+                                                                  "GZT "+GZT_file.split("/")[-2],
+                                                                  np.isfinite(selected_ML_low[vi][-1][0]).sum()) )
                     except:
                         print(vi+": reloading \n "+sfp_tg+".npy \n or \n "+sfp_ref+".npy \n failed")
                 if dbzh_loaded:
+                    continue
+                if not calc:
+                    print("Total fail reloading \n "+sfp_tg+".npy \n or \n "+sfp_ref+".npy")
                     continue
                 print("Total fail reloading \n "+sfp_tg+".npy \n or \n "+sfp_ref+".npy \n attempting to calculate")
 
@@ -1579,15 +1625,22 @@ for date in ML_low_dates:
             ds1 = wrl.georef.georeference(ds1, crs=proj)
             ds2 = wrl.georef.georeference(ds2, crs=proj)
 
-            # add bump variables
-            vv_bump = [vv for vv in vv_to_extract if "bump" in vv]
-            vv_nobump = [vv.split("_bump")[0] for vv in vv_to_extract if "bump" in vv]
+            # add ML bump/min/max variables
+            vv_bump = [vv for vv in vv_to_extract if "_MLbump" in vv]
+            vv_nobump = [vv.split("_MLbump")[0] for vv in vv_to_extract if "MLbump" in vv]
+
+            vv_min = [vv for vv in vv_to_extract if "_MLmin" in vv]
+            vv_nomin = [vv.split("_MLmin")[0] for vv in vv_to_extract if "MLmin" in vv]
+
+            vv_max = [vv for vv in vv_to_extract if "_MLmax" in vv]
+            vv_nomax = [vv.split("_MLmax")[0] for vv in vv_to_extract if "MLmax" in vv]
+
             if len(vv_bump) > 0:
                 # for ds1
                 below_ml = ds1[vv_nobump].where(ds1.z < ds1.height_ml_bottom_new_gia).where(ds1.z > ds1.height_ml_bottom_new_gia - 100)
                 above_ml = ds1[vv_nobump].where(ds1.z > ds1.height_ml_new_gia).where(ds1.z < ds1.height_ml_new_gia + 100)
                 below_ml_TEMP = ds1[vv_nobump].where(ds1.TEMP>3).where(ds1.TEMP<3.5).where(~ds1.height_ml_bottom_new_gia.notnull())
-                above_ml_TEMP = ds1[vv_nobump].where(ds1.TEMP<TEMP_max).where(ds1.TEMP>TEMP_max-0.5).where(~ds1.height_ml_new_gia.notnull())
+                above_ml_TEMP = ds1[vv_nobump].where(ds1.TEMP<-1).where(ds1.TEMP>-1-0.5).where(~ds1.height_ml_new_gia.notnull())
 
                 bump_ml = above_ml.bfill("range").head(range=1).isel(range=0) - below_ml.ffill("range").tail(range=1).isel(range=0)
                 bump_ml_TEMP = above_ml_TEMP.bfill("range").head(range=1).isel(range=0) - below_ml_TEMP.ffill("range").tail(range=1).isel(range=0)
@@ -1600,7 +1653,7 @@ for date in ML_low_dates:
                 below_ml = ds2[vv_nobump].where(ds2.z < ds2.height_ml_bottom_new_gia).where(ds2.z > ds2.height_ml_bottom_new_gia - 100)
                 above_ml = ds2[vv_nobump].where(ds2.z > ds2.height_ml_new_gia).where(ds2.z < ds2.height_ml_new_gia + 100)
                 below_ml_TEMP = ds2[vv_nobump].where(ds2.TEMP>3).where(ds2.TEMP<3.5).where(~ds2.height_ml_bottom_new_gia.notnull())
-                above_ml_TEMP = ds2[vv_nobump].where(ds2.TEMP<TEMP_max).where(ds2.TEMP>TEMP_max-0.5).where(~ds2.height_ml_new_gia.notnull())
+                above_ml_TEMP = ds2[vv_nobump].where(ds2.TEMP<-1).where(ds2.TEMP>-1-0.5).where(~ds2.height_ml_new_gia.notnull())
 
                 bump_ml = above_ml.bfill("range").head(range=1).isel(range=0) - below_ml.ffill("range").tail(range=1).isel(range=0)
                 bump_ml_TEMP = above_ml_TEMP.bfill("range").head(range=1).isel(range=0) - below_ml_TEMP.ffill("range").tail(range=1).isel(range=0)
@@ -1608,6 +1661,44 @@ for date in ML_low_dates:
                 ds2 = ds2.assign( xr.where(ds2.height_ml_bottom_new_gia.notnull(),
                                            bump_ml.rename(dict(zip(vv_nobump, vv_bump))),
                                            bump_ml_TEMP.rename(dict(zip(vv_nobump, vv_bump))) ) )
+
+            if len(vv_nomin) > 0 or len(vv_nomax) > 0:
+                # for ds1
+                in_ml = ds1[vv_nomin+vv_nomax].where(ds1.z >= ds1.height_ml_bottom_new_gia).where(ds1.z <= ds1.height_ml_new_gia)
+                in_ml_TEMP = ds1[vv_nomin+vv_nomax].where(ds1.TEMP<3).where(ds1.TEMP>-1).where(~ds1.height_ml_bottom_new_gia.notnull())
+
+                if len(vv_nomin) > 0:
+                    min_ml = in_ml[vv_nomin].min("range")
+                    min_ml_TEMP = in_ml_TEMP[vv_nomin].min("range")
+                    ds1 = ds1.assign( xr.where(ds1.height_ml_bottom_new_gia.notnull(),
+                                               min_ml.rename(dict(zip(vv_nomin, vv_min))),
+                                               min_ml_TEMP.rename(dict(zip(vv_nomin, vv_min))) ) )
+
+                if len(vv_nomax) > 0:
+                    max_ml = in_ml[vv_nomax].max("range")
+                    max_ml_TEMP = in_ml_TEMP[vv_nomax].max("range")
+                    ds1 = ds1.assign( xr.where(ds1.height_ml_bottom_new_gia.notnull(),
+                                               max_ml.rename(dict(zip(vv_nomax, vv_max))),
+                                               max_ml_TEMP.rename(dict(zip(vv_nomax, vv_max))) ) )
+
+
+                # for ds2 (by definition this will be NaN for the cases we will select, but we still need the variable for completion)
+                in_ml = ds2[vv_nomin+vv_nomax].where(ds2.z >= ds2.height_ml_bottom_new_gia).where(ds2.z <= ds2.height_ml_new_gia)
+                in_ml_TEMP = ds2[vv_nomin+vv_nomax].where(ds2.TEMP<3).where(ds2.TEMP>-1).where(~ds2.height_ml_bottom_new_gia.notnull())
+
+                if len(vv_nomin) > 0:
+                    min_ml = in_ml[vv_nomin].min("range")
+                    min_ml_TEMP = in_ml_TEMP[vv_nomin].min("range")
+                    ds2 = ds2.assign( xr.where(ds2.height_ml_bottom_new_gia.notnull(),
+                                               min_ml.rename(dict(zip(vv_nomin, vv_min))),
+                                               min_ml_TEMP.rename(dict(zip(vv_nomin, vv_min))) ) )
+
+                if len(vv_nomax) > 0:
+                    max_ml = in_ml[vv_nomax].max("range")
+                    max_ml_TEMP = in_ml_TEMP[vv_nomax].max("range")
+                    ds2 = ds2.assign( xr.where(ds2.height_ml_bottom_new_gia.notnull(),
+                                               max_ml.rename(dict(zip(vv_nomax, vv_max))),
+                                               max_ml_TEMP.rename(dict(zip(vv_nomax, vv_max))) ) )
 
             # Add beam blockage
             ds1_pbb, ds1_cbb = beam_blockage_from_radar_ds(ds1.isel(time=0),
@@ -1638,6 +1729,17 @@ for date in ML_low_dates:
             # Analogously, add the TEMP close to the radar as a measure of below/above ML
             dsx = dsx.assign_coords({"TEMPm": dsx["TEMP"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsx["TEMP"]) })
             dsy = dsy.assign_coords({"TEMPm": dsy["TEMP"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsy["TEMP"]) })
+
+            # if we want z or ML heights we need to broadcast them
+            if "z" in vv_to_extract:
+                dsx["z"] = dsx["z"].broadcast_like(dsx["DBZH"])
+                dsy["z"] = dsy["z"].broadcast_like(dsy["DBZH"])
+            if "height_ml_bottom_new_gia" in vv_to_extract:
+                dsx["height_ml_bottom_new_gia"] = dsx["height_ml_bottom_new_gia"].broadcast_like(dsx["DBZH"])
+                dsy["height_ml_bottom_new_gia"] = dsy["height_ml_bottom_new_gia"].broadcast_like(dsy["DBZH"])
+            if "height_ml_new_gia" in vv_to_extract:
+                dsx["height_ml_new_gia"] = dsx["height_ml_new_gia"].broadcast_like(dsx["DBZH"])
+                dsy["height_ml_new_gia"] = dsy["height_ml_new_gia"].broadcast_like(dsy["DBZH"])
 
             # Add the additional DBZH and TEMP thresholds
             # (apply the TEMP threshold manually since it is not a variable but a coord)
@@ -1695,6 +1797,9 @@ total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
 
 #%%% Plot boxplot of DBZH/ZDR as vertical profiles (ML attenuation)
+
+#!!! ZDR has no offest correction in the ref data (GZT) because there is no rain to calibrate
+
 phi = "PHIDP_OC_MASKED"
 dbzh = "ZDR_EC_OC"
 TEMPm = "TEMPm"
@@ -1783,6 +1888,8 @@ plt.show()
 #%%% Plot boxplot of delta DBZH/ZDR vs target PHI (ML attenuation)
 #!!! I need to, somehow, keep the atten corr below the ML and remove the one related to the ML
 
+#!!! ZDR has no offest correction in the ref data (GZT) because there is no rain to calibrate
+
 phi = "PHIDP_OC_MASKED"
 dbzh = "DBZH"
 TEMPm = "TEMPm"
@@ -1811,9 +1918,9 @@ tg_TEMP = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[TEMP] ])
 
 ref_TEMP = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[TEMP] ])
 
-tg_phi_bump = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi+"_bump"] ])
+tg_phi_bump = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi] ])
 
-ref_phi_bump = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi+"_bump"] ])
+ref_phi_bump = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi] ])
 
 # filter by valid values according to conditions
 #!!! The best filter would have ref_TEMPm < -1, but looks like no event so far
@@ -1874,7 +1981,8 @@ plt.tight_layout()
 plt.show()
 
 #%%% Plot boxplot of delta DBZH/ZDR vs target PHI bump (ML attenuation)
-#!!! I need to, somehow, keep the atten corr below the ML and remove the one related to the ML
+
+#!!! ZDR has no offest correction in the ref data (GZT) because there is no rain to calibrate
 
 phi = "PHIDP_OC_MASKED"
 dbzh = "ZDR_EC_OC_AC"
@@ -1904,9 +2012,9 @@ tg_TEMP = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[TEMP] ])
 
 ref_TEMP = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[TEMP] ])
 
-tg_phi_bump = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi+"_bump"] ])
+tg_phi_bump = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi+"_MLbump"] ])
 
-ref_phi_bump = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi+"_bump"] ])
+ref_phi_bump = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi+"_MLbump"] ])
 
 # filter by valid values according to conditions
 #!!! The best filter would have ref_TEMPm < -1, but looks like no event so far
@@ -1919,7 +2027,7 @@ tg_phi_bump = tg_phi_bump[valid]
 
 # Calculate best linear fit
 lfit = np.polynomial.Polynomial.fit(tg_phi_bump, delta_dbzh, 1, domain=[0, 18])
-lfit_str = str(lfit.convert()).replace("x", "Phi bump")
+lfit_str = str(lfit.convert()).replace("x", "Phi ML bump")
 
 # Box plots like in the paper
 # Define bins
@@ -1938,9 +2046,9 @@ counts = [len(vals) for vals in box_data]
 # Plot
 plt.figure(figsize=(9, 5))
 bp = plt.boxplot(box_data, positions=bin_centers, widths=0.6, showmeans=True)
-plt.xlabel(phi+"_bump"+" (binned, 1° intervals)")
+plt.xlabel(phi+"_MLbump"+" (binned, 1° intervals)")
 plt.ylabel("delta "+dbzh)
-plt.title("Boxplots of delta "+dbzh+" vs "+phi+"_bump"+" bins")
+plt.title("Boxplots of delta "+dbzh+" vs "+phi+"_MLbump"+" bins")
 plt.grid(True, linestyle="--", alpha=0.5)
 plt.xticks(bin_centers, [f"{b}-{b+1}" for b in bins[:-1]])
 
@@ -1952,7 +2060,7 @@ plt.text(0.95, 0.9, "Linear fit: "+lfit_str, transform=plt.gca().transAxes, c="b
 # add a second linear fit using the medians
 medians = [line.get_ydata()[0] for line in bp['medians']]
 lfit_m = np.polynomial.Polynomial.fit(bin_centers, medians, 1, domain=[0, 18])
-lfit_m_str = str(lfit_m.convert()).replace("x", "Phi bump")
+lfit_m_str = str(lfit_m.convert()).replace("x", "Phi ML bump")
 plt.plot([0,18], [lfit_m(0), lfit_m(18)], c="red")
 plt.text(0.95, 0.85, "Linear fit (medians): "+lfit_m_str, transform=plt.gca().transAxes, c="red",
          horizontalalignment="right")
@@ -1965,3 +2073,145 @@ for x, n in zip(bin_centers, counts):
 
 plt.tight_layout()
 plt.show()
+
+#%% TEST: ML detection over PPI or better ML from QVPs
+ds = xr.open_dataset('/automount/realpep//upload/jgiles/dmi/final_ppis/2020/2020-12/2020-12-14/HTY/VOL_A/1.5/VOL_A-allmoms-1.5-2020-12-14-HTY-h5netcdf.nc')
+
+ds0=ds.sel(time="2020-12-14T17", method="nearest").copy()
+
+moments={"DBZH": (10., 60.), "RHOHV": (0.65, 1.), "PHIDP_OC": (-20, 180)}
+
+ds_slice = ds.sel(time=slice("2020-12-14T17", "2020-12-14T17:10"))
+
+# Estimate melting layer over the PPI
+ds_slice2 = utils.melting_layer_qvp_X_new(ds_slice, moments=moments, dim="range", fmlh=0.3, grad_thresh=0.0001,
+         xwin=3, ywin=3, min_h=200, rhohv_thresh_gia=(0.99,1), all_data=True, clowres=False)
+
+# Plot PPI with ML values
+height_ml_new_gia_valid0 = ds_slice2.range.broadcast_like(ds_slice2.z).where(ds_slice2.range.broadcast_like(ds_slice2.z)==ds_slice2.height_ml_new_gia).isel(time=0).values.flatten()
+
+height_ml_bottom_new_gia_valid0 = ds_slice2.range.broadcast_like(ds_slice2.z).where(ds_slice2.range.broadcast_like(ds_slice2.z)==ds_slice2.height_ml_bottom_new_gia).isel(time=0).values.flatten()
+
+ds_slice2.isel(time=0).RHOHV.wrl.vis.plot(vmin=0.8, vmax=1, xlim=(35,36.5), ylim=(35.5,37))
+ax=plt.gca()
+ax.plot(ds_slice.x.values.flatten()[np.isfinite(height_ml_new_gia_valid0)],
+        ds_slice.y.values.flatten()[np.isfinite(height_ml_new_gia_valid0)],
+        marker=".")
+ax.plot(ds_slice.x.values.flatten()[np.isfinite(height_ml_bottom_new_gia_valid0)],
+        ds_slice.y.values.flatten()[np.isfinite(height_ml_bottom_new_gia_valid0)],
+        marker=".")
+
+# Lets interpolate the missing values, wrapping around the 360 degrees, and plot again
+# (this basically generates the values to fill the plotted lines)
+def interpolate_cyclic(da, dim="azimuth", period=360, max_gap=10):
+    coord = da[dim]
+    da_ext = xr.concat(
+        [da.isel({dim: -1}).assign_coords({dim: coord[-1] - period}),
+         da,
+         da.isel({dim: 0}).assign_coords({dim: coord[0] + period})],
+        dim=dim
+    )
+    out = da_ext.interpolate_na(dim, max_gap=max_gap)
+    return out.sel({dim: slice(coord.min(), coord.max())})
+
+height_ml_new_gia_valid0 = ds_slice2.range.broadcast_like(ds_slice2.z).where(ds_slice2.range.broadcast_like(ds_slice2.z)==interpolate_cyclic(ds_slice2.height_ml_new_gia.compute())).isel(time=0).values.flatten()
+
+height_ml_bottom_new_gia_valid0 = ds_slice2.range.broadcast_like(ds_slice2.z).where(ds_slice2.range.broadcast_like(ds_slice2.z)==interpolate_cyclic(ds_slice2.height_ml_bottom_new_gia.compute())).isel(time=0).values.flatten()
+
+ds_slice2.isel(time=0).RHOHV.wrl.vis.plot(vmin=0.8, vmax=1, xlim=(35,36.5), ylim=(35.5,37))
+ax=plt.gca()
+ax.plot(ds_slice.x.values.flatten()[np.isfinite(height_ml_new_gia_valid0)],
+        ds_slice.y.values.flatten()[np.isfinite(height_ml_new_gia_valid0)],
+        marker=".")
+ax.plot(ds_slice.x.values.flatten()[np.isfinite(height_ml_bottom_new_gia_valid0)],
+        ds_slice.y.values.flatten()[np.isfinite(height_ml_bottom_new_gia_valid0)],
+        marker=".")
+
+# Let's run a rolling median to remove crap values
+def rolling_wrap(da, dim="azimuth", window=5, func="median", **kwargs):
+    n = window // 2
+    da_ext = da.pad({dim: (n, n)}, mode="wrap", keep_attrs=True)
+    rolled = getattr(da_ext.rolling({dim: window}, center=True, min_periods=n), func)(**kwargs)
+    return rolled.isel({dim: slice(n, -n)})
+
+height_ml_new_gia_valid0 = ds_slice2.range.broadcast_like(ds_slice2.z).where(ds_slice2.range.broadcast_like(ds_slice2.z)==interpolate_cyclic(rolling_wrap(ds_slice2.height_ml_new_gia.compute()))).isel(time=0).values.flatten()
+
+height_ml_bottom_new_gia_valid0 = ds_slice2.range.broadcast_like(ds_slice2.z).where(ds_slice2.range.broadcast_like(ds_slice2.z)==interpolate_cyclic(rolling_wrap(ds_slice2.height_ml_bottom_new_gia.compute()))).isel(time=0).values.flatten()
+
+ds_slice2.isel(time=0).RHOHV.wrl.vis.plot(vmin=0.8, vmax=1, xlim=(35,36.5), ylim=(35.5,37))
+ax=plt.gca()
+ax.plot(ds_slice.x.values.flatten()[np.isfinite(height_ml_new_gia_valid0)],
+        ds_slice.y.values.flatten()[np.isfinite(height_ml_new_gia_valid0)],
+        marker=".")
+ax.plot(ds_slice.x.values.flatten()[np.isfinite(height_ml_bottom_new_gia_valid0)],
+        ds_slice.y.values.flatten()[np.isfinite(height_ml_bottom_new_gia_valid0)],
+        marker=".")
+
+# What comes out of calculating the ML on the QVP?
+ds_slice_qvp, ds_slice_qvp_count = utils.compute_qvp(ds_slice,
+                                 min_thresh={"RHOHV":0.7, "DBZH":0, "ZDR_EC_OC":-1, "SNRH":15,
+                                             "SNRHC":15, "SQIH":0.5}, output_count=True)
+# adding a min count threshold is key to get rid of irrelevant QVP values that mess up the ML detection
+moments={"DBZH": (10., 60.), "RHOHV": (0.65, 1.), "PHIDP_OC": (-20, 180)}
+
+ds_slice_qvp2 = utils.melting_layer_qvp_X_new(ds_slice_qvp.where(ds_slice_qvp_count>20), moments=moments, dim="z", fmlh=0.3, grad_thresh=0.0001,
+         xwin=3, ywin=3, min_h=200, rhohv_thresh_gia=(0.99,1), all_data=True, clowres=False)
+
+
+ds_slice.isel(time=0).DBZH.wrl.vis.plot(vmin=0, vmax=60, xlim=(34,38), ylim=(34,38))
+ax = plt.gca()
+ds_slice.isel(time=0)["z"].wrl.vis.plot(ax=ax,
+                      levels=[ds_slice_qvp2.isel(time=0)["height_ml_bottom_new_gia"].values,
+                              ds_slice_qvp2.isel(time=0)["height_ml_new_gia"].values],
+                      cmap="black",
+                      func="contour")
+
+ds_slice.isel(time=0)["TEMP"].wrl.vis.plot(ax=ax,
+                      levels=[-1,6],
+                      cmap="Reds",
+                      func="contour")
+
+# Plot QVP over more timesteps
+ds_slice = ds.sel(time=slice("2020-12-14T15", "2020-12-14T18"))
+ds_slice_qvp, ds_slice_qvp_count = utils.compute_qvp(ds_slice,
+                                 min_thresh={"RHOHV":0.7, "DBZH":0, "ZDR_EC_OC":-1, "SNRH":15,
+                                             "SNRHC":15, "SQIH":0.5}, output_count=True)
+
+ds_slice_qvp2 = utils.melting_layer_qvp_X_new(ds_slice_qvp.where(ds_slice_qvp_count>20), moments=moments, dim="z", fmlh=0.3, grad_thresh=0.0001,
+         xwin=5, ywin=5, min_h=200+ds_slice.altitude, rhohv_thresh_gia=(0.99,1), all_data=True, clowres=False)
+
+
+ds_slice_qvp2.RHOHV.plot(x="time", vmin=0.8, vmax=1, cmap="HomeyerRainbow")
+ds_slice_qvp2.height_ml_bottom_new_gia.plot(x="time", c="black")
+ds_slice_qvp2.height_ml_new_gia.plot(x="time", c="black")
+
+ds_slice0 = ds_slice.sel(time="2020-12-14T16", method="nearest")
+ds_slice_qvp20 = ds_slice_qvp2.sel(time="2020-12-14T16", method="nearest")
+
+ds_slice0.RHOHV.wrl.vis.plot(vmin=0.8, vmax=1, xlim=(34,38), ylim=(34,38))
+ax = plt.gca()
+ds_slice0["z"].wrl.vis.plot(ax=ax,
+                      levels=[ds_slice_qvp20["height_ml_bottom_new_gia"].values,
+                              ds_slice_qvp20["height_ml_new_gia"].values],
+                      cmap="black",
+                      func="contour")
+
+ds_slice_qvp20.DBZH.plot()
+ds_slice_qvp20.PHIDP_OC_MASKED.plot()
+ax = plt.gca()
+ax2 = ax.twinx()
+ds_slice_qvp20.RHOHV.plot(ax=ax2)
+
+# Try new atten corr
+ds_slice0 = utils.attenuation_corr_linear(ds_slice0,
+                              alpha = 0.08, beta = 0.02, alphaml = 0.16, betaml = 0.04,
+                            dbzh = "DBZH", zdr = "ZDR_EC_OC", phidp = "PHIDP_OC_MASKED")
+
+(ds_slice0.ZDR_EC_OC_AC-ds_slice0.ZDR_EC_OC).wrl.vis.plot(vmin=-1, vmax=3, xlim=(34,38), ylim=(34,38))
+ax = plt.gca()
+ds_slice0["z"].wrl.vis.plot(ax=ax,
+                      levels=[ds_slice_qvp20["height_ml_bottom_new_gia"].values,
+                              ds_slice_qvp20["height_ml_new_gia"].values],
+                      cmap="black",
+                      func="contour")
+
