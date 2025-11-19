@@ -1041,9 +1041,9 @@ GZT_files = [ff for ff in GZT_files if get_elev(ff) in GZT_elevs]
 # Define dates
 ML_high_dates = [
     "2016-04-09", #### no valid matches: 3.0-0.7 # ONLY GZT 0.4,0.7 AND SURV 0.5 (SURV seems to not be useful because of range res 5km)
-    "2016-05-14",# ONLY GZT SURV 0.0 # no valid matches
-    "2016-05-15",# ONLY GZT SURV 0.0 # no valid matches
-    "2016-05-16",# ONLY GZT SURV 0.0 # no valid matches
+    # "2016-05-14",# ONLY GZT SURV 0.0 # no valid matches
+    # "2016-05-15",# ONLY GZT SURV 0.0 # no valid matches
+    # "2016-05-16",# ONLY GZT SURV 0.0 # no valid matches
     "2016-05-31",
     "2016-09-22", # Wet radome in GZT
     "2016-10-18", #### no valid matches: 3.0-0.5
@@ -1436,7 +1436,7 @@ plt.show()
 #%%% Special handling of ZDR. Plot boxplot of delta ZDR vs target Zm (wet radome attenuation).
 # same as before but we try to remove the offsets of ZDR when wet radome was affecting the radar
 phi = "PHIDP_OC_MASKED"
-zdr = "ZDR" # not OC ZDR
+zdr = "ZDR_EC" # not OC ZDR
 zdr_to_plot = "ZDR_EC_OC_new"
 zdr_oc = zdr_to_plot.split("_new")[0]
 
@@ -1565,8 +1565,9 @@ CBB_max = 0.05
 
 Zm_range = 1000. # range in m for the computation of Zm (DBZH close to radar)
 
-vv_to_extract = ["DBZH", "DBZH_AC", "DBZH_AC_rain", "DBTH",
-                 "ZDR_EC", "ZDR_EC_OC", "ZDR_EC_OC_AC", "ZDR_EC_OC_AC_rain",
+vv_to_extract = ["DBZH", "DBZH_AC", "DBZH_AC_rain",
+                 "ZDR_EC", "ZDR_EC_AC_rain",
+                 "ZDR_EC_OC", "ZDR_EC_OC_AC", "ZDR_EC_OC_AC_rain",
                  "PHIDP_OC", "PHIDP_OC_MASKED",
                  "TEMP", "Zm", "TEMPm", "z",
                  "height_ml_bottom_new_gia", "height_ml_new_gia",
