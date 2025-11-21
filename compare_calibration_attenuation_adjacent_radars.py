@@ -1260,18 +1260,19 @@ for date in ML_high_dates:
 
 
             for vi in vv_to_extract:
-                if vi in dsx_tg and vi in dsy_rf:
-                    dsx_p_tg, dsy_p_rf = utils.return_unique_NN_value_pairs(dsx_tg, dsy_rf,
-                                                                            mask_tg_ref, mask_rf_ref,
-                                                               idx_tg_ref, idx_rf_ref,
-                                                               matched_timesteps, vi)
+                if vi not in dsx_tg:
+                    print(vi+" not found in target ds, filling with NaNs")
+                    dsx_tg = dsx_tg.assign( { vi: xr.full_like(dsx_tg["DBZH"], fill_value=np.nan) } )
+                if vi not in dsy_rf:
+                    print(vi+" not found in reference ds, filling with NaNs")
+                    dsy_rf = dsy_rf.assign( { vi: xr.full_like(dsy_rf["DBZH"], fill_value=np.nan) } )
 
-                    selected_ML_high[vi].append( (dsx_p_tg.copy(), dsy_p_rf.copy()) )
-                else:
-                    print(vi+" not found in one of the ds, filling with NaNs")
-                    selected_ML_high[vi].append( (np.full_like(selected_ML_high['DBZH'][-1][0], fill_value=np.nan),
-                                            np.full_like(selected_ML_high['DBZH'][-1][1], fill_value=np.nan))
-                                          )
+                dsx_p_tg, dsy_p_rf = utils.return_unique_NN_value_pairs(dsx_tg, dsy_rf,
+                                                                        mask_tg_ref, mask_rf_ref,
+                                                           idx_tg_ref, idx_rf_ref,
+                                                           matched_timesteps, vi)
+
+                selected_ML_high[vi].append( (dsx_p_tg.copy(), dsy_p_rf.copy()) )
 
                 # Save to temporary file
                 sfp_tg = sf+"_".join([vi, "tg", os.path.basename(HTY_file), os.path.basename(GZT_file)])
@@ -1774,18 +1775,19 @@ for date in ML_low_dates:
                 continue # jump to next iteration if no pairs are found
 
             for vi in vv_to_extract:
-                if vi in dsx_tg and vi in dsy_rf:
-                    dsx_p_tg, dsy_p_rf = utils.return_unique_NN_value_pairs(dsx_tg, dsy_rf,
-                                                                            mask_tg_ref, mask_rf_ref,
-                                                               idx_tg_ref, idx_rf_ref,
-                                                               matched_timesteps, vi)
+                if vi not in dsx_tg:
+                    print(vi+" not found in target ds, filling with NaNs")
+                    dsx_tg = dsx_tg.assign( { vi: xr.full_like(dsx_tg["DBZH"], fill_value=np.nan) } )
+                if vi not in dsy_rf:
+                    print(vi+" not found in reference ds, filling with NaNs")
+                    dsy_rf = dsy_rf.assign( { vi: xr.full_like(dsy_rf["DBZH"], fill_value=np.nan) } )
 
-                    selected_ML_low[vi].append( (dsx_p_tg.copy(), dsy_p_rf.copy()) )
-                else:
-                    print(vi+" not found in one of the ds, filling with NaNs")
-                    selected_ML_low[vi].append( (np.full_like(selected_ML_low['DBZH'][-1][0], fill_value=np.nan),
-                                            np.full_like(selected_ML_low['DBZH'][-1][1], fill_value=np.nan))
-                                          )
+                dsx_p_tg, dsy_p_rf = utils.return_unique_NN_value_pairs(dsx_tg, dsy_rf,
+                                                                        mask_tg_ref, mask_rf_ref,
+                                                           idx_tg_ref, idx_rf_ref,
+                                                           matched_timesteps, vi)
+
+                selected_ML_low[vi].append( (dsx_p_tg.copy(), dsy_p_rf.copy()) )
 
                 sfp_tg = sf+"_".join([vi, "tg", os.path.basename(HTY_file), os.path.basename(GZT_file)])
                 sfp_ref = sf+"_".join([vi, "ref", os.path.basename(HTY_file), os.path.basename(GZT_file)])
@@ -1802,16 +1804,17 @@ print(f"took {total_time/60:.2f} minutes.")
 #!!! ZDR has no offest correction in the ref data (GZT) because there is no rain to calibrate
 
 phi = "PHIDP_OC_MASKED"
-dbzh = "ZDR_EC_OC"
+dbzh_tg = "DBZH_AC_rain"
+dbzh_ref = "DBZH_AC_rain"
 TEMPm = "TEMPm"
 TEMP = "TEMP"
 
 # We only need to check that TEMPm is appropriate for each radar
 
 # extract/build necessary variables
-tg_dbzh = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[dbzh] ])
+tg_dbzh = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[dbzh_tg] ])
 
-ref_dbzh = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[dbzh] ])
+ref_dbzh = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[dbzh_ref] ])
 
 tg_phi = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi] ])
 
@@ -1829,15 +1832,15 @@ tg_TEMP = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[TEMP] ])
 
 ref_TEMP = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[TEMP] ])
 
-tg_phi_bump = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi+"_bump"] ])
+tg_phi_bump = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi+"_MLbump"] ])
 
-ref_phi_bump = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi+"_bump"] ])
+ref_phi_bump = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi+"_MLbump"] ])
 
 # filter by valid values according to conditions
 #!!! The best filter would have ref_TEMPm < -1, but looks like no event so far
 # meets this condition. So let's use PHI and Zm as an alternative for now
-valid = (tg_TEMPm > 3) & (np.nan_to_num(ref_phi_bump) < 1)  & (ref_phi < 5) & (ref_Zm < 5) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
-# valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
+# valid = (tg_TEMPm > 3) & (np.nan_to_num(ref_phi_bump) < 1)  & (ref_phi < 5) & (ref_Zm < 5) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
+valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
 
 tg_dbzh = tg_dbzh[valid]
 ref_dbzh = ref_dbzh[valid]
@@ -1868,9 +1871,9 @@ for box in bpref['boxes']:
     # change outline color
     box.set(color='red')
 plt.gca().yaxis.set_inverted(True)
-plt.xlabel(dbzh)
+plt.xlabel(dbzh_tg)
 plt.ylabel(TEMP+" (binned, 1° intervals)")
-plt.title("Boxplots of "+dbzh+" vs "+TEMP)
+plt.title("Boxplots of "+dbzh_tg+" vs "+TEMP)
 plt.grid(True, linestyle="--", alpha=0.5)
 plt.yticks(bin_centers, [f"{b}-{b+1}" for b in bins[:-1]])
 
