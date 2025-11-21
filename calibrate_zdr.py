@@ -370,18 +370,17 @@ for ff in files:
                     isotherm = -1 # isotherm for the upper limit of possible ML values
                     z_isotherm = data_qvp.TEMP.isel(z=((data_qvp["TEMP"].fillna(100.)-isotherm)**2).argmin("z").compute())["z"]
 
-                    data_qvp.coords["height_ml_new_gia"] = data_qvp["height_ml_new_gia"].where(data_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
-                    data_qvp.coords["height_ml_bottom_new_gia"] = data_qvp["height_ml_bottom_new_gia"].where(data_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
+                    data_qvp.coords["height_ml_bottom_new_gia_clean"] = data_qvp["height_ml_bottom_new_gia"].where(data_qvp["height_ml_bottom_new_gia"]<=z_isotherm.values).compute()
 
                     # Then, check that ML top is over ML bottom
-                    cond_top_over_bottom = data_qvp.coords["height_ml_new_gia"] > data_qvp.coords["height_ml_bottom_new_gia"]
+                    cond_top_over_bottom = data_qvp.coords["height_ml_new_gia"] > data_qvp.coords["height_ml_bottom_new_gia_clean"]
 
                     # Assign final values
-                    data_qvp.coords["height_ml_new_gia"] = data_qvp["height_ml_new_gia"].where(cond_top_over_bottom).compute()
-                    data_qvp.coords["height_ml_bottom_new_gia"] = data_qvp["height_ml_bottom_new_gia"].where(cond_top_over_bottom).compute()
+                    data_qvp.coords["height_ml_new_gia_clean"] = data_qvp["height_ml_new_gia"].where(cond_top_over_bottom).compute()
+                    data_qvp.coords["height_ml_bottom_new_gia_clean"] = data_qvp["height_ml_bottom_new_gia_clean"].where(cond_top_over_bottom).compute()
 
-                    data = data.assign_coords({'height_ml_new_gia': data_qvp.height_ml_new_gia.where(cond_top_over_bottom)})
-                    data = data.assign_coords({'height_ml_bottom_new_gia': data_qvp.height_ml_bottom_new_gia.where(cond_top_over_bottom)})
+                    data = data.assign_coords({'height_ml_new_gia_clean': data_qvp.height_ml_new_gia_clean})
+                    data = data.assign_coords({'height_ml_bottom_new_gia_clean': data_qvp.height_ml_bottom_new_gia_clean})
 
             except:
                 print("Calculating ML failed, skipping...")
@@ -417,6 +416,7 @@ for ff in files:
                 if "height_ml_bottom_new_gia" in data:
                     # Calculate offset below ML
                     zdr_offset = utils.zdr_offset_detection_vps(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO,
+                                                                mlbottom="height_ml_bottom_new_gia_clean",
                                                                 min_h=min_height, timemode=timemode, minbins=minbins).compute()
 
                     # Copy encodings
@@ -485,7 +485,9 @@ for ff in files:
             if "boxpol" in ff: band = "X"
             if "height_ml_bottom_new_gia" in data:
                 # Calculate offset below ML per timestep
-                zdr_offset = utils.zhzdr_lr_consistency(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, min_h=min_height, timemode="step", band=band)
+                zdr_offset = utils.zhzdr_lr_consistency(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO,
+                                                        mlbottom="height_ml_bottom_new_gia_clean",
+                                                        min_h=min_height, timemode="step", band=band)
 
                 # Copy encodings
                 zdr_offset.encoding = data[X_ZDR].encoding
@@ -496,7 +498,9 @@ for ff in files:
                 zdr_offset.to_netcdf(filename)
 
                 # Calculate offset below ML for full timespan
-                zdr_offset = utils.zhzdr_lr_consistency(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, min_h=min_height, timemode="all", band=band)
+                zdr_offset = utils.zhzdr_lr_consistency(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO,
+                                                        mlbottom="height_ml_bottom_new_gia_clean",
+                                                        min_h=min_height, timemode="all", band=band)
 
                 # Copy encodings
                 zdr_offset.encoding = data[X_ZDR].encoding
@@ -543,6 +547,7 @@ for ff in files:
                     if "height_ml_bottom_new_gia" in data:
                         # Calculate offset below ML
                         zdr_offset = utils.zdr_offset_detection_qvps(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, azmed=azmed,
+                                                                     mlbottom="height_ml_bottom_new_gia_clean",
                                                                     min_h=min_height, timemode=timemode, minbins=minbins).compute()
 
                         # Copy encodings

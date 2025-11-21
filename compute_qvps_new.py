@@ -461,23 +461,23 @@ for ff in files:
 #%% Discard possible erroneous ML values
     if "height_ml_new_gia" in ds_qvp_ra:
         ## First, filter out ML heights that are too high (above selected isotherm)
-        isotherm = -5 # isotherm for the upper limit of possible ML values
+        isotherm = -1 # isotherm for the upper limit of possible ML values
         # we need to fill the nans of the TEMP qvp otherwise the argmin operation will fail
         ds_qvp_ra["TEMP"] = ds_qvp_ra["TEMP"].fillna(ds["TEMP"].median("azimuth", keep_attrs=True).assign_coords({"z": ds["z"].median("azimuth", keep_attrs=True)}).swap_dims({"range":"z"}))
         z_isotherm = ds_qvp_ra.TEMP.isel(z=((ds_qvp_ra["TEMP"].fillna(100.)-isotherm)**2).argmin("z").compute())["z"]
 
-        ds_qvp_ra.coords["height_ml_new_gia_clean"] = ds_qvp_ra["height_ml_new_gia"].where(ds_qvp_ra["height_ml_new_gia"]<=z_isotherm.values).compute()
-        ds_qvp_ra.coords["height_ml_bottom_new_gia_clean"] = ds_qvp_ra["height_ml_bottom_new_gia"].where(ds_qvp_ra["height_ml_new_gia"]<=z_isotherm.values).compute()
+        # ds_qvp_ra.coords["height_ml_new_gia_clean"] = ds_qvp_ra["height_ml_new_gia"].where(ds_qvp_ra["height_ml_new_gia"]<=z_isotherm.values).compute()
+        ds_qvp_ra.coords["height_ml_bottom_new_gia_clean"] = ds_qvp_ra["height_ml_bottom_new_gia"].where(ds_qvp_ra["height_ml_bottom_new_gia"]<=z_isotherm.values).compute()
 
         # Then, check that ML top is over ML bottom
-        cond_top_over_bottom = ds_qvp_ra.coords["height_ml_new_gia_clean"] > ds_qvp_ra.coords["height_ml_bottom_new_gia_clean"]
+        cond_top_over_bottom = ds_qvp_ra.coords["height_ml_new_gia"] > ds_qvp_ra.coords["height_ml_bottom_new_gia_clean"]
 
         # Assign final values
-        ds_qvp_ra.coords["height_ml_new_gia_clean"] = ds_qvp_ra["height_ml_new_gia_clean"].where(cond_top_over_bottom).compute()
+        ds_qvp_ra.coords["height_ml_new_gia_clean"] = ds_qvp_ra["height_ml_new_gia"].where(cond_top_over_bottom).compute()
         ds_qvp_ra.coords["height_ml_bottom_new_gia_clean"] = ds_qvp_ra["height_ml_bottom_new_gia_clean"].where(cond_top_over_bottom).compute()
 
-        ds = ds.assign_coords({'height_ml_new_gia_clean': ds_qvp_ra["height_ml_new_gia_clean"].where(cond_top_over_bottom)})
-        ds = ds.assign_coords({'height_ml_bottom_new_gia_clean': ds_qvp_ra["height_ml_bottom_new_gia_clean"].where(cond_top_over_bottom)})
+        ds = ds.assign_coords({'height_ml_new_gia_clean': ds_qvp_ra["height_ml_new_gia_clean"]})
+        ds = ds.assign_coords({'height_ml_bottom_new_gia_clean': ds_qvp_ra["height_ml_bottom_new_gia_clean"]})
 
 #%% Attenuation correction (NOT PROVED THAT IT WORKS NICELY ABOVE THE ML)
     if X_PHI in ds.data_vars:
