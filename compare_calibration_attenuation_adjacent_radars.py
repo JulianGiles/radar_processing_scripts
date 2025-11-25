@@ -1556,6 +1556,10 @@ plt.show()
 #%%% Start the loop for dates for ML attenuation
 token = "eyJ0eXAiOiJKV1QiLCJvcmlnaW4iOiJFYXJ0aGRhdGEgTG9naW4iLCJzaWciOiJlZGxqd3RwdWJrZXlfb3BzIiwiYWxnIjoiUlMyNTYifQ.eyJ0eXBlIjoiVXNlciIsInVpZCI6ImpnaWxlcyIsImV4cCI6MTc2NTg4MjQyNiwiaWF0IjoxNzYwNjk4NDI2LCJpc3MiOiJodHRwczovL3Vycy5lYXJ0aGRhdGEubmFzYS5nb3YiLCJpZGVudGl0eV9wcm92aWRlciI6ImVkbF9vcHMiLCJhY3IiOiJlZGwiLCJhc3N1cmFuY2VfbGV2ZWwiOjN9.UvbHo78icjYzHBJxtW4KxgrJ97dULLiCJFeT41ylakwLkRYEc7_xlRGLbZ_gkIAwY6H0tvSDdQHUX-as2pBOSEB8QsYS7aL7RGqzupSVXUhEHFk74rLUwKNUT22ftB_iQoKkS1KNoU6-9xiGoIg2eACPEbzg9qMc6hdRCBZKUYDY8pqPkfx2PT7fSwb2-0Jj2sk6wORnE4jk6O6nXnOMEC6ZNnH8FHnLb4PzW6U8Ig1iTkNiR3MzETI1SNo5v5pdGXT_GJcnCur4RvwBZoqBtXA60LW5XBwFW5cBOt-rCv_N3mXRJerCkgje6ikqpv-L1kYeufzBvRvgNroCfGy_dQ"
 
+# New alpha and beta values for atten correction in rain, based on the previous results.
+new_alpha = 0.09
+new_beta = 0.04
+
 tsel = "2016-12-01T14" # for plots
 
 tolerance = 250.
@@ -1568,20 +1572,66 @@ CBB_max = 0.05
 
 Zm_range = 1000. # range in m for the computation of Zm (DBZH close to radar)
 
-vv_to_extract = ["DBZH", "DBZH_AC", "DBZH_AC_rain",
-                 "ZDR_EC", "ZDR_EC_AC_rain",
-                 "ZDR_EC_OC", "ZDR_EC_OC_AC", "ZDR_EC_OC_AC_rain",
-                 "PHIDP_OC", "PHIDP_OC_MASKED",
-                 "TEMP", "Zm", "TEMPm", "z",
-                 "height_ml_bottom_new_gia", "height_ml_new_gia",
-                 "PHIDP_OC_MASKED_MLbump", "PHIDP_OC_SMOOTH_MLbump",
-                 "DBZH_AC_rain_MLmax", "RHOHV_MLmin"] # all variables to extract from the datasets, DBZH must be the first
+vv_to_extract = ["DBZH", #"DBZH_AC", "DBZH_AC_rain",
+                 "DBZH_AC2_rain",
+                 # "ZDR_EC", "ZDR_EC_AC_rain",
+                 # "ZDR_EC_OC", "ZDR_EC_OC_AC", "ZDR_EC_OC_AC_rain",
+                 "ZDR_EC_OC2", "ZDR_EC_OC2_AC2_rain",
+                 # "PHIDP_OC", "PHIDP_OC_MASKED",
+                 # "TEMP", "Zm", "TEMPm", "z",
+                 # "height_ml_bottom_new_gia", "height_ml_new_gia",
+                 # "PHIDP_OC_MASKED_MLbump", "PHIDP_OC_SMOOTH_MLbump",
+                 # "DBZH_AC_rain_MLmax",
+                 "DBZH_AC2_rain_MLmax",
+                 # "RHOHV_MLmin"
+                 ] # all variables to extract from the datasets, DBZH must be the first
 
 selected_ML_low = {vi:[] for vi in vv_to_extract}
 
 selected_ML_low_dates = {} # to collect dates info and number of valid points
 
 start_time = time.time()
+
+# These dates should not have valid ZDR calibrations in GZT due to the low ML.
+# Then, we load all daily calibrations available in the period to approximate the
+# calibration with smoothing and interpolation.
+
+print("Loading ZDR daily offsets for NaN filling")
+
+ds1_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc")
+ds1_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc")
+ds1_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc")
+ds1_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc")
+
+ds2_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc")
+ds2_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc")
+ds2_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc")
+ds2_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc")
+
+# # plot running medians to check smoothing
+# zdr_offsets_lr_ml.ZDR_offset.compute().interpolate_na("time").plot(); zdr_offsets_lr_ml.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+# zdr_offsets_lr_1c.ZDR_offset.compute().interpolate_na("time").plot(); zdr_offsets_lr_1c.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+# zdr_offsets_qvp_ml.ZDR_offset.compute().interpolate_na("time").plot(); zdr_offsets_qvp_ml.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+# zdr_offsets_qvp_1c.ZDR_offset.compute().interpolate_na("time").plot(); zdr_offsets_qvp_1c.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+
+# Combine to create a single offset timeseries
+ds1_zdr_offsets_lr = xr.concat([ds1_zdr_offsets_lr_ml, ds1_zdr_offsets_lr_1c], dim="variant").mean("variant")
+ds1_zdr_offsets_qvp = xr.concat([ds1_zdr_offsets_qvp_ml, ds1_zdr_offsets_qvp_1c], dim="variant").mean("variant")
+ds1_zdr_offsets_qvp = ds1_zdr_offsets_qvp.where(ds1_zdr_offsets_qvp["ZDR_offset"] < 2) # there is an extreme value in one date, lets remove it
+ds1_zdr_offsets_comb = xr.where(ds1_zdr_offsets_lr["ZDR_offset_datacount"] >= ds1_zdr_offsets_qvp["ZDR_offset_datacount"],
+                            ds1_zdr_offsets_lr["ZDR_offset"],
+                            ds1_zdr_offsets_qvp["ZDR_offset"]).fillna(ds1_zdr_offsets_qvp["ZDR_offset"])
+
+ds2_zdr_offsets_lr = xr.concat([ds2_zdr_offsets_lr_ml, ds2_zdr_offsets_lr_1c], dim="variant").mean("variant")
+ds2_zdr_offsets_qvp = xr.concat([ds2_zdr_offsets_qvp_ml, ds2_zdr_offsets_qvp_1c], dim="variant").mean("variant")
+ds2_zdr_offsets_qvp = ds2_zdr_offsets_qvp.where(ds2_zdr_offsets_qvp["ZDR_offset"] < 2) # there is an extreme value in one date, lets remove it
+ds2_zdr_offsets_comb = xr.where(ds2_zdr_offsets_lr["ZDR_offset_datacount"] >= ds2_zdr_offsets_qvp["ZDR_offset_datacount"],
+                            ds2_zdr_offsets_lr["ZDR_offset"],
+                            ds2_zdr_offsets_qvp["ZDR_offset"]).fillna(ds2_zdr_offsets_qvp["ZDR_offset"])
+
+# finally, smooth it out
+ds1_zdr_offsets_comb_smooth = ds1_zdr_offsets_comb.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
+ds2_zdr_offsets_comb_smooth = ds2_zdr_offsets_comb.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
 
 for date in ML_low_dates:
     print("Processing "+date)
@@ -1628,6 +1678,38 @@ for date in ML_low_dates:
 
             ds1 = wrl.georef.georeference(ds1, crs=proj)
             ds2 = wrl.georef.georeference(ds2, crs=proj)
+
+            # Add new offset/atten corrected ZDR in datasets
+            if "ZDR_EC_OC2" in vv_to_extract:
+                ds1 = ds1.assign({"ZDR_EC_OC2":
+                                  ds1["ZDR_EC"] - ds1_zdr_offsets_comb_smooth.sel(time=ds1.time[0].values.astype(str)[:10]).mean()} )
+
+                ds2 = ds2.assign({"ZDR_EC_OC2":
+                                  ds2["ZDR_EC"] - ds2_zdr_offsets_comb_smooth.sel(time=ds2.time[0].values.astype(str)[:10]).mean()} )
+
+            vv_AC2_rain = [vv for vv in vv_to_extract if "2_rain" in vv and "_ML" not in vv]
+            vv_noAC2_rain = [vv.split("_AC2_rain")[0] for vv in vv_to_extract if "_AC2_rain" in vv and "_ML" not in vv]
+
+            if len(vv_noAC2_rain)>0:
+                ds1_AC2_rain = utils.attenuation_corr_linear(ds1[["PHIDP_OC_MASKED", "PHIDP_OC"]+vv_noAC2_rain].compute(),
+                                                    alpha = new_alpha, beta = new_beta, alphaml = 0, betaml = 0,
+                                                   dbzh=[vv for vv in vv_noAC2_rain if "DBZH" in vv],
+                                                   zdr=[vv for vv in vv_noAC2_rain if "ZDR" in vv],
+                                                   phidp=["PHIDP_OC_MASKED", "PHIDP_OC"],
+                                                   ML_bot = "height_ml_bottom_new_gia_clean", ML_top = "height_ml_new_gia_clean",
+                                                   temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
+                                                   interpolate_deltabump = True )
+                ds1 = ds1.assign(ds1_AC2_rain.rename({vv: vv+"2_rain" for vv in [vv+"_AC" for vv in vv_noAC2_rain]})[vv_AC2_rain])
+
+                ds2_AC2_rain = utils.attenuation_corr_linear(ds2[["PHIDP_OC_MASKED", "PHIDP_OC"]+vv_noAC2_rain].compute(),
+                                                    alpha = new_alpha, beta = new_beta, alphaml = 0, betaml = 0,
+                                                   dbzh=[vv for vv in vv_noAC2_rain if "DBZH" in vv],
+                                                   zdr=[vv for vv in vv_noAC2_rain if "ZDR" in vv],
+                                                   phidp=["PHIDP_OC_MASKED", "PHIDP_OC"],
+                                                   ML_bot = "height_ml_bottom_new_gia_clean", ML_top = "height_ml_new_gia_clean",
+                                                   temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
+                                                   interpolate_deltabump = True )
+                ds2 = ds2.assign(ds2_AC2_rain.rename({vv: vv+"2_rain" for vv in [vv+"_AC" for vv in vv_noAC2_rain]})[vv_AC2_rain])
 
             # add ML bump/min/max variables
             vv_bump = [vv for vv in vv_to_extract if "_MLbump" in vv]
@@ -2071,6 +2153,95 @@ plt.plot([0,18], [lfit_m(0), lfit_m(18)], c="red")
 plt.text(0.95, 0.85, "Linear fit (medians): "+lfit_m_str, transform=plt.gca().transAxes, c="red",
          horizontalalignment="right")
 
+
+# Add counts above x-tick labels (inside the plot area)
+for x, n in zip(bin_centers, counts):
+    plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
+             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
+
+plt.tight_layout()
+plt.show()
+
+
+#%%% Plot boxplot of delta DBZH/ZDR vs target ZH/RHOHV min/max in ML (ML attenuation)
+
+#!!! ZDR has no offest correction in the ref data (GZT) because there is no rain to calibrate
+
+varx = "DBZH_AC_rain_MLmax"
+vary = "ZDR_EC_OC_AC_rain"
+TEMPm = "TEMPm"
+TEMP = "TEMP"
+
+# We only need to check that TEMPm is appropriate for each radar
+
+# extract/build necessary variables
+tg_vary = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[vary] ])
+
+ref_vary = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[vary] ])
+
+tg_varx = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[varx] ])
+
+ref_varx = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[varx] ])
+
+tg_Zm = np.nan_to_num(np.concat([ d1.flatten() for d1,d2 in selected_ML_low["Zm"] ]))
+
+ref_Zm = np.nan_to_num(np.concat([ d2.flatten() for d1,d2 in selected_ML_low["Zm"] ]))
+
+tg_TEMPm = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[TEMPm] ])
+
+ref_TEMPm = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[TEMPm] ])
+
+tg_TEMP = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[TEMP] ])
+
+ref_TEMP = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[TEMP] ])
+
+# filter by valid values according to conditions
+#!!! The best filter would have ref_TEMPm < -1, but looks like no event so far
+# meets this condition. So let's use PHI and Zm as an alternative for now
+valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_varx) & np.isfinite(ref_vary)
+
+delta_vary = (tg_vary - ref_vary)[valid]
+tg_varx = tg_varx[valid]
+
+# Calculate best linear fit
+lfit = np.polynomial.Polynomial.fit(tg_varx, delta_vary, 1, domain=[0, 18])
+lfit_str = str(lfit.convert()).replace("x", varx)
+
+# Box plots like in the paper
+# Define bins
+bins = np.arange(0, 19, 1)  # 0,1,2,3,4,5
+bin_centers = bins[:-1] + 0.5
+
+# Digitize tg_varx into bins
+bin_indices = np.digitize(tg_varx, bins) - 1
+
+# Prepare data for boxplot
+box_data = [delta_vary[bin_indices == i] for i in range(len(bins) - 1)]
+
+# Compute counts per bin
+counts = [len(vals) for vals in box_data]
+
+# Plot
+plt.figure(figsize=(9, 5))
+bp = plt.boxplot(box_data, positions=bin_centers, widths=0.6, showmeans=True)
+plt.xlabel(varx+" (binned, 1° intervals)")
+plt.ylabel("delta "+vary)
+plt.title("Boxplots of delta "+vary+" vs "+varx+" bins")
+plt.grid(True, linestyle="--", alpha=0.5)
+plt.xticks(bin_centers, [f"{b}-{b+1}" for b in bins[:-1]])
+
+# add linear fit
+plt.plot([bins[0], bins[-1]], [lfit(bins[0]), lfit(bins[-1])])
+plt.text(0.95, 0.9, "Linear fit: "+lfit_str, transform=plt.gca().transAxes, c="blue",
+         horizontalalignment="right")
+
+# add a second linear fit using the medians
+medians = [line.get_ydata()[0] for line in bp['medians']]
+lfit_m = np.polynomial.Polynomial.fit(bin_centers, medians, 1, domain=[0, 18])
+lfit_m_str = str(lfit_m.convert()).replace("x", varx)
+plt.plot([bins[0], bins[-1]], [lfit_m(bins[0]), lfit_m(bins[-1])], c="red")
+plt.text(0.95, 0.85, "Linear fit (medians): "+lfit_m_str, transform=plt.gca().transAxes, c="red",
+         horizontalalignment="right")
 
 # Add counts above x-tick labels (inside the plot area)
 for x, n in zip(bin_centers, counts):
