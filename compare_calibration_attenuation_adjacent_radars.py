@@ -378,48 +378,86 @@ wrl.vis.plot_scan_strategy(
 #%% List of dates and available elevs
 """
 ML high:
-2016-05-14 ONLY GZT SURV 0.0
-2016-05-15 ONLY GZT SURV 0.0
-2016-05-16 ONLY GZT SURV 0.0
-2016-05-31
-2016-10-28
-2016-09-22
-2016-11-01
-2016-12-01
-2017-04-13
-2018-03-28 NO POLARIMETRY OR RHOHV IN HTY
-2019-02-06 NO POLARIMETRY OR RHOHV IN HTY
-2019-05-06 NO POLARIMETRY OR RHOHV IN HTY
-2019-10-17
-2019-10-20
-2020-03-13
+    "2016-04-09", #### no valid matches: 3.0-0.7 # ONLY GZT 0.4,0.7 AND SURV 0.5 (SURV seems to not be useful because of range res 5km)
+    # "2016-05-14",# ONLY GZT SURV 0.0 # no valid matches
+    # "2016-05-15",# ONLY GZT SURV 0.0 # no valid matches
+    # "2016-05-16",# ONLY GZT SURV 0.0 # no valid matches
+    "2016-05-31",
+    "2016-09-22", # Wet radome in GZT
+    "2016-10-18", #### no valid matches: 3.0-0.5
+    "2016-10-28",
+    "2016-11-01", #### no valid matches: 2.2-0.5, 3.0-0.5
+    # "2016-12-01", #### no valid matches: 1.5-0.5, 2.2-0.5, 3.0-0.5 (all combinations)
+    "2017-04-12",
+    "2017-04-13",
+    "2017-05-18",
+    "2017-05-22", #### no valid matches: 2.2-0.5, 3.0-0.5
+    # "2018-03-28",# NO POLARIMETRY OR RHOHV IN HTY
+    # "2019-02-06",# NO POLARIMETRY OR RHOHV IN HTY
+    # "2019-05-06",# NO POLARIMETRY OR RHOHV IN HTY
+    "2019-10-17",
+    "2019-10-20",
+    "2019-10-21", #### no valid matches: 3.0-0.5
+    "2019-10-22", #### no valid matches: 3.0-0.5
+    "2019-10-28", #### no valid matches: 3.0-0.5
+    "2020-03-12", #### no valid matches: 3.0-0.5
+    "2020-03-13", #### no valid matches: 3.0-0.5
+    # "2020-05-01", #### no valid matches: 1.5-0.5, 3.0-0.5 (all combinations)
 
+# # X means that this date does not have ML low enough, so I removed it
+# # XX means that the ML is not low enough but it is very close, I could leave it if it works.
 ML in between radars:
-2016-02-06 ONLY GZT 0.4,0.7 AND SURV 0.5 (SURV seems to not be useful because of range res 5km)
-2016-02-21 ONLY GZT 0.4,0.7 AND SURV 0.5 (SURV seems to not be useful because of range res 5km)
-2016-04-12 ONLY GZT 0.4,0.7 AND SURV 0.5 (SURV seems to not be useful because of range res 5km)
-2016-05-28
-2016-11-30
-2016-12-26
-2016-12-29
-2017-01-02
-2017-11-28
-2017-12-31
-2018-01-04
-2018-01-05
-2019-11-27
-2019-12-09
-2019-12-13
-2019-12-14
-2019-12-24
-2019-12-25
-2020-01-02
-2020-01-03
-2020-01-06
-2020-03-17
-2020-11-04
-2020-11-20
-2020-12-14
+    "2016-02-06", # ONLY GZT 0.4,0.7 AND SURV 0.5 (SURV seems to not be useful because of range res 5km)
+    # "2016-02-21", # X # ONLY GZT 0.4,0.7 AND SURV 0.5 (SURV seems to not be useful because of range res 5km)
+    # "2016-04-12", # X # ONLY GZT 0.4,0.7 AND SURV 0.5 (SURV seems to not be useful because of range res 5km)
+    # "2016-05-28", # X
+    # "2016-11-30", # X
+    # "2016-12-01", # X
+    "2016-12-14",
+    "2016-12-16",
+    "2016-12-20",
+    "2016-12-21",
+    "2016-12-22",
+    # "2016-12-26", # X
+    "2016-12-27",
+    "2016-12-29", # XX
+    "2016-12-30", # XX
+    "2016-12-31",
+    "2017-01-01",
+    "2017-01-02",
+    # "2017-01-08", #### UNUSABLE ZDR IN GZT
+    # "2017-01-11", #### no valid matches: 1.5-0.5, 2.2-0.5, 3.0-0.5 (all combinations)
+    # "2017-01-20",  #### UNUSABLE ZDR IN GZT #### no valid matches: 1.5-0.5,
+    # "2017-03-04", # XX #### UNUSABLE ZDR IN GZT
+    # "2017-03-16", #### no valid matches: 1.5-0.5, 2.2-0.5, 3.0-0.5 (all combinations)
+    # "2017-03-17", #### no valid matches: 1.5-0.5, 2.2-0.5, 3.0-0.5 (all combinations)
+    # "2017-12-24", # X
+    # "2017-12-31", # X
+    # "2018-01-04", # X
+    # "2018-01-05", # X
+    # "2018-01-14", # X
+    # "2019-11-27", # X
+    # "2019-12-09", # X
+    # "2019-12-13", # X
+    # "2019-12-14", # X
+    # "2019-12-24", # X
+    # "2019-12-25", # X
+    # "2019-12-26", # XX
+    # "2019-12-28", # X
+    # "2019-12-30", # X
+    # "2019-12-31", # X
+    # "2020-01-02", # XX
+    # "2020-01-03", # XX
+    # "2020-01-04", # XX
+    # "2020-01-06",
+    # "2020-01-07", # XX
+    "2020-01-19", # XX
+    # "2020-02-22", # XX
+    # "2020-02-29", # XX
+    # "2020-03-17", # X
+    # "2020-11-04", # X
+    # "2020-11-20", # X
+    # "2020-12-14", # X
 """
 
 #%% Load the selected elevations and check
@@ -428,8 +466,8 @@ ML in between radars:
 # HTY: 1.5, 2.2, 3.0 and above
 # GZT: 0.5, 1.3
 
-ff1 = realpep_path+"/upload/jgiles/dmi/final_ppis/2017/2017-04/2017-04-13/HTY/MON_YAZ_B/2.2/MON_YAZ_B-allmoms-2.2-2017-04-13-HTY-h5netcdf.nc"
-ff2 = realpep_path+"/upload/jgiles/dmi/final_ppis/2017/2017-04/2017-04-13/GZT/VOL_A/0.5/VOL_A-allmoms-0.5-2017-04-13-GZT-h5netcdf.nc"
+ff1 = realpep_path+"/upload/jgiles/dmi/final_ppis/2017/2017-01/2017-01-02/HTY/MON_YAZ_B/1.5/MON_YAZ_B-allmoms-1.5-20172017-012017-01-02-HTY-h5netcdf.nc"
+ff2 = realpep_path+"/upload/jgiles/dmi/final_ppis/2017/2017-01/2017-01-02/GZT/VOL_A/0.5/VOL_A-allmoms-0.5-2017-01-02-GZT-h5netcdf.nc"
 
 ds1 = xr.open_mfdataset(ff1)
 ds2 = xr.open_mfdataset(ff2)
@@ -440,16 +478,70 @@ proj = utils.get_common_projection(ds1, ds2)
 ds1 = wrl.georef.georeference(ds1, crs=proj)
 ds2 = wrl.georef.georeference(ds2, crs=proj)
 
-tsel = "2016-12-01T14"
+#%%% Load and apply smoothed and extrapolated ZDR offsets for dates without offset (like for GZT when the ML is too low)
+# These dates should not have valid ZDR calibrations in GZT due to the low ML.
+# Then, we load all daily calibrations available in the period to approximate the
+# calibration with smoothing and interpolation.
 
-ds1.sel(time=tsel, method="nearest")["DBZH"].wrl.vis.plot(alpha=0.5)
+print("Loading ZDR daily offsets for NaN filling")
+
+ds1_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc")
+ds1_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc")
+ds1_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc")
+ds1_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc")
+
+ds2_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc")
+ds2_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc")
+ds2_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc")
+ds2_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc")
+
+# # plot running medians to check smoothing
+# ds2_zdr_offsets_lr_ml.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_lr_ml.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+# ds2_zdr_offsets_lr_1c.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_lr_1c.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+# ds2_zdr_offsets_qvp_ml.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_qvp_ml.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+# ds2_zdr_offsets_qvp_1c.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_qvp_1c.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+
+# Combine to create a single offset timeseries
+ds1_zdr_offsets_lr = xr.concat([ds1_zdr_offsets_lr_ml, ds1_zdr_offsets_lr_1c], dim="variant").mean("variant")
+ds1_zdr_offsets_qvp = xr.concat([ds1_zdr_offsets_qvp_ml, ds1_zdr_offsets_qvp_1c], dim="variant").mean("variant")
+ds1_zdr_offsets_qvp = ds1_zdr_offsets_qvp.where(ds1_zdr_offsets_qvp["ZDR_offset"] < 2) # there is an extreme value in one date, lets remove it
+ds1_zdr_offsets_comb = xr.where(ds1_zdr_offsets_lr["ZDR_offset_datacount"] >= ds1_zdr_offsets_qvp["ZDR_offset_datacount"],
+                            ds1_zdr_offsets_lr["ZDR_offset"],
+                            ds1_zdr_offsets_qvp["ZDR_offset"]).fillna(ds1_zdr_offsets_qvp["ZDR_offset"])
+
+ds2_zdr_offsets_lr = xr.concat([ds2_zdr_offsets_lr_ml, ds2_zdr_offsets_lr_1c], dim="variant").mean("variant")
+ds2_zdr_offsets_qvp = xr.concat([ds2_zdr_offsets_qvp_ml, ds2_zdr_offsets_qvp_1c], dim="variant").mean("variant")
+ds2_zdr_offsets_qvp = ds2_zdr_offsets_qvp.where(ds2_zdr_offsets_qvp["ZDR_offset"] < 2) # there is an extreme value in one date, lets remove it
+ds2_zdr_offsets_comb = xr.where(ds2_zdr_offsets_lr["ZDR_offset_datacount"] >= ds2_zdr_offsets_qvp["ZDR_offset_datacount"],
+                            ds2_zdr_offsets_lr["ZDR_offset"],
+                            ds2_zdr_offsets_qvp["ZDR_offset"]).fillna(ds2_zdr_offsets_qvp["ZDR_offset"])
+
+# finally, smooth it out
+ds1_zdr_offsets_comb_smooth = ds1_zdr_offsets_comb.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
+ds2_zdr_offsets_comb_smooth = ds2_zdr_offsets_comb.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
+
+
+# Add new offset/atten corrected ZDR in datasets
+ds1 = ds1.assign({"ZDR_EC_OC2":
+                  ds1["ZDR_EC"] - ds1_zdr_offsets_comb_smooth.sel(time=ds1.time[0].values.astype(str)[:10]).mean()} )
+
+ds2 = ds2.assign({"ZDR_EC_OC2":
+                  ds2["ZDR_EC"] - ds2_zdr_offsets_comb_smooth.sel(time=ds2.time[0].values.astype(str)[:10]).mean()} )
+
+#%%% Plot example
+tsel = "2017-01-02T06"
+
+vv = "DBZH" # for the example plot
+vmin = -10
+vmax = 50
+ds1.sel(time=tsel, method="nearest")[vv].wrl.vis.plot(alpha=0.5, vmin=vmin, vmax=vmax)
 ax = plt.gca()
-ds2.sel(time=tsel, method="nearest")["DBZH"].wrl.vis.plot(ax=ax, alpha=0.2)
+ds2.sel(time=tsel, method="nearest")[vv].wrl.vis.plot(ax=ax, alpha=0.2, vmin=vmin, vmax=vmax)
 ax.scatter([ds1.x[0,0], ds2.x[0,0]], [ds1.y[0,0], ds2.y[0,0]])
 ax.text(ds1.x[0,0], ds1.y[0,0]-30000, "HTY")
 ax.text(ds2.x[0,0], ds2.y[0,0]-30000, "GZT")
 
-plt.title("DBZH "+tsel)
+plt.title(vv+" "+tsel)
 
 #%% Add beam blockage
 
@@ -585,11 +677,11 @@ plt.title("CBB "+tsel)
 
 #%% Set parameters and filters
 
-tsel = "2016-12-01T14" # for plots
+tsel = "2017-01-02T06" # for plots
 vv = "DBZH"
 SNRH_min = 15
 RHOHV_min = 0.95
-TEMP_min = 3
+TEMP_min = -15
 DBZH_min = 10
 CBB_max = 0.05
 
@@ -605,8 +697,8 @@ dsy = utils.apply_min_max_thresh(ds2, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
 
 # They consider that there is rain above the radar by looking at the
 # median reflectivity in a circle 5km aroud each radar. Let's add this variable
-dsx = dsx.assign_coords({"Zm": dsx["DBZH"].sel(range=slice(0,5000)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
-dsy = dsy.assign_coords({"Zm": dsy["DBZH"].sel(range=slice(0,5000)).compute().median(("azimuth", "range")).broadcast_like(dsy["DBZH"]) })
+dsx = dsx.assign_coords({"Zm": dsx["DBZH"].sel(range=slice(0,1000)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
+dsy = dsy.assign_coords({"Zm": dsy["DBZH"].sel(range=slice(0,1000)).compute().median(("azimuth", "range")).broadcast_like(dsy["DBZH"]) })
 
 # Add the additional DBZH threshold
 dsx = utils.apply_min_max_thresh(dsx, {"DBZH":DBZH_min},
@@ -648,7 +740,7 @@ plt.title(vv+" "+tsel)
 #%% Plot initial mask (with zoom and scatter of points)
 dsx[vv].where(mask1).sel(time=tsel, method="nearest").wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
 ax = plt.gca()
-dsy[vv].where(mask2).sel(time=tsel, method="nearest").wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-20000, 0), ylim=(-20000, 0))
+dsy[vv].where(mask2).sel(time=tsel, method="nearest").wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-10000, 10000), ylim=(-10000, 10000))
 
 x1 = dsx.x.where(mask1).sel(time=tsel, method="nearest").values.flatten()
 y1 = dsx.y.where(mask1).sel(time=tsel, method="nearest").values.flatten()
@@ -684,7 +776,7 @@ plt.title(vv+" "+tsel)
 #%% Plot refined masks (with zoom and scatter of points)
 dsx[vv].where(mask1_ref).sel(time=tsel, method="nearest").wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
 ax = plt.gca()
-dsy[vv].where(mask2_ref).sel(time=tsel, method="nearest").wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-20000, 0), ylim=(-20000, 0))
+dsy[vv].where(mask2_ref).sel(time=tsel, method="nearest").wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-10000, 10000), ylim=(-10000, 10000))
 
 x1 = dsx.x.where(mask1_ref).sel(time=tsel, method="nearest").values.flatten()
 y1 = dsx.y.where(mask1_ref).sel(time=tsel, method="nearest").values.flatten()
