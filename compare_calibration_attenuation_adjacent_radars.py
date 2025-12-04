@@ -1088,10 +1088,10 @@ ML_low_dates = [
     "2016-12-31",
     "2017-01-01",
     "2017-01-02",
-    "2017-01-08",
+    # "2017-01-08", #### UNUSABLE ZDR IN GZT
     # "2017-01-11", #### no valid matches: 1.5-0.5, 2.2-0.5, 3.0-0.5 (all combinations)
-    "2017-01-20", #### no valid matches: 1.5-0.5,
-    "2017-03-04", # XX
+    # "2017-01-20",  #### UNUSABLE ZDR IN GZT #### no valid matches: 1.5-0.5,
+    # "2017-03-04", # XX #### UNUSABLE ZDR IN GZT
     # "2017-03-16", #### no valid matches: 1.5-0.5, 2.2-0.5, 3.0-0.5 (all combinations)
     # "2017-03-17", #### no valid matches: 1.5-0.5, 2.2-0.5, 3.0-0.5 (all combinations)
     # "2017-12-24", # X
@@ -1295,6 +1295,8 @@ dbzh = "DBZH"
 Zm_max = 15
 ref_phi_max = 2
 
+varx_range = (0, 19, 1) # start, stop, step
+
 # extract/build necessary variables
 delta_dbzh = np.concat([ (d1-d2).flatten() for d1,d2 in selected_ML_high[dbzh] ])
 
@@ -1307,19 +1309,21 @@ tg_Zm = np.nan_to_num(np.concat([ d1.flatten() for d1,d2 in selected_ML_high["Zm
 ref_Zm = np.nan_to_num(np.concat([ d2.flatten() for d1,d2 in selected_ML_high["Zm"] ]))
 
 # filter by valid values according to conditions
-valid = np.isfinite(delta_dbzh) & (ref_phi<ref_phi_max) & (np.isfinite(tg_phi)) & (ref_Zm<Zm_max) & (tg_Zm<Zm_max)
+valid = np.isfinite(delta_dbzh) & (ref_phi<ref_phi_max) & (np.isfinite(tg_phi))\
+        & (ref_Zm<Zm_max) & (tg_Zm<Zm_max)\
+        & (tg_phi > varx_range[0]) & (tg_phi < varx_range[1] - varx_range[2])
 
 delta_dbzh = delta_dbzh[valid]
 tg_phi = tg_phi[valid]
 
 # Calculate best linear fit
-lfit = np.polynomial.Polynomial.fit(tg_phi, delta_dbzh, 1, domain=[0, 18])
+lfit = np.polynomial.Polynomial.fit(tg_phi, delta_dbzh, 1)
 lfit_str = str(lfit.convert()).replace("x", "Phi")
 
 # Box plots like in the paper
 # Define bins
-bins = np.arange(0, 19, 1)  # 0,1,2,3,4,5
-bin_centers = bins[:-1] + 0.5
+bins = np.arange(varx_range[0], varx_range[1], varx_range[2])  # 0,1,2,3,4,5
+bin_centers = bins[:-1] + np.diff(bins).mean()/2
 
 # Digitize tg_phi into bins
 bin_indices = np.digitize(tg_phi, bins) - 1
@@ -1332,25 +1336,37 @@ counts = [len(vals) for vals in box_data]
 
 # Plot
 plt.figure(figsize=(9, 5))
-bp = plt.boxplot(box_data, positions=bin_centers, widths=0.6, showmeans=True)
+bp = plt.boxplot(box_data, positions=bin_centers, widths=np.diff(bins).mean()/2, showmeans=True)
+plt.xlim(bins[0], bins[-1])
 plt.xlabel(phi+" (binned, 1° intervals)")
 plt.ylabel("delta "+dbzh)
 plt.title("Boxplots of delta "+dbzh+" vs "+phi+" bins")
 plt.grid(True, linestyle="--", alpha=0.5)
-plt.xticks(bin_centers, [f"{b}-{b+1}" for b in bins[:-1]])
+plt.xticks(bin_centers, [f"{round(b, 2)}-{round(b+varx_range[2], 2)}" for b in bins[:-1]])
 
 # add linear fit
-plt.plot([0,18], [lfit(0), lfit(18)])
+plt.plot([bins[0], bins[-1]], [lfit(bins[0]), lfit(bins[-1])])
 plt.text(0.95, 0.9, "Linear fit: "+lfit_str, transform=plt.gca().transAxes, c="blue",
          horizontalalignment="right")
 
 # add a second linear fit using the medians
 medians = [line.get_ydata()[0] for line in bp['medians']]
-lfit_m = np.polynomial.Polynomial.fit(bin_centers, medians, 1, domain=[0, 18])
+lfit_m = np.polynomial.Polynomial.fit(bin_centers, medians, 1)
 lfit_m_str = str(lfit_m.convert()).replace("x", "Phi")
-plt.plot([0,18], [lfit_m(0), lfit_m(18)], c="red")
+plt.plot([bins[0], bins[-1]], [lfit_m(bins[0]), lfit_m(bins[-1])], c="red")
 plt.text(0.95, 0.85, "Linear fit (medians): "+lfit_m_str, transform=plt.gca().transAxes, c="red",
          horizontalalignment="right")
+
+# add a third linear fit using the medians and variances of each bin
+variances = np.array([vals.var(ddof=1) for vals in box_data])
+weights = 1 / variances
+weights[~np.isfinite(weights)] = 0
+w = np.sqrt(weights)
+lfit_mw = np.polynomial.Polynomial.fit(bin_centers, medians, 1, w=w)
+lfit_mw_str = str(lfit_m.convert()).replace("x", "Phi")
+plt.plot([bins[0], bins[-1]], [lfit_mw(bins[0]), lfit_m(bins[-1])], c="deeppink", ls="--")
+plt.text(0.95, 0.8, "Variance-weighted linear fit (medians): "+lfit_mw_str, transform=plt.gca().transAxes,
+         c="deeppink", horizontalalignment="right")
 
 
 # Add counts above x-tick labels (inside the plot area)
@@ -1361,14 +1377,15 @@ for x, n in zip(bin_centers, counts):
 plt.tight_layout()
 plt.show()
 
-#%%% Plot boxplot of delta DBZH/ZDR vs target Zm (wet radome attenuation)
+#%%% Confidence interval analysis based on different ranges (rain attenuation)
+# INPUT DATA
+
 phi = "PHIDP_OC_MASKED"
 dbzh = "DBZH"
 
-# we need to apply additional filters that we did not apply in the previous step
-ref_Zm_max = 5
-ref_phi_max = 5
-tg_phi_max = 15
+# repeat filters
+Zm_max = 15
+ref_phi_max = 2
 
 # extract/build necessary variables
 delta_dbzh = np.concat([ (d1-d2).flatten() for d1,d2 in selected_ML_high[dbzh] ])
@@ -1382,19 +1399,230 @@ tg_Zm = np.nan_to_num(np.concat([ d1.flatten() for d1,d2 in selected_ML_high["Zm
 ref_Zm = np.nan_to_num(np.concat([ d2.flatten() for d1,d2 in selected_ML_high["Zm"] ]))
 
 # filter by valid values according to conditions
-valid = np.isfinite(delta_dbzh) & (ref_phi<ref_phi_max) & (tg_phi<tg_phi_max) & (ref_Zm<ref_Zm_max)
+valid = np.isfinite(delta_dbzh) & (ref_phi<ref_phi_max) & (np.isfinite(tg_phi))\
+        & (ref_Zm<Zm_max) & (tg_Zm<Zm_max)\
+
+delta_dbzh = delta_dbzh[valid]
+tg_phi = tg_phi[valid]
+
+# CONFIG
+phi_ranges = [(0,18), (0,25), (0,30), (0,40), (0,50), (0,60)]   # φ ranges to test
+bin_widths = [1,2,3]                                          # size of bins
+B = 500                                                # bootstrap samples
+ci_level = 95                                          # e.g. 95% CI
+min_bin_n = 0                                          # e.g. 20 if we want to filter out low count bins
+
+slopes_mean = {}
+slopes_lowCI = {} # confidence interval based on global bootstrapping
+slopes_highCI = {}
+slopes2_lowCI = {} # confidence interval based on within-bin bootstrapping
+slopes2_highCI = {}
+phi_N = {} # Number of valid phi values in each range
+
+# ---- FUNCTION: compute slope using bin-medians ----
+def fit_binmedian_slope(phi_vals, dbzh_vals, phi_min, phi_max, bin_width, min_bin_n=0):
+    """
+    min_bin_n: bins with equal or less valid values than min_bin_n will be ignored.
+    """
+
+    # mask values inside selected phi range
+    mask = (phi_vals >= phi_min) & (phi_vals < phi_max)
+    phi_sel = phi_vals[mask]
+    dbzh_sel = dbzh_vals[mask]
+
+    # not enough samples -> return NaN
+    if len(phi_sel) < 20:
+        return np.nan
+
+    # bins
+    bins = np.arange(phi_min, phi_max + bin_width, bin_width)
+    bin_centers = bins[:-1] + bin_width/2
+
+    bin_idx = np.digitize(phi_sel, bins) - 1
+    nbins = len(bins) - 1
+
+    # compute medians
+    medians = np.zeros(nbins)
+    for i in range(nbins):
+        vals = dbzh_sel[bin_idx == i]
+        medians[i] = np.nanmedian(vals) if np.isfinite(vals).sum()>min_bin_n else np.nan
+
+    # remove empty bins
+    valid = np.isfinite(medians)
+    if np.sum(valid) < 2:
+        return np.nan
+
+    # linear fit
+    p = np.polynomial.Polynomial.fit(bin_centers[valid], medians[valid], 1)
+    return p.convert().coef[1]  # slope is coef[1]
+
+# -------------------------------------------------------------------
+# MAIN LOOP OVER BIN SIZES AND PHI RANGES
+# -------------------------------------------------------------------
+for bin_width in bin_widths:
+    print(f"Processing {bin_width}° bins ...")
+    slopes_mean[bin_width] = []
+    slopes_lowCI[bin_width] = []
+    slopes_highCI[bin_width] = []
+    slopes2_lowCI[bin_width] = []
+    slopes2_highCI[bin_width] = []
+    phi_N[bin_width] = []
+
+    for (phi_min, phi_max) in phi_ranges:
+
+        print(f"Processing φ-range {phi_min}–{phi_max}° ...")
+
+        # ---- 1. Compute slope for the real dataset ----
+        real_slope = fit_binmedian_slope(tg_phi, delta_dbzh, phi_min, phi_max, bin_width, min_bin_n=min_bin_n)
+
+        # ---- 2. Bootstrap slopes (global resampling) ----
+        boot_slopes = np.zeros(B)
+        N = len(tg_phi)
+
+        for b in range(B):
+            # sample indices WITH replacement
+            idx = np.random.randint(0, N, N)
+            boot_phi = tg_phi[idx]
+            boot_dbzh = delta_dbzh[idx]
+
+            boot_slopes[b] = fit_binmedian_slope(
+                boot_phi, boot_dbzh,
+                phi_min, phi_max,
+                bin_width,
+                min_bin_n=min_bin_n
+            )
+
+        # remove NaNs from failed fits
+        boot_slopes = boot_slopes[np.isfinite(boot_slopes)]
+
+        # ---- 3. Compute confidence intervals ----
+        low = np.percentile(boot_slopes, (100-ci_level)/2)
+        high = np.percentile(boot_slopes, 100-(100-ci_level)/2)
+
+        slopes_mean[bin_width].append(real_slope)
+        slopes_lowCI[bin_width].append(low)
+        slopes_highCI[bin_width].append(high)
+
+        # ---- 4. Bootstrap slopes (within-bin resampling) ----
+        mask = (tg_phi >= phi_min) & (tg_phi < phi_max)
+        phi_sel = tg_phi[mask]
+        dbzh_sel = delta_dbzh[mask]
+
+        phi_N[bin_width].append(len(phi_sel))
+
+        bins = np.arange(phi_min, phi_max + bin_width, bin_width)
+        bin_centers = bins[:-1] + bin_width/2
+        bin_idx = np.digitize(phi_sel, bins) - 1
+        nbins = len(bin_centers)
+
+        bin_samples = [dbzh_sel[bin_idx == i] for i in range(nbins)]
+
+        boot_slopes = np.zeros(B)
+        for b in range(B):
+            # bootstrap each bin separately
+            boot_medians = []
+            for vals in bin_samples:
+                if np.isfinite(vals).sum()>min_bin_n:
+                    idx = np.random.randint(0, len(vals), len(vals))
+                    boot_vals = vals[idx]
+                    boot_medians.append(np.median(boot_vals))
+                else:
+                    boot_medians.append(np.nan)
+
+            boot_medians = np.array(boot_medians)
+            valid = np.isfinite(boot_medians)
+
+            boot_slopes[b] = np.polynomial.Polynomial.fit(bin_centers[valid], boot_medians[valid], 1).convert().coef[1]
+
+        # ---- 5. Compute confidence intervals ----
+        low = np.percentile(boot_slopes, (100-ci_level)/2)
+        high = np.percentile(boot_slopes, 100-(100-ci_level)/2)
+
+        slopes2_lowCI[bin_width].append(low)
+        slopes2_highCI[bin_width].append(high)
+
+# -------------------------------------------------------------------
+# PLOT RESULTS
+# -------------------------------------------------------------------
+plt.figure(figsize=(6,4))
+for bin_width in bin_widths:
+    phi_max_values = [pr[1] for pr in phi_ranges]
+
+    eb1 = plt.errorbar(
+        phi_max_values,
+        slopes_mean[bin_width],
+        yerr=[np.array(slopes_mean[bin_width])-np.array(slopes_lowCI[bin_width]),
+              np.array(slopes_highCI[bin_width])-np.array(slopes_mean[bin_width])],
+        fmt='o-', capsize=4, lw=3, capthick=3, label=f"{bin_width}° bins global bootstrap",
+        alpha=0.5
+    )
+    eb2 = plt.errorbar(
+        phi_max_values,
+        slopes_mean[bin_width],
+        yerr=[np.array(slopes_mean[bin_width])-np.array(slopes2_lowCI[bin_width]),
+              np.array(slopes2_highCI[bin_width])-np.array(slopes_mean[bin_width])],
+        fmt='none', capsize=4, lw=3, capthick=3, label=f"{bin_width}° bins within-bin bootstrap",
+        ecolor=eb1[0].get_color()
+    )
+    eb2[-1][0].set_linestyle('--') # change linestyle of second error bars
+    plt.xlabel('Max φ of fitted range (°)')
+    plt.ylabel('Slope of Δ'+dbzh+'–φ (dB/°)')
+    plt.title('Bootstrap CI of Bin-Median Linear Fit Slope ('+str(B)+' Iterations)')
+    plt.legend(fontsize=6)
+    plt.grid(True, ls='--', alpha=0.6)
+
+    plt.tight_layout()
+    # plt.show()
+
+    # print exact slope values
+    print(f"#### {bin_width}° bins slope results ####")
+    for x, n in zip(phi_max_values, slopes_mean[bin_width]):
+        print("Range 0-"+str(x)+": "+str(round(n, 4)))
+    print("Mean of all slopes: "+str(round(np.nanmean(slopes_mean[bin_width]), 4)))
+
+# Add phi_N counts above x-tick labels (inside the plot area)
+phi_N_ = [str(phi_N[bin_width][0])] + ["+"+str(pn0-phi_N[bin_width][0]) for pn0 in phi_N[bin_width][1:]]
+for x, n in zip(phi_max_values, phi_N_):
+    plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
+             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
+
+#%%% Plot boxplot of delta DBZH/ZDR vs target Zm (wet radome attenuation)
+phi = "PHIDP_OC_MASKED"
+dbzh = "DBZH"
+
+# we need to apply additional filters that we did not apply in the previous step
+ref_Zm_max = 5
+ref_phi_max = 5
+tg_phi_max = 15
+
+varx_range = (0, 45, 5) # start, stop, step
+
+# extract/build necessary variables
+delta_dbzh = np.concat([ (d1-d2).flatten() for d1,d2 in selected_ML_high[dbzh] ])
+
+tg_phi = np.concat([ d1.flatten() for d1,d2 in selected_ML_high[phi] ])
+
+ref_phi = np.concat([ d2.flatten() for d1,d2 in selected_ML_high[phi] ])
+
+tg_Zm = np.nan_to_num(np.concat([ d1.flatten() for d1,d2 in selected_ML_high["Zm"] ]))
+
+ref_Zm = np.nan_to_num(np.concat([ d2.flatten() for d1,d2 in selected_ML_high["Zm"] ]))
+
+# filter by valid values according to conditions
+valid = np.isfinite(delta_dbzh) & (ref_phi<ref_phi_max) & (tg_phi<tg_phi_max) & (ref_Zm<ref_Zm_max)\
+        & (tg_Zm > varx_range[0]) & (tg_Zm < varx_range[1])
 
 delta_dbzh = delta_dbzh[valid]
 tg_Zm = tg_Zm[valid]
 
 # Calculate best cuadratic fit
-lfit = np.polynomial.Polynomial.fit(tg_Zm, delta_dbzh, 2, domain=[0, 40])
+lfit = np.polynomial.Polynomial.fit(tg_Zm, delta_dbzh, 2)
 lfit_str = str(lfit.convert()).replace("x", "Zm")
 
 # Box plots like in the paper
 # Define bins
-bins = np.arange(0, 45, 5)
-bin_centers = (bins[:-1] + bins[1:])/2
+bins = np.arange(varx_range[0], varx_range[1], varx_range[2])  # 0,1,2,3,4,5
+bin_centers = bins[:-1] + np.diff(bins).mean()/2
 
 # Digitize tg_Zm into bins
 bin_indices = np.digitize(tg_Zm, bins) - 1
@@ -1407,23 +1635,24 @@ counts = [len(vals) for vals in box_data]
 
 # Plot
 plt.figure(figsize=(9, 5))
-bp = plt.boxplot(box_data, positions=bin_centers, widths=0.6, showmeans=True)
+bp = plt.boxplot(box_data, positions=bin_centers, widths=np.diff(bins).mean()/2, showmeans=True)
+plt.xlim(bins[0], bins[-1])
 plt.xlabel("Zm target (binned, 5 dBZ intervals)")
 plt.ylabel("delta "+dbzh)
 plt.title("Boxplots of delta "+dbzh+" vs Zm bins")
 plt.grid(True, linestyle="--", alpha=0.5)
-plt.xticks(bin_centers, [f"{b}-{b+5}" for b in bins[:-1]])
+plt.xticks(bin_centers, [f"{round(b, 2)}-{round(b+varx_range[2], 2)}" for b in bins[:-1]])
 
 # add cuadratic fit
-plt.plot([0,40], [lfit(0), lfit(40)])
+plt.plot([bins[0], bins[-1]], [lfit(bins[0]), lfit(bins[-1])])
 plt.text(0.95, 0.9, "Cuadratic fit: "+lfit_str, transform=plt.gca().transAxes, c="blue",
          horizontalalignment="right")
 
 # add a second cuadratic fit using the medians
 medians = [line.get_ydata()[0] for line in bp['medians']]
-lfit_m = np.polynomial.Polynomial.fit(bin_centers, medians, 2, domain=[0, 40])
+lfit_m = np.polynomial.Polynomial.fit(bin_centers, medians, 2)
 lfit_m_str = str(lfit_m.convert()).replace("x", "Zm")
-plt.plot([0,40], [lfit_m(0), lfit_m(40)], c="red")
+plt.plot([bins[0], bins[-1]], [lfit_m(bins[0]), lfit_m(bins[-1])], c="red")
 plt.text(0.95, 0.85, "Cuadratic fit (medians): "+lfit_m_str, transform=plt.gca().transAxes, c="red",
          horizontalalignment="right")
 
@@ -1447,6 +1676,9 @@ zdr_oc = zdr_to_plot.split("_new")[0]
 ref_Zm_max = 5
 ref_phi_max = 5
 tg_phi_max = 15
+
+varx_range = (0, 45, 5) # start, stop, step
+min_bin_n = 20 # min count of valid values inside bin to be included in the fitting
 
 # custom atten corr based on the previous results
 beta_new = 0.04 # to ignore this step set beta_new = 0
@@ -1499,19 +1731,20 @@ else:
     delta_zdr = tg_zdr - ref_zdr
 
 # filter by valid values according to conditions
-valid = np.isfinite(delta_zdr) & (ref_phi<ref_phi_max) & (tg_phi<tg_phi_max) & (ref_Zm<ref_Zm_max)
+valid = np.isfinite(delta_zdr) & (ref_phi<ref_phi_max) & (tg_phi<tg_phi_max) & (ref_Zm<ref_Zm_max)\
+        & (tg_Zm > varx_range[0]) & (tg_Zm < varx_range[1])
 
 delta_zdr = delta_zdr[valid]
 tg_Zm = tg_Zm[valid]
 
 # Calculate best cuadratic fit
-lfit = np.polynomial.Polynomial.fit(tg_Zm, delta_zdr, 2, domain=[0, 40])
+lfit = np.polynomial.Polynomial.fit(tg_Zm, delta_zdr, 2)
 lfit_str = str(lfit.convert()).replace("x", "Zm")
 
 # Box plots like in the paper
 # Define bins
-bins = np.arange(0, 45, 5)
-bin_centers = (bins[:-1] + bins[1:])/2
+bins = np.arange(varx_range[0], varx_range[1], varx_range[2])  # 0,1,2,3,4,5
+bin_centers = bins[:-1] + np.diff(bins).mean()/2
 
 # Digitize tg_Zm into bins
 bin_indices = np.digitize(tg_Zm, bins) - 1
@@ -1522,25 +1755,31 @@ box_data = [delta_zdr[bin_indices == i] for i in range(len(bins) - 1)]
 # Compute counts per bin
 counts = [len(vals) for vals in box_data]
 
+# Remove bins that have less than min_bin_n valid values
+valid_bins = [ np.isfinite(arr).sum() >= min_bin_n  for arr in box_data ]
+
 # Plot
 plt.figure(figsize=(9, 5))
-bp = plt.boxplot(box_data, positions=bin_centers, widths=0.6, showmeans=True)
+bp = plt.boxplot(box_data, positions=bin_centers, widths=np.diff(bins).mean()/2, showmeans=True)
+plt.xlim(bins[0], bins[-1])
 plt.xlabel("Zm target (binned, 5 dBZ intervals)")
 plt.ylabel("delta "+zdr_to_plot)
 plt.title("Boxplots of delta "+zdr_to_plot+" vs Zm bins")
 plt.grid(True, linestyle="--", alpha=0.5)
-plt.xticks(bin_centers, [f"{b}-{b+5}" for b in bins[:-1]])
+plt.xticks(bin_centers, [f"{round(b, 2)}-{round(b+varx_range[2], 2)}" for b in bins[:-1]])
 
 # add cuadratic fit
-plt.plot([0,40], [lfit(0), lfit(40)])
+plt.plot([bins[0], bins[-1]], [lfit(bins[0]), lfit(bins[-1])])
 plt.text(0.95, 0.9, "Cuadratic fit: "+lfit_str, transform=plt.gca().transAxes, c="blue",
          horizontalalignment="right")
 
 # add a second cuadratic fit using the medians
-medians = [line.get_ydata()[0] for line in bp['medians']]
-lfit_m = np.polynomial.Polynomial.fit(bin_centers, medians, 2, domain=[0, 40])
+medians = np.array([line.get_ydata()[0] for line in bp['medians']])
+lfit_m = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)],
+                                      medians[np.array(valid_bins)],
+                                      2)
 lfit_m_str = str(lfit_m.convert()).replace("x", "Zm")
-plt.plot([0,40], [lfit_m(0), lfit_m(40)], c="red")
+plt.plot([bins[0], bins[-1]], [lfit_m(bins[0]), lfit_m(bins[-1])], c="red")
 plt.text(0.95, 0.85, "Cuadratic fit (medians): "+lfit_m_str, transform=plt.gca().transAxes, c="red",
          horizontalalignment="right")
 
@@ -1572,18 +1811,19 @@ CBB_max = 0.05
 
 Zm_range = 1000. # range in m for the computation of Zm (DBZH close to radar)
 
-vv_to_extract = ["DBZH", #"DBZH_AC", "DBZH_AC_rain",
+vv_to_extract = ["DBZH", "DBZH_AC_rain", "DBZH_AC",
                  "DBZH_AC2_rain",
-                 # "ZDR_EC", "ZDR_EC_AC_rain",
-                 # "ZDR_EC_OC", "ZDR_EC_OC_AC", "ZDR_EC_OC_AC_rain",
+                 "ZDR_EC", "ZDR_EC_AC_rain",
+                 "ZDR_EC_OC", "ZDR_EC_OC_AC", "ZDR_EC_OC_AC_rain",
+                 "ZDR_EC_OC_AC2_rain",
                  "ZDR_EC_OC2", "ZDR_EC_OC2_AC2_rain",
-                 # "PHIDP_OC", "PHIDP_OC_MASKED",
-                 # "TEMP", "Zm", "TEMPm", "z",
-                 # "height_ml_bottom_new_gia", "height_ml_new_gia",
-                 # "PHIDP_OC_MASKED_MLbump", "PHIDP_OC_SMOOTH_MLbump",
-                 # "DBZH_AC_rain_MLmax",
+                 "PHIDP_OC", "PHIDP_OC_MASKED",
+                 "TEMP", "Zm", "TEMPm", "z",
+                 "height_ml_bottom_new_gia", "height_ml_new_gia",
+                 "PHIDP_OC_MASKED_MLbump", "PHIDP_OC_SMOOTH_MLbump",
+                 "DBZH_AC_rain_MLmax",
                  "DBZH_AC2_rain_MLmax",
-                 # "RHOHV_MLmin"
+                 "RHOHV_MLmin"
                  ] # all variables to extract from the datasets, DBZH must be the first
 
 selected_ML_low = {vi:[] for vi in vv_to_extract}
@@ -1592,46 +1832,47 @@ selected_ML_low_dates = {} # to collect dates info and number of valid points
 
 start_time = time.time()
 
-# These dates should not have valid ZDR calibrations in GZT due to the low ML.
-# Then, we load all daily calibrations available in the period to approximate the
-# calibration with smoothing and interpolation.
+if calc:
+    # These dates should not have valid ZDR calibrations in GZT due to the low ML.
+    # Then, we load all daily calibrations available in the period to approximate the
+    # calibration with smoothing and interpolation.
 
-print("Loading ZDR daily offsets for NaN filling")
+    print("Loading ZDR daily offsets for NaN filling")
 
-ds1_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc")
-ds1_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc")
-ds1_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc")
-ds1_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc")
+    ds1_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc")
+    ds1_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc")
+    ds1_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc")
+    ds1_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc")
 
-ds2_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc")
-ds2_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc")
-ds2_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc")
-ds2_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc")
+    ds2_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc")
+    ds2_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc")
+    ds2_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc")
+    ds2_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc")
 
-# # plot running medians to check smoothing
-# zdr_offsets_lr_ml.ZDR_offset.compute().interpolate_na("time").plot(); zdr_offsets_lr_ml.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
-# zdr_offsets_lr_1c.ZDR_offset.compute().interpolate_na("time").plot(); zdr_offsets_lr_1c.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
-# zdr_offsets_qvp_ml.ZDR_offset.compute().interpolate_na("time").plot(); zdr_offsets_qvp_ml.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
-# zdr_offsets_qvp_1c.ZDR_offset.compute().interpolate_na("time").plot(); zdr_offsets_qvp_1c.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+    # # plot running medians to check smoothing
+    # ds2_zdr_offsets_lr_ml.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_lr_ml.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+    # ds2_zdr_offsets_lr_1c.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_lr_1c.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+    # ds2_zdr_offsets_qvp_ml.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_qvp_ml.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+    # ds2_zdr_offsets_qvp_1c.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_qvp_1c.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
 
-# Combine to create a single offset timeseries
-ds1_zdr_offsets_lr = xr.concat([ds1_zdr_offsets_lr_ml, ds1_zdr_offsets_lr_1c], dim="variant").mean("variant")
-ds1_zdr_offsets_qvp = xr.concat([ds1_zdr_offsets_qvp_ml, ds1_zdr_offsets_qvp_1c], dim="variant").mean("variant")
-ds1_zdr_offsets_qvp = ds1_zdr_offsets_qvp.where(ds1_zdr_offsets_qvp["ZDR_offset"] < 2) # there is an extreme value in one date, lets remove it
-ds1_zdr_offsets_comb = xr.where(ds1_zdr_offsets_lr["ZDR_offset_datacount"] >= ds1_zdr_offsets_qvp["ZDR_offset_datacount"],
-                            ds1_zdr_offsets_lr["ZDR_offset"],
-                            ds1_zdr_offsets_qvp["ZDR_offset"]).fillna(ds1_zdr_offsets_qvp["ZDR_offset"])
+    # Combine to create a single offset timeseries
+    ds1_zdr_offsets_lr = xr.concat([ds1_zdr_offsets_lr_ml, ds1_zdr_offsets_lr_1c], dim="variant").mean("variant")
+    ds1_zdr_offsets_qvp = xr.concat([ds1_zdr_offsets_qvp_ml, ds1_zdr_offsets_qvp_1c], dim="variant").mean("variant")
+    ds1_zdr_offsets_qvp = ds1_zdr_offsets_qvp.where(ds1_zdr_offsets_qvp["ZDR_offset"] < 2) # there is an extreme value in one date, lets remove it
+    ds1_zdr_offsets_comb = xr.where(ds1_zdr_offsets_lr["ZDR_offset_datacount"] >= ds1_zdr_offsets_qvp["ZDR_offset_datacount"],
+                                ds1_zdr_offsets_lr["ZDR_offset"],
+                                ds1_zdr_offsets_qvp["ZDR_offset"]).fillna(ds1_zdr_offsets_qvp["ZDR_offset"])
 
-ds2_zdr_offsets_lr = xr.concat([ds2_zdr_offsets_lr_ml, ds2_zdr_offsets_lr_1c], dim="variant").mean("variant")
-ds2_zdr_offsets_qvp = xr.concat([ds2_zdr_offsets_qvp_ml, ds2_zdr_offsets_qvp_1c], dim="variant").mean("variant")
-ds2_zdr_offsets_qvp = ds2_zdr_offsets_qvp.where(ds2_zdr_offsets_qvp["ZDR_offset"] < 2) # there is an extreme value in one date, lets remove it
-ds2_zdr_offsets_comb = xr.where(ds2_zdr_offsets_lr["ZDR_offset_datacount"] >= ds2_zdr_offsets_qvp["ZDR_offset_datacount"],
-                            ds2_zdr_offsets_lr["ZDR_offset"],
-                            ds2_zdr_offsets_qvp["ZDR_offset"]).fillna(ds2_zdr_offsets_qvp["ZDR_offset"])
+    ds2_zdr_offsets_lr = xr.concat([ds2_zdr_offsets_lr_ml, ds2_zdr_offsets_lr_1c], dim="variant").mean("variant")
+    ds2_zdr_offsets_qvp = xr.concat([ds2_zdr_offsets_qvp_ml, ds2_zdr_offsets_qvp_1c], dim="variant").mean("variant")
+    ds2_zdr_offsets_qvp = ds2_zdr_offsets_qvp.where(ds2_zdr_offsets_qvp["ZDR_offset"] < 2) # there is an extreme value in one date, lets remove it
+    ds2_zdr_offsets_comb = xr.where(ds2_zdr_offsets_lr["ZDR_offset_datacount"] >= ds2_zdr_offsets_qvp["ZDR_offset_datacount"],
+                                ds2_zdr_offsets_lr["ZDR_offset"],
+                                ds2_zdr_offsets_qvp["ZDR_offset"]).fillna(ds2_zdr_offsets_qvp["ZDR_offset"])
 
-# finally, smooth it out
-ds1_zdr_offsets_comb_smooth = ds1_zdr_offsets_comb.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
-ds2_zdr_offsets_comb_smooth = ds2_zdr_offsets_comb.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
+    # finally, smooth it out
+    ds1_zdr_offsets_comb_smooth = ds1_zdr_offsets_comb.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
+    ds2_zdr_offsets_comb_smooth = ds2_zdr_offsets_comb.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
 
 for date in ML_low_dates:
     print("Processing "+date)
@@ -1691,7 +1932,7 @@ for date in ML_low_dates:
             vv_noAC2_rain = [vv.split("_AC2_rain")[0] for vv in vv_to_extract if "_AC2_rain" in vv and "_ML" not in vv]
 
             if len(vv_noAC2_rain)>0:
-                ds1_AC2_rain = utils.attenuation_corr_linear(ds1[["PHIDP_OC_MASKED", "PHIDP_OC"]+vv_noAC2_rain].compute(),
+                ds1_AC2_rain = utils.attenuation_corr_linear(ds1[["PHIDP_OC_MASKED", "PHIDP_OC"]+[vv for vv in vv_noAC2_rain if vv in ds1.data_vars]].compute(),
                                                     alpha = new_alpha, beta = new_beta, alphaml = 0, betaml = 0,
                                                    dbzh=[vv for vv in vv_noAC2_rain if "DBZH" in vv],
                                                    zdr=[vv for vv in vv_noAC2_rain if "ZDR" in vv],
@@ -1699,9 +1940,10 @@ for date in ML_low_dates:
                                                    ML_bot = "height_ml_bottom_new_gia_clean", ML_top = "height_ml_new_gia_clean",
                                                    temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
                                                    interpolate_deltabump = True )
-                ds1 = ds1.assign(ds1_AC2_rain.rename({vv: vv+"2_rain" for vv in [vv+"_AC" for vv in vv_noAC2_rain]})[vv_AC2_rain])
+                vars_rename = {vv: vv+"2_rain" for vv in [vv+"_AC" for vv in vv_noAC2_rain if vv in ds1.data_vars]}
+                ds1 = ds1.assign(ds1_AC2_rain.rename(vars_rename)[list(vars_rename.values())])
 
-                ds2_AC2_rain = utils.attenuation_corr_linear(ds2[["PHIDP_OC_MASKED", "PHIDP_OC"]+vv_noAC2_rain].compute(),
+                ds2_AC2_rain = utils.attenuation_corr_linear(ds2[["PHIDP_OC_MASKED", "PHIDP_OC"]+[vv for vv in vv_noAC2_rain if vv in ds2.data_vars]].compute(),
                                                     alpha = new_alpha, beta = new_beta, alphaml = 0, betaml = 0,
                                                    dbzh=[vv for vv in vv_noAC2_rain if "DBZH" in vv],
                                                    zdr=[vv for vv in vv_noAC2_rain if "ZDR" in vv],
@@ -1709,7 +1951,8 @@ for date in ML_low_dates:
                                                    ML_bot = "height_ml_bottom_new_gia_clean", ML_top = "height_ml_new_gia_clean",
                                                    temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
                                                    interpolate_deltabump = True )
-                ds2 = ds2.assign(ds2_AC2_rain.rename({vv: vv+"2_rain" for vv in [vv+"_AC" for vv in vv_noAC2_rain]})[vv_AC2_rain])
+                vars_rename = {vv: vv+"2_rain" for vv in [vv+"_AC" for vv in vv_noAC2_rain if vv in ds2.data_vars]}
+                ds2 = ds2.assign(ds2_AC2_rain.rename(vars_rename)[list(vars_rename.values())])
 
             # add ML bump/min/max variables
             vv_bump = [vv for vv in vv_to_extract if "_MLbump" in vv]
@@ -1885,11 +2128,9 @@ print(f"took {total_time/60:.2f} minutes.")
 
 #%%% Plot boxplot of DBZH/ZDR as vertical profiles (ML attenuation)
 
-#!!! ZDR has no offest correction in the ref data (GZT) because there is no rain to calibrate
-
 phi = "PHIDP_OC_MASKED"
-dbzh_tg = "DBZH_AC_rain"
-dbzh_ref = "DBZH_AC_rain"
+dbzh_tg = "DBZH_AC2_rain" # ZDR_EC_OC_AC2_rain
+dbzh_ref = "DBZH_AC2_rain" # ZDR_EC_OC2_AC2_rain
 TEMPm = "TEMPm"
 TEMP = "TEMP"
 
@@ -1920,11 +2161,13 @@ tg_phi_bump = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi+"_MLbump
 
 ref_phi_bump = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi+"_MLbump"] ])
 
+tg_height_ml_top = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["height_ml_new_gia"] ])
+
 # filter by valid values according to conditions
 #!!! The best filter would have ref_TEMPm < -1, but looks like no event so far
 # meets this condition. So let's use PHI and Zm as an alternative for now
 # valid = (tg_TEMPm > 3) & (np.nan_to_num(ref_phi_bump) < 1)  & (ref_phi < 5) & (ref_Zm < 5) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
-valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
+valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh) & (tg_height_ml_top < 1600)
 
 tg_dbzh = tg_dbzh[valid]
 ref_dbzh = ref_dbzh[valid]
@@ -1974,9 +2217,6 @@ plt.tight_layout()
 plt.show()
 
 #%%% Plot boxplot of delta DBZH/ZDR vs target PHI (ML attenuation)
-#!!! I need to, somehow, keep the atten corr below the ML and remove the one related to the ML
-
-#!!! ZDR has no offest correction in the ref data (GZT) because there is no rain to calibrate
 
 phi = "PHIDP_OC_MASKED"
 dbzh = "DBZH"
@@ -2020,7 +2260,7 @@ delta_dbzh = (tg_dbzh - ref_dbzh)[valid]
 tg_phi = tg_phi[valid]
 
 # Calculate best linear fit
-lfit = np.polynomial.Polynomial.fit(tg_phi, delta_dbzh, 1, domain=[0, 18])
+lfit = np.polynomial.Polynomial.fit(tg_phi, delta_dbzh, 1)
 lfit_str = str(lfit.convert()).replace("x", "Phi")
 
 # Box plots like in the paper
@@ -2053,7 +2293,7 @@ plt.text(0.95, 0.9, "Linear fit: "+lfit_str, transform=plt.gca().transAxes, c="b
 
 # add a second linear fit using the medians
 medians = [line.get_ydata()[0] for line in bp['medians']]
-lfit_m = np.polynomial.Polynomial.fit(bin_centers, medians, 1, domain=[0, 18])
+lfit_m = np.polynomial.Polynomial.fit(bin_centers, medians, 1)
 lfit_m_str = str(lfit_m.convert()).replace("x", "Phi")
 plt.plot([0,18], [lfit_m(0), lfit_m(18)], c="red")
 plt.text(0.95, 0.85, "Linear fit (medians): "+lfit_m_str, transform=plt.gca().transAxes, c="red",
@@ -2070,19 +2310,22 @@ plt.show()
 
 #%%% Plot boxplot of delta DBZH/ZDR vs target PHI bump (ML attenuation)
 
-#!!! ZDR has no offest correction in the ref data (GZT) because there is no rain to calibrate
-
 phi = "PHIDP_OC_MASKED"
-dbzh = "ZDR_EC_OC_AC"
+dbzh_tg = "DBZH_AC2_rain" # ZDR_EC_OC_AC2_rain
+dbzh_ref = "DBZH_AC2_rain" # ZDR_EC_OC2_AC2_rain
 TEMPm = "TEMPm"
 TEMP = "TEMP"
+
+varx_range = (0, 19, 1) # start, stop, step # (0.7, 0.98, 0.02)
+
+min_bin_n = 20 # min count of valid values inside bin to be included in the fitting
 
 # We only need to check that TEMPm is appropriate for each radar
 
 # extract/build necessary variables
-tg_dbzh = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[dbzh] ])
+tg_dbzh = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[dbzh_tg] ])
 
-ref_dbzh = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[dbzh] ])
+ref_dbzh = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[dbzh_ref] ])
 
 tg_phi = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi] ])
 
@@ -2104,23 +2347,31 @@ tg_phi_bump = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi+"_MLbump
 
 ref_phi_bump = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi+"_MLbump"] ])
 
+tg_height_ml_top = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["height_ml_new_gia"] ])
+
 # filter by valid values according to conditions
 #!!! The best filter would have ref_TEMPm < -1, but looks like no event so far
 # meets this condition. So let's use PHI and Zm as an alternative for now
-valid = (tg_TEMPm > 3) & (np.nan_to_num(ref_phi_bump) < 1)  & (ref_phi < 5) & (ref_Zm < 5) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh) & np.isfinite(tg_phi_bump)
-# valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
+# valid = (tg_TEMPm > 3) & (np.nan_to_num(ref_phi_bump) < 1)  & (ref_phi < 5) & (ref_Zm < 5) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh) & np.isfinite(tg_phi_bump)
+valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)\
+        & (tg_height_ml_top < 1600) & np.isfinite(tg_phi_bump)\
+        & (tg_phi_bump > varx_range[0]) & (tg_phi_bump < varx_range[1])
 
 delta_dbzh = (tg_dbzh - ref_dbzh)[valid]
 tg_phi_bump = tg_phi_bump[valid]
 
+# In case we need to filter out unrealistic values
+# tg_phi_bump = tg_phi_bump[delta_dbzh>-4]
+# delta_dbzh = delta_dbzh[delta_dbzh>-4]
+
 # Calculate best linear fit
-lfit = np.polynomial.Polynomial.fit(tg_phi_bump, delta_dbzh, 1, domain=[0, 18])
+lfit = np.polynomial.Polynomial.fit(tg_phi_bump, delta_dbzh, 1)
 lfit_str = str(lfit.convert()).replace("x", "Phi ML bump")
 
 # Box plots like in the paper
 # Define bins
-bins = np.arange(0, 19, 1)  # 0,1,2,3,4,5
-bin_centers = bins[:-1] + 0.5
+bins = np.arange(varx_range[0], varx_range[1], varx_range[2])  # 0,1,2,3,4,5
+bin_centers = bins[:-1] + np.diff(bins).mean()/2
 
 # Digitize tg_phi_bump into bins
 bin_indices = np.digitize(tg_phi_bump, bins) - 1
@@ -2131,25 +2382,29 @@ box_data = [delta_dbzh[bin_indices == i] for i in range(len(bins) - 1)]
 # Compute counts per bin
 counts = [len(vals) for vals in box_data]
 
+# Remove bins that have less than min_bin_n valid values
+valid_bins = [ np.isfinite(arr).sum() >= min_bin_n  for arr in box_data ]
+
 # Plot
 plt.figure(figsize=(9, 5))
-bp = plt.boxplot(box_data, positions=bin_centers, widths=0.6, showmeans=True)
+bp = plt.boxplot(box_data, positions=bin_centers, widths=np.diff(bins).mean()/2, showmeans=True)
+plt.xlim(bins[0], bins[-1])
 plt.xlabel(phi+"_MLbump"+" (binned, 1° intervals)")
-plt.ylabel("delta "+dbzh)
-plt.title("Boxplots of delta "+dbzh+" vs "+phi+"_MLbump"+" bins")
+plt.ylabel("delta "+dbzh_tg)
+plt.title("Boxplots of delta "+dbzh_tg+" vs "+phi+"_MLbump"+" bins")
 plt.grid(True, linestyle="--", alpha=0.5)
-plt.xticks(bin_centers, [f"{b}-{b+1}" for b in bins[:-1]])
+plt.xticks(bin_centers, [f"{round(b, 2)}-{round(b+varx_range[2], 2)}" for b in bins[:-1]])
 
 # add linear fit
-plt.plot([0,18], [lfit(0), lfit(18)])
+plt.plot([bins[0], bins[-1]], [lfit(bins[0]), lfit(bins[-1])])
 plt.text(0.95, 0.9, "Linear fit: "+lfit_str, transform=plt.gca().transAxes, c="blue",
          horizontalalignment="right")
 
 # add a second linear fit using the medians
-medians = [line.get_ydata()[0] for line in bp['medians']]
-lfit_m = np.polynomial.Polynomial.fit(bin_centers, medians, 1, domain=[0, 18])
+medians = np.array([line.get_ydata()[0] for line in bp['medians']])
+lfit_m = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 1)
 lfit_m_str = str(lfit_m.convert()).replace("x", "Phi ML bump")
-plt.plot([0,18], [lfit_m(0), lfit_m(18)], c="red")
+plt.plot([bins[0], bins[-1]], [lfit_m(bins[0]), lfit_m(bins[-1])], c="red")
 plt.text(0.95, 0.85, "Linear fit (medians): "+lfit_m_str, transform=plt.gca().transAxes, c="red",
          horizontalalignment="right")
 
@@ -2165,12 +2420,12 @@ plt.show()
 
 #%%% Plot boxplot of delta DBZH/ZDR vs target ZH/RHOHV min/max in ML (ML attenuation)
 
-#!!! ZDR has no offest correction in the ref data (GZT) because there is no rain to calibrate
-
-varx = "DBZH_AC_rain_MLmax"
-vary = "ZDR_EC_OC_AC_rain"
+varx = "DBZH_AC2_rain_MLmax" # RHOHV_MLmin
+vary = "DBZH_AC2_rain" # ZDR_EC_OC_AC2_rain
 TEMPm = "TEMPm"
 TEMP = "TEMP"
+
+varx_range = (10, 60, 5) # start, stop, step # (0.7, 0.93, 0.02)
 
 # We only need to check that TEMPm is appropriate for each radar
 
@@ -2195,22 +2450,26 @@ tg_TEMP = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[TEMP] ])
 
 ref_TEMP = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[TEMP] ])
 
+tg_height_ml_top = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["height_ml_new_gia"] ])
+
 # filter by valid values according to conditions
 #!!! The best filter would have ref_TEMPm < -1, but looks like no event so far
 # meets this condition. So let's use PHI and Zm as an alternative for now
-valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_varx) & np.isfinite(ref_vary)
+# valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_varx) & np.isfinite(ref_vary)
+valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_varx) & np.isfinite(tg_vary)\
+    & np.isfinite(ref_vary) & (tg_height_ml_top < 1600) & (tg_varx > varx_range[0]) & (tg_varx < varx_range[1])
 
 delta_vary = (tg_vary - ref_vary)[valid]
 tg_varx = tg_varx[valid]
 
 # Calculate best linear fit
-lfit = np.polynomial.Polynomial.fit(tg_varx, delta_vary, 1, domain=[0, 18])
+lfit = np.polynomial.Polynomial.fit(tg_varx, delta_vary, 1)
 lfit_str = str(lfit.convert()).replace("x", varx)
 
 # Box plots like in the paper
 # Define bins
-bins = np.arange(0, 19, 1)  # 0,1,2,3,4,5
-bin_centers = bins[:-1] + 0.5
+bins = np.arange(varx_range[0], varx_range[1], varx_range[2])  # 0,1,2,3,4,5
+bin_centers = bins[:-1] + np.diff(bins).mean()/2
 
 # Digitize tg_varx into bins
 bin_indices = np.digitize(tg_varx, bins) - 1
@@ -2223,12 +2482,13 @@ counts = [len(vals) for vals in box_data]
 
 # Plot
 plt.figure(figsize=(9, 5))
-bp = plt.boxplot(box_data, positions=bin_centers, widths=0.6, showmeans=True)
-plt.xlabel(varx+" (binned, 1° intervals)")
+bp = plt.boxplot(box_data, positions=bin_centers, widths=np.diff(bins).mean()/2, showmeans=True)
+plt.xlim(bins[0], bins[-1])
+plt.xlabel(varx+" (binned)")
 plt.ylabel("delta "+vary)
 plt.title("Boxplots of delta "+vary+" vs "+varx+" bins")
 plt.grid(True, linestyle="--", alpha=0.5)
-plt.xticks(bin_centers, [f"{b}-{b+1}" for b in bins[:-1]])
+plt.xticks(bin_centers, [f"{round(b, 2)}-{round(b+varx_range[2], 2)}" for b in bins[:-1]])
 
 # add linear fit
 plt.plot([bins[0], bins[-1]], [lfit(bins[0]), lfit(bins[-1])])
@@ -2237,7 +2497,7 @@ plt.text(0.95, 0.9, "Linear fit: "+lfit_str, transform=plt.gca().transAxes, c="b
 
 # add a second linear fit using the medians
 medians = [line.get_ydata()[0] for line in bp['medians']]
-lfit_m = np.polynomial.Polynomial.fit(bin_centers, medians, 1, domain=[0, 18])
+lfit_m = np.polynomial.Polynomial.fit(bin_centers, medians, 1)
 lfit_m_str = str(lfit_m.convert()).replace("x", varx)
 plt.plot([bins[0], bins[-1]], [lfit_m(bins[0]), lfit_m(bins[-1])], c="red")
 plt.text(0.95, 0.85, "Linear fit (medians): "+lfit_m_str, transform=plt.gca().transAxes, c="red",
