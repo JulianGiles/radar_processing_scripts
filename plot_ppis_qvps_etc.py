@@ -97,7 +97,7 @@ SNRH_min = 15 # min value for SNRH thresholding. This has a significant influenc
 ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/pro/vol5minng01/07/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2019-07-17/ANK/*F/8.0/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-08-09/AFY/*/10.0/*allmoms*"
-ff = "/automount/realpep/upload/jgiles/dmi/*/*/2016-02-21/HTY/*/8.0/*allmoms*"
+ff = "/automount/realpep/upload/jgiles/dmi/*/*/2017-01-02/HTY/*/12.0/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2017-05-20/GZT/*/10.0/*allmoms*.nc"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-04-30/SVS/*/10.0/*allmoms*.nc"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-10-21/SVS/*/7.0/*allmoms*.nc"
@@ -430,23 +430,23 @@ ds = ds.chunk({"time":10, "azimuth":-1, "range":-1})
 #### Discard possible erroneous ML values
 if "height_ml_new_gia" in ds_qvp:
     ## First, filter out ML heights that are too high (above selected isotherm)
-    isotherm = -5 # isotherm for the upper limit of possible ML values
+    isotherm = -1 # isotherm for the upper limit of possible ML values
     # we need to fill the nans of the TEMP qvp otherwise the argmin operation will fail
     ds_qvp["TEMP"] = ds_qvp["TEMP"].fillna(ds["TEMP"].median("azimuth", keep_attrs=True).assign_coords({"z": ds["z"].median("azimuth", keep_attrs=True)}).swap_dims({"range":"z"}))
     z_isotherm = ds_qvp.TEMP.isel(z=((ds_qvp["TEMP"].fillna(100.)-isotherm)**2).argmin("z").compute())["z"]
 
     ds_qvp.coords["height_ml_new_gia_clean"] = ds_qvp["height_ml_new_gia"].where(ds_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
-    ds_qvp.coords["height_ml_bottom_new_gia_clean"] = ds_qvp["height_ml_bottom_new_gia"].where(ds_qvp["height_ml_new_gia"]<=z_isotherm.values).compute()
+    ds_qvp.coords["height_ml_bottom_new_gia_clean"] = ds_qvp["height_ml_bottom_new_gia"].where(ds_qvp["height_ml_bottom_new_gia"]<=z_isotherm.values).compute()
 
     # Then, check that ML top is over ML bottom
-    cond_top_over_bottom = ds_qvp.coords["height_ml_new_gia_clean"] > ds_qvp.coords["height_ml_bottom_new_gia_clean"]
+    cond_top_over_bottom = ds_qvp.coords["height_ml_new_gia"] > ds_qvp.coords["height_ml_bottom_new_gia_clean"]
 
     # Assign final values
-    ds_qvp.coords["height_ml_new_gia_clean"] = ds_qvp["height_ml_new_gia_clean"].where(cond_top_over_bottom).compute()
+    ds_qvp.coords["height_ml_new_gia_clean"] = ds_qvp["height_ml_new_gia"].where(cond_top_over_bottom).compute()
     ds_qvp.coords["height_ml_bottom_new_gia_clean"] = ds_qvp["height_ml_bottom_new_gia_clean"].where(cond_top_over_bottom).compute()
 
-    ds = ds.assign_coords({'height_ml_new_gia_clean': ds_qvp["height_ml_new_gia_clean"].where(cond_top_over_bottom)})
-    ds = ds.assign_coords({'height_ml_bottom_new_gia_clean': ds_qvp["height_ml_bottom_new_gia_clean"].where(cond_top_over_bottom)})
+    ds = ds.assign_coords({'height_ml_new_gia_clean': ds_qvp["height_ml_new_gia_clean"]})
+    ds = ds.assign_coords({'height_ml_bottom_new_gia_clean': ds_qvp["height_ml_bottom_new_gia_clean"]})
 
 if not isvolume:
     #### Attenuation correction (NOT PROVED THAT IT WORKS NICELY ABOVE THE ML)
