@@ -1231,9 +1231,10 @@ TEMP_min = 0 # preliminary filter, we can use the actual ML height later
 DBZH_min = 10
 CBB_max = 0.05
 
-Zm_range = 1000. # range in m for the computation of Zm (DBZH close to radar)
+Zm_range = 1500. # range in m for the computation of Zm (DBZH close to radar)
 
 vv_to_extract = ["DBZH", "DBZH_AC", "DBTH", "ZDR_EC", "ZDR_EC_OC", "ZDR_EC_OC_AC",
+                 "ZDR_EC_OCnoWR",
                  "PHIDP_OC", "PHIDP_OC_SMOOTH", "PHIDP_OC_MASKED",
                  "TEMP", "Zm", "z", "height_ml_bottom_new_gia"] # all variables to extract from the datasets, DBZH must be the first
 
@@ -1242,6 +1243,72 @@ selected_ML_high = {vi:[] for vi in vv_to_extract}
 selected_ML_high_dates = {} # to collect dates info and number of valid points
 
 start_time = time.time()
+
+if calc:
+    # We load ZDR offsets again for alternative offset correction
+
+    print("Loading ZDR daily offsets")
+
+    ds1_zdr_offsets_lr_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML_noWR-*-HTY-h5netcdf.nc")
+    ds1_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc")
+    ds1_zdr_offsets_lr_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C_noWR-*-HTY-h5netcdf.nc")
+    ds1_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc")
+    ds1_zdr_offsets_qvp_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML_noWR-*-HTY-h5netcdf.nc")
+    ds1_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc")
+    ds1_zdr_offsets_qvp_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C_noWR-*-HTY-h5netcdf.nc")
+    ds1_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc")
+
+    ds2_zdr_offsets_lr_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML_noWR-*-GZT-h5netcdf.nc")
+    ds2_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc")
+    ds2_zdr_offsets_lr_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C_noWR-*-GZT-h5netcdf.nc")
+    ds2_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc")
+    ds2_zdr_offsets_qvp_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML_noWR-*-GZT-h5netcdf.nc")
+    ds2_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc")
+    ds2_zdr_offsets_qvp_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C_noWR-*-GZT-h5netcdf.nc")
+    ds2_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc")
+
+    # # plot running medians to check smoothing
+    # ds2_zdr_offsets_lr_ml.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_lr_ml.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+    # ds2_zdr_offsets_lr_1c.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_lr_1c.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+    # ds2_zdr_offsets_qvp_ml.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_qvp_ml.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+    # ds2_zdr_offsets_qvp_1c.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_qvp_1c.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+
+    # Combine to create a single offset timeseries
+    ds1_zdr_offsets_lr = ds1_zdr_offsets_lr_ml_nowr.resample(time="D").mean()\
+        .fillna(ds1_zdr_offsets_lr_ml.resample(time="D").mean())\
+            .fillna(ds1_zdr_offsets_lr_1c_nowr.resample(time="D").mean())\
+                .fillna(ds1_zdr_offsets_lr_1c.resample(time="D").mean())
+    ds1_zdr_offsets_qvp = ds1_zdr_offsets_qvp_ml_nowr.resample(time="D").mean()\
+        .fillna(ds1_zdr_offsets_qvp_ml.resample(time="D").mean())\
+            .fillna(ds1_zdr_offsets_qvp_1c_nowr.resample(time="D").mean())\
+                .fillna(ds1_zdr_offsets_qvp_1c.resample(time="D").mean())
+    ds1_zdr_offsets_qvp = ds1_zdr_offsets_qvp.where(ds1_zdr_offsets_qvp["ZDR_offset"] < 2) # there is an extreme value in one date, lets remove it
+    ds1_zdr_offsets_comb = xr.where(ds1_zdr_offsets_lr["ZDR_offset_datacount"] >= ds1_zdr_offsets_qvp["ZDR_offset_datacount"],
+                                ds1_zdr_offsets_lr["ZDR_offset"],
+                                ds1_zdr_offsets_qvp["ZDR_offset"]).fillna(ds1_zdr_offsets_lr["ZDR_offset"]).fillna(ds1_zdr_offsets_qvp["ZDR_offset"])
+
+    ds2_zdr_offsets_lr = ds2_zdr_offsets_lr_ml_nowr.resample(time="D").mean()\
+        .fillna(ds2_zdr_offsets_lr_ml.resample(time="D").mean())\
+            .fillna(ds2_zdr_offsets_lr_1c_nowr.resample(time="D").mean())\
+                .fillna(ds2_zdr_offsets_lr_1c.resample(time="D").mean())
+    ds2_zdr_offsets_qvp = ds2_zdr_offsets_qvp_ml_nowr.resample(time="D").mean()\
+        .fillna(ds2_zdr_offsets_qvp_ml.resample(time="D").mean())\
+            .fillna(ds2_zdr_offsets_qvp_1c_nowr.resample(time="D").mean())\
+                .fillna(ds2_zdr_offsets_qvp_1c.resample(time="D").mean())
+    ds2_zdr_offsets_qvp = ds2_zdr_offsets_qvp.where(ds2_zdr_offsets_qvp["ZDR_offset"] < 2) # there is an extreme value in one date, lets remove it
+    ds2_zdr_offsets_comb = xr.where(ds2_zdr_offsets_lr["ZDR_offset_datacount"] >= ds2_zdr_offsets_qvp["ZDR_offset_datacount"],
+                                ds2_zdr_offsets_lr["ZDR_offset"],
+                                ds2_zdr_offsets_qvp["ZDR_offset"]).fillna(ds2_zdr_offsets_lr["ZDR_offset"]).fillna(ds2_zdr_offsets_qvp["ZDR_offset"])
+
+    # finally, smooth it out (I think we dont need to smooth it)
+    # ds1_zdr_offsets_comb_smooth = ds1_zdr_offsets_comb.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
+    # ds2_zdr_offsets_comb_smooth = ds2_zdr_offsets_comb.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
+
+    # Plots, for checking
+    # ds1_zdr_offsets_lr.ZDR_offset.sel(time=slice("2016-12-01", "2017-01-31")).plot(marker="o")
+    # ds1_zdr_offsets_qvp.ZDR_offset.sel(time=slice("2016-12-01", "2017-01-31")).plot(marker="x")
+    # ds1_zdr_offsets_comb.sel(time=slice("2016-12-01", "2017-01-31")).plot(marker=".")
+    # plt.grid()
 
 for date in ML_high_dates:
     print("Processing "+date)
@@ -1261,6 +1328,10 @@ for date in ML_high_dates:
             if reload:
                 dbzh_loaded = False
                 for vi in vv_to_extract:
+                    # if "_OCnoWR" in vi:
+                    #     vi_ = "".join(vi.split("_OCnoWR"))
+                    #     vi_OC = "".join(vi.split("noWR"))
+                    #     selected_ML_high[vi].append( (selected_ML_high[], ) )
                     sfp_tg = sf+"_".join([vi, "tg", os.path.basename(HTY_file), os.path.basename(GZT_file)])
                     sfp_ref = sf+"_".join([vi, "ref", os.path.basename(HTY_file), os.path.basename(GZT_file)])
                     try:
@@ -1288,6 +1359,14 @@ for date in ML_high_dates:
 
             ds1 = wrl.georef.georeference(ds1, crs=proj)
             ds2 = wrl.georef.georeference(ds2, crs=proj)
+
+            # Add new offset/atten corrected ZDR in datasets
+            if "ZDR_EC_OCnoWR" in vv_to_extract:
+                ds1 = ds1.assign({"ZDR_EC_OCnoWR":
+                                  ds1["ZDR_EC"] - ds1_zdr_offsets_comb.sel(time=ds1.time[0].values.astype(str)[:10]).mean()} )
+
+                ds2 = ds2.assign({"ZDR_EC_OCnoWR":
+                                  ds2["ZDR_EC"] - ds2_zdr_offsets_comb.sel(time=ds2.time[0].values.astype(str)[:10]).mean()} )
 
             # Add beam blockage
             ds1_pbb, ds1_cbb = beam_blockage_from_radar_ds(ds1.isel(time=0),
@@ -1764,8 +1843,11 @@ plt.show()
 # same as before but we try to remove the offsets of ZDR when wet radome was affecting the radar
 phi = "PHIDP_OC_MASKED"
 zdr = "ZDR_EC" # not OC ZDR
-zdr_to_plot = "ZDR_EC_OC_new"
-zdr_oc = zdr_to_plot.split("_new")[0]
+zdr_to_plot = "ZDR_EC_OCnoWR_WRcorr" # ZDR_EC_OC_WRcorr (for checking the correction)
+if "_new" in zdr_to_plot:
+    zdr_oc = zdr_to_plot.split("_new")[0]
+if "_WRcorr" in zdr_to_plot:
+    zdr_oc = zdr_to_plot.split("_WRcorr")[0]
 
 # we need to apply additional filters that we did not apply in the previous step
 ref_Zm_max = 5
@@ -1776,7 +1858,11 @@ varx_range = (0, 45, 5) # start, stop, step
 min_bin_n = 20 # min count of valid values inside bin to be included in the fitting
 
 # custom atten corr based on the previous results
-beta_new = 0.04 # to ignore this step set beta_new = 0
+beta_new = 0.036 # to ignore this step set beta_new = 0
+
+# WR corr based on results
+def zdr_wrc(Zm):
+    return 0.0016*Zm + 0.00018*Zm**2 # change here to adjust coefficients based on results
 
 if "new" in zdr_to_plot:
     # Remove the timestep-based ZDR offsets and replace with daily offsets ignore the
@@ -1805,6 +1891,15 @@ if "new" in zdr_to_plot:
 
         # add to the new variable
         selected_ML_high[zdr_oc+"_new"].append((tg_zdr_oc_new_ti.copy(), selected_ML_high[zdr_oc][ti][1]))
+
+if "_WRcorr" in zdr_to_plot:
+    # Correct wet-radome timesteps
+
+    selected_ML_high[zdr_oc+"_WRcorr"] = []
+    for ti in range(len(selected_ML_high[zdr])):
+        # add to the new variable
+        selected_ML_high[zdr_oc+"_WRcorr"].append((selected_ML_high[zdr_oc][ti][0].copy() - zdr_wrc(selected_ML_high["Zm"][ti][0].copy()),
+                                                selected_ML_high[zdr_oc][ti][1]))
 
 # extract/build necessary variables
 tg_zdr = np.concat([ d1.flatten() for d1,d2 in selected_ML_high[zdr_to_plot] ])
@@ -1891,8 +1986,8 @@ plt.show()
 token = secrets['EARTHDATA_TOKEN']
 
 # New alpha and beta values for atten correction in rain, based on the previous results.
-new_alpha = 0.09
-new_beta = 0.04
+new_alpha = 0.1
+new_beta = 0.036
 
 tsel = "2016-12-01T14" # for plots
 
@@ -1904,14 +1999,15 @@ TEMP_max = 1 # for this we need a max temp, we want to select above the ML (not 
 DBZH_min = 10
 CBB_max = 0.05
 
-Zm_range = 1000. # range in m for the computation of Zm (DBZH close to radar)
+Zm_range = 1500. # range in m for the computation of Zm (DBZH close to radar)
 
 vv_to_extract = ["DBZH", "DBZH_AC_rain", "DBZH_AC",
                  "DBZH_AC2_rain",
                  "ZDR_EC", "ZDR_EC_AC_rain",
                  "ZDR_EC_OC", "ZDR_EC_OC_AC", "ZDR_EC_OC_AC_rain",
                  "ZDR_EC_OC_AC2_rain",
-                 "ZDR_EC_OC2", "ZDR_EC_OC2_AC2_rain",
+                 "ZDR_EC_OC2", "ZDR_EC_OC2_AC2_rain", # ZDR corrected with extrapolated offsets
+                 "ZDR_EC_OC3", "ZDR_EC_OC3_AC2_rain", # ZDR corrected with extrapolated offsets and manual offsets for some dates
                  "PHIDP_OC", "PHIDP_OC_MASKED",
                  "TEMP", "Zm", "TEMPm", "z",
                  "height_ml_bottom_new_gia", "height_ml_new_gia",
@@ -1934,14 +2030,22 @@ if calc:
 
     print("Loading ZDR daily offsets for NaN filling")
 
+    ds1_zdr_offsets_lr_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML_noWR-*-HTY-h5netcdf.nc")
     ds1_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc")
+    ds1_zdr_offsets_lr_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C_noWR-*-HTY-h5netcdf.nc")
     ds1_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc")
+    ds1_zdr_offsets_qvp_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML_noWR-*-HTY-h5netcdf.nc")
     ds1_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc")
+    ds1_zdr_offsets_qvp_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C_noWR-*-HTY-h5netcdf.nc")
     ds1_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc")
 
+    ds2_zdr_offsets_lr_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML_noWR-*-GZT-h5netcdf.nc")
     ds2_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc")
+    ds2_zdr_offsets_lr_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C_noWR-*-GZT-h5netcdf.nc")
     ds2_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc")
+    ds2_zdr_offsets_qvp_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML_noWR-*-GZT-h5netcdf.nc")
     ds2_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc")
+    ds2_zdr_offsets_qvp_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C_noWR-*-GZT-h5netcdf.nc")
     ds2_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc")
 
     # # plot running medians to check smoothing
@@ -1951,23 +2055,49 @@ if calc:
     # ds2_zdr_offsets_qvp_1c.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_qvp_1c.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
 
     # Combine to create a single offset timeseries
-    ds1_zdr_offsets_lr = xr.concat([ds1_zdr_offsets_lr_ml, ds1_zdr_offsets_lr_1c], dim="variant").mean("variant")
-    ds1_zdr_offsets_qvp = xr.concat([ds1_zdr_offsets_qvp_ml, ds1_zdr_offsets_qvp_1c], dim="variant").mean("variant")
+    ds1_zdr_offsets_lr = ds1_zdr_offsets_lr_ml_nowr.resample(time="D").mean()\
+        .fillna(ds1_zdr_offsets_lr_ml.resample(time="D").mean())\
+            .fillna(ds1_zdr_offsets_lr_1c_nowr.resample(time="D").mean())\
+                .fillna(ds1_zdr_offsets_lr_1c.resample(time="D").mean())
+    ds1_zdr_offsets_qvp = ds1_zdr_offsets_qvp_ml_nowr.resample(time="D").mean()\
+        .fillna(ds1_zdr_offsets_qvp_ml.resample(time="D").mean())\
+            .fillna(ds1_zdr_offsets_qvp_1c_nowr.resample(time="D").mean())\
+                .fillna(ds1_zdr_offsets_qvp_1c.resample(time="D").mean())
     ds1_zdr_offsets_qvp = ds1_zdr_offsets_qvp.where(ds1_zdr_offsets_qvp["ZDR_offset"] < 2) # there is an extreme value in one date, lets remove it
     ds1_zdr_offsets_comb = xr.where(ds1_zdr_offsets_lr["ZDR_offset_datacount"] >= ds1_zdr_offsets_qvp["ZDR_offset_datacount"],
                                 ds1_zdr_offsets_lr["ZDR_offset"],
-                                ds1_zdr_offsets_qvp["ZDR_offset"]).fillna(ds1_zdr_offsets_qvp["ZDR_offset"])
+                                ds1_zdr_offsets_qvp["ZDR_offset"]).fillna(ds1_zdr_offsets_lr["ZDR_offset"]).fillna(ds1_zdr_offsets_qvp["ZDR_offset"])
 
-    ds2_zdr_offsets_lr = xr.concat([ds2_zdr_offsets_lr_ml, ds2_zdr_offsets_lr_1c], dim="variant").mean("variant")
-    ds2_zdr_offsets_qvp = xr.concat([ds2_zdr_offsets_qvp_ml, ds2_zdr_offsets_qvp_1c], dim="variant").mean("variant")
+    ds2_zdr_offsets_lr = ds2_zdr_offsets_lr_ml_nowr.resample(time="D").mean()\
+        .fillna(ds2_zdr_offsets_lr_ml.resample(time="D").mean())\
+            .fillna(ds2_zdr_offsets_lr_1c_nowr.resample(time="D").mean())\
+                .fillna(ds2_zdr_offsets_lr_1c.resample(time="D").mean())
+    ds2_zdr_offsets_qvp = ds2_zdr_offsets_qvp_ml_nowr.resample(time="D").mean()\
+        .fillna(ds2_zdr_offsets_qvp_ml.resample(time="D").mean())\
+            .fillna(ds2_zdr_offsets_qvp_1c_nowr.resample(time="D").mean())\
+                .fillna(ds2_zdr_offsets_qvp_1c.resample(time="D").mean())
     ds2_zdr_offsets_qvp = ds2_zdr_offsets_qvp.where(ds2_zdr_offsets_qvp["ZDR_offset"] < 2) # there is an extreme value in one date, lets remove it
     ds2_zdr_offsets_comb = xr.where(ds2_zdr_offsets_lr["ZDR_offset_datacount"] >= ds2_zdr_offsets_qvp["ZDR_offset_datacount"],
                                 ds2_zdr_offsets_lr["ZDR_offset"],
-                                ds2_zdr_offsets_qvp["ZDR_offset"]).fillna(ds2_zdr_offsets_qvp["ZDR_offset"])
+                                ds2_zdr_offsets_qvp["ZDR_offset"]).fillna(ds2_zdr_offsets_lr["ZDR_offset"]).fillna(ds2_zdr_offsets_qvp["ZDR_offset"])
 
     # finally, smooth it out
     ds1_zdr_offsets_comb_smooth = ds1_zdr_offsets_comb.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
     ds2_zdr_offsets_comb_smooth = ds2_zdr_offsets_comb.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
+
+    # Manually adjust some offsets in GZT (based on ZDR medians calculated with ZH>30, RHOHV>0.99, SNRH>20, TEMP<0)
+    dates_to_update = [
+    '2016-12-16',
+    '2016-12-20',
+    '2016-12-21',
+    '2016-12-27',
+    '2016-12-30'
+    ]
+    new_ds2_offsets = [-0.16, -0.25, -0.13, -0.14, -0.21]
+
+    ds2_zdr_offsets_comb_alt = ds2_zdr_offsets_comb.copy(deep=True)
+    ds2_zdr_offsets_comb_alt.loc[dates_to_update] = new_ds2_offsets
+    ds2_zdr_offsets_comb_alt_smooth = ds2_zdr_offsets_comb_alt.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
 
 for date in ML_low_dates:
     print("Processing "+date)
@@ -2016,12 +2146,16 @@ for date in ML_low_dates:
             ds2 = wrl.georef.georeference(ds2, crs=proj)
 
             # Add new offset/atten corrected ZDR in datasets
-            if "ZDR_EC_OC2" in vv_to_extract:
+            if "ZDR_EC_OC2" in vv_to_extract: # correct ds2 ZDR with extrapolated offsets
                 ds1 = ds1.assign({"ZDR_EC_OC2":
-                                  ds1["ZDR_EC"] - ds1_zdr_offsets_comb_smooth.sel(time=ds1.time[0].values.astype(str)[:10]).mean()} )
+                                  ds1["ZDR_EC"] - ds1_zdr_offsets_comb.sel(time=ds1.time[0].values.astype(str)[:10]).mean()} )
 
                 ds2 = ds2.assign({"ZDR_EC_OC2":
                                   ds2["ZDR_EC"] - ds2_zdr_offsets_comb_smooth.sel(time=ds2.time[0].values.astype(str)[:10]).mean()} )
+
+            if "ZDR_EC_OC3" in vv_to_extract: # correct ds2 ZDR with extrapolated offsets, some dates have manual offsets
+                ds2 = ds2.assign({"ZDR_EC_OC3":
+                                  ds2["ZDR_EC"] - ds2_zdr_offsets_comb_alt_smooth.sel(time=ds2.time[0].values.astype(str)[:10]).mean()} )
 
             vv_AC2_rain = [vv for vv in vv_to_extract if "2_rain" in vv and "_ML" not in vv]
             vv_noAC2_rain = [vv.split("_AC2_rain")[0] for vv in vv_to_extract if "_AC2_rain" in vv and "_ML" not in vv]
