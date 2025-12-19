@@ -77,8 +77,10 @@ if "dwd" in path0:
 
 min_hgts = utils.min_hgts
 min_rngs = utils.min_rngs
+min_irngs_zdr = utils.min_irngs_ZDR
 min_hgt = min_hgts["default"] # minimum height above the radar to be considered
 min_range = min_rngs["default"] # minimum range from which to consider data (mostly for bad PHIDP filtering)
+min_irange_zdr = min_irngs_zdr["default"]
 if "dwd" in path0 and "90grads" in path0:
     # for the VP we need to set a higher min height because there are several bins of unrealistic values
     min_hgt = min_hgts["90grads"]
@@ -86,15 +88,20 @@ if "dwd" in path0 and "90grads" in path0:
 if "ANK" in path0:
     min_hgt = min_hgts["ANK"]
     min_range = min_rngs["ANK"]
+    min_irange_zdr = min_irngs_zdr["ANK"]
 if "GZT" in path0:
     min_hgt = min_hgts["GZT"]
     min_range = min_rngs["GZT"]
+    min_irange_zdr = min_irngs_zdr["GZT"]
 if "AFY" in path0:
     min_range = min_rngs["AFY"]
+    min_irange_zdr = min_irngs_zdr["AFY"]
 if "SVS" in path0:
     min_range = min_rngs["SVS"]
+    min_irange_zdr = min_irngs_zdr["SVS"]
 if "HTY" in path0:
     min_range = min_rngs["HTY"]
+    min_irange_zdr = min_irngs_zdr["HTY"]
 
 # get the files and check that it is not empty
 if "hd5" in path0 or "h5" in path0:
@@ -395,11 +402,20 @@ for ff in files:
         else:
             print(X_PHI+" not found in the data, skipping ML detection and below-ML offset")
 
+        # Assign Zm
+        data = data.assign_coords({"Zm": utils.apply_min_max_thresh(data, {X_RHO:0.9, "SNRH":15, "SNRHC":15, "SQIH":0.5},
+                                          {}, skipfullna=True)[X_DBZH]\
+                            .isel({"range": slice(1, None) }).sel({"range": slice(0, Zm_range)})\
+                                .compute().median(("azimuth","range")) })
+        data["Zm"].attrs = {"long_name": "Median "+X_DBZH+" in "+str(Zm_range)+" m radius"}
+
         # Apply universal filters and elevation dependency
         # For ZDR calibration: SNR> 20-25 and attenuation should be insignificant (Ryzhkov and Zrnic p. 156)
         # We consider PHIDP<5 to be insignificant attenuation
+        # Important to use PHIDP_OC_SMOOTH here because the _MASKED it may be too much masked and we throw away many ZDR values
         data = utils.apply_min_max_thresh(data, {"SNRH":20, "SNRHC":20, "SQIH":0.5},
-                                          {X_PHI+"_OC_MASKED": 5}, skipfullna=True)
+                                          {X_PHI+"_OC_SMOOTH": 5}, skipfullna=True)\
+                .isel(range=slice(min_irange_zdr,-1))
         try:
             angle = float(data.elevation.mean())
         except:
@@ -410,10 +426,6 @@ for ff in files:
                 X_ZDR = X_ZDR+"_EC"
         except:
             pass
-
-        # Assign Zm
-        data = data.assign({"Zm": data[X_DBZH].isel({"range": slice(1, None) }).sel({"range": slice(0, Zm_range)}).compute().median(("azimuth","range")) })
-        data["Zm"].attrs = {"long_name": "Median "+X_DBZH+" in "+str(Zm_range)+" m radius"}
 
         if 1 in calib_types and calib_1:
             # We ask for at least 1 km of consecutive ZDR values in each VP to be included in the calculation
