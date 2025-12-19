@@ -91,6 +91,16 @@ min_rngs = {
     'GZT': 8500, # for GZT we need higher min_range to avoid artifacts
 }
 
+# Set minimum range index to be considered for ZDR (to avoid artifacts close to the radar)
+min_irngs_ZDR = {
+    'default': 1,
+    'HTY': 1, # for HTY the data looks pretty good close to the radar
+    'ANK': 1, # for ANK we need higher min_range to avoid PHIDP artifacts
+    'AFY': 8, # for AFY we need higher min_range to avoid artifacts
+    'SVS': 3, # for SVS we need higher min_range to avoid artifacts
+    'GZT': 5, # for GZT we need higher min_range to avoid artifacts
+}
+
 # Set the possible ZDR calibrations locations to include (in order of priority)
 # The idea is to use a script that will try to correct according to the first offset; if not available or nan it will
 # continue with the next one, and so on. Only the used offset will be outputted in the final file.
@@ -98,6 +108,7 @@ min_rngs = {
 zdroffdir = ["/calibration/zdr/VP/", "/calibration/zdr/LR_consistency/", "/calibration/zdr/QVP/",]# "/calibration/zdr/falseQVP/"] # subfolder(s) where to find the zdr offset data
 zdrofffile = ["*zdr_offset_belowML_00*",  "*zdr_offset_below1C_00*", "*zdr_offset_below3C_00*", "*zdr_offset_wholecol_00*",
               "*zdr_offset_belowML_07*", "*zdr_offset_below1C_07*", "*zdr_offset_below3C_07*",
+              "*zdr_offset_belowML_noWR-*", "*zdr_offset_below1C_noWR-*", "*zdr_offset_below3C_noWR-*",
               "*zdr_offset_belowML-*", "*zdr_offset_below1C-*", "*zdr_offset_below3C-*",
               "*zdr_offset_belowML_2*", "*zdr_offset_below1C_2*", "*zdr_offset_below3C_2*", # this line is for boxpol
               ] # pattern to select the appropriate file (careful with the zdr_offset_belowML_timesteps)
@@ -5292,6 +5303,27 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
 
 
     return ds_offset
+
+
+#### Wet radome correction
+
+def zdr_wr_offset_zm_cuadratic(Zm, a=0.0016, b=0.00018):
+    r"""
+    Corrects higher ZDR values due to wet radome based on a reference cuadratic fit.
+
+    Parameters
+    ----------
+    Zm : Median reflectivity values in a 1.5 km radius around the radar (or
+         whatever other reflectivity value was used to derive the reference fit).
+    a : linear coefficient of the fit
+    b : quadratic coefficient of the fit
+
+    Returns
+    ----------
+    value for correction: ZDR_WRcorrected = ZDR - zdr_wr_offset_zm_cuadratic(Zm¨)
+    """
+    return 0.0016*Zm + 0.00018*Zm**2
+
 
 #### Attenuation correction
 
