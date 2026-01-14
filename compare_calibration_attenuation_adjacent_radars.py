@@ -1233,10 +1233,13 @@ CBB_max = 0.05
 
 Zm_range = 1500. # range in m for the computation of Zm (DBZH close to radar)
 
-vv_to_extract = ["DBZH", "DBZH_AC", "DBTH", "ZDR_EC", "ZDR_EC_OC", "ZDR_EC_OC_AC",
+vv_to_extract = ["DBZH", "DBZH_AC",
+                 "ZDR_EC", "ZDR_EC_OC", "ZDR_EC_OC_AC",
                  "ZDR_EC_OCnoWR",
                  "PHIDP_OC", "PHIDP_OC_SMOOTH", "PHIDP_OC_MASKED",
-                 "TEMP", "Zm", "z", "height_ml_bottom_new_gia"] # all variables to extract from the datasets, DBZH must be the first
+                 "Zm",
+                 "TEMP", "z", "height_ml_bottom_new_gia"
+                 ] # all variables to extract from the datasets, DBZH must be the first
 
 selected_ML_high = {vi:[] for vi in vv_to_extract}
 
@@ -1393,8 +1396,10 @@ for date in ML_high_dates:
 
             # They consider that there is rain above the radar by looking at the
             # median reflectivity in a circle around each radar. Let's add this variable
-            dsx = dsx.assign_coords({"Zm": dsx["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
-            dsy = dsy.assign_coords({"Zm": dsy["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsy["DBZH"]) })
+            if "Zm" not in dsx.coords:
+                dsx = dsx.assign_coords({"Zm": dsx["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
+            if "Zm" not in dsy.coords:
+                dsy = dsy.assign_coords({"Zm": dsy["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsy["DBZH"]) })
 
             # if we want z or ML heights we need to broadcast them
             if "z" in vv_to_extract:
@@ -1762,7 +1767,7 @@ for x, n in zip(phi_max_values, phi_N_):
 
 #%%% Plot boxplot of delta DBZH/ZDR vs target Zm (wet radome attenuation)
 phi = "PHIDP_OC_MASKED"
-dbzh = "DBZH"
+dbzh = "DBZH_AC"
 
 # we need to apply additional filters that we did not apply in the previous step
 ref_Zm_max = 5
@@ -1858,11 +1863,11 @@ varx_range = (0, 45, 5) # start, stop, step
 min_bin_n = 20 # min count of valid values inside bin to be included in the fitting
 
 # custom atten corr based on the previous results
-beta_new = 0.036 # to ignore this step set beta_new = 0
+beta_new = 0.035 # to ignore this step set beta_new = 0
 
 # WR corr based on results
 def zdr_wrc(Zm):
-    return 0.0016*Zm + 0.00018*Zm**2 # change here to adjust coefficients based on results
+    return 0.00057*Zm + 0.00022*Zm**2 # change here to adjust coefficients based on results
 
 if "new" in zdr_to_plot:
     # Remove the timestep-based ZDR offsets and replace with daily offsets ignore the
@@ -1987,7 +1992,7 @@ token = secrets['EARTHDATA_TOKEN']
 
 # New alpha and beta values for atten correction in rain, based on the previous results.
 new_alpha = 0.1
-new_beta = 0.036
+new_beta = 0.035
 
 tsel = "2016-12-01T14" # for plots
 
@@ -2009,7 +2014,8 @@ vv_to_extract = ["DBZH", "DBZH_AC_rain", "DBZH_AC",
                  "ZDR_EC_OC2", "ZDR_EC_OC2_AC2_rain", # ZDR corrected with extrapolated offsets
                  "ZDR_EC_OC3", "ZDR_EC_OC3_AC2_rain", # ZDR corrected with extrapolated offsets and manual offsets for some dates
                  "PHIDP_OC", "PHIDP_OC_MASKED",
-                 "TEMP", "Zm", "TEMPm", "z",
+                 "Zm",
+                 "TEMP", "TEMPm", "z",
                  "height_ml_bottom_new_gia", "height_ml_new_gia",
                  "PHIDP_OC_MASKED_MLbump", "PHIDP_OC_SMOOTH_MLbump",
                  "DBZH_AC_rain_MLmax",
@@ -2085,15 +2091,18 @@ if calc:
     ds1_zdr_offsets_comb_smooth = ds1_zdr_offsets_comb.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
     ds2_zdr_offsets_comb_smooth = ds2_zdr_offsets_comb.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
 
-    # Manually adjust some offsets in GZT (based on ZDR medians calculated with ZH>30, RHOHV>0.99, SNRH>20, TEMP<0)
+    # Manually adjust some offsets in GZT based on ZDR medians calculated with ZH>30, RHOHV>0.99, SNRH>20, TEMP<0
+    # and taking a reference value for snow of 0.1 dB
+    # ds.ZDR_EC.where(ds.DBZH>0).where(ds.RHOHV>0.99).where(ds.SNRH>20).where(ds.TEMP<0).compute().median()
     dates_to_update = [
     '2016-12-16',
     '2016-12-20',
     '2016-12-21',
     '2016-12-27',
-    '2016-12-30'
+    '2016-12-30',
+    '2017-01-01'
     ]
-    new_ds2_offsets = [-0.16, -0.25, -0.13, -0.14, -0.21]
+    new_ds2_offsets = [-0.16, -0.25, -0.13, -0.14, -0.21, -0.29]
 
     ds2_zdr_offsets_comb_alt = ds2_zdr_offsets_comb.copy(deep=True)
     ds2_zdr_offsets_comb_alt.loc[dates_to_update] = new_ds2_offsets
@@ -2281,8 +2290,10 @@ for date in ML_low_dates:
 
             # They consider that there is rain above the radar by looking at the
             # median reflectivity in a circle aroud each radar. Let's add this variable
-            dsx = dsx.assign_coords({"Zm": dsx["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
-            dsy = dsy.assign_coords({"Zm": dsy["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsy["DBZH"]) })
+            if "Zm" not in dsx.coords:
+                dsx = dsx.assign_coords({"Zm": dsx["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
+            if "Zm" not in dsy.coords:
+                dsy = dsy.assign_coords({"Zm": dsy["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsy["DBZH"]) })
 
             # Analogously, add the TEMP close to the radar as a measure of below/above ML
             dsx = dsx.assign_coords({"TEMPm": dsx["TEMP"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsx["TEMP"]) })
@@ -2359,7 +2370,7 @@ print(f"took {total_time/60:.2f} minutes.")
 
 phi = "PHIDP_OC_MASKED"
 dbzh_tg = "DBZH_AC2_rain" # ZDR_EC_OC_AC2_rain
-dbzh_ref = "DBZH_AC2_rain" # ZDR_EC_OC2_AC2_rain
+dbzh_ref = "DBZH_AC2_rain" # ZDR_EC_OC3_AC2_rain
 TEMPm = "TEMPm"
 TEMP = "TEMP"
 
@@ -2540,8 +2551,8 @@ plt.show()
 #%%% Plot boxplot of delta DBZH/ZDR vs target PHI bump (ML attenuation)
 
 phi = "PHIDP_OC_MASKED"
-dbzh_tg = "DBZH_AC2_rain" # ZDR_EC_OC_AC2_rain
-dbzh_ref = "DBZH_AC2_rain" # ZDR_EC_OC2_AC2_rain
+dbzh_tg = "ZDR_EC_OC_AC2_rain_WRcorr" # ZDR_EC_OC_AC2_rain
+dbzh_ref = "ZDR_EC_OC3_AC2_rain" # ZDR_EC_OC3_AC2_rain
 TEMPm = "TEMPm"
 TEMP = "TEMP"
 
@@ -2549,7 +2560,27 @@ varx_range = (0, 19, 1) # start, stop, step # (0.7, 0.98, 0.02)
 
 min_bin_n = 20 # min count of valid values inside bin to be included in the fitting
 
-# We only need to check that TEMPm is appropriate for each radar
+# WR corr based on results
+def zdr_wrc(Zm):
+    return 0.00057*Zm + 0.00022*Zm**2 # change here to adjust coefficients based on results
+
+if "_WRcorr" in dbzh_tg:
+    # Correct wet-radome timesteps
+    var_tg_ = "".join(dbzh_tg.split("_WRcorr"))
+    selected_ML_low[dbzh_tg] = []
+    for ti in range(len(selected_ML_low[var_tg_])):
+        # add to the new variable
+        selected_ML_low[dbzh_tg].append((selected_ML_low[var_tg_][ti][0].copy() - zdr_wrc(selected_ML_low["Zm"][ti][0].copy()),
+                                         selected_ML_low[var_tg_][ti][1].copy() - zdr_wrc(selected_ML_low["Zm"][ti][1].copy()) ))
+
+if "_WRcorr" in dbzh_ref:
+    # Correct wet-radome timesteps
+    var_ref_ = "".join(dbzh_ref.split("_WRcorr"))
+    selected_ML_low[dbzh_ref] = []
+    for ti in range(len(selected_ML_low[var_tg_])):
+        # add to the new variable
+        selected_ML_low[dbzh_ref].append((selected_ML_low[var_ref_][ti][0].copy() - zdr_wrc(selected_ML_low["Zm"][ti][0].copy()),
+                                         selected_ML_low[var_ref_][ti][1].copy() - zdr_wrc(selected_ML_low["Zm"][ti][1].copy()) ))
 
 # extract/build necessary variables
 tg_dbzh = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[dbzh_tg] ])
