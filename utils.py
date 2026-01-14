@@ -85,20 +85,50 @@ min_hgts = {
 min_rngs = {
     'default': 1000,
     'HTY': 0, # for HTY the data looks pretty good close to the radar
-    'ANK': 7000, # for ANK we need higher min_range to avoid PHIDP artifacts
-    'AFY': 8500, # for AFY we need higher min_range to avoid artifacts
-    'SVS': 5500, # for SVS we need higher min_range to avoid artifacts
-    'GZT': 8500, # for GZT we need higher min_range to avoid artifacts
+    'ANK': 7000, # for ANK we need higher min_range to avoid artifacts
+    'AFY': { # for AFY we need higher min_range to avoid artifacts
+            2016: 6000,
+            2017: 5000,
+            2018: 7000,
+            2019: 7000,
+            2020: 7000
+            },
+    'SVS': 4200, # for SVS we need higher min_range to avoid artifacts
+    'GZT': 3000, # for GZT we need higher min_range to avoid artifacts
 }
 
-# Set minimum range index to be considered for ZDR (to avoid artifacts close to the radar)
-min_irngs_ZDR = {
-    'default': 1,
-    'HTY': 1, # for HTY the data looks pretty good close to the radar
-    'ANK': 1, # for ANK we need higher min_range to avoid PHIDP artifacts
-    'AFY': 8, # for AFY we need higher min_range to avoid artifacts
-    'SVS': 3, # for SVS we need higher min_range to avoid artifacts
-    'GZT': 5, # for GZT we need higher min_range to avoid artifacts
+# DEPRECATED
+# # Set minimum range index to be considered for ZDR (to avoid artifacts close to the radar)
+# min_irngs_ZDR = {
+#     'default': 1,
+#     'HTY': 1, # for HTY the data looks pretty good close to the radar
+#     'ANK': 1, # for ANK we need higher min_range to avoid artifacts
+#     'AFY': 8, # for AFY we need higher min_range to avoid artifacts
+#     'SVS': 8, # for SVS we need higher min_range to avoid artifacts
+#     'GZT': 8, # for GZT we need higher min_range to avoid artifacts
+# }
+
+# Set minimum range to be considered for ZDR (to avoid artifacts close to the radar)
+min_rngs_ZDR = {
+    'default': 500,
+    'HTY': 300, # for HTY the data looks pretty good close to the radar
+    'ANK': { # for ANK we need higher min_range to avoid artifacts
+            2015: 1875,
+            2016: 1875,
+            2017: 1750,
+            2018: 2250,
+            2019: 3250,
+            2020: 750
+            },
+    'AFY': { # for AFY we need higher min_range to avoid artifacts
+            2016: 4200,
+            2017: 2100,
+            2018: 5100,
+            2019: 6000,
+            2020: 6000
+            },
+    'SVS': 3000, # for SVS we need higher min_range to avoid artifacts
+    'GZT': 3000, # for GZT we need higher min_range to avoid artifacts
 }
 
 # Set the possible ZDR calibrations locations to include (in order of priority)
@@ -5307,7 +5337,7 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
 
 #### Wet radome correction
 
-def zdr_wr_offset_zm_cuadratic(Zm, a=0.0016, b=0.00018):
+def zdr_wr_offset_zm_cuadratic(Zm, a=0.00057, b=0.00022):
     r"""
     Corrects higher ZDR values due to wet radome based on a reference cuadratic fit.
 
@@ -5322,7 +5352,7 @@ def zdr_wr_offset_zm_cuadratic(Zm, a=0.0016, b=0.00018):
     ----------
     value for correction: ZDR_WRcorrected = ZDR - zdr_wr_offset_zm_cuadratic(Zm¨)
     """
-    return 0.0016*Zm + 0.00018*Zm**2
+    return a*Zm + b*Zm**2
 
 
 #### Attenuation correction
@@ -7365,7 +7395,7 @@ def get_discrete_cmap(ticks, colors, bad="white", over=None, under=None):
     ticks = ticks if isinstance(ticks, int) else len(ticks)
     if isinstance(colors, (str, mpl.colors.Colormap)):
         cmap = mpl.cm.get_cmap(colors)
-        colors = cmap(np.linspace(0, 1, ticks + 1))
+        colors = cmap(np.linspace(0, 1, ticks + 2))
     cmap = mpl.colors.ListedColormap(colors[1:-1])
     if over is None:
         over = colors[-1]
@@ -8858,6 +8888,161 @@ ff_icon_z = '/automount/data02/agradar/jgiles/out_EU-R13B5_constant_20200102T220
 icon_field = utils.load_icon(ff_icon, ff_icon_z)
 
 '''
+
+def calc_microphys_nocloud(icon_fields, mom=2):
+    """
+    Same as calc_microphys but without considering qc and qnc.
+    Calculate volumetric versions of qx and qnx and mean diameters.
+
+    Parameters
+    ----------
+    icon_fields : xarray.Dataset
+        Dataset with icon fields. Must include hydrometeors qx and qnx (if available),
+        qv (water vapor content), temp (temperature), pres (pressure).
+    mom : int
+        Use 1- or 2- moment scheme.
+
+    Returns
+    -------
+    icon_nc : xarray.Dataset
+        A dataset with the same data as icon_fields and the calculated new fields.
+    """
+    icon_nc = icon_fields.copy()
+
+    hymets = icon_hydromets(mom=mom)
+
+    if mom>1:
+      q_dens, qn_dens = adjust_icon_fields(icon_nc, hymets, mom=mom)
+      multi_params = mgdparams(q_dens, qn_dens, hymets)
+    else:
+      q_dens, qn_dens = adjust_icon_fields(icon_nc, hymets, mom=mom)
+      if "hail" in q_dens.keys(): del(q_dens["hail"]) # remove hail in case it is present
+      t = icon_nc['temp']
+      multi_params, qn_dens = mgdparams_1mom(q_dens, hymets, t=t, qn_out=True)
+
+    moments = calc_moments(multi_params, hymets=hymets, adjust=1) #!!! Julian S uses adjust=0
+
+    if mom>1:
+        # Add totice, totliq and tot
+        multimoments = calc_multimoments(moments)
+        multimoments = calc_multimoments(multimoments, inhm=['rain'], outhm='totliq')
+        multimoments = calc_multimoments(multimoments, inhm=['ice', 'snow', 'graupel', 'hail',
+                                                             'rain'], outhm='tot')
+    else:
+        warnings.warn("WARNING calc_microphys: Results of 1-mom scheme are probably wrong (unrealistic D0 values)")
+        multimoments = calc_multimoments(moments, inhm=['ice','snow','graupel'])
+        multimoments = calc_multimoments(multimoments, inhm=['rain'], outhm='totliq')
+        multimoments = calc_multimoments(multimoments, inhm=['ice', 'snow', 'graupel',
+                                                             'rain'], outhm='tot')
+    try:
+        mean_volume_diameter = calc_Dmean(multimoments)
+    except:
+        warnings.warn("Calculation of Dm not possible")
+
+    for hm in ['rain', 'ice', 'snow', 'graupel', 'hail']:
+        try:
+            icon_nc['vol_q' + hm[0]] = (q_dens[hm] * 1000).assign_attrs(
+                dict( standard_name='volume ' +
+                         " ".join(icon_nc['q' + hm[0]].long_name.split(" ")),
+                    units='g m-3'))
+        except:
+            warnings.warn("Creation of vol_q"+hm[0]+" not possible")
+        try:
+            icon_nc['vol_qn' + hm[0]] = np.log10(qn_dens[hm]/1000).assign_attrs(
+                dict( standard_name=
+                         " ".join(icon_nc['qn' + hm[0]].long_name.split("_")) +
+                              ' per volume',
+                    units='log10(1/L)'))
+        except:
+            warnings.warn("Creation of vol_qn"+hm[0]+" not possible")
+        try:
+            icon_nc['Dm_' + hm[0]] = (mean_volume_diameter[hm]*1000).assign_attrs(
+                    dict(standard_name='mean volume diameter of ' +
+                                     " ".join(icon_nc['q' + hm[0]].long_name.split(" ")[1:-1]),
+                         units='mm'))
+        except:
+            warnings.warn("Creation of Dm_"+hm[0]+" not possible")
+
+    # Generate vol_qtotice, vol_qtotliq and vol_qtot
+
+    vol_qtotice = icon_nc["vol_qi"].copy()
+    comment = "vol_qi"
+    for hm in ['snow', 'graupel', 'hail']:
+        if 'vol_q' + hm[0] in icon_nc.keys():
+            vol_qtotice += icon_nc['vol_q' + hm[0]].copy()
+            comment += " + vol_q" + hm[0]
+
+    icon_nc['vol_qtotice'] = vol_qtotice.assign_attrs( dict (
+        standard_name='volume specific total ice water content',
+        comments=comment,
+        units='g m-3'))
+
+    icon_nc['vol_qtotliq'] = (icon_nc["vol_qr"] ).assign_attrs( dict (
+        standard_name='volume specific total liquid water content',
+        comments="vol_qr",
+        units='g m-3'))
+
+    icon_nc['vol_qtot'] = (icon_nc["vol_qtotice"] + icon_nc["vol_qtotliq"] ).assign_attrs( dict (
+        standard_name='volume specific total water content',
+        comments="vol_qtotice + vol_qtotliq",
+        units='g m-3'))
+
+    # Generate vol_qntotice, vol_qntotliq and vol_qntot
+
+    try:
+        vol_qntotice = qn_dens["ice"].copy()
+        comment = "vol_qni"
+        for hm in ['snow', 'graupel', 'hail']:
+            if 'vol_qn' + hm[0] in icon_nc.keys():
+                vol_qntotice += qn_dens[hm].copy()
+                comment += " + vol_qn" + hm[0]
+        icon_nc['vol_qntotice'] = np.log10(vol_qntotice/1000).assign_attrs( dict (
+            standard_name='number concentration total ice water content per volume',
+            comments=comment,
+            units='log10(1/L)'))
+    except:
+        warnings.warn("Creation of vol_qntotice not possible")
+
+    try:
+        icon_nc['vol_qntotliq'] = np.log10(( qn_dens["rain"] )/1000).assign_attrs( dict (
+            standard_name='number concentration total liquid water content per volume',
+            comments="vol_qnr",
+            units='log10(1/L)'))
+    except:
+        warnings.warn("Creation of vol_qntotliq not possible")
+
+    try:
+        icon_nc['vol_qntot'] = np.log10((vol_qntotice + qn_dens["rain"] )/1000).assign_attrs( dict (
+            standard_name='number concentration total water content per volume',
+            comments="vol_qntotice + vol_qntotliq",
+            units='log10(1/L)'))
+    except:
+        warnings.warn("Creation of vol_qntot not possible")
+
+    # Generate D0_totice, D0_totliq and D0_tot
+
+    try:
+        icon_nc['Dm_totice'] = (mean_volume_diameter['totice'] *1000).assign_attrs(dict(
+            standard_name='mean volume diameter of total ice',
+            units='mm'))
+    except:
+        warnings.warn("Creation of D0_totice not possible")
+
+    try:
+        icon_nc['Dm_totliq'] = (mean_volume_diameter['totliq'] *1000).assign_attrs(dict(
+            standard_name='mean volume diameter of total liquid',
+            units='mm'))
+    except:
+        warnings.warn("Creation of D0_totliq not possible")
+
+    try:
+        icon_nc['Dm_tot'] = (mean_volume_diameter['tot'] *1000).assign_attrs(dict(
+            standard_name='mean volume diameter of total',
+            units='mm'))
+    except:
+        warnings.warn("Creation of D0_tot not possible")
+
+    return icon_nc
 
 #### Vapor pressure and Relative humidity calculations
 # According to ERA5 IFS Documentation CY49R1 - Part IV: Physical Processes (version 11/2024)
