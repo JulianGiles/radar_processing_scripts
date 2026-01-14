@@ -55,9 +55,13 @@ except ModuleNotFoundError:
     # import colormap_generator
 
 
+import dotenv
+
+secrets = dotenv.dotenv_values("/user/jgiles/secrets.env")
+
 os.environ['WRADLIB_DATA'] = '/home/jgiles/wradlib-data-main'
-# set earthdata token (this may change, only lasts a few months https://urs.earthdata.nasa.gov/users/jgiles/user_tokens)
-os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = "eyJ0eXAiOiJKV1QiLCJvcmlnaW4iOiJFYXJ0aGRhdGEgTG9naW4iLCJzaWciOiJlZGxqd3RwdWJrZXlfb3BzIiwiYWxnIjoiUlMyNTYifQ.eyJ0eXBlIjoiVXNlciIsInVpZCI6ImpnaWxlcyIsImV4cCI6MTcwMzMzMjE5NywiaWF0IjoxNjk4MTQ4MTk3LCJpc3MiOiJFYXJ0aGRhdGEgTG9naW4ifQ.6DB5JJ9vdC7Vvwvaa7_mb_HbpVAh05Gz26dzdateN10C5lAd2X4a1_zClx7KkTpyoeVZSzkGSgtcd5Azc_btG0am4r2aJDGv4Zp4Vg55G4mcZMp-aTR7D520InQLMvqFacVO5wwmvfNWzMT4TyLGcXwPuX58s1oaFR5gRL9T30pXN9nEs-1aJg4LUl553PfdOvvom3q-JKXFtSTE2nLyEQOzWW36COl1aHwq6Wh4ykn4aq6ppTVAIeHdgkjtnQtxbhd9trm16fSbX9HIgG7n-drnz_v-WMeFuycMHa-zLDKnd3U3oZW6XAUq2akw2ddu6ChwoTZ4Ix2di7fudioo9Q"
+# set earthdata token (this may change, only lasts a few months)
+os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = secrets['EARTHDATA_TOKEN']
 
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -71,8 +75,8 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 # ZDR offset loading parameters
 abs_zdr_off_min_thresh = 0. # if ZDR_OC has more negative values than the original ZDR
 # and the absolute median offset is < abs_zdr_off_min_thresh, then undo the correction (set to 0 to avoid this step)
-daily_corr = False # correct ZDR with daily offset? if False, correct with timestep offsets
-variability_check = True # Check the variability of the timestep offsets to decide between daily or timestep offsets?
+daily_corr = True # correct ZDR with daily offset? if False, correct with timestep offsets
+variability_check = False # Check the variability of the timestep offsets to decide between daily or timestep offsets?
 variability_thresh = 0.1 # Threshold value of timestep-based ZDR offsets variability to use if variability_check is True.
 first_offset_method_abs_priority = False # If True, give absolute priority to the offset from the first method if valid
 mix_offset_variants = True # Use timestep-offsets variants to fill NaNs?
@@ -88,6 +92,10 @@ abs_zdr_off_min_thresh = 0. # If abs_zdr_off_min_thresh > 0, check if offset cor
 propagate_forward = False # Propagate timestep offsets forward to fill NaNs?
 fill_with_daily_offset = True # Fill timestep NaN offsets with daily offset?
 
+# Zm params (for wet radome identification)
+Zm_range = 1500 # radius in m to select bins close to the radar
+Zm_WR = 10 # Zm higher than 10 dBZ is considered wet radome
+
 # PHIDP processing / KDP calc parameters
 window0max = 25 # max value for window0 (only applied if window0 is given in meters)
 winlen0max = [9, 25] # max value for winlen0 (only applied if winlen0 is given in meters)
@@ -97,7 +105,7 @@ SNRH_min = 15 # min value for SNRH thresholding. This has a significant influenc
 ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/pro/vol5minng01/07/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2019-07-17/ANK/*F/8.0/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-08-09/AFY/*/10.0/*allmoms*"
-ff = "/automount/realpep/upload/jgiles/dmi/*/*/2017-01-02/HTY/*/12.0/*allmoms*"
+ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-03-11/HTY/*/8.0/*allmoms*"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2017-05-20/GZT/*/10.0/*allmoms*.nc"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-04-30/SVS/*/10.0/*allmoms*.nc"
 # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-10-21/SVS/*/7.0/*allmoms*.nc"
@@ -144,10 +152,19 @@ if "SVS" in ff:
 if "HTY" in ff:
     min_range = min_rngs["HTY"]
 
+if type(min_range) == dict:
+    for yy in min_range.keys():
+        if str(yy) in ff:
+            min_range = min_range[yy]
+            break
+
 if "dwd" in ff:
     country="dwd"
 elif "dmi" in ff:
     country="dmi"
+
+if "dwd" in country:
+    Zm_range = 3000
 
 # ERA5 folder
 if "dwd" in ff:
@@ -291,6 +308,21 @@ if not isvolume:
         print("Loading ZDR offsets failed")
 else:
     print("Skipped Loading ZDR offsets")
+
+# Correct wet radome
+if not isvolume:
+    if country=="dmi":
+        # Assign Zm
+        ds = ds.assign_coords({"Zm": utils.apply_min_max_thresh(ds, {X_RHO:0.9, "SNRH":15, "SNRHC":15, "SQIH":0.5},
+                                          {}, skipfullna=True)[X_DBZH]\
+                               .isel({"range": slice(1, None) }).sel({"range": slice(0, Zm_range)})\
+                                   .compute().median(("azimuth","range")) })
+        ds["Zm"] = ds["Zm"].where(ds["Zm"]>0, other=0)# cap the negative values to 0
+        ds["Zm"].attrs = {"long_name": "Median "+X_DBZH+" in "+str(Zm_range)+" m radius"}
+
+        # correct WR
+        ds = ds.assign({X_ZDR+"_WRC": ds[X_ZDR] - utils.zdr_wr_offset_zm_cuadratic(ds["Zm"]) })
+        X_ZDR = X_ZDR+"_WRC"
 
 #### Phase processing
 
@@ -452,8 +484,9 @@ if not isvolume:
     #### Attenuation correction (NOT PROVED THAT IT WORKS NICELY ABOVE THE ML)
     if X_PHI in ds.data_vars:
         # First we calculate atten correction only in rain, as backup
-        ds = utils.attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0, betaml = 0,
-                                           dbzh="DBZH", zdr=["ZDR", "ZDR_EC", "ZDR_OC", "ZDR_EC_OC"],
+        ds = utils.attenuation_corr_linear(ds, alpha = 0.1, beta = 0.035, alphaml = 0, betaml = 0,
+                                           dbzh="DBZH",
+                                           zdr=["ZDR", "ZDR_EC", "ZDR_EC_OC", "ZDR_EC_OC_WRC", "ZDR_EC_WRC"],
                                            phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
                                            ML_bot = "height_ml_bottom_new_gia_clean", ML_top = "height_ml_new_gia_clean",
                                            temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
@@ -462,8 +495,9 @@ if not isvolume:
         ds = ds.rename({vv: vv+"_rain" for vv in ds.data_vars if "_AC" in vv})
 
         # Then we calculate the atten correction both in rain and the ML (this are the final values used)
-        ds = utils.attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.16, betaml = 0.022,
-                                           dbzh="DBZH", zdr=["ZDR", "ZDR_EC", "ZDR_OC", "ZDR_EC_OC"],
+        ds = utils.attenuation_corr_linear(ds, alpha = 0.1, beta = 0.035, alphaml = 0.2, betaml = 0.02,
+                                           dbzh="DBZH",
+                                           zdr=["ZDR", "ZDR_EC", "ZDR_EC_OC", "ZDR_EC_OC_WRC", "ZDR_EC_WRC"],
                                            phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
                                            ML_bot = "height_ml_bottom_new_gia_clean", ML_top = "height_ml_new_gia_clean",
                                            temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
@@ -811,7 +845,7 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "ZDR"
+mom = "ZDR_EC_OC_WRC_AC"
 min_entropy_thresh = 0.99
 
 try:
@@ -834,12 +868,13 @@ plt.gca().set_ylabel("height over sea level")
 
 # # Plot reflectivity as lines to check wet radome effect
 # ax2 = plt.gca().twinx()
-# ds.DBZH.mean("azimuth")[:,4:7].mean("range").plot(ax=ax2, c="dodgerblue")
+# ds["Zm"].plot(ax=ax2, c="dodgerblue")
 # ax2.yaxis.label.set_color("dodgerblue")
 # ax2.spines['left'].set_position(('outward', 60))
 # ax2.tick_params(axis='y', labelcolor="dodgerblue")  # Add padding to the ticks
 # ax2.yaxis.labelpad = -400  # Add padding to the y-axis label
 # ax2.set_title("")
+# plt.xlim((datetime.datetime(2015,3,11,6), datetime.datetime(2015,3,11,12)))
 
 # # Plot zdrcal values
 # ax3 = plt.gca().twinx()

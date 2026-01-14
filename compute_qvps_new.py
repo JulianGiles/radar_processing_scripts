@@ -51,8 +51,8 @@ abs_zdr_off_min_thresh = 0. # if ZDR_OC has more negative values than the origin
 # and the absolute median offset is < abs_zdr_off_min_thresh, then undo the correction (set to 0 to avoid this step)
 daily_corr = True # correct ZDR with daily offset? if False, correct with timestep offsets
 if "dmi" in path0:
-    daily_corr = False
-variability_check = True # Check the variability of the timestep offsets to decide between daily or timestep offsets?
+    daily_corr = True
+variability_check = False # Check the variability of the timestep offsets to decide between daily or timestep offsets?
 variability_thresh = 0.1 # Threshold value of timestep-based ZDR offsets variability to use if variability_check is True.
 first_offset_method_abs_priority = False # If True, give absolute priority to the offset from the first method if valid
 mix_offset_variants = True # Use timestep-offsets variants to fill NaNs?
@@ -67,6 +67,10 @@ abs_zdr_off_min_thresh = 0. # If abs_zdr_off_min_thresh > 0, check if offset cor
 # is < abs_zdr_off_min_thresh, then undo the correction (set to 0 to avoid this step).
 propagate_forward = False # Propagate timestep offsets forward to fill NaNs?
 fill_with_daily_offset = True # Fill timestep NaN offsets with daily offset?
+
+# Zm params (for wet radome identification)
+Zm_range = 1500 # radius in m to select bins close to the radar
+Zm_WR = 10 # Zm higher than 10 dBZ is considered wet radome
 
 # PHIDP processing / KDP calc parameters
 window0max = 25 # max value for window0 (only applied if window0 is given in meters)
@@ -125,6 +129,15 @@ if "SVS" in path0:
     min_range = min_rngs["SVS"]
 if "HTY" in path0:
     min_range = min_rngs["HTY"]
+
+if type(min_range) == dict:
+    for yy in min_range.keys():
+        if str(yy) in path0:
+            min_range = min_range[yy]
+            break
+
+if "dwd" in path0:
+    Zm_range = 3000
 
 # ERA5 folder
 if "dwd" in path0:
@@ -336,6 +349,19 @@ for ff in files:
     except:
         print("Loading ZDR offsets failed")
 
+#%% Correct wet radome
+    if country=="dmi":
+        # Assign Zm
+        swp = swp.assign_coords({"Zm": utils.apply_min_max_thresh(swp, {X_RHO:0.9, "SNRH":15, "SNRHC":15, "SQIH":0.5},
+                                          {}, skipfullna=True)[X_DBZH]\
+                               .isel({"range": slice(1, None) }).sel({"range": slice(0, Zm_range)})\
+                                   .compute().median(("azimuth","range")) })
+        swp["Zm"] = swp["Zm"].where(swp["Zm"]>0, other=0)# cap the negative values to 0
+        swp["Zm"].attrs = {"long_name": "Median "+X_DBZH+" in "+str(Zm_range)+" m radius"}
+
+        # correct WR
+        swp = swp.assign({X_ZDR+"_WRC": swp[X_ZDR] - utils.zdr_wr_offset_zm_cuadratic(swp["Zm"]) })
+        X_ZDR = X_ZDR+"_WRC"
 
 #%% Correct PHIDP
     ################## Before entropy calculation we need to use the melting layer detection algorithm
@@ -482,8 +508,9 @@ for ff in files:
 #%% Attenuation correction (NOT PROVED THAT IT WORKS NICELY ABOVE THE ML)
     if X_PHI in ds.data_vars:
         # First we calculate atten correction only in rain, as backup
-        ds = utils.attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0, betaml = 0,
-                                           dbzh=X_DBZH, zdr=["ZDR", "ZDR_EC", "ZDR_OC", "ZDR_EC_OC"],
+        ds = utils.attenuation_corr_linear(ds, alpha = 0.01, beta = 0.035, alphaml = 0, betaml = 0,
+                                           dbzh=X_DBZH,
+                                           zdr=["ZDR", "ZDR_EC", "ZDR_EC_OC", "ZDR_EC_OC_WRC", "ZDR_EC_WRC"],
                                            phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
                                            ML_bot = "height_ml_bottom_new_gia_clean", ML_top = "height_ml_new_gia_clean",
                                            temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
@@ -492,8 +519,9 @@ for ff in files:
         ds = ds.rename({vv: vv+"_rain" for vv in ds.data_vars if "_AC" in vv})
 
         # Then we calculate the atten correction both in rain and the ML (this are the final values used)
-        ds = utils.attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.16, betaml = 0.022,
-                                           dbzh=X_DBZH, zdr=["ZDR", "ZDR_EC", "ZDR_OC", "ZDR_EC_OC"],
+        ds = utils.attenuation_corr_linear(ds, alpha = 0.01, beta = 0.035, alphaml = 0.2, betaml = 0.02,
+                                           dbzh=X_DBZH,
+                                           zdr=["ZDR", "ZDR_EC", "ZDR_EC_OC", "ZDR_EC_OC_WRC", "ZDR_EC_WRC"],
                                            phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
                                            ML_bot = "height_ml_bottom_new_gia_clean", ML_top = "height_ml_new_gia_clean",
                                            temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
