@@ -77,10 +77,10 @@ if "dwd" in path0:
 
 min_hgts = utils.min_hgts
 min_rngs = utils.min_rngs
-min_irngs_zdr = utils.min_irngs_ZDR
+min_rngs_zdr = utils.min_rngs_ZDR
 min_hgt = min_hgts["default"] # minimum height above the radar to be considered
 min_range = min_rngs["default"] # minimum range from which to consider data (mostly for bad PHIDP filtering)
-min_irange_zdr = min_irngs_zdr["default"]
+min_range_zdr = min_rngs_zdr["default"]
 if "dwd" in path0 and "90grads" in path0:
     # for the VP we need to set a higher min height because there are several bins of unrealistic values
     min_hgt = min_hgts["90grads"]
@@ -88,20 +88,32 @@ if "dwd" in path0 and "90grads" in path0:
 if "ANK" in path0:
     min_hgt = min_hgts["ANK"]
     min_range = min_rngs["ANK"]
-    min_irange_zdr = min_irngs_zdr["ANK"]
+    min_range_zdr = min_rngs_zdr["ANK"]
 if "GZT" in path0:
     min_hgt = min_hgts["GZT"]
     min_range = min_rngs["GZT"]
-    min_irange_zdr = min_irngs_zdr["GZT"]
+    min_range_zdr = min_rngs_zdr["GZT"]
 if "AFY" in path0:
     min_range = min_rngs["AFY"]
-    min_irange_zdr = min_irngs_zdr["AFY"]
+    min_range_zdr = min_rngs_zdr["AFY"]
 if "SVS" in path0:
     min_range = min_rngs["SVS"]
-    min_irange_zdr = min_irngs_zdr["SVS"]
+    min_range_zdr = min_rngs_zdr["SVS"]
 if "HTY" in path0:
     min_range = min_rngs["HTY"]
-    min_irange_zdr = min_irngs_zdr["HTY"]
+    min_range_zdr = min_rngs_zdr["HTY"]
+
+if type(min_range) == dict:
+    for yy in min_range.keys():
+        if str(yy) in path0:
+            min_range = min_range[yy]
+            break
+
+if type(min_range_zdr) == dict:
+    for yy in min_range_zdr.keys():
+        if str(yy) in path0:
+            min_range_zdr = min_range_zdr[yy]
+            break
 
 # get the files and check that it is not empty
 if "hd5" in path0 or "h5" in path0:
@@ -415,7 +427,7 @@ for ff in files:
         # Important to use PHIDP_OC_SMOOTH here because the _MASKED it may be too much masked and we throw away many ZDR values
         data = utils.apply_min_max_thresh(data, {"SNRH":20, "SNRHC":20, "SQIH":0.5},
                                           {X_PHI+"_OC_SMOOTH": 5}, skipfullna=True)\
-                .isel(range=slice(min_irange_zdr,-1))
+                .sel(range=slice(min_range_zdr,None))
         try:
             angle = float(data.elevation.mean())
         except:
