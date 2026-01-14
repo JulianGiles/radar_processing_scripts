@@ -359,6 +359,10 @@ visdict14 = dict(ZH=dict(ticks=np.arange(-10,55,5),
                           cmap=mpl.colors.ListedColormap(plt.get_cmap("viridis")(np.linspace(0,1,21+2))),
                           name=r'IWC/LWC [g/m^3]',
                           short='$\mathrm{\mathsf{IWC/LWC}}$'),
+                 PR=dict(ticks=np.array([.1, .2, .3, .5, 1., 2., 3., 5., 10., 20., 50.]),
+                          cmap="HomeyerRainbow",
+                            name=r'Precipitation rate (mm/h)',
+                            short='$\mathrm{\mathsf{PR}}$'),
                 )
 
 
