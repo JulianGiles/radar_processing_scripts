@@ -205,6 +205,167 @@ else:
         elevtitle = " "+str(np.round(ds.isel({"sweep_fixed_angle":elevn}).elevation.mean().values, 2))+"°"
 plt.title(mom+elevtitle+". "+str(datasel.time.values).split(".")[0])
 
+#%% FOR DETECT VIDEO: compare PPIs of radar obs vs simulations (optionally
+# interpolate the simulated volume to a grid so it looks more like the original model
+# since I deleted the model field files)
+tsel = "2017-07-25T02:55"
+elevn = 0 # elevation index
+
+regrid_mod = False
+datatype = "ori" # sim, obs or ori (original)
+mom = "PR"
+xylims = 180000 # xlim and ylim (from -xylims to xylims)
+crop_rg = 120 #120
+
+cities = {
+  'Berlin': {'lat': 52.520008, 'lon': 13.404954},
+  # Add more cities as needed
+}
+
+if datatype == "sim":
+    ds = vol_emvorado_sim.copy()
+
+elif datatype == "obs":
+    ds = vol_emvorado_obs.copy()
+
+elif datatype == "ori":
+    ds = vol_dwd.copy()
+
+else:
+    raise Exception("select correct data source")
+
+if "sweep_fixed_angle" in ds.dims:
+    isvolume = True
+
+if isvolume: # if more than one elevation, we need to select the one we want
+    if tsel == "":
+        datasel = ds.isel({"sweep_fixed_angle":elevn})
+    else:
+        datasel = ds.isel({"sweep_fixed_angle":elevn}).sel({"time": tsel}, method="nearest")
+else:
+    if tsel == "":
+        datasel = ds
+    else:
+        datasel = ds.sel({"time": tsel}, method="nearest")
+
+datasel = datasel.pipe(wrl.georef.georeference)
+
+if mom=="PR": # for precipitation rate, we need to calculate it, we use simple Marshall-Palmer
+    datasel = datasel.assign( {"PR": wrl.zr.z_to_r(wrl.trafo.idecibel(datasel.DBZH))} )
+
+if crop_rg != 0:
+    datasel=datasel.isel(range=slice(0, crop_rg))
+
+if regrid_mod:
+    # 1. Determine the bounds and create the target 3km grid
+    # Assuming 'x' and 'y' coordinates in your dataset represent meters.
+    # If not, you may need to calculate max range from the 'range' coord.
+    max_range = datasel.range.max().item()
+
+    # Create 1D arrays for the new grid (3 km = 3000 m step)
+    step_size = 3000
+    x_target = np.arange(-max_range, max_range, step_size)
+    y_target = np.arange(-max_range, max_range, step_size)
+
+    # 2. Create a 2D meshgrid of the target X and Y coordinates
+    # We use 'ij' indexing to keep dimensions ordered (x, y) or (y, x) as preferred
+    grid_x, grid_y = np.meshgrid(x_target, y_target, indexing='ij')
+
+    # 3. Convert these Cartesian points back to Polar (Range and Azimuth)
+    # Calculate Range (hypotenuse)
+    target_range = np.sqrt(grid_x**2 + grid_y**2)
+
+    # Calculate Azimuth (angle)
+    # np.arctan2 returns values in radians between -pi and pi
+    target_azimuth_rad = np.arctan2(grid_x, grid_y)
+
+    # --- CRITICAL UNIT CHECK ---
+    # Check if your source 'azimuth' is in Degrees (0-360) or Radians.
+    # Most radar data is 0-360 degrees. If so, convert target_azimuth to degrees.
+    target_azimuth_deg = np.degrees(target_azimuth_rad)
+
+    # arctan2 returns -180 to 180. If your data is 0 to 360, adjust:
+    target_azimuth_deg = np.where(target_azimuth_deg < 0,
+                                  target_azimuth_deg + 360,
+                                  target_azimuth_deg)
+
+    # 4. Prepare DataArrays for Advanced Interpolation
+    # We wrap the calculated coordinates in DataArrays with new dimensions 'x' and 'y'
+    da_r = xr.DataArray(target_range, coords={'x': x_target, 'y': y_target}, dims=('x', 'y'))
+    da_a = xr.DataArray(target_azimuth_deg, coords={'x': x_target, 'y': y_target}, dims=('x', 'y'))
+
+    # 5. Interpolate
+    # We allow extrapolation for values slightly outside boundaries, or fill with NaN
+    interpolated_datasel = datasel.drop_vars(['x', 'y']).interp(
+        range=da_r,
+        azimuth=da_a,
+        method='linear',  # or 'nearest'
+    ).interpolate_na(dim="x").compute().isel(x=slice(20,-20)).isel(y=slice(20,-20))
+
+    # The result is now (time, x, y)
+    # print(interpolated_datasel)
+    datasel = interpolated_datasel.copy()
+
+
+# New Colormap
+colors = ["#2B2540", "#4F4580", "#5a77b1",
+          "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
+
+
+ticks = radarmet.visdict14[mom]["ticks"]
+cmap0 = mpl.colormaps.get_cmap("RdBu_r")
+cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
+norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
+if mom!="VRADH": cmap = "miub2"
+if mom=="PR": cmap = utils.get_discrete_cmap(ticks, radarmet.visdict14[mom]["cmap"], over="maroon")
+
+plot_over_map = True
+plot_ML = False
+
+crs=ccrs.Mercator(central_longitude=float(datasel["longitude"]))
+
+if not plot_over_map:
+    # plot simple PPI
+    datasel[mom].wrl.vis.plot( cmap=cmap, norm=norm, xlim=(-xylims,xylims), ylim=(-xylims,xylims))
+    # datasel[mom].wrl.vis.plot( cmap="Blues", vmin=0, vmax=6, xlim=(-xylims,xylims), ylim=(-xylims,xylims))
+elif plot_over_map:
+    # plot PPI with map coordinates
+    fig = plt.figure(figsize=(5, 5))
+    datasel[mom].wrl.vis.plot(fig=fig, cmap=cmap, norm=norm, crs=ccrs.Mercator(central_longitude=float(datasel["longitude"])))
+    ax = plt.gca()
+    # ax.add_feature(cartopy.feature.COASTLINE, linestyle='-', linewidth=1, alpha=0.4)
+    # ax.add_feature(cartopy.feature.BORDERS, linestyle='-', linewidth=1, alpha=0.4)
+    ax.gridlines(draw_labels={"bottom": "x", "left": "y"})
+
+if plot_ML:
+    cax = plt.gca()
+    datasel["z"].wrl.vis.plot(ax=cax,
+                          levels=[datasel["height_ml_bottom_new_gia"], datasel["height_ml_new_gia"]],
+                          cmap="black",
+                          func="contour")
+    # datasel["z"].wrl.vis.plot(fig=fig, cmap=cmap, norm=norm, crs=ccrs.Mercator(central_longitude=float(datasel["longitude"])))
+
+# add cities
+for city, coord in cities.items():
+    ax.plot(coord['lon'], coord['lat'], 'ro', markersize=5, transform=ccrs.PlateCarree(), color="black")  # Plot the city as a red dot
+    ax.text(coord['lon'] + 0.02, coord['lat'], city, transform=ccrs.PlateCarree(), fontsize=12, color='black')  # Add city name
+
+if isvolume:
+    try:
+        elevtitle = " "+str(np.round(ds.isel({"sweep_fixed_angle":elevn}).sweep_fixed_angle.values, 2))+"°"
+    except AttributeError:
+        elevtitle = " "+str(np.round(ds.isel({"sweep_fixed_angle":elevn}).elevation.mean().values, 2))+"°"
+else:
+    try:
+        elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
+    except AttributeError:
+        elevtitle = " "+str(np.round(ds.isel({"sweep_fixed_angle":elevn}).elevation.mean().values, 2))+"°"
+# plt.title(mom+elevtitle+". "+str(datasel.time.values).split(".")[0])
+plt.title(str(datasel.time.values).split(".")[0][:-3].replace("T", " "))
+
+
+
+
 #%% QVP
 # Azimuthally averaged profiles of a conical volume measured at elevations between 10 and 20 degrees
 # use 12 deg elevation
