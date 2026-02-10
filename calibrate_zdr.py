@@ -187,9 +187,9 @@ if "boxpol" in path0:
 if os.path.exists("/automount/ags/jgiles/ERA5/hourly/"):
     # then we are in local system
     era5_dir = "/automount/ags/jgiles/ERA5/hourly/"+cloc+"/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
-elif os.path.exists("/p/scratch/detectrea/giles1/ERA5/hourly/"):
+elif os.path.exists("/p/scratch/detectrea2/giles1/ERA5/hourly/"):
     # then we are in JSC
-    era5_dir = "/p/scratch/detectrea/giles1/ERA5/hourly/"+cloc+"/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
+    era5_dir = "/p/scratch/detectrea2/giles1/ERA5/hourly/"+cloc+"/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
 elif os.path.exists("/p/largedata2/detectdata/projects/A04/ERA5/hourly/"):
     # then we are in JSC
     era5_dir = "/p/largedata2/detectdata/projects/A04/ERA5/hourly/"+cloc+"/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
