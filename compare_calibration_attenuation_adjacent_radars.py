@@ -1351,7 +1351,7 @@ Zm_range = 1500. # range in m for the computation of Zm (DBZH close to radar)
 vv_to_extract = ["DBZH", "DBZH_AC",
                  "ZDR_EC", "ZDR_EC_OC", "ZDR_EC_OC_AC",
                  "ZDR_EC_OCnoWR",
-                 "PHIDP_OC", "PHIDP_OC_SMOOTH", "PHIDP_OC_MASKED",
+                 "PHIDP_OC_MASKED", #"PHIDP_OC", "PHIDP_OC_SMOOTH",
                  "Zm",
                  "TEMP", "z",
                  "z_beamtop",
@@ -1737,8 +1737,8 @@ tg_height_ml_bot_qvp = np.concat([ds1.flatten() for ds1 in tg_height_ml_bot_qvp]
 ref_height_ml_bot_qvp = np.concat([ds2.flatten() for ds2 in ref_height_ml_bot_qvp])
 
 # fill remaining NaNs with an arbitrarely high value so it does no undesired filtering
-tg_height_ml_bot_qvp[np.isnan(tg_height_ml_bot_qvp)] = 5000
-ref_height_ml_bot_qvp[np.isnan(ref_height_ml_bot_qvp)] = 5000
+tg_height_ml_bot_qvp[np.isnan(tg_height_ml_bot_qvp)] = 4000
+ref_height_ml_bot_qvp[np.isnan(ref_height_ml_bot_qvp)] = 4000
 
 # filter by valid values according to conditions
 valid = np.isfinite(delta_dbzh) & (ref_phi<ref_phi_max) & (np.isfinite(tg_phi))\
@@ -1936,8 +1936,8 @@ tg_height_ml_bot_qvp = np.concat([ds1.flatten() for ds1 in tg_height_ml_bot_qvp]
 ref_height_ml_bot_qvp = np.concat([ds2.flatten() for ds2 in ref_height_ml_bot_qvp])
 
 # fill remaining NaNs with an arbitrarely high value so it does no undesired filtering
-tg_height_ml_bot_qvp[np.isnan(tg_height_ml_bot_qvp)] = 5000
-ref_height_ml_bot_qvp[np.isnan(ref_height_ml_bot_qvp)] = 5000
+tg_height_ml_bot_qvp[np.isnan(tg_height_ml_bot_qvp)] = 4000
+ref_height_ml_bot_qvp[np.isnan(ref_height_ml_bot_qvp)] = 4000
 
 # filter by valid values according to conditions
 valid = np.isfinite(delta_dbzh) & (ref_phi<ref_phi_max) & (np.isfinite(tg_phi))\
@@ -2262,7 +2262,7 @@ valid = np.isfinite(delta_dbzh) & (ref_phi<ref_phi_max) & (tg_phi<tg_phi_max) & 
 
 # # And if we try to add the reverse matching? (GZT as tg and HTY as ref)
 # # filter by valid values according to conditions (inverse)
-# valid_ = np.isfinite(delta_dbzh) & (tg_phi<ref_phi_max) & (np.isfinite(ref_phi))\
+# valid_ = np.isfinite(delta_dbzh) & (tg_phi<ref_phi_max) & (ref_phi<tg_phi_max) & (tg_Zm<ref_Zm_max)\
 #         & (ref_Zm > varx_range[0]) & (ref_Zm < varx_range[1] - varx_range[2])\
 #         & (tg_z < tg_height_ml_bot_qvp) & (ref_z < ref_height_ml_bot_qvp)\
 #         & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\
@@ -2510,8 +2510,8 @@ tg_height_ml_bot_qvp = np.concat([ds1.flatten() for ds1 in tg_height_ml_bot_qvp]
 ref_height_ml_bot_qvp = np.concat([ds2.flatten() for ds2 in ref_height_ml_bot_qvp])
 
 # fill remaining NaNs with an arbitrarely high value so it does no undesired filtering
-tg_height_ml_bot_qvp[np.isnan(tg_height_ml_bot_qvp)] = 5000
-ref_height_ml_bot_qvp[np.isnan(ref_height_ml_bot_qvp)] = 5000
+tg_height_ml_bot_qvp[np.isnan(tg_height_ml_bot_qvp)] = 4000
+ref_height_ml_bot_qvp[np.isnan(ref_height_ml_bot_qvp)] = 4000
 
 if beta_new > 0:
     zdr_to_plot = zdr_to_plot+"_AC"
@@ -2618,8 +2618,8 @@ print(results.summary())
 token = secrets['EARTHDATA_TOKEN']
 
 # New alpha and beta values for atten correction in rain, based on the previous results.
-new_alpha = 0.1
-new_beta = 0.035
+new_alpha = 0.14
+new_beta = 0.025
 
 tsel = "2016-12-01T14" # for plots
 
@@ -2640,7 +2640,7 @@ vv_to_extract = ["DBZH", "DBZH_AC_rain", "DBZH_AC",
                  "ZDR_EC_OC_AC2_rain",
                  "ZDR_EC_OC2", "ZDR_EC_OC2_AC2_rain", # ZDR corrected with extrapolated offsets
                  "ZDR_EC_OC3", "ZDR_EC_OC3_AC2_rain", # ZDR corrected with extrapolated offsets and manual offsets for some dates
-                 "PHIDP_OC", "PHIDP_OC_MASKED",
+                 "PHIDP_OC_MASKED", #"PHIDP_OC",
                  "Zm",
                  "TEMP", "TEMPm", "z",
                  "height_ml_bottom_new_gia", "height_ml_new_gia",
@@ -3262,14 +3262,46 @@ tg_z_beambot = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["z_beambot"
 
 ref_z_beambot = np.concat([ d2.flatten() for d1,d2 in selected_ML_low["z_beambot"] ])
 
-tg_height_ml_top_qvp = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["height_ml_new_gia_fromqvp"] ])
+# tg_height_ml_top_qvp = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["height_ml_new_gia_fromqvp"] ])
 
-ref_height_ml_top_qvp = np.concat([ d2.flatten() for d1,d2 in selected_ML_low["height_ml_new_gia_fromqvp"] ])
+# ref_height_ml_top_qvp = np.concat([ d2.flatten() for d1,d2 in selected_ML_low["height_ml_new_gia_fromqvp"] ])
 
-# We should only use height_ml_top_qvp values from tg since ref should be above the ML
+# # We should only use height_ml_top_qvp values from tg since ref should be above the ML
+# # fill remaining NaNs with an arbitrarely low value so it does no undesired filtering
+# tg_height_ml_top_qvp[np.isnan(tg_height_ml_top_qvp)] = 0
+# ref_height_ml_top_qvp[np.isnan(ref_height_ml_top_qvp)] = 0
+
+# Alternative: interpolate and extrapolate the ML heights for each day to fill NaNs
+tg_height_ml_top_qvp = [ pd.DataFrame(d1).ffill(axis=1).values for d1,d2 in selected_ML_low["height_ml_new_gia_fromqvp"] ]
+
+ref_height_ml_top_qvp = [ pd.DataFrame(d2).ffill(axis=1).values for d1,d2 in selected_ML_low["height_ml_new_gia_fromqvp"] ]
+
+for ts in range(len(tg_height_ml_top_qvp)):
+    # fill the NaN height_ml_top_qvp values from ref with tg
+    ref_height_ml_top_qvp[ts][np.isnan(ref_height_ml_top_qvp[ts])] = tg_height_ml_top_qvp[ts][np.isnan(ref_height_ml_top_qvp[ts])]
+
+    # remove outliers (median+-std)
+    tg_m = np.nanmedian(tg_height_ml_top_qvp[ts][:,0])
+    tg_std = np.nanstd(tg_height_ml_top_qvp[ts][:,0])
+    tg_height_ml_top_qvp[ts][tg_height_ml_top_qvp[ts] < tg_m-tg_std] = np.nan
+    tg_height_ml_top_qvp[ts][tg_height_ml_top_qvp[ts] > tg_m+tg_std] = np.nan
+    ref_m = np.nanmedian(ref_height_ml_top_qvp[ts][:,0])
+    ref_std = np.nanstd(ref_height_ml_top_qvp[ts][:,0])
+    ref_height_ml_top_qvp[ts][ref_height_ml_top_qvp[ts] < ref_m-ref_std] = np.nan
+    ref_height_ml_top_qvp[ts][ref_height_ml_top_qvp[ts] > ref_m+ref_std] = np.nan
+
+    # Interpolate and extrapolate to fill NaNs
+    tg_height_ml_top_qvp[ts] = pd.DataFrame(tg_height_ml_top_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+    ref_height_ml_top_qvp[ts] = pd.DataFrame(ref_height_ml_top_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+
+# finally, flatten
+tg_height_ml_top_qvp = np.concat([ds1.flatten() for ds1 in tg_height_ml_top_qvp])
+ref_height_ml_top_qvp = np.concat([ds2.flatten() for ds2 in ref_height_ml_top_qvp])
+
 # fill remaining NaNs with an arbitrarely low value so it does no undesired filtering
 tg_height_ml_top_qvp[np.isnan(tg_height_ml_top_qvp)] = 0
 ref_height_ml_top_qvp[np.isnan(ref_height_ml_top_qvp)] = 0
+
 
 # filter by valid values according to conditions
 #!!! The best filter would have ref_TEMPm < -1, but looks like no event so far
@@ -3277,10 +3309,10 @@ ref_height_ml_top_qvp[np.isnan(ref_height_ml_top_qvp)] = 0
 # valid = (tg_TEMPm > 3) & (np.nan_to_num(ref_phi_bump) < 1)  & (ref_phi < 5) & (ref_Zm < 5) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
 valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)\
         & np.isfinite(ref_dbzh) & (tg_height_ml_top_qvp < 1600)\
-        & (tg_phi_bump > varx_range[0]) & (tg_phi_bump < varx_range[1] - varx_range[2])
-        # & (tg_z_beambot > tg_height_ml_top_qvp) & (ref_z_beambot > tg_height_ml_top_qvp)\
-        # & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\ # loose way of avoiding the ML
-        # & (tg_TEMPm > 3) & (ref_TEMPm < 0)\ # loose way of avoiding the ML
+        & (tg_phi_bump > varx_range[0]) & (tg_phi_bump < varx_range[1] - varx_range[2])\
+        & (tg_z_beambot > tg_height_ml_top_qvp) & (ref_z_beambot > tg_height_ml_top_qvp)\
+        & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\
+        & (tg_TEMPm > 3) & (ref_TEMPm < 0)
 
 delta_dbzh = (tg_dbzh - ref_dbzh)[valid]
 tg_phi_bump = tg_phi_bump[valid]
