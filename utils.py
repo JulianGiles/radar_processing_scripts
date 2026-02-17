@@ -7395,7 +7395,7 @@ def get_discrete_cmap(ticks, colors, bad="white", over=None, under=None):
     ticks = ticks if isinstance(ticks, int) else len(ticks)
     if isinstance(colors, (str, mpl.colors.Colormap)):
         cmap = mpl.cm.get_cmap(colors)
-        colors = cmap(np.linspace(0, 1, ticks + 2))
+        colors = cmap(np.linspace(0, 1, ticks + 1))
     cmap = mpl.colors.ListedColormap(colors[1:-1])
     if over is None:
         over = colors[-1]
