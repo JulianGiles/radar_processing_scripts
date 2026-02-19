@@ -20,7 +20,6 @@ import numpy as np
 import sys
 import glob
 import xarray as xr
-import datetime as dt
 import pandas as pd
 import datetime
 from dask.diagnostics import ProgressBar
@@ -1837,6 +1836,7 @@ plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+""
 # plt.text(0.95, 0.8, "Variance-weighted linear fit (medians): "+lfit_mw_str, transform=plt.gca().transAxes,
 #          c="deeppink", horizontalalignment="right")
 
+plt.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
 
 # Add counts above x-tick labels (inside the plot area)
 for x, n in zip(bin_centers[::2], counts[::2]):
@@ -2334,6 +2334,8 @@ plt.plot(x_dense, lfit_m(x_dense), c="red")
 plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
          horizontalalignment="right")
 
+plt.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
+
 # Add counts above x-tick labels (inside the plot area)
 for x, n in zip(bin_centers[::2], counts[::2]):
     plt.text(x, plt.ylim()[0] + 0.05 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
@@ -2583,6 +2585,8 @@ x_dense = np.linspace(bins[0], bins[-1], 100) # 100 points for a smooth curve
 plt.plot(x_dense, lfit_m(x_dense), c="red")
 plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
          horizontalalignment="right")
+
+plt.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
 
 # Add counts above x-tick labels (inside the plot area)
 for x, n in zip(bin_centers[::2], counts[::2]):
@@ -3192,7 +3196,7 @@ TEMPm = "TEMPm"
 TEMP = "TEMP"
 
 yax = r"$Δ\mathrm{Z_{DR}}\ [dB]$" # label for the y axis
-xax = r"$\mathrm{\Phi_{DP}^{ML}}\ [°]$" # label for the x axis
+xax = r"$Δ\mathrm{\Phi_{DP}^{ML}}\ [°]$" # label for the x axis
 
 varx_range = (0, 19, 1) # start, stop, step # (0.7, 0.98, 0.02)
 
@@ -3207,7 +3211,7 @@ ymax = 2.5
 
 # WR corr based on results
 def zdr_wrc(Zm):
-    return -0.00205*Zm + 0.00021*Zm**2 # change here to adjust coefficients based on results
+    return 0.00165*Zm + 0.00021*Zm**2 # change here to adjust coefficients based on results
 
 if "_WRcorr" in dbzh_tg:
     # Correct wet-radome timesteps
@@ -3302,13 +3306,12 @@ ref_height_ml_top_qvp = np.concat([ds2.flatten() for ds2 in ref_height_ml_top_qv
 tg_height_ml_top_qvp[np.isnan(tg_height_ml_top_qvp)] = 0
 ref_height_ml_top_qvp[np.isnan(ref_height_ml_top_qvp)] = 0
 
-
 # filter by valid values according to conditions
 #!!! The best filter would have ref_TEMPm < -1, but looks like no event so far
 # meets this condition. So let's use PHI and Zm as an alternative for now
 # valid = (tg_TEMPm > 3) & (np.nan_to_num(ref_phi_bump) < 1)  & (ref_phi < 5) & (ref_Zm < 5) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
 valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)\
-        & np.isfinite(ref_dbzh) & (tg_height_ml_top_qvp < 1600)\
+        & (tg_height_ml_top_qvp < 1600)\
         & (tg_phi_bump > varx_range[0]) & (tg_phi_bump < varx_range[1] - varx_range[2])\
         & (tg_z_beambot > tg_height_ml_top_qvp) & (ref_z_beambot > tg_height_ml_top_qvp)\
         & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\
@@ -3371,6 +3374,7 @@ plt.plot([bins[0], bins[-1]], [lfit_m(bins[0]), lfit_m(bins[-1])], c="red")
 plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
          horizontalalignment="right")
 
+plt.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
 
 # Add counts above x-tick labels (inside the plot area)
 for x, n in zip(bin_centers[::2], counts[::2]):
@@ -3384,7 +3388,7 @@ plt.tight_layout()
 plt.show()
 
 # Print p value and other stats
-scipy.stats.linregress(bin_centers, medians)
+scipy.stats.linregress(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)])
 
 #%%% Plot boxplot of delta DBZH/ZDR vs target ZH/RHOHV min/max in ML (ML attenuation)
 
@@ -3478,6 +3482,304 @@ for x, n in zip(bin_centers, counts):
 
 plt.tight_layout()
 plt.show()
+
+#%% Wet radome attenuation estimation based on ZDR offsets and Zm (no radar volume matching)
+# We don't get enough data points for wet radome attenuation quantification by volume matching the two radars.
+# Then, we try to at least quantify the differential attenuation using ZDR offsets calculated for different Zm values.
+
+# =============================================================================
+# 1. CONFIGURATION & DISCOVERY
+# =============================================================================
+
+# Define the limits for each Wet Radome (WR) category
+wr_limits = {
+    "noWR": (0, 10), # noWR must be first
+    "WR1015": (10, 15),
+    "WR1520": (15, 20),
+    "WR2025": (20, 25),
+    "WR2530": (25, 30),
+    "WR3035": (30, 35),
+    "WR3550": (35, 50) # Assuming 50 is a reasonable max
+}
+wr_tags = list(wr_limits.keys())
+
+# Plot settings
+sc = False # show boxplots caps?
+sf = False # show boxplots outliers?
+wp = 0 # position of the whiskers as proportion of (Q3-Q1), default is 1.5
+
+ymin = -0.15 # min and max limits for the y axis
+ymax = 0.45
+xminmax = np.arange(0,55,5) # min and max limits for the x axis and grid lines
+
+yax = r"$\Delta Z_{DR}$ Offset [dB]" # label for the y axis
+xax = r"$\mathrm{Z_{H}^m}\ [dBZ]$" # label for the x axis
+
+# Pattern to find ALL offset files (all elevations, all WR modes)
+# Structure: .../LR_consistency/<YYYY>/<MM>/<DD>/HTY/<MODE>/<ELEV>/*-zdr_offset_belowML_<TAG>-*.nc
+offset_height_lim = "belowML"
+offset_pattern = "/automount/realpep/upload/jgiles/dmi/calibration_WRtest/zdr/*/*/*/*/*/*/*/*-zdr_offset_"+offset_height_lim+"_*WR*-*.nc"
+
+print("Step 1: Discovering files...")
+files = glob.glob(offset_pattern)
+print(f"Found {len(files)} offset files. Parsing metadata...")
+
+# =============================================================================
+# 2. METADATA PARSING
+# =============================================================================
+
+data_entries = []
+
+# Regex to extract info from path
+# Expected path ending: .../2016/04/09/HTY/MON_YAZ_C/12.0/filename.nc
+# We need: Date, Mode, Elevation, WR_Tag
+for fpath in files:
+    parts = fpath.split(os.sep)
+
+    try:
+        # Extract from directory structure (assuming fixed depth from 'LR_consistency')
+        # Adjust indices if your mount point depth differs
+        # .../LR_consistency/YYYY/YYYY-MM/YYYY-MM-DD/HTY/MODE/ELEV/file.nc
+        # parts[-5] = YYYY-MM-DD
+        # parts[-3] = MODE, parts[-2] = ELEV
+
+        loc = parts[-4]
+        method = parts[-8]
+        date_str = f"{parts[-5]}" # YYYY-MM-DD
+        mode = parts[-3]
+        elev = float(parts[-2])
+
+        # Extract WR tag from filename
+        fname = parts[-1]
+        # Filename format: ...-zdr_offset_belowML_WRX-....nc
+        # We can regex specifically for the tag
+        match = re.search(offset_height_lim+r"_(noWR|WR\d+)-", fname)
+        if match:
+            tag = match.group(1)
+        else:
+            continue
+
+        data_entries.append({
+            "loc": loc,
+            "method": method,
+            "date": pd.Timestamp(date_str),
+            "mode": mode,
+            "elev": elev,
+            "tag": tag,
+            "path": fpath
+        })
+
+    except Exception as e:
+        print(f"Error parsing {fpath}: {e}")
+        continue
+
+df_files = pd.DataFrame(data_entries)
+
+# =============================================================================
+# 3. LOAD ZDR OFFSETS
+# =============================================================================
+
+print("Step 2: Loading ZDR Offsets...")
+
+offset_values = []
+
+# We can loop through files and load the single value (or daily mean)
+# Since files are small, this is reasonably fast.
+for idx, row in df_files.iterrows():
+    try:
+        with xr.open_dataset(row['path']) as ds:
+            # Resample to daily mean to handle potential sub-daily chunks
+            # Assuming the file contains one day
+            val = ds['ZDR_offset'].mean().item()
+
+            offset_values.append({
+                "loc": row['loc'],
+                "method": row['method'],
+                "date": row['date'],
+                "elev": row['elev'],
+                "mode": row['mode'],
+                "tag": row['tag'],
+                "offset": val
+            })
+    except Exception as e:
+        print(f"Failed to load {row['path']}")
+
+df_offsets = pd.DataFrame(offset_values)
+
+# Pivot to get columns: date, elev, noWR, WR1015, WR1520...
+# This aligns 'noWR' (baseline) with 'WRxx' for the same day/elev
+df_pivot = df_offsets.pivot(index=['loc', 'method', 'date', 'elev', 'mode'], columns='tag', values='offset').reset_index()
+
+# =============================================================================
+# 4. LOAD QVP COUNTS (The Efficiency Step)
+# =============================================================================
+# We need to find valid timesteps for each WR category.
+# Strategy: Find unique (Date, Elev, Mode) -> Find QVP -> Count timestamps
+
+print("Step 3: Calculating valid timesteps from QVPs...")
+
+# Unique combinations requiring QVP check
+unique_combos = df_pivot[['loc', 'method', 'date', 'elev', 'mode']].drop_duplicates()
+
+validity_dict = {} # Key: (date, elev), Value: {WR1015: count, ...}
+
+for idx, row in unique_combos.iterrows():
+    loc = row['loc']
+    method = row['method']
+    dt = row['date']
+    elev = row['elev']
+    mode = row['mode']
+
+    # Construct QVP Search Path
+    # Path: .../qvps/YYYY/YYYY-MM/YYYY-MM-DD/HTY/MODE/ELEV/*allmoms*.nc
+    date_path = dt.strftime("%Y/%Y-%m/%Y-%m-%d")
+    qvp_glob = f"/automount/realpep/upload/jgiles/dmi/qvps/{date_path}/{loc}/{mode}/{elev}/*allmoms*.nc"
+
+    qvp_files = glob.glob(qvp_glob)
+
+    if not qvp_files:
+        # print(f"No QVP found for {dt.date()} {elev} {mode}")
+        continue
+
+    # Load QVP (Select only necessary variables to save memory)
+    try:
+        # Open first match (usually only one per day/elev)
+        with xr.open_dataset(qvp_files[0]) as ds_qvp:
+            zm = ds_qvp['Zm'].load() # Load into memory for fast numpy ops
+            mlh = ds_qvp['height_ml_new_gia_clean'].load() # Load into memory for fast numpy ops
+
+            counts = {}
+            for tag, (low, high) in wr_limits.items():
+                # Count timesteps in this range
+                if "ML" in offset_height_lim:
+                    count = ((zm >= low) & (zm < high) & mlh.notnull()).sum().item()
+                else:
+                    count = ((zm >= low) & (zm < high)).sum().item()
+                counts[tag] = count
+
+            validity_dict[(dt, elev, mode)] = counts
+
+    except Exception as e:
+        print(f"Error reading QVP {qvp_files[0]}: {e}")
+
+# =============================================================================
+# 5. CALCULATE DIFFERENCES & FILTER
+# =============================================================================
+
+print("Step 4: Processing differences...")
+
+_ = wr_tags.pop(0) # remove 'noWR'
+diff_data = {tag: [] for tag in wr_tags}
+min_timesteps = 5
+
+for idx, row in df_pivot.iterrows():
+    key = (row['date'], row['elev'], row['mode'])
+
+    # Skip if we didn't find a QVP for this day
+    if key not in validity_dict:
+        continue
+
+    counts = validity_dict[key]
+    baseline = row['noWR'] # The dry reference for this specific day/elev
+
+    # If baseline is missing, we can't compare
+    if pd.isna(baseline):
+        continue
+
+    for tag in wr_tags:
+        # Skip if this WR tag data is missing for this day
+        if tag not in row or pd.isna(row[tag]):
+            continue
+
+        # Check data quality (timesteps)
+        if (counts.get(tag, 0) >= min_timesteps) & (counts.get("noWR", 0) >= min_timesteps) :
+            # Calculate Difference: Wet - Dry
+            diff = row[tag] - baseline
+            diff_data[tag].append(diff)
+
+# =============================================================================
+# 6. PLOTTING
+# =============================================================================
+
+print("Step 5: Plotting...")
+
+# Prepare list of arrays for boxplot
+plot_data = [diff_data[tag] for tag in wr_tags]
+labels = [t.replace("WR", "") for t in wr_tags]
+
+fig, ax = plt.subplots(figsize=(6, 3.5))
+
+# Boxplot
+bin_centers = [(wr_limits[tag][1] + wr_limits[tag][0])/2 for tag in wr_tags]
+bp = ax.boxplot(plot_data, positions=bin_centers,
+                   widths=2.5, #labels=labels, patch_artist=True,
+                   showmeans=True, showcaps=sc, showfliers=sf, whis=wp,
+                   medianprops={"color":"black"}, meanprops={"marker":"."})
+
+plt.xlim(xminmax[0], xminmax[-1])
+plt.ylim(ymin, ymax)
+plt.xlabel(xax)
+plt.ylabel(yax)
+plt.grid(True, linestyle="--", alpha=0.5)
+plt.xticks(xminmax, xminmax)
+
+# # Style
+# colors = ['#a6cee3', '#1f78b4', '#b2df8a', '#33a02c', '#fb9a99', '#e31a1c']
+# for patch, color in zip(bp['boxes'], colors):
+#     patch.set_facecolor(color)
+#     patch.set_alpha(0.7)
+
+# # Stats for legend
+# counts_str = [f"N={len(d)}" for d in plot_data]
+# for i, count_text in enumerate(counts_str):
+#     ax.text(i+1, ax.get_ylim()[0], count_text,
+#             horizontalalignment='center', verticalalignment='bottom',
+#             fontsize=8, fontweight='bold')
+
+ax.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
+
+# add a cuadratic fit using the medians
+medians = np.array([line.get_ydata()[0] for line in bp['medians']])
+bin_centers_valid = np.concatenate(([0], np.array(bin_centers)[np.isfinite(medians)]))
+medians_valid = np.concatenate(([0], medians[np.isfinite(medians)]))
+lfit_m = np.polynomial.Polynomial.fit(bin_centers_valid, medians_valid, 2)
+lfit_m_rcoefs = np.round(lfit_m.convert().coef, 5)
+lfit_m_rounded = np.polynomial.Polynomial(lfit_m_rcoefs)
+lfit_m_str = str(lfit_m_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
+x_dense = np.linspace(xminmax[0], xminmax[-1], 100) # 100 points for a smooth curve
+plt.plot(x_dense, lfit_m(x_dense), c="red")
+plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
+         horizontalalignment="right")
+
+# Add counts above x-tick labels (inside the plot area)
+for x, n in zip(bin_centers, [f"{len(d)}" for d in plot_data]):
+    plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
+             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
+
+plt.tight_layout()
+plt.show()
+
+# Print p value and other stats
+# use alternative to scipy.optimize.curve_fit (there is no quadratic equivalent)
+
+# We add a column for the constant (intercept) and the squared term
+# Stack columns: [1, x, x^2]
+X = np.column_stack((np.ones_like(bin_centers_valid),
+                     bin_centers_valid,
+                     bin_centers_valid**2))
+
+# 2. Fit the model (OLS = Ordinary Least Squares)
+model = sm.OLS(medians_valid, X)
+results = model.fit()
+
+# 3. Get the stats
+print(f"R²: {results.rsquared:.4f}")
+print(f"p-values (const, x, x²): {results.pvalues}")
+print(f"Prob (F-statistic): {results.f_pvalue}")
+
+# You can also print a comprehensive summary table
+print(results.summary())
+
 
 #%% TEST: ML detection over PPI or better ML from QVPs
 ds = xr.open_dataset('/automount/realpep//upload/jgiles/dmi/final_ppis/2020/2020-12/2020-12-14/HTY/VOL_A/1.5/VOL_A-allmoms-1.5-2020-12-14-HTY-h5netcdf.nc')
