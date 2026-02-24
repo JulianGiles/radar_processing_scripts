@@ -1352,8 +1352,10 @@ vv_to_extract = ["DBZH", "DBZH_AC",
                  "ZDR_EC_OCnoWR",
                  "PHIDP_OC_MASKED", #"PHIDP_OC", "PHIDP_OC_SMOOTH",
                  "Zm",
-                 "TEMP", "z",
-                 "z_beamtop",
+                 "TEMP", "TEMPm",
+                 # "TEMP_p25", "TEMP_p75", "TEMP_p50", # percentiles of TEMP along the ray
+                 # "ZDR_EC_OC_p25", "ZDR_EC_OC_p75", "ZDR_EC_OC_p50", # percentiles of ZDR along the ray
+                 "z", "z_beamtop",
                  "height_ml_bottom_new_gia", "height_ml_bottom_new_gia_fromqvp",
                  "RHOHV"
                  ] # all variables to extract from the datasets, DBZH must be the first
@@ -1543,6 +1545,11 @@ for date in ML_high_dates:
             if "Zm" not in dsy.coords:
                 dsy = dsy.assign_coords({"Zm": dsy["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsy["DBZH"]) })
 
+            # add the TEMP close to the radar if requested
+            if "TEMPm" in vv_to_extract:
+                dsx = dsx.assign_coords({"TEMPm": dsx["TEMP"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
+                dsy = dsy.assign_coords({"TEMPm": dsy["TEMP"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsy["DBZH"]) })
+
             # if we want z or ML heights we need to broadcast them
             if "z" in vv_to_extract:
                 dsx["z"] = dsx["z"].broadcast_like(dsx["DBZH"])
@@ -1614,7 +1621,88 @@ for date in ML_high_dates:
                 print("No matches found")
                 continue # jump to next iteration if no pairs are found
 
+            # compute percentile variables
+            perc = []
+            for vi in vv_to_extract:
+                if re.search(r"_p\d{2}", vi):
+                    perc += [re.search(r"_p\d{2}", vi).group()[-2:]]
+            perc = np.unique(perc)
 
+            for vi in vv_to_extract:
+                if vi not in dsx_tg and re.search(r"_p\d{2}", vi):
+                    vio = vi[:-4] # original variable name
+
+                    # 1. Extract raw numpy arrays to avoid xarray overhead in the loop
+                    dsx_tg_vals = dsx_tg[vio].values
+                    dsy_rf_vals = dsy_rf[vio].values
+
+                    # 2. Initialize output arrays with NaNs
+                    # We'll create three separate arrays for the percentiles
+                    shape_dsx = dsx_tg_vals.shape
+                    shape_dsy = dsy_rf_vals.shape
+
+                    dsx_tg_vals_pc = {}
+                    dsy_rf_vals_pc = {}
+                    for pc in perc:
+                        dsx_tg_vals_pc[pc] = np.full(shape_dsx, np.nan, dtype=np.float32)
+                        dsy_rf_vals_pc[pc] = np.full(shape_dsy, np.nan, dtype=np.float32)
+
+                    # 3. Get the indices where the mask is True
+                    t_idx, a_idx, r_idx = np.where(mask_tg_ref.values)
+                    t_idy, a_idy, r_idy = np.where(mask_rf_ref.values)
+
+                    # 4. Iterate only over the selected points
+                    # We use a warning filter because slicing an array of pure NaNs
+                    # will trigger a RuntimeWarning in np.nanpercentile
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", category=RuntimeWarning)
+
+                        # for dsx
+                        for t, a, r in zip(t_idx, a_idx, r_idx):
+                            # Slice along the range dimension up to the current point (inclusive)
+                            data_slice = dsx_tg_vals[t, a, :r+1]
+
+                            # Calculate the percentiles, ignoring NaNs in the data
+                            perc_dsx = np.nanpercentile(data_slice, [int(percx) for percx in perc])
+
+                            # Assign the results to our output arrays
+                            for pci, pc in enumerate(perc):
+                                dsx_tg_vals_pc[pc][t, a, r] = perc_dsx[pci]
+
+                        # for dsy
+                        for t, a, r in zip(t_idy, a_idy, r_idy):
+                            # Slice along the range dimension up to the current point (inclusive)
+                            data_slice = dsy_rf_vals[t, a, :r+1]
+
+                            # Calculate the percentiles, ignoring NaNs in the data
+                            perc_dsy = np.nanpercentile(data_slice, [int(percy) for percy in perc])
+
+                            # Assign the results to our output arrays
+                            for pci, pc in enumerate(perc):
+                                dsy_rf_vals_pc[pc][t, a, r] = perc_dsy[pci]
+
+                    # 5. Reconstruct the results into a new xarray Dataset and assign to the original
+
+                    dsx_percentiles = xr.Dataset(
+                        {
+                            vio+"_p"+pc: (["time", "azimuth", "range"],
+                                          dsx_tg_vals_pc[pc]) for pc in perc
+                        },
+                        coords=dsx_tg[vio].coords
+                    )
+
+                    dsy_percentiles = xr.Dataset(
+                        {
+                            vio+"_p"+pc: (["time", "azimuth", "range"],
+                                          dsy_rf_vals_pc[pc]) for pc in perc
+                        },
+                        coords=dsy_rf[vio].coords
+                    )
+
+                    dsx_tg = dsx_tg.assign( dsx_percentiles.copy() )
+                    dsy_rf = dsy_rf.assign( dsy_percentiles.copy() )
+
+            # Extract variables
             for vi in vv_to_extract:
                 if vi not in dsx_tg:
                     print(vi+" not found in target ds, filling with NaNs")
