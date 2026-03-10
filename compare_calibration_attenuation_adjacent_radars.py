@@ -144,6 +144,8 @@ def plot_dual_scan_strategy(
     ds2,
     elevs1,
     elevs2,
+    ds1_name="Radar 1",
+    ds2_name="Radar 2",
     beamwidth=1.0,
     terrain=True,
     dem=None,
@@ -153,6 +155,8 @@ def plot_dual_scan_strategy(
     pad_deg=0.02,
     show=True,
     figsize=(12, 5),
+    plot_title = True,
+    legend_pos = "out"
 ):
     """
     Plot scan strategies of two radars *facing each other* on a shared transect,
@@ -165,6 +169,8 @@ def plot_dual_scan_strategy(
         and a coordinate called `range` (units: metres).
     elevs1, elevs2 : sequence of float
         Elevation angles (deg) for radar 1 and radar 2.
+    ds1_name, ds2_name : str
+        Names of the radar datasets for the labels.
     beamwidth : float
         3 dB beam width in degrees (default 1.0 deg).
     terrain : bool
@@ -182,6 +188,10 @@ def plot_dual_scan_strategy(
         If True, plt.show() is called for new figures.
     figsize : tuple
         Matplotlib figure size.
+    plot_title: bool
+        If True add the title.
+    legend_pos: "out" or "in"
+        If "out" plot the legends outside the plot area. If "in" plot them inside.
 
     Returns
     -------
@@ -219,7 +229,7 @@ def plot_dual_scan_strategy(
         # bbox: [minlon, maxlon, minlat, maxlat] with a small pad
         bbox = [lons.min() - pad_deg, lons.max() + pad_deg, lats.min() - pad_deg, lats.max() + pad_deg]
         try:
-            ds_srtm = dem if dem is not None else wrl.io.get_srtm(bbox)
+            ds_srtm = dem if dem is not None else wrl.io.get_srtm(bbox, resolution=1)
             rastervalues, rastercoords, crs = wrl.georef.extract_raster_dataset(ds_srtm, nodata=-32768.0)
             # map raster values to transect lon/lats
             terrain_heights_m = wrl.ipol.cart_to_irregular_spline(
@@ -279,7 +289,7 @@ def plot_dual_scan_strategy(
 
     # mark radar 1 position and text
     ax.scatter([0.0], [alt1 / 1000.0], color="k", s=30, zorder=4)
-    ax.text(0.0, alt1 / 1000.0 + 0.2, "Radar 1", color="k", va="bottom", ha="left")
+    ax.text(0.0, alt1 / 1000.0 - 0.2, ds1_name, color="k", va="bottom", ha="right")
 
     # --- Radar 2: azimuth pointing to radar 1 ---
     az2 = _bearing_deg(lon2, lat2, lon1, lat1)
@@ -304,7 +314,7 @@ def plot_dual_scan_strategy(
 
     # mark radar 2 position and text
     ax.scatter([dist_total_km], [alt2 / 1000.0], color="k", s=30, zorder=4)
-    ax.text(dist_total_km, alt2 / 1000.0 + 0.2, "Radar 2", color="k", va="bottom", ha="right")
+    ax.text(dist_total_km, alt2 / 1000.0 - 0.2, ds2_name, color="k", va="bottom", ha="left")
 
     # --- cosmetics and legends ---
     handles, labels = ax.get_legend_handles_labels()
@@ -317,12 +327,18 @@ def plot_dual_scan_strategy(
             uniq_labels.append(l)
             seen.add(l)
     if uniq_handles:
-        leg1 = ax.legend(uniq_handles, uniq_labels, prop={"family": "monospace"}, loc="upper left", bbox_to_anchor=(1.02, 1.0))
+        if legend_pos == "in":
+            leg1 = ax.legend(uniq_handles, uniq_labels, prop={"family": "monospace"}, loc="upper right")
+        else:
+            leg1 = ax.legend(uniq_handles, uniq_labels, prop={"family": "monospace"}, loc="upper left", bbox_to_anchor=(1.02, 1.0))
         ax.add_artist(leg1)
 
     if center_last is not None and edge_last is not None:
         legend2 = {"Center": center_last[0], "3 dB": edge_last[0]}
-        ax.legend(legend2.values(), legend2.keys(), prop={"family": "monospace"}, loc="lower left", bbox_to_anchor=(1.02, 0.0))
+        if legend_pos == "in":
+            ax.legend(legend2.values(), legend2.keys(), prop={"family": "monospace"}, loc="lower right")
+        else:
+            ax.legend(legend2.values(), legend2.keys(), prop={"family": "monospace"}, loc="lower left", bbox_to_anchor=(1.02, 0.0))
 
     margin_x = max(2.0, 0.05 * dist_total_km)
     ax.set_xlim(-margin_x, dist_total_km + margin_x)
@@ -336,7 +352,7 @@ def plot_dual_scan_strategy(
 
     ax.set_xlabel("Distance along transect (km)")
     ax.set_ylabel("Height (km a.s.l.)")
-    ax.set_title("Dual-Radar Scan Strategies (shared transect & terrain)")
+    if plot_title: ax.set_title("Dual-Radar Scan Strategies (shared transect & terrain)")
     ax.grid(True, linestyle="--", alpha=0.4)
     plt.tight_layout()
     if show:
@@ -348,9 +364,13 @@ def plot_dual_scan_strategy(
 
 plot_dual_scan_strategy(
     ds1, ds2,
-    elevs1=[0.2, 0.4, 0.7, 1.0, 1.5, 2.2, 3.0, 4.5, 6.0, 8.0, 12.0, 18.0, 27.0, 38.0],
-    elevs2=[0.5, 1.3, 4.0, 10.0, 15.0],
-    terrain=True
+    elevs1=[1.5, 2.2, 3.0], # [0.2, 0.4, 0.7, 1.0, 1.5, 2.2, 3.0, 4.5, 6.0, 8.0, 12.0, 18.0, 27.0, 38.0],
+    elevs2=[0.4, 0.5, 0.7], # [0.5, 1.3, 4.0, 10.0, 15.0],
+    ds1_name="HTY",
+    ds2_name="GZT",
+    terrain=True,
+    plot_title=False,
+    legend_pos="in"
 )
 
 
@@ -607,6 +627,83 @@ ax.text(ds1.x[0,0], ds1.y[0,0]-30000, "HTY")
 ax.text(ds2.x[0,0], ds2.y[0,0]-30000, "GZT")
 
 plt.title(vv+" "+tsel)
+
+#%%% Plot example over map
+tsel = "2017-01-02T06"
+
+vv = "DBZH" # for the example plot
+vmin = -10
+vmax = 50
+
+import cartopy.io.img_tiles as cimgt
+
+# Choose a tile source (pick one):
+tiles = cimgt.OSM()                        # OpenStreetMap
+# tiles = cimgt.GoogleTiles(style="terrain")   # Google Maps (may need API key)
+# tiles = cimgt.GoogleTiles(style="satellite")  # Google Satellite
+# tiles = cimgt.GoogleTiles(style="street")        # road map
+# tiles = cimgt.QuadtreeTiles()                    # Bing maps
+# tiles = cimgt.Stamen('terrain')          # Stamen Terrain (may be deprecated)
+
+# Use PlateCarree (lon/lat) as the display projection
+map_proj = ccrs.Mercator()
+
+fig, ax = plt.subplots(
+    figsize=(5, 4),
+    subplot_kw={"projection": map_proj}
+)
+
+# Add the background tiles FIRST (before other features)
+ax.add_image(tiles, 7, zorder=0)  # <-- second arg is zoom level (higher = more detail, slower)
+
+# --- Add map features ---
+ax.add_feature(cartopy.feature.COASTLINE, linewidth=0.8, zorder=2)
+ax.add_feature(cartopy.feature.BORDERS, linewidth=0.8, linestyle="--", zorder=2)
+# ax.add_feature(cartopy.feature.LAND, facecolor="lightgray", alpha=0.3)
+# ax.add_feature(cartopy.feature.OCEAN, facecolor="lightblue", alpha=0.3)
+ax.gridlines(draw_labels=[ "bottom", "left"], linewidth=0.5, linestyle=":", color="gray")
+
+# --- Plot radar data ---
+# wradlib's .wrl.vis.plot() can accept a cartopy axes via the `ax` kwarg
+# We need to pass the transform so it knows the data CRS
+ds1_sel = ds1.sel(time=tsel, method="nearest")[vv]
+ds2_sel = ds2.sel(time=tsel, method="nearest")[vv]
+
+# Get lon/lat arrays (they should be coordinates after georeferencing)
+# If your datasets have 'lon' and 'lat' coords use them directly;
+# otherwise use wradlib's georef to get them
+ds1_sel.wrl.vis.plot(
+    ax=ax,
+    crs=proj,           # the CRS the x/y data is in (from get_common_projection)
+    alpha=0.3,
+    vmin=vmin, vmax=vmax,
+    add_colorbar=False,
+    zorder=1
+)
+pm = ds2_sel.wrl.vis.plot(
+    ax=ax,
+    crs=proj,
+    alpha=0.3,
+    vmin=vmin, vmax=vmax,
+    add_colorbar=False,
+    zorder=1
+)
+
+# --- Radar site markers ---
+
+lon1, lat1 = (float(ds1.longitude), float(ds1.latitude))
+lon2, lat2 = (float(ds2.longitude), float(ds2.latitude))
+
+ax.scatter([lon1, lon2], [lat1, lat2],
+           color="black", s=50, zorder=5, transform=ccrs.PlateCarree())
+ax.text(lon1, lat1 - 0.3, "HTY", transform=ccrs.PlateCarree(), fontsize=9, ha="center")
+ax.text(lon2, lat2 - 0.3, "GZT", transform=ccrs.PlateCarree(), fontsize=9, ha="center")
+
+# --- Colorbar and title ---
+plt.colorbar(pm, ax=ax, label=vv, shrink=0.7)
+ax.set_title(f"{vv} {tsel}")
+plt.tight_layout()
+plt.show()
 
 #%% Add beam blockage
 
