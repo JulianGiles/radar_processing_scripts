@@ -613,7 +613,7 @@ plt.title(vv+" "+tsel)
 #%%% Define a function to calculate the beam blockage
 def beam_blockage_from_radar_ds(ds,
                                 sitecoords,
-                                dem_resolution=3,
+                                dem_resolution=1,
                                 bw=1.0,
                                 wradlib_token: str = None):
     """
@@ -684,10 +684,18 @@ def beam_blockage_from_radar_ds(ds,
 
     # 7. Interpolate DEM heights to the polar coords
     # The result is the “terrain height under each bin” (shape az × range)
+    # polar_terrain = wrl.ipol.cart_to_irregular_spline(
+    #     rastercoords_clip, rastervalues_clip, polcoords,
+    #     order=3, prefilter=False
+    # )
+
+    # 7. Interpolate DEM heights to the polar coords
+    # Pass the full, unclipped arrays. Coordinates falling outside the
+    # downloaded DEM (i.e., the missing open ocean) will default to 0.0.
     polar_terrain = wrl.ipol.cart_to_irregular_spline(
-        rastercoords_clip, rastervalues_clip, polcoords,
-        order=3, prefilter=False
-    )
+            rastercoords, rastervalues, polcoords,
+            order=3, prefilter=False
+        )
 
     # 8. Compute beam radius (half power) for each range bin
     r = ds_geo.range.values   # 1D array (range)
@@ -731,9 +739,9 @@ ds2_pbb, ds2_cbb = beam_blockage_from_radar_ds(ds2.isel(time=0),
 ds2 = ds2.assign({"PBB": ds2_pbb, "CBB": ds2_cbb})
 
 # Plot beam blockage
-ds1["CBB"].where(ds1["CBB"]>0.).wrl.vis.plot(alpha=0.5, vmin=0, vmax=1, cmap=mpl.cm.PuRd)
+ds1["CBB"].where(ds1["CBB"]>0.05).wrl.vis.plot(alpha=0.5, vmin=0, vmax=1, cmap=mpl.cm.PuRd)
 ax = plt.gca()
-ds2["CBB"].where(ds2["CBB"]>0.).wrl.vis.plot(ax=ax, alpha=0.5, vmin=0, vmax=1, cmap=mpl.cm.PuRd,  xlim=(-100000, 100000), ylim=(-100000, 100000))
+ds2["CBB"].where(ds2["CBB"]>0.05).wrl.vis.plot(ax=ax, alpha=0.5, vmin=0, vmax=1, cmap=mpl.cm.PuRd,  xlim=(-100000, 100000), ylim=(-100000, 100000))
 ax.scatter([ds1.x[0,0], ds2.x[0,0]], [ds1.y[0,0], ds2.y[0,0]])
 ax.text(ds1.x[0,0], ds1.y[0,0]-30000, "HTY")
 ax.text(ds2.x[0,0], ds2.y[0,0]-30000, "GZT")
@@ -1176,10 +1184,11 @@ plt.show()
 #%%% Make a dictionary with paths for each event
 
 # Set a temporary folder where the selected values will be saved
-savefolder = realpep_path+"/upload/jgiles/temp_compare_calibration_attenuation_adjacent_radars/"
+savefolder = realpep_path+"/upload/jgiles/temp_compare_calibration_attenuation_adjacent_radars_alldates_multipleneighbors_new/"
 
 reload = True # try to reload previous calculations?
 calc = True # try to calculate if previous calculations failed?
+NN = False # calculate only for nearest neighbors? If False, include all neighbors that fulfill the conditions
 
 # First let's get all files
 HTY_files = glob.glob(realpep_path+"/upload/jgiles/dmi/final_ppis/*/*/*/HTY/*/*/*allm*")
@@ -1222,10 +1231,8 @@ ML_high_dates = [
     "2020-03-12", #### no valid matches: 3.0-0.5
     "2020-03-13", #### no valid matches: 3.0-0.5
     # "2020-05-01", #### no valid matches: 1.5-0.5, 3.0-0.5 (all combinations)
-]
 
-savefolder = realpep_path+"/upload/jgiles/temp_compare_calibration_attenuation_adjacent_radars_newdates/"
-ML_high_dates = [ # New dates
+    # New dates
     "2016-06-07",
     "2016-06-30",
     "2016-07-05",
@@ -1306,11 +1313,8 @@ ML_low_dates = [
     # "2020-11-04", # X
     # "2020-11-20", # X
     # "2020-12-14", # X
-    ]
 
-savefolder = realpep_path+"/upload/jgiles/temp_compare_calibration_attenuation_adjacent_radars_newdates/"
-
-ML_low_dates = [ # New dates
+    # New dates
     "2016-12-25",
     "2016-12-26", # <= reactivated
     "2017-01-03",
@@ -1357,7 +1361,8 @@ vv_to_extract = ["DBZH", "DBZH_AC",
                  # "ZDR_EC_OC_p25", "ZDR_EC_OC_p75", "ZDR_EC_OC_p50", # percentiles of ZDR along the ray
                  "z", "z_beamtop",
                  "height_ml_bottom_new_gia", "height_ml_bottom_new_gia_fromqvp",
-                 "RHOHV"
+                 "RHOHV",
+                 "binvol", "beam_cross_angle"
                  ] # all variables to extract from the datasets, DBZH must be the first
 
 elev_ml_bottom_fromqvp = ["10.0", "12.0", "8.0"] # elevations to try to load the height of the ML from QVP files, in order of preference
@@ -1552,12 +1557,12 @@ for date in ML_high_dates:
 
             # if we want z or ML heights we need to broadcast them
             if "z" in vv_to_extract:
-                dsx["z"] = dsx["z"].broadcast_like(dsx["DBZH"])
-                dsy["z"] = dsy["z"].broadcast_like(dsy["DBZH"])
+                dsx["z"] = dsx["z"]
+                dsy["z"] = dsy["z"]
 
             if "height_ml_bottom_new_gia" in vv_to_extract:
-                dsx.coords["height_ml_bottom_new_gia"] = dsx["height_ml_bottom_new_gia"].broadcast_like(dsx["DBZH"])
-                dsy.coords["height_ml_bottom_new_gia"] = dsy["height_ml_bottom_new_gia"].broadcast_like(dsy["DBZH"])
+                dsx.coords["height_ml_bottom_new_gia"] = dsx["height_ml_bottom_new_gia"]
+                dsy.coords["height_ml_bottom_new_gia"] = dsy["height_ml_bottom_new_gia"]
 
             if "height_ml_bottom_new_gia_fromqvp" in vv_to_extract:
                 try:
@@ -1565,19 +1570,19 @@ for date in ML_high_dates:
                         qvp_glob = glob.glob("/".join(HTY_file.replace("final_ppis","qvps").split("/")[:-3])+"/*/"+qvp_elev+"/*.nc")
                         if len(qvp_glob)>0:
                             qvp_for_ml = xr.open_dataset(qvp_glob[0])
-                            dsx.coords["height_ml_bottom_new_gia_fromqvp"] = qvp_for_ml.sel(time=date)["height_ml_bottom_new_gia"].interp_like(dsx.time, method="nearest").broadcast_like(dsx["DBZH"])
+                            dsx.coords["height_ml_bottom_new_gia_fromqvp"] = qvp_for_ml.sel(time=date)["height_ml_bottom_new_gia"].interp_like(dsx.time, method="nearest")
                             break
                 except:
-                    dsx.coords["height_ml_bottom_new_gia_fromqvp"] = ds1_mlb_qvp.sel(time=date)["height_ml_bottom_new_gia"].interp_like(dsx.time, method="nearest").broadcast_like(dsx["DBZH"])
+                    dsx.coords["height_ml_bottom_new_gia_fromqvp"] = ds1_mlb_qvp.sel(time=date)["height_ml_bottom_new_gia"].interp_like(dsx.time, method="nearest")
                 try:
                     for qvp_elev in elev_ml_bottom_fromqvp:
                         qvp_glob = glob.glob("/".join(GZT_file.replace("final_ppis","qvps").split("/")[:-3])+"/*/"+qvp_elev+"/*.nc")
                         if len(qvp_glob)>0:
                             qvp_for_ml = xr.open_dataset(qvp_glob[0])
-                            dsy.coords["height_ml_bottom_new_gia_fromqvp"] = qvp_for_ml.sel(time=date)["height_ml_bottom_new_gia"].interp_like(dsy.time, method="nearest").broadcast_like(dsy["DBZH"])
+                            dsy.coords["height_ml_bottom_new_gia_fromqvp"] = qvp_for_ml.sel(time=date)["height_ml_bottom_new_gia"].interp_like(dsy.time, method="nearest")
                             break
                 except:
-                    dsy.coords["height_ml_bottom_new_gia_fromqvp"] = ds2_mlb_qvp.sel(time=date)["height_ml_bottom_new_gia"].interp_like(dsy.time, method="nearest").broadcast_like(dsy["DBZH"])
+                    dsy.coords["height_ml_bottom_new_gia_fromqvp"] = ds2_mlb_qvp.sel(time=date)["height_ml_bottom_new_gia"].interp_like(dsy.time, method="nearest")
 
             if "z_beamtop" in vv_to_extract:
                 # we just copy the original coordinates and add half beamwidth, then georeference again
@@ -1590,6 +1595,14 @@ for date in ML_high_dates:
                 dsy_beamtop['elevation'] = dsy_beamtop['elevation'] + 0.5
                 dsy_beamtop = wrl.georef.georeference(dsy_beamtop, crs=proj)
                 dsy.coords["z_beamtop"] = dsy_beamtop["z"].broadcast_like(dsy["DBZH"]).reset_coords(drop=True)
+
+            if "binvol" in vv_to_extract:
+                dsx.coords["binvol"] = dsx.range.wrl.qual.pulse_volume(dsx.range.diff("range").median(), 1)
+                dsy.coords["binvol"] = dsy.range.wrl.qual.pulse_volume(dsy.range.diff("range").median(), 1)
+
+            if "beam_cross_angle" in vv_to_extract:
+                dsx.coords["beam_cross_angle"] = utils.compute_crossing_angle_cartesian(dsx, (dsx.x[:,0].mean(), dsx.y[:,0].mean(), dsx.z[:,0].mean()), (dsy.x[:,0].mean(), dsy.y[:,0].mean(), dsy.z[:,0].mean()))
+                dsy.coords["beam_cross_angle"] = utils.compute_crossing_angle_cartesian(dsy, (dsx.x[:,0].mean(), dsx.y[:,0].mean(), dsx.z[:,0].mean()), (dsy.x[:,0].mean(), dsy.y[:,0].mean(), dsy.z[:,0].mean()))
 
             # Add the additional DBZH threshold
             dsx = utils.apply_min_max_thresh(dsx, {"DBZH":DBZH_min},
@@ -1605,17 +1618,33 @@ for date in ML_high_dates:
             dsx_tg = dsx[[vv for vv in vv_to_extract if vv in dsx]].compute() # if we pre compute the variables that we want
             dsy_rf = dsy[[vv for vv in vv_to_extract if vv in dsy]].compute() # we save a lot of time (~3 times faster)
 
-            mask_tg, mask_rf, idx_tg, idx_rf, matched_timesteps = utils.find_radar_overlap_unique_NN_pairs(dsx_tg,
-                                                                                                           dsy_rf,
-                                                                                tolerance=tolerance,
-                                                                                tolerance_time=60*4)
+            if NN:
+                mask_tg, mask_rf, idx_tg, idx_rf, matched_timesteps = utils.find_radar_overlap_unique_NN_pairs(dsx_tg,
+                                                                                                               dsy_rf,
+                                                                                    tolerance=tolerance,
+                                                                                    tolerance_time=60*4)
 
-            mask_tg_ref, mask_rf_ref, idx_tg_ref, idx_rf_ref, matched_timesteps = utils.refine_radar_overlap_unique_NN_pairs(
-                                                                                    dsx_tg, dsy_rf,
-                                                                                    idx_tg, idx_rf,
-                                                                                    vv,
-                                                                                tolerance_time=60*4,
-                                                                                z_tolerance=100.)
+                mask_tg_ref, mask_rf_ref, idx_tg_ref, idx_rf_ref = utils.refine_radar_overlap_unique_NN_pairs(
+                                                                                        dsx_tg, dsy_rf,
+                                                                                        idx_tg, idx_rf,
+                                                                                        matched_timesteps,
+                                                                                        vv,
+                                                                                    tolerance_time=60*4,
+                                                                                    z_tolerance=100.)
+            else:
+                mask_tg, mask_rf, idx_tg, idx_rf, matched_timesteps = utils.find_radar_overlap(dsx_tg,
+                                                                                               dsy_rf,
+                                                                                    tolerance=tolerance,
+                                                                                    tolerance_time=60*4)
+
+                mask_tg_ref, mask_rf_ref, idx_tg_ref, idx_rf_ref = utils.refine_radar_overlap(
+                                                                                        dsx_tg, dsy_rf,
+                                                                                        mask_tg, mask_rf,
+                                                                                        matched_timesteps,
+                                                                                        vv,
+                                                                                        tolerance=tolerance,
+                                                                                    tolerance_time=60*4,
+                                                                                    z_tolerance=100.)
 
             if mask_tg_ref.sum() == 0:
                 print("No matches found")
@@ -1711,10 +1740,15 @@ for date in ML_high_dates:
                     print(vi+" not found in reference ds, filling with NaNs")
                     dsy_rf = dsy_rf.assign( { vi: xr.full_like(dsy_rf["DBZH"], fill_value=np.nan) } )
 
-                dsx_p_tg, dsy_p_rf = utils.return_unique_NN_value_pairs(dsx_tg, dsy_rf,
-                                                                        mask_tg_ref, mask_rf_ref,
-                                                           idx_tg_ref, idx_rf_ref,
-                                                           matched_timesteps, vi)
+                if NN:
+                    dsx_p_tg, dsy_p_rf = utils.return_unique_NN_value_pairs(dsx_tg, dsy_rf,
+                                                                            mask_tg_ref, mask_rf_ref,
+                                                               idx_tg_ref, idx_rf_ref,
+                                                               matched_timesteps, vi)
+                else:
+                    dsx_p_tg, dsy_p_rf = utils.return_value_pairs(dsx_tg, dsy_rf,
+                                                                  idx_tg_ref, idx_rf_ref,
+                                                               matched_timesteps, vi)
 
                 #!!! The arrays might have matched timesteps filled with NaNs (because of no valid pairs)
                 # Improvement idea: remove the timesteps without valid pairs
@@ -1784,6 +1818,26 @@ tg_z_beamtop = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["z_beamtop
 
 ref_z_beamtop = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["z_beamtop"] ])
 
+tg_binvol = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["binvol"] ])
+
+ref_binvol = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["binvol"] ])
+
+tg_bca = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["beam_cross_angle"] ])
+
+ref_bca = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["beam_cross_angle"] ])
+
+tg_ZDR25 = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_p25"] ])
+
+ref_ZDR25 = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_p25"] ])
+
+tg_ZDR75 = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_p75"] ])
+
+ref_ZDR75 = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_p75"] ])
+
+tg_ZDR = np.concat([ d1.flatten() for d1,d2 in selected_ML_high[dbzh] ])
+
+ref_ZDR = np.concat([ d2.flatten() for d1,d2 in selected_ML_high[dbzh] ])
+
 # tg_height_ml_bot_qvp = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ])
 
 # ref_height_ml_bot_qvp = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ])
@@ -1833,10 +1887,11 @@ valid = np.isfinite(delta_dbzh) & (ref_phi<ref_phi_max) & (np.isfinite(tg_phi))\
         & (tg_phi > varx_range[0]) & (tg_phi < varx_range[1] - varx_range[2])\
         & (tg_z < tg_height_ml_bot_qvp) & (ref_z < ref_height_ml_bot_qvp)\
         & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\
-        & (tg_TEMP > 3) & (ref_TEMP > 3)
+        & (tg_TEMP > 3) & (ref_TEMP > 3) \
+        & (tg_bca > 135) & (ref_bca > 135)\
+        # & (tg_ZDR25 > -0.25) & (tg_ZDR25 < 0.25) & (tg_ZDR75 > 0) & (tg_ZDR75 < 5)
+        # & (tg_binvol/ref_binvol > 0.5)
         # & (tg_z_beamtop < tg_height_ml_bot_qvp) & (ref_z_beamtop < ref_height_ml_bot_qvp)\
-        # & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\ # loose way of avoiding the ML
-        # & (tg_TEMP > 3) & (ref_TEMP > 3)\ # loose way of avoiding the ML
 
 
 # # And if we try to add the reverse matching? (GZT as tg and HTY as ref)
@@ -1906,20 +1961,23 @@ plt.xticks(bins, bins)
 # add a second linear fit using the medians
 medians = np.array([line.get_ydata()[0] for line in bp['medians']])
 lfit_m = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 1)
-lfit_m_rcoefs = np.round(lfit_m.convert().coef, 2)
+lfit_m_rcoefs = np.round(lfit_m.convert().coef, 3)
 lfit_m_rounded = np.polynomial.Polynomial(lfit_m_rcoefs)
 lfit_m_str = str(lfit_m_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
 plt.plot([bins[0], bins[-1]], [lfit_m(bins[0]), lfit_m(bins[-1])], c="red")
 plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
          horizontalalignment="right")
 
-# # add a third linear fit using the medians and variances of each bin
+# # add a third linear fit using the medians and IQRs of each bin
 # variances = np.array([vals.var(ddof=1) for vals in box_data])
-# weights = 1 / variances
+# iqr = np.array([np.quantile(vals,0.75) for vals in box_data]) - np.array([np.quantile(vals,0.25) for vals in box_data])
+# weights = 1 / iqr**2 # 1 / variances
 # weights[~np.isfinite(weights)] = 0
 # w = np.sqrt(weights)
-# lfit_mw = np.polynomial.Polynomial.fit(bin_centers, medians, 1, w=w)
-# lfit_mw_str = str(lfit_m.convert()).replace("x", "Phi")
+# lfit_mw = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 1, w=w[np.array(valid_bins)])
+# lfit_mw_rcoefs = np.round(lfit_mw.convert().coef, 3)
+# lfit_mw_rounded = np.polynomial.Polynomial(lfit_mw_rcoefs)
+# lfit_mw_str = str(lfit_mw_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
 # plt.plot([bins[0], bins[-1]], [lfit_mw(bins[0]), lfit_m(bins[-1])], c="deeppink", ls="--")
 # plt.text(0.95, 0.8, "Variance-weighted linear fit (medians): "+lfit_mw_str, transform=plt.gca().transAxes,
 #          c="deeppink", horizontalalignment="right")
@@ -1938,7 +1996,26 @@ plt.tight_layout()
 plt.show()
 
 # Print p value and other stats
-scipy.stats.linregress(bin_centers, medians)
+scipy.stats.linregress(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)])
+
+# # Print p value and other stats (for weighted fit)
+# # use alternative to scipy.optimize.curve_fit (there is no quadratic equivalent)
+
+# # We add a column for the constant (intercept) and the squared term
+# # Stack columns: [1, x]
+# X = np.column_stack((np.ones_like(bin_centers[np.array(valid_bins)]), bin_centers[np.array(valid_bins)]))
+
+# # 2. Fit the model (OLS = Ordinary Least Squares)
+# model = sm.WLS(medians[np.array(valid_bins)], X, weights=w)
+# results = model.fit()
+
+# # 3. Get the stats
+# print(f"R²: {results.rsquared:.4f}")
+# print(f"p-values (const, x): {results.pvalues}")
+# print(f"Prob (F-statistic): {results.f_pvalue}")
+
+# # You can also print a comprehensive summary table
+# print(results.summary())
 
 #%%% Confidence interval analysis based on different ranges (rain attenuation)
 # INPUT DATA
@@ -1948,6 +2025,8 @@ dbzh = "DBZH" # DBZH, ZDR_EC_OC
 
 yax = r"Slope of $Δ\mathrm{Z_{H} - \Phi_{DP}}$ best fit [dBZ/°]" # label for the y axis
 xax = r"Maximum $\mathrm{\Phi_{DP}}$ of fitted range [°]" # label for the x axis
+
+weighted = False # weight the bins for the linear fittings? IQR or variance weighting (select in the code below)
 
 # repeat filters
 Zm_max = 15
@@ -1983,6 +2062,14 @@ ref_RHOHV = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["RHOHV"] ])
 tg_z_beamtop = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["z_beamtop"] ])
 
 ref_z_beamtop = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["z_beamtop"] ])
+
+tg_binvol = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["binvol"] ])
+
+ref_binvol = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["binvol"] ])
+
+tg_bca = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["beam_cross_angle"] ])
+
+ref_bca = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["beam_cross_angle"] ])
 
 # tg_height_ml_bot_qvp = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ])
 
@@ -2032,10 +2119,10 @@ valid = np.isfinite(delta_dbzh) & (ref_phi<ref_phi_max) & (np.isfinite(tg_phi))\
         & (ref_Zm<Zm_max) & (tg_Zm<Zm_max)\
         & (tg_z < tg_height_ml_bot_qvp) & (ref_z < ref_height_ml_bot_qvp)\
         & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\
-        & (tg_TEMP > 3) & (ref_TEMP > 3)
+        & (tg_TEMP > 3) & (ref_TEMP > 3)\
+        & (tg_bca > 135) & (ref_bca > 135)\
+        # & (tg_binvol/ref_binvol > 0.5)
         # & (tg_z_beamtop < tg_height_ml_bot_qvp) & (ref_z_beamtop < ref_height_ml_bot_qvp)\
-        # & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\ # loose way of avoiding the ML
-        # & (tg_TEMP > 3) & (ref_TEMP > 3)\ # loose way of avoiding the ML
 
 delta_dbzh = delta_dbzh[valid]
 tg_phi = tg_phi[valid]
@@ -2078,17 +2165,32 @@ def fit_binmedian_slope(phi_vals, dbzh_vals, phi_min, phi_max, bin_width, min_bi
 
     # compute medians
     medians = np.zeros(nbins)
+    q25 = np.zeros(nbins)
+    q75 = np.zeros(nbins)
     for i in range(nbins):
         vals = dbzh_sel[bin_idx == i]
         medians[i] = np.nanmedian(vals) if np.isfinite(vals).sum()>min_bin_n else np.nan
+        q25[i] = np.quantile(vals, 0.25) if np.isfinite(vals).sum()>min_bin_n else np.nan
+        q75[i] = np.quantile(vals, 0.75) if np.isfinite(vals).sum()>min_bin_n else np.nan
+    iqr = q75-q25
 
     # remove empty bins
     valid = np.isfinite(medians)
     if np.sum(valid) < 2:
         return np.nan
 
+    box_data = [dbzh_sel[bin_idx == i] for i in range(len(bins) - 1)]
+    counts = [len(vals) for vals in box_data]
+    variances = np.array([vals.var(ddof=1) for vals in box_data])
+    weights = 1 / iqr**2 # 1 / variances # change to counts/variances for variance weighting
+    weights[~np.isfinite(weights)] = 0
+    w = np.sqrt(weights)
+
     # linear fit
-    p = np.polynomial.Polynomial.fit(bin_centers[valid], medians[valid], 1)
+    if weighted:
+        p = np.polynomial.Polynomial.fit(bin_centers[valid], medians[valid], 1, w=w[valid])
+    else:
+        p = np.polynomial.Polynomial.fit(bin_centers[valid], medians[valid], 1)
     return p.convert().coef[1]  # slope is coef[1]
 
 # -------------------------------------------------------------------
@@ -2156,18 +2258,30 @@ for bin_width in bin_widths:
         for b in range(B):
             # bootstrap each bin separately
             boot_medians = []
+            boot_weights = []
             for vals in bin_samples:
                 if np.isfinite(vals).sum()>min_bin_n:
                     idx = np.random.randint(0, len(vals), len(vals))
                     boot_vals = vals[idx]
                     boot_medians.append(np.median(boot_vals))
+                    q25 = np.quantile(boot_vals, 0.25)
+                    q75 = np.quantile(boot_vals, 0.75)
+                    iqr = q75-q25
+                    boot_counts = len(boot_vals)
+                    boot_vars = boot_vals.var(ddof=1)
+                    boot_weights.append(1/iqr**2) # change to boot_counts/boot_vars for variance weighting
                 else:
                     boot_medians.append(np.nan)
+                    boot_weights.append(np.nan)
 
             boot_medians = np.array(boot_medians)
             valid = np.isfinite(boot_medians)
+            w = np.sqrt(np.array(boot_weights))
 
-            boot_slopes[b] = np.polynomial.Polynomial.fit(bin_centers[valid], boot_medians[valid], 1).convert().coef[1]
+            if weighted:
+                boot_slopes[b] = np.polynomial.Polynomial.fit(bin_centers[valid], boot_medians[valid], 1, w=w[valid]).convert().coef[1]
+            else:
+                boot_slopes[b] = np.polynomial.Polynomial.fit(bin_centers[valid], boot_medians[valid], 1).convert().coef[1]
 
         # ---- 5. Compute confidence intervals ----
         low = np.percentile(boot_slopes, (100-ci_level)/2)
@@ -2295,6 +2409,14 @@ tg_z_beamtop = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["z_beamtop
 
 ref_z_beamtop = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["z_beamtop"] ])
 
+tg_binvol = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["binvol"] ])
+
+ref_binvol = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["binvol"] ])
+
+tg_bca = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["beam_cross_angle"] ])
+
+ref_bca = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["beam_cross_angle"] ])
+
 # tg_height_ml_bot_qvp = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ])
 
 # ref_height_ml_bot_qvp = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ])
@@ -2343,7 +2465,9 @@ valid = np.isfinite(delta_dbzh) & (ref_phi<ref_phi_max) & (tg_phi<tg_phi_max) & 
         & (tg_Zm > varx_range[0]) & (tg_Zm < varx_range[1] - varx_range[2])\
         & (tg_z < tg_height_ml_bot_qvp) & (ref_z < ref_height_ml_bot_qvp)\
         & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\
-        & (tg_TEMP > 3) & (ref_TEMP > 3)
+        & (tg_TEMP > 3) & (ref_TEMP > 3)\
+        & (tg_bca > 135) & (ref_bca > 135)\
+        # & (tg_binvol/ref_binvol > 0.5)
         # & (tg_z_beamtop < tg_height_ml_bot_qvp) & (ref_z_beamtop < ref_height_ml_bot_qvp)\
         # & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\ # loose way of avoiding the ML
         # & (tg_TEMP > 3) & (ref_TEMP > 3)\ # loose way of avoiding the ML
@@ -2421,6 +2545,20 @@ x_dense = np.linspace(bins[0], bins[-1], 100) # 100 points for a smooth curve
 plt.plot(x_dense, lfit_m(x_dense), c="red")
 plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
          horizontalalignment="right")
+
+# # add a third cuadratic fit using the medians and IQRs of each bin
+# variances = np.array([vals.var(ddof=1) for vals in box_data])
+# iqr = np.array([np.quantile(vals,0.75) for vals in box_data]) - np.array([np.quantile(vals,0.25) for vals in box_data])
+# weights = 1 / iqr**2 # 1 / variances
+# weights[~np.isfinite(weights)] = 0
+# w = np.sqrt(weights)
+# lfit_mw = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 2, w=w[np.array(valid_bins)])
+# lfit_mw_rcoefs = np.round(lfit_mw.convert().coef, 5)
+# lfit_mw_rounded = np.polynomial.Polynomial(lfit_mw_rcoefs)
+# lfit_mw_str = str(lfit_mw_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
+# plt.plot([bins[0], bins[-1]], [lfit_mw(bins[0]), lfit_m(bins[-1])], c="deeppink", ls="--")
+# plt.text(0.95, 0.8, "IQR-weighted best fit: "+lfit_mw_str, transform=plt.gca().transAxes,
+#          c="deeppink", horizontalalignment="right")
 
 plt.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
 
@@ -2738,11 +2876,12 @@ vv_to_extract = ["DBZH", "DBZH_AC_rain", "DBZH_AC",
                  "height_ml_bottom_new_gia", "height_ml_new_gia",
                  "z_beambot",
                  "height_ml_new_gia_fromqvp",
-                 "PHIDP_OC_MASKED_MLbump", "PHIDP_OC_SMOOTH_MLbump",
-                 "DBZH_AC_rain_MLmax",
-                 "DBZH_AC2_rain_MLmax",
-                 "RHOHV_MLmin",
-                 "RHOHV"
+                 "PHIDP_OC_MASKED_MLbump", #"PHIDP_OC_SMOOTH_MLbump",
+                 # "DBZH_AC_rain_MLmax",
+                 # "DBZH_AC2_rain_MLmax",
+                 # "RHOHV_MLmin",
+                 "RHOHV",
+                 "binvol", "beam_cross_angle"
                  ] # all variables to extract from the datasets, DBZH must be the first
 
 elev_ml_top_fromqvp = ["10.0", "12.0", "8.0"] # elevations to try to load the height of the ML from QVP files, in order of preference
@@ -2863,7 +3002,7 @@ if calc:
 
     if "height_ml_new_gia_fromqvp" in vv_to_extract:
         print("Loading ML top heights from QVP stats")
-
+        # ML_bottom files contain also ML height in its coords
         ds1_mlb_qvp = xr.open_dataset(realpep_path+"/upload/jgiles/radar_stats/stratiform_ML/hty_ML_bottom.nc")
         ds2_mlb_qvp = xr.open_dataset(realpep_path+"/upload/jgiles/radar_stats/stratiform_ML/gzt_ML_bottom.nc")
 
@@ -3054,26 +3193,26 @@ for date in ML_low_dates:
             # They consider that there is rain above the radar by looking at the
             # median reflectivity in a circle aroud each radar. Let's add this variable
             if "Zm" not in dsx.coords:
-                dsx = dsx.assign_coords({"Zm": dsx["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
+                dsx = dsx.assign_coords({"Zm": dsx["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")) })
             if "Zm" not in dsy.coords:
-                dsy = dsy.assign_coords({"Zm": dsy["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsy["DBZH"]) })
+                dsy = dsy.assign_coords({"Zm": dsy["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")) })
 
             # Analogously, add the TEMP close to the radar as a measure of below/above ML
-            dsx = dsx.assign_coords({"TEMPm": dsx["TEMP"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsx["TEMP"]) })
-            dsy = dsy.assign_coords({"TEMPm": dsy["TEMP"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsy["TEMP"]) })
+            dsx = dsx.assign_coords({"TEMPm": dsx["TEMP"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")) })
+            dsy = dsy.assign_coords({"TEMPm": dsy["TEMP"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")) })
 
             # if we want z or ML heights we need to broadcast them
             if "z" in vv_to_extract:
-                dsx["z"] = dsx["z"].broadcast_like(dsx["DBZH"])
-                dsy["z"] = dsy["z"].broadcast_like(dsy["DBZH"])
+                dsx["z"] = dsx["z"]
+                dsy["z"] = dsy["z"]
 
             if "height_ml_bottom_new_gia" in vv_to_extract:
-                dsx["height_ml_bottom_new_gia"] = dsx["height_ml_bottom_new_gia"].broadcast_like(dsx["DBZH"])
-                dsy["height_ml_bottom_new_gia"] = dsy["height_ml_bottom_new_gia"].broadcast_like(dsy["DBZH"])
+                dsx["height_ml_bottom_new_gia"] = dsx["height_ml_bottom_new_gia"]
+                dsy["height_ml_bottom_new_gia"] = dsy["height_ml_bottom_new_gia"]
 
             if "height_ml_new_gia" in vv_to_extract:
-                dsx["height_ml_new_gia"] = dsx["height_ml_new_gia"].broadcast_like(dsx["DBZH"])
-                dsy["height_ml_new_gia"] = dsy["height_ml_new_gia"].broadcast_like(dsy["DBZH"])
+                dsx["height_ml_new_gia"] = dsx["height_ml_new_gia"]
+                dsy["height_ml_new_gia"] = dsy["height_ml_new_gia"]
 
             if "height_ml_new_gia_fromqvp" in vv_to_extract:
                 try:
@@ -3081,19 +3220,19 @@ for date in ML_low_dates:
                         qvp_glob = glob.glob("/".join(HTY_file.replace("final_ppis","qvps").split("/")[:-3])+"/*/"+qvp_elev+"/*.nc")
                         if len(qvp_glob)>0:
                             qvp_for_ml = xr.open_dataset(qvp_glob[0])
-                            dsx.coords["height_ml_new_gia_fromqvp"] = qvp_for_ml.sel(time=date)["height_ml_new_gia"].interp_like(dsx.time, method="nearest").broadcast_like(dsx["DBZH"])
+                            dsx.coords["height_ml_new_gia_fromqvp"] = qvp_for_ml.sel(time=date)["height_ml_new_gia"].interp_like(dsx.time, method="nearest")
                             break
                 except:
-                    dsx.coords["height_ml_new_gia_fromqvp"] = ds1_mlb_qvp.sel(time=date)["height_ml_new_gia"].interp_like(dsx.time, method="nearest").broadcast_like(dsx["DBZH"])
+                    dsx.coords["height_ml_new_gia_fromqvp"] = ds1_mlb_qvp.sel(time=date)["height_ml_new_gia"].interp_like(dsx.time, method="nearest")
                 try:
                     for qvp_elev in elev_ml_top_fromqvp:
                         qvp_glob = glob.glob("/".join(GZT_file.replace("final_ppis","qvps").split("/")[:-3])+"/*/"+qvp_elev+"/*.nc")
                         if len(qvp_glob)>0:
                             qvp_for_ml = xr.open_dataset(qvp_glob[0])
-                            dsy.coords["height_ml_new_gia_fromqvp"] = qvp_for_ml.sel(time=date)["height_ml_new_gia"].interp_like(dsy.time, method="nearest").broadcast_like(dsy["DBZH"])
+                            dsy.coords["height_ml_new_gia_fromqvp"] = qvp_for_ml.sel(time=date)["height_ml_new_gia"].interp_like(dsy.time, method="nearest")
                             break
                 except:
-                    dsy.coords["height_ml_new_gia_fromqvp"] = ds2_mlb_qvp.sel(time=date)["height_ml_new_gia"].interp_like(dsy.time, method="nearest").broadcast_like(dsy["DBZH"])
+                    dsy.coords["height_ml_new_gia_fromqvp"] = ds2_mlb_qvp.sel(time=date)["height_ml_new_gia"].interp_like(dsy.time, method="nearest")
 
             if "z_beambot" in vv_to_extract:
                 # we just copy the original coordinates and subtract half beamwidth, then georeference again
@@ -3106,6 +3245,14 @@ for date in ML_low_dates:
                 dsy_beambot['elevation'] = dsy_beambot['elevation'] - 0.5
                 dsy_beambot = wrl.georef.georeference(dsy_beambot, crs=proj)
                 dsy.coords["z_beambot"] = dsy_beambot["z"].broadcast_like(dsy["DBZH"]).reset_coords(drop=True)
+
+            if "binvol" in vv_to_extract:
+                dsx.coords["binvol"] = dsx.range.wrl.qual.pulse_volume(dsx.range.diff("range").median(), 1)
+                dsy.coords["binvol"] = dsy.range.wrl.qual.pulse_volume(dsy.range.diff("range").median(), 1)
+
+            if "beam_cross_angle" in vv_to_extract:
+                dsx.coords["beam_cross_angle"] = utils.compute_crossing_angle_cartesian(dsx, (dsx.x[:,0].mean(), dsx.y[:,0].mean(), dsx.z[:,0].mean()), (dsy.x[:,0].mean(), dsy.y[:,0].mean(), dsy.z[:,0].mean()))
+                dsy.coords["beam_cross_angle"] = utils.compute_crossing_angle_cartesian(dsy, (dsx.x[:,0].mean(), dsx.y[:,0].mean(), dsx.z[:,0].mean()), (dsy.x[:,0].mean(), dsy.y[:,0].mean(), dsy.z[:,0].mean()))
 
             # Add the additional DBZH and TEMP thresholds
             # (apply the TEMP threshold manually since it is not a variable but a coord)
@@ -3122,17 +3269,33 @@ for date in ML_low_dates:
             dsx_tg = dsx[[vv for vv in vv_to_extract if vv in dsx]].compute() # if we pre compute the variables that we want
             dsy_rf = dsy[[vv for vv in vv_to_extract if vv in dsy]].compute() # we save a lot of time (~3 times faster)
 
-            mask_tg, mask_rf, idx_tg, idx_rf, matched_timesteps = utils.find_radar_overlap_unique_NN_pairs(dsx_tg,
-                                                                                                           dsy_rf,
-                                                                                tolerance=tolerance,
-                                                                                tolerance_time=60*4)
+            if NN:
+                mask_tg, mask_rf, idx_tg, idx_rf, matched_timesteps = utils.find_radar_overlap_unique_NN_pairs(dsx_tg,
+                                                                                                               dsy_rf,
+                                                                                    tolerance=tolerance,
+                                                                                    tolerance_time=60*4)
 
-            mask_tg_ref, mask_rf_ref, idx_tg_ref, idx_rf_ref, matched_timesteps = utils.refine_radar_overlap_unique_NN_pairs(
-                                                                                    dsx_tg, dsy_rf,
-                                                                                    idx_tg, idx_rf,
-                                                                                    vv,
-                                                                                tolerance_time=60*4,
-                                                                                z_tolerance=100.)
+                mask_tg_ref, mask_rf_ref, idx_tg_ref, idx_rf_ref = utils.refine_radar_overlap_unique_NN_pairs(
+                                                                                        dsx_tg, dsy_rf,
+                                                                                        idx_tg, idx_rf,
+                                                                                        matched_timesteps,
+                                                                                        vv,
+                                                                                    tolerance_time=60*4,
+                                                                                    z_tolerance=100.)
+            else:
+                mask_tg, mask_rf, idx_tg, idx_rf, matched_timesteps = utils.find_radar_overlap(dsx_tg,
+                                                                                               dsy_rf,
+                                                                                    tolerance=tolerance,
+                                                                                    tolerance_time=60*4)
+
+                mask_tg_ref, mask_rf_ref, idx_tg_ref, idx_rf_ref = utils.refine_radar_overlap(
+                                                                                        dsx_tg, dsy_rf,
+                                                                                        mask_tg, mask_rf,
+                                                                                        matched_timesteps,
+                                                                                        vv,
+                                                                                        tolerance=tolerance,
+                                                                                    tolerance_time=60*4,
+                                                                                    z_tolerance=100.)
 
             if mask_tg_ref.sum() == 0:
                 print("No matches found")
@@ -3146,10 +3309,15 @@ for date in ML_low_dates:
                     print(vi+" not found in reference ds, filling with NaNs")
                     dsy_rf = dsy_rf.assign( { vi: xr.full_like(dsy_rf["DBZH"], fill_value=np.nan) } )
 
-                dsx_p_tg, dsy_p_rf = utils.return_unique_NN_value_pairs(dsx_tg, dsy_rf,
-                                                                        mask_tg_ref, mask_rf_ref,
-                                                           idx_tg_ref, idx_rf_ref,
-                                                           matched_timesteps, vi)
+                if NN:
+                    dsx_p_tg, dsy_p_rf = utils.return_unique_NN_value_pairs(dsx_tg, dsy_rf,
+                                                                            mask_tg_ref, mask_rf_ref,
+                                                               idx_tg_ref, idx_rf_ref,
+                                                               matched_timesteps, vi)
+                else:
+                    dsx_p_tg, dsy_p_rf = utils.return_value_pairs(dsx_tg, dsy_rf,
+                                                                  idx_tg_ref, idx_rf_ref,
+                                                               matched_timesteps, vi)
 
                 selected_ML_low[vi].append( (dsx_p_tg.copy(), dsy_p_rf.copy()) )
 
