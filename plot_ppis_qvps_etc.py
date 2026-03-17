@@ -845,8 +845,10 @@ colors = ["#2B2540", "#4F4580", "#5a77b1",
           "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
 
 
-mom = "ZDR_EC_OC_WRC_AC"
+mom = "DBZH"
 min_entropy_thresh = 0.99
+
+datasel = datasel.assign_coords(z=datasel.z / 1000)
 
 try:
     ticks = radarmet.visdict14[mom.split("_")[0]]["ticks"]
@@ -855,16 +857,17 @@ try:
     # norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
     cmap = "miub2"
     norm = utils.get_discrete_norm(ticks, cmap, extend="both")
-    datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm, figsize=(7,3))
+    qvp_plot = datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm, figsize=(7,3))
 except:
-    datasel[mom].wrl.plot(x="time", figsize=(7,3))
+    qvp_plot = datasel[mom].wrl.plot(x="time", figsize=(7,3))
 datasel["min_entropy"].compute().dropna("z", how="all").interpolate_na(dim="z").plot.contourf(
     x="time", levels=[min_entropy_thresh, 1], hatches=["", "XXX", ""], colors=[(1,1,1,0)],
     add_colorbar=False, extend="both")
+qvp_plot.colorbar.set_label(datasel[mom].units)
 plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only the hour in the x-axis
-datasel["height_ml_new_gia"].plot(c="black")
-datasel["height_ml_bottom_new_gia"].plot(c="black")
-plt.gca().set_ylabel("height over sea level")
+(datasel["height_ml_new_gia_clean"]/1000).plot(c="black")
+(datasel["height_ml_bottom_new_gia_clean"]/1000).plot(c="black")
+plt.gca().set_ylabel("Height [km a.s.l.]")
 
 # # Plot reflectivity as lines to check wet radome effect
 # ax2 = plt.gca().twinx()
