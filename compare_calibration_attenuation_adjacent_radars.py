@@ -369,6 +369,7 @@ plot_dual_scan_strategy(
     ds1_name="HTY",
     ds2_name="GZT",
     terrain=True,
+    figsize=(9, 4),
     plot_title=False,
     legend_pos="in"
 )
@@ -551,8 +552,11 @@ ML in between radars:
 # HTY: 1.5, 2.2, 3.0 and above
 # GZT: 0.5, 1.3
 
-ff1 = realpep_path+"/upload/jgiles/dmi/final_ppis/2017/2017-01/2017-01-02/HTY/MON_YAZ_B/1.5/MON_YAZ_B-allmoms-1.5-20172017-012017-01-02-HTY-h5netcdf.nc"
-ff2 = realpep_path+"/upload/jgiles/dmi/final_ppis/2017/2017-01/2017-01-02/GZT/VOL_A/0.5/VOL_A-allmoms-0.5-2017-01-02-GZT-h5netcdf.nc"
+# ff1 = realpep_path+"/upload/jgiles/dmi/final_ppis/2017/2017-01/2017-01-02/HTY/MON_YAZ_B/1.5/MON_YAZ_B-allmoms-1.5-20172017-012017-01-02-HTY-h5netcdf.nc"
+# ff2 = realpep_path+"/upload/jgiles/dmi/final_ppis/2017/2017-01/2017-01-02/GZT/VOL_A/0.5/VOL_A-allmoms-0.5-2017-01-02-GZT-h5netcdf.nc"
+
+ff1 = realpep_path+"/upload/jgiles/dmi/final_ppis/2020/2020-03/2020-03-13/HTY/VOL_A/1.5/VOL_A-allmoms-1.5-2020-03-13-HTY-h5netcdf.nc"
+ff2 = realpep_path+"/upload/jgiles/dmi/final_ppis/2020/2020-03/2020-03-13/GZT/VOL_A/0.5/VOL_A-allmoms-0.5-2020-03-13-GZT-h5netcdf.nc"
 
 ds1 = xr.open_mfdataset(ff1)
 ds2 = xr.open_mfdataset(ff2)
@@ -614,7 +618,7 @@ ds2 = ds2.assign({"ZDR_EC_OC2":
                   ds2["ZDR_EC"] - ds2_zdr_offsets_comb_smooth.sel(time=ds2.time[0].values.astype(str)[:10]).mean()} )
 
 #%%% Plot example
-tsel = "2017-01-02T06"
+tsel = "2020-03-13T08"
 
 vv = "DBZH" # for the example plot
 vmin = -10
@@ -629,13 +633,25 @@ ax.text(ds2.x[0,0], ds2.y[0,0]-30000, "GZT")
 plt.title(vv+" "+tsel)
 
 #%%% Plot example over map
-tsel = "2017-01-02T06"
+import shapely.geometry as sgeom
+from cartopy.geodesic import Geodesic
+import cartopy.io.img_tiles as cimgt
+
+def add_range_circle(ax, lon, lat, radius_m, **kwargs):
+    """Add a range circle around a radar site."""
+    gd = Geodesic()
+    geom = gd.circle(lon=lon, lat=lat, radius=radius_m)
+    circle = sgeom.Polygon(geom)
+    ax.add_geometries(
+        [circle], crs=ccrs.PlateCarree(),
+        **kwargs
+    )
+
+tsel = "2020-03-13T08"
 
 vv = "DBZH" # for the example plot
 vmin = -10
 vmax = 50
-
-import cartopy.io.img_tiles as cimgt
 
 # Choose a tile source (pick one):
 tiles = cimgt.OSM()                        # OpenStreetMap
@@ -689,6 +705,8 @@ pm = ds2_sel.wrl.vis.plot(
     zorder=1
 )
 
+ax.autoscale(enable=False, axis='both', tight=True)
+
 # --- Radar site markers ---
 
 lon1, lat1 = (float(ds1.longitude), float(ds1.latitude))
@@ -698,6 +716,11 @@ ax.scatter([lon1, lon2], [lat1, lat2],
            color="black", s=50, zorder=5, transform=ccrs.PlateCarree())
 ax.text(lon1, lat1 - 0.3, "HTY", transform=ccrs.PlateCarree(), fontsize=9, ha="center")
 ax.text(lon2, lat2 - 0.3, "GZT", transform=ccrs.PlateCarree(), fontsize=9, ha="center")
+
+add_range_circle(ax, lon1, lat1, ds1.range.max().values,
+                 facecolor="none", edgecolor="black", linewidth=1, zorder=4)
+add_range_circle(ax, lon2, lat2, ds2.range.max().values,
+                 facecolor="none", edgecolor="black", linewidth=1, zorder=4)
 
 # --- Colorbar and title ---
 plt.colorbar(pm, ax=ax, label=vv, shrink=0.7)
@@ -847,11 +870,11 @@ plt.title("CBB "+tsel)
 
 #%% Set parameters and filters
 
-tsel = "2017-01-02T06" # for plots
+tsel = "2020-03-13T08" # for plots
 vv = "DBZH"
 SNRH_min = 15
 RHOHV_min = 0.95
-TEMP_min = -15
+TEMP_min = -10
 DBZH_min = 10
 CBB_max = 0.05
 
@@ -866,9 +889,9 @@ dsy = utils.apply_min_max_thresh(ds2, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
                                      {"CBB": CBB_max})
 
 # They consider that there is rain above the radar by looking at the
-# median reflectivity in a circle 5km aroud each radar. Let's add this variable
-dsx = dsx.assign_coords({"Zm": dsx["DBZH"].sel(range=slice(0,1000)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
-dsy = dsy.assign_coords({"Zm": dsy["DBZH"].sel(range=slice(0,1000)).compute().median(("azimuth", "range")).broadcast_like(dsy["DBZH"]) })
+# median reflectivity in a circle 1.5km aroud each radar. Let's add this variable
+dsx = dsx.assign_coords({"Zm": dsx["DBZH"].sel(range=slice(0,1500)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
+dsy = dsy.assign_coords({"Zm": dsy["DBZH"].sel(range=slice(0,1500)).compute().median(("azimuth", "range")).broadcast_like(dsy["DBZH"]) })
 
 # Add the additional DBZH threshold
 dsx = utils.apply_min_max_thresh(dsx, {"DBZH":DBZH_min},
@@ -877,46 +900,73 @@ dsy = utils.apply_min_max_thresh(dsy, {"DBZH":DBZH_min},
                                      {})
 
 #%% Generate masks
-mask1, mask2, idx1, idx2, matched_timesteps = utils.find_radar_overlap_unique_NN_pairs(dsx, dsy,
+mask1, mask2, idx1, idx2, matched_timesteps = utils.find_radar_overlap(dsx,dsy,
                                                                     tolerance=250.,
                                                                     tolerance_time=60*4)
 
-mask1_ref, mask2_ref, idx1_ref, idx2_ref, matched_timesteps = utils.refine_radar_overlap_unique_NN_pairs(dsx, dsy,
-                                                                                      idx1, idx2,
-                                                                                      vv,
+mask1_ref, mask2_ref, idx1_ref, idx2_ref = utils.refine_radar_overlap(dsx,dsy,
+                                                                        mask1, mask2,
+                                                                        matched_timesteps,
+                                                                        vv,
+                                                                        tolerance=250.,
                                                                     tolerance_time=60*4,
                                                                     z_tolerance=100.)
 
+# mask1, mask2, idx1, idx2, matched_timesteps = utils.find_radar_overlap_unique_NN_pairs(dsx, dsy,
+#                                                                     tolerance=250.,
+#                                                                     tolerance_time=60*4)
+
+# mask1_ref, mask2_ref, idx1_ref, idx2_ref, matched_timesteps = utils.refine_radar_overlap_unique_NN_pairs(dsx, dsy,
+#                                                                                       idx1, idx2,
+#                                                                                       vv,
+#                                                                     tolerance_time=60*4,
+#                                                                     z_tolerance=100.)
+
 #%% Plot initial mask
-dsx[vv].where(mask1).sel(time=tsel, method="nearest").wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
+dsx_ = dsx.copy()
+dsy_ = dsy.copy()
+dsx_.coords["x"] = dsx_.coords["x"]/1000
+dsx_.coords["y"] = dsx_.coords["y"]/1000
+dsy_.coords["x"] = dsy_.coords["x"]/1000
+dsy_.coords["y"] = dsy_.coords["y"]/1000
+
+dsx_plot = dsx_[vv].where(mask1).sel(time=tsel, method="nearest").wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
+dsx_plot.colorbar.set_label(dsx_[vv].units)
 ax = plt.gca()
-dsy[vv].where(mask2).sel(time=tsel, method="nearest").wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-100000, 100000), ylim=(-100000, 100000))
+dsy_[vv].where(mask2).sel(time=tsel, method="nearest").wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-100, 100), ylim=(-100, 100), add_colorbar=False)
 
-x1 = dsx.x.where(mask1).sel(time=tsel, method="nearest").values.flatten()
-y1 = dsx.y.where(mask1).sel(time=tsel, method="nearest").values.flatten()
+plt.gca().set_ylabel("North-south distance from center [km]")
+plt.gca().set_xlabel("West-east distance from center [km]")
 
-x2 = dsy.x.where(mask2).sel(time=tsel, method="nearest").values.flatten()
-y2 = dsy.y.where(mask2).sel(time=tsel, method="nearest").values.flatten()
+x1 = dsx_.x.where(mask1).sel(time=tsel, method="nearest").values.flatten()
+y1 = dsx_.y.where(mask1).sel(time=tsel, method="nearest").values.flatten()
+
+x2 = dsy_.x.where(mask2).sel(time=tsel, method="nearest").values.flatten()
+y2 = dsy_.y.where(mask2).sel(time=tsel, method="nearest").values.flatten()
 
 # ax.scatter(x1, y1, s=1, marker="o")
 # ax.scatter(x2, y2, s=1, c="r", marker="x")
 
-ax.scatter([ds1.x[0,0], ds2.x[0,0]], [ds1.y[0,0], ds2.y[0,0]])
-ax.text(ds1.x[0,0], ds1.y[0,0]-30000, "HTY")
-ax.text(ds2.x[0,0], ds2.y[0,0]-30000, "GZT")
+ax.scatter([dsx_.x[0,0], dsy_.x[0,0]], [dsx_.y[0,0], dsy_.y[0,0]], c="black")
+ax.text(dsx_.x[0,0], dsx_.y[0,0]-30, "HTY")
+ax.text(dsy_.x[0,0], dsy_.y[0,0]-30, "GZT")
 
 plt.title(vv+" "+tsel)
 
 #%% Plot initial mask (with zoom and scatter of points)
-dsx[vv].where(mask1).sel(time=tsel, method="nearest").wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
+dsx_plot = dsx_[vv].where(mask1).sel(time=tsel, method="nearest").wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
+dsx_plot.colorbar.set_label(dsx_[vv].units)
 ax = plt.gca()
-dsy[vv].where(mask2).sel(time=tsel, method="nearest").wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-10000, 10000), ylim=(-10000, 10000))
+dsy_[vv].where(mask2).sel(time=tsel, method="nearest").wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-10, 10), ylim=(-10, 10), add_colorbar=False)
 
-x1 = dsx.x.where(mask1).sel(time=tsel, method="nearest").values.flatten()
-y1 = dsx.y.where(mask1).sel(time=tsel, method="nearest").values.flatten()
+plt.gca().set_ylabel("North-south distance from center [km]")
+plt.gca().set_xlabel("West-east distance from center [km]")
 
-x2 = dsy.x.where(mask2).sel(time=tsel, method="nearest").values.flatten()
-y2 = dsy.y.where(mask2).sel(time=tsel, method="nearest").values.flatten()
+x1 = dsx_.x.where(mask1).sel(time=tsel, method="nearest").values.flatten()
+y1 = dsx_.y.where(mask1).sel(time=tsel, method="nearest").values.flatten()
+
+x2 = dsy_.x.where(mask2).sel(time=tsel, method="nearest").values.flatten()
+y2 = dsy_.y.where(mask2).sel(time=tsel, method="nearest").values.flatten()
 
 ax.scatter(x1, y1, s=1, marker="o")
 ax.scatter(x2, y2, s=1, c="r", marker="x")
@@ -924,35 +974,43 @@ ax.scatter(x2, y2, s=1, c="r", marker="x")
 plt.title(vv+" "+tsel)
 
 #%% Plot refined masks
-dsx[vv].where(mask1_ref).sel(time=tsel, method="nearest").wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
+dsx_plot = dsx_[vv].where(mask1_ref).sel(time=tsel, method="nearest").wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
+dsx_plot.colorbar.set_label(dsx_[vv].units)
 ax = plt.gca()
-dsy[vv].where(mask2_ref).sel(time=tsel, method="nearest").wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-100000, 100000), ylim=(-100000, 100000))
+dsy_[vv].where(mask2_ref).sel(time=tsel, method="nearest").wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-100, 100), ylim=(-100, 100), add_colorbar=False)
 
-x1 = dsx.x.where(mask1_ref).sel(time=tsel, method="nearest").values.flatten()
-y1 = dsx.y.where(mask1_ref).sel(time=tsel, method="nearest").values.flatten()
+plt.gca().set_ylabel("North-south distance from center [km]")
+plt.gca().set_xlabel("West-east distance from center [km]")
 
-x2 = dsy.x.where(mask2_ref).sel(time=tsel, method="nearest").values.flatten()
-y2 = dsy.y.where(mask2_ref).sel(time=tsel, method="nearest").values.flatten()
+x1 = dsx_.x.where(mask1_ref).sel(time=tsel, method="nearest").values.flatten()
+y1 = dsx_.y.where(mask1_ref).sel(time=tsel, method="nearest").values.flatten()
+
+x2 = dsy_.x.where(mask2_ref).sel(time=tsel, method="nearest").values.flatten()
+y2 = dsy_.y.where(mask2_ref).sel(time=tsel, method="nearest").values.flatten()
 
 # ax.scatter(x1, y1, s=1, marker="o")
 # ax.scatter(x2, y2, s=1, c="r", marker="x")
 
-ax.scatter([ds1.x[0,0], ds2.x[0,0]], [ds1.y[0,0], ds2.y[0,0]])
-ax.text(ds1.x[0,0], ds1.y[0,0]-30000, "HTY")
-ax.text(ds2.x[0,0], ds2.y[0,0]-30000, "GZT")
+ax.scatter([dsx_.x[0,0], dsy_.x[0,0]], [dsx_.y[0,0], dsy_.y[0,0]], c="black")
+ax.text(dsx_.x[0,0], dsx_.y[0,0]-30, "HTY")
+ax.text(dsy_.x[0,0], dsy_.y[0,0]-30, "GZT")
 
 plt.title(vv+" "+tsel)
 
 #%% Plot refined masks (with zoom and scatter of points)
-dsx[vv].where(mask1_ref).sel(time=tsel, method="nearest").wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
+dsx_plot = dsx_[vv].where(mask1_ref).sel(time=tsel, method="nearest").wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
+dsx_plot.colorbar.set_label(dsx_[vv].units)
 ax = plt.gca()
-dsy[vv].where(mask2_ref).sel(time=tsel, method="nearest").wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-10000, 10000), ylim=(-10000, 10000))
+dsy_[vv].where(mask2_ref).sel(time=tsel, method="nearest").wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-10, 10), ylim=(-10, 10), add_colorbar=False)
 
-x1 = dsx.x.where(mask1_ref).sel(time=tsel, method="nearest").values.flatten()
-y1 = dsx.y.where(mask1_ref).sel(time=tsel, method="nearest").values.flatten()
+plt.gca().set_ylabel("North-south distance from center [km]")
+plt.gca().set_xlabel("West-east distance from center [km]")
 
-x2 = dsy.x.where(mask2_ref).sel(time=tsel, method="nearest").values.flatten()
-y2 = dsy.y.where(mask2_ref).sel(time=tsel, method="nearest").values.flatten()
+x1 = dsx_.x.where(mask1_ref).sel(time=tsel, method="nearest").values.flatten()
+y1 = dsx_.y.where(mask1_ref).sel(time=tsel, method="nearest").values.flatten()
+
+x2 = dsy_.x.where(mask2_ref).sel(time=tsel, method="nearest").values.flatten()
+y2 = dsy_.y.where(mask2_ref).sel(time=tsel, method="nearest").values.flatten()
 
 ax.scatter(x1, y1, s=1, marker="o")
 ax.scatter(x2, y2, s=1, c="r", marker="x")
@@ -972,6 +1030,76 @@ plt.ylabel("GZT")
 cc = round(np.corrcoef(dsx_p[np.isfinite(dsx_p)],dsy_p[np.isfinite(dsy_p)])[0,1],2).astype(str)
 plt.text(0.5,0.1,"Corr coef (Pearson): "+cc, transform=ax.transAxes)
 plt.title(var_name+" "+tsel)
+
+#%% Generate masks (again for new plot, we still need previous masks too)
+mask1_, mask2_, idx1_, idx2_, matched_timesteps = utils.find_radar_overlap(ds1,ds2,
+                                                                    tolerance=250.,
+                                                                    tolerance_time=60*4)
+
+mask1_ref_, mask2_ref_, idx1_ref_, idx2_ref_ = utils.refine_radar_overlap(ds1,ds2,
+                                                                        mask1_, mask2_,
+                                                                        matched_timesteps,
+                                                                        "SNRH",
+                                                                        tolerance=250.,
+                                                                    tolerance_time=60*4,
+                                                                    z_tolerance=100.)
+
+#%% Plot initial mask
+dsx_ = dsx.copy()
+dsy_ = dsy.copy()
+
+dsx_.coords["bca"] = utils.compute_crossing_angle_cartesian(dsx_, (dsx_.x[:,0].mean(), dsx_.y[:,0].mean(), dsx_.z[:,0].mean()), (dsy_.x[:,0].mean(), dsy_.y[:,0].mean(), dsy_.z[:,0].mean()))
+dsy_.coords["bca"] = utils.compute_crossing_angle_cartesian(dsy_, (dsx_.x[:,0].mean(), dsx_.y[:,0].mean(), dsx_.z[:,0].mean()), (dsy_.x[:,0].mean(), dsy_.y[:,0].mean(), dsy_.z[:,0].mean()))
+bca_min = 135
+
+dsx_.coords["x"] = dsx_.coords["x"]/1000
+dsx_.coords["y"] = dsx_.coords["y"]/1000
+dsy_.coords["x"] = dsy_.coords["x"]/1000
+dsy_.coords["y"] = dsy_.coords["y"]/1000
+
+dsx_plot = dsx_[vv].where(mask1_ref).sel(time=tsel, method="nearest").where(dsx_["bca"]>bca_min).wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
+dsx_plot.colorbar.set_label(dsx_[vv].units)
+ax = plt.gca()
+dsy_[vv].where(mask2_ref).sel(time=tsel, method="nearest").where(dsy_["bca"]>bca_min).wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-100, 100), ylim=(-100, 100), add_colorbar=False)
+
+plt.gca().set_ylabel("North-south distance from center [km]")
+plt.gca().set_xlabel("West-east distance from center [km]")
+
+x1 = dsx_.x.where(mask1_ref_).sel(time=tsel, method="nearest").where(dsx_["bca"]>bca_min).values.flatten()
+y1 = dsx_.y.where(mask1_ref_).sel(time=tsel, method="nearest").where(dsx_["bca"]>bca_min).values.flatten()
+
+x2 = dsy_.x.where(mask2_ref_).sel(time=tsel, method="nearest").where(dsy_["bca"]>bca_min).values.flatten()
+y2 = dsy_.y.where(mask2_ref_).sel(time=tsel, method="nearest").where(dsy_["bca"]>bca_min).values.flatten()
+
+ax.scatter(x1, y1, s=1, marker="o")
+ax.scatter(x2, y2, s=1, c="r", marker="x")
+
+ax.scatter([dsx_.x[0,0], dsy_.x[0,0]], [dsx_.y[0,0], dsy_.y[0,0]], c="black")
+ax.text(dsx_.x[0,0], dsx_.y[0,0]-30, "HTY")
+ax.text(dsy_.x[0,0], dsy_.y[0,0]-30, "GZT")
+
+plt.title(vv+" "+tsel)
+
+#%% Plot initial mask (with zoom and scatter of points)
+dsx_plot = dsx_[vv].where(mask1_ref).sel(time=tsel, method="nearest").where(dsx_["bca"]>bca_min).wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
+dsx_plot.colorbar.set_label(dsx_[vv].units)
+ax = plt.gca()
+dsy_[vv].where(mask2_ref).sel(time=tsel, method="nearest").where(dsy_["bca"]>bca_min).wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-7, 3), ylim=(-7, 3), add_colorbar=False)
+
+plt.gca().set_ylabel("North-south distance from center [km]")
+plt.gca().set_xlabel("West-east distance from center [km]")
+
+x1 = dsx_.x.where(mask1_ref_).sel(time=tsel, method="nearest").where(dsx_["bca"]>bca_min).values.flatten()
+y1 = dsx_.y.where(mask1_ref_).sel(time=tsel, method="nearest").where(dsx_["bca"]>bca_min).values.flatten()
+
+x2 = dsy_.x.where(mask2_ref_).sel(time=tsel, method="nearest").where(dsy_["bca"]>bca_min).values.flatten()
+y2 = dsy_.y.where(mask2_ref_).sel(time=tsel, method="nearest").where(dsy_["bca"]>bca_min).values.flatten()
+
+ax.scatter(x1, y1, s=1, marker="o")
+ax.scatter(x2, y2, s=1, c="r", marker="x")
+
+plt.title(vv+" "+tsel)
+
 
 #%% Rain path attenuation check
 
@@ -1284,7 +1412,7 @@ plt.show()
 savefolder = realpep_path+"/upload/jgiles/temp_compare_calibration_attenuation_adjacent_radars_alldates_multipleneighbors_new/"
 
 reload = True # try to reload previous calculations?
-calc = True # try to calculate if previous calculations failed?
+calc = False # try to calculate if previous calculations failed?
 NN = False # calculate only for nearest neighbors? If False, include all neighbors that fulfill the conditions
 
 # First let's get all files
@@ -1454,8 +1582,8 @@ vv_to_extract = ["DBZH", "DBZH_AC",
                  "PHIDP_OC_MASKED", #"PHIDP_OC", "PHIDP_OC_SMOOTH",
                  "Zm",
                  "TEMP", "TEMPm",
-                 # "TEMP_p25", "TEMP_p75", "TEMP_p50", # percentiles of TEMP along the ray
-                 # "ZDR_EC_OC_p25", "ZDR_EC_OC_p75", "ZDR_EC_OC_p50", # percentiles of ZDR along the ray
+                 "TEMP_p25", "TEMP_p75", "TEMP_p50", # percentiles of TEMP along the ray
+                 "ZDR_EC_OC_p25", "ZDR_EC_OC_p75", "ZDR_EC_OC_p50", # percentiles of ZDR along the ray
                  "z", "z_beamtop",
                  "height_ml_bottom_new_gia", "height_ml_bottom_new_gia_fromqvp",
                  "RHOHV",
@@ -2061,23 +2189,23 @@ lfit_m = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians
 lfit_m_rcoefs = np.round(lfit_m.convert().coef, 3)
 lfit_m_rounded = np.polynomial.Polynomial(lfit_m_rcoefs)
 lfit_m_str = str(lfit_m_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
-plt.plot([bins[0], bins[-1]], [lfit_m(bins[0]), lfit_m(bins[-1])], c="red")
-plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
-         horizontalalignment="right")
+# plt.plot([bins[0], bins[-1]], [lfit_m(bins[0]), lfit_m(bins[-1])], c="red")
+# plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
+#          horizontalalignment="right")
 
-# # add a third linear fit using the medians and IQRs of each bin
-# variances = np.array([vals.var(ddof=1) for vals in box_data])
-# iqr = np.array([np.quantile(vals,0.75) for vals in box_data]) - np.array([np.quantile(vals,0.25) for vals in box_data])
-# weights = 1 / iqr**2 # 1 / variances
-# weights[~np.isfinite(weights)] = 0
-# w = np.sqrt(weights)
-# lfit_mw = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 1, w=w[np.array(valid_bins)])
-# lfit_mw_rcoefs = np.round(lfit_mw.convert().coef, 3)
-# lfit_mw_rounded = np.polynomial.Polynomial(lfit_mw_rcoefs)
-# lfit_mw_str = str(lfit_mw_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
-# plt.plot([bins[0], bins[-1]], [lfit_mw(bins[0]), lfit_m(bins[-1])], c="deeppink", ls="--")
-# plt.text(0.95, 0.8, "Variance-weighted linear fit (medians): "+lfit_mw_str, transform=plt.gca().transAxes,
-#          c="deeppink", horizontalalignment="right")
+# add a third linear fit using the medians and IQRs of each bin
+variances = np.array([vals.var(ddof=1) for vals in box_data])
+iqr = np.array([np.nanquantile(vals,0.75) for vals in box_data]) - np.array([np.nanquantile(vals,0.25) for vals in box_data])
+weights = 1 / iqr**2 # 1 / variances
+weights[~np.isfinite(weights)] = 0
+w = np.sqrt(weights)
+lfit_mw = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 1, w=w[np.array(valid_bins)])
+lfit_mw_rcoefs = np.round(lfit_mw.convert().coef, 3)
+lfit_mw_rounded = np.polynomial.Polynomial(lfit_mw_rcoefs)
+lfit_mw_str = str(lfit_mw_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
+plt.plot([bins[0], bins[-1]], [lfit_mw(bins[0]), lfit_mw(bins[-1])], c="red")
+plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_mw_str+"", transform=plt.gca().transAxes,
+         c="red", horizontalalignment="right")
 
 plt.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
 
@@ -2095,24 +2223,24 @@ plt.show()
 # Print p value and other stats
 scipy.stats.linregress(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)])
 
-# # Print p value and other stats (for weighted fit)
-# # use alternative to scipy.optimize.curve_fit (there is no quadratic equivalent)
+# Print p value and other stats (for weighted fit)
+# use alternative to scipy.optimize.curve_fit (there is no quadratic equivalent)
 
-# # We add a column for the constant (intercept) and the squared term
-# # Stack columns: [1, x]
-# X = np.column_stack((np.ones_like(bin_centers[np.array(valid_bins)]), bin_centers[np.array(valid_bins)]))
+# We add a column for the constant (intercept) and the squared term
+# Stack columns: [1, x]
+X = np.column_stack((np.ones_like(bin_centers[np.array(valid_bins)]), bin_centers[np.array(valid_bins)]))
 
-# # 2. Fit the model (OLS = Ordinary Least Squares)
-# model = sm.WLS(medians[np.array(valid_bins)], X, weights=w)
-# results = model.fit()
+# 2. Fit the model (OLS = Ordinary Least Squares)
+model = sm.WLS(medians[np.array(valid_bins)], X, weights=weights[np.array(valid_bins)])
+results = model.fit()
 
-# # 3. Get the stats
-# print(f"R²: {results.rsquared:.4f}")
-# print(f"p-values (const, x): {results.pvalues}")
-# print(f"Prob (F-statistic): {results.f_pvalue}")
+# 3. Get the stats
+print(f"R²: {results.rsquared:.4f}")
+print(f"p-values (const, x): {results.pvalues}")
+print(f"Prob (F-statistic): {results.f_pvalue}")
 
-# # You can also print a comprehensive summary table
-# print(results.summary())
+# You can also print a comprehensive summary table
+print(results.summary())
 
 #%%% Confidence interval analysis based on different ranges (rain attenuation)
 # INPUT DATA
@@ -2123,7 +2251,7 @@ dbzh = "DBZH" # DBZH, ZDR_EC_OC
 yax = r"Slope of $Δ\mathrm{Z_{H} - \Phi_{DP}}$ best fit [dBZ/°]" # label for the y axis
 xax = r"Maximum $\mathrm{\Phi_{DP}}$ of fitted range [°]" # label for the x axis
 
-weighted = False # weight the bins for the linear fittings? IQR or variance weighting (select in the code below)
+weighted = True # weight the bins for the linear fittings? IQR or variance weighting (select in the code below)
 
 # repeat filters
 Zm_max = 15
@@ -2267,8 +2395,8 @@ def fit_binmedian_slope(phi_vals, dbzh_vals, phi_min, phi_max, bin_width, min_bi
     for i in range(nbins):
         vals = dbzh_sel[bin_idx == i]
         medians[i] = np.nanmedian(vals) if np.isfinite(vals).sum()>min_bin_n else np.nan
-        q25[i] = np.quantile(vals, 0.25) if np.isfinite(vals).sum()>min_bin_n else np.nan
-        q75[i] = np.quantile(vals, 0.75) if np.isfinite(vals).sum()>min_bin_n else np.nan
+        q25[i] = np.nanquantile(vals, 0.25) if np.isfinite(vals).sum()>min_bin_n else np.nan
+        q75[i] = np.nanquantile(vals, 0.75) if np.isfinite(vals).sum()>min_bin_n else np.nan
     iqr = q75-q25
 
     # remove empty bins
@@ -2361,8 +2489,8 @@ for bin_width in bin_widths:
                     idx = np.random.randint(0, len(vals), len(vals))
                     boot_vals = vals[idx]
                     boot_medians.append(np.median(boot_vals))
-                    q25 = np.quantile(boot_vals, 0.25)
-                    q75 = np.quantile(boot_vals, 0.75)
+                    q25 = np.nanquantile(boot_vals, 0.25)
+                    q75 = np.nanquantile(boot_vals, 0.75)
                     iqr = q75-q25
                     boot_counts = len(boot_vals)
                     boot_vars = boot_vals.var(ddof=1)
@@ -2566,8 +2694,6 @@ valid = np.isfinite(delta_dbzh) & (ref_phi<ref_phi_max) & (tg_phi<tg_phi_max) & 
         & (tg_bca > 135) & (ref_bca > 135)\
         # & (tg_binvol/ref_binvol > 0.5)
         # & (tg_z_beamtop < tg_height_ml_bot_qvp) & (ref_z_beamtop < ref_height_ml_bot_qvp)\
-        # & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\ # loose way of avoiding the ML
-        # & (tg_TEMP > 3) & (ref_TEMP > 3)\ # loose way of avoiding the ML
 
 # # And if we try to add the reverse matching? (GZT as tg and HTY as ref)
 # # filter by valid values according to conditions (inverse)
@@ -2575,10 +2701,9 @@ valid = np.isfinite(delta_dbzh) & (ref_phi<ref_phi_max) & (tg_phi<tg_phi_max) & 
 #         & (ref_Zm > varx_range[0]) & (ref_Zm < varx_range[1] - varx_range[2])\
 #         & (tg_z < tg_height_ml_bot_qvp) & (ref_z < ref_height_ml_bot_qvp)\
 #         & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\
-#         & (tg_TEMP > 3) & (ref_TEMP > 3)
+#         & (tg_TEMP > 3) & (ref_TEMP > 3)\
+#         & (tg_bca > 135) & (ref_bca > 135)\
 #         # & (tg_z_beamtop < tg_height_ml_bot_qvp) & (ref_z_beamtop < ref_height_ml_bot_qvp)\
-#         # & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\ # loose way of avoiding the ML
-#         # & (tg_TEMP > 3) & (ref_TEMP > 3)\ # loose way of avoiding the ML
 
 # valid__ = ~valid & valid_ # when GZT is valid and HTY is not
 
@@ -2639,23 +2764,23 @@ lfit_m_rcoefs = np.round(lfit_m.convert().coef, 5)
 lfit_m_rounded = np.polynomial.Polynomial(lfit_m_rcoefs)
 lfit_m_str = str(lfit_m_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
 x_dense = np.linspace(bins[0], bins[-1], 100) # 100 points for a smooth curve
-plt.plot(x_dense, lfit_m(x_dense), c="red")
-plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
-         horizontalalignment="right")
+# plt.plot(x_dense, lfit_m(x_dense), c="red")
+# plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
+#          horizontalalignment="right")
 
-# # add a third cuadratic fit using the medians and IQRs of each bin
-# variances = np.array([vals.var(ddof=1) for vals in box_data])
-# iqr = np.array([np.quantile(vals,0.75) for vals in box_data]) - np.array([np.quantile(vals,0.25) for vals in box_data])
-# weights = 1 / iqr**2 # 1 / variances
-# weights[~np.isfinite(weights)] = 0
-# w = np.sqrt(weights)
-# lfit_mw = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 2, w=w[np.array(valid_bins)])
-# lfit_mw_rcoefs = np.round(lfit_mw.convert().coef, 5)
-# lfit_mw_rounded = np.polynomial.Polynomial(lfit_mw_rcoefs)
-# lfit_mw_str = str(lfit_mw_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
-# plt.plot([bins[0], bins[-1]], [lfit_mw(bins[0]), lfit_m(bins[-1])], c="deeppink", ls="--")
-# plt.text(0.95, 0.8, "IQR-weighted best fit: "+lfit_mw_str, transform=plt.gca().transAxes,
-#          c="deeppink", horizontalalignment="right")
+# add a third cuadratic fit using the medians and IQRs of each bin
+variances = np.array([vals.var(ddof=1) for vals in box_data])
+iqr = np.array([np.nanquantile(vals,0.75) for vals in box_data]) - np.array([np.nanquantile(vals,0.25) for vals in box_data])
+weights = 1 / iqr**2 # 1 / variances
+weights[~np.isfinite(weights)] = 0
+w = np.sqrt(weights)
+lfit_mw = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 2, w=w[np.array(valid_bins)])
+lfit_mw_rcoefs = np.round(lfit_mw.convert().coef, 5)
+lfit_mw_rounded = np.polynomial.Polynomial(lfit_mw_rcoefs)
+lfit_mw_str = str(lfit_mw_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
+plt.plot(x_dense, lfit_m(x_dense), c="red")
+plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_mw_str+"", transform=plt.gca().transAxes,
+         c="red", horizontalalignment="right")
 
 plt.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
 
@@ -2678,7 +2803,7 @@ plt.show()
 X = np.column_stack((np.ones_like(bin_centers[np.array(valid_bins)]), bin_centers[np.array(valid_bins)], bin_centers[np.array(valid_bins)]**2))
 
 # 2. Fit the model (OLS = Ordinary Least Squares)
-model = sm.OLS(medians[np.array(valid_bins)], X)
+model = sm.WLS(medians[np.array(valid_bins)], X, weights=weights[np.array(valid_bins)])
 results = model.fit()
 
 # 3. Get the stats
@@ -2795,6 +2920,10 @@ tg_z_beamtop = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["z_beamtop
 
 ref_z_beamtop = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["z_beamtop"] ])
 
+tg_bca = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["beam_cross_angle"] ])
+
+ref_bca = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["beam_cross_angle"] ])
+
 # tg_height_ml_bot_qvp = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ])
 
 # ref_height_ml_bot_qvp = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ])
@@ -2849,7 +2978,8 @@ valid = np.isfinite(delta_zdr) & (ref_phi<ref_phi_max) & (tg_phi<tg_phi_max) & (
         & (tg_Zm > varx_range[0]) & (tg_Zm < varx_range[1] - varx_range[2])\
         & (tg_z < tg_height_ml_bot_qvp) & (ref_z < ref_height_ml_bot_qvp)\
         & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\
-        & (tg_TEMP > 3) & (ref_TEMP > 3)
+        & (tg_TEMP > 3) & (ref_TEMP > 3)\
+        & (tg_bca > 135) & (ref_bca > 135)\
         # & (tg_z_beamtop < tg_height_ml_bot_qvp) & (ref_z_beamtop < ref_height_ml_bot_qvp)\
         # & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\ # loose way of avoiding the ML
         # & (tg_TEMP > 3) & (ref_TEMP > 3)\ # loose way of avoiding the ML
@@ -2905,9 +3035,23 @@ lfit_m_rcoefs = np.round(lfit_m.convert().coef, 5)
 lfit_m_rounded = np.polynomial.Polynomial(lfit_m_rcoefs)
 lfit_m_str = str(lfit_m_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
 x_dense = np.linspace(bins[0], bins[-1], 100) # 100 points for a smooth curve
+# plt.plot(x_dense, lfit_m(x_dense), c="red")
+# plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
+#          horizontalalignment="right")
+
+# add a third cuadratic fit using the medians and IQRs of each bin
+variances = np.array([vals.var(ddof=1) for vals in box_data])
+iqr = np.array([np.nanquantile(vals,0.75) for vals in box_data]) - np.array([np.nanquantile(vals,0.25) for vals in box_data])
+weights = 1 / iqr**2 # 1 / variances
+weights[~np.isfinite(weights)] = 0
+w = np.sqrt(weights)
+lfit_mw = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 2, w=w[np.array(valid_bins)])
+lfit_mw_rcoefs = np.round(lfit_mw.convert().coef, 5)
+lfit_mw_rounded = np.polynomial.Polynomial(lfit_mw_rcoefs)
+lfit_mw_str = str(lfit_mw_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
 plt.plot(x_dense, lfit_m(x_dense), c="red")
-plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
-         horizontalalignment="right")
+plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_mw_str+"", transform=plt.gca().transAxes,
+         c="red", horizontalalignment="right")
 
 plt.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
 
@@ -2927,10 +3071,10 @@ plt.show()
 
 # We add a column for the constant (intercept) and the squared term
 # Stack columns: [1, x, x^2]
-X = np.column_stack((np.ones_like(bin_centers), bin_centers, bin_centers**2))
+X = np.column_stack((np.ones_like(bin_centers[np.array(valid_bins)]), bin_centers[np.array(valid_bins)], bin_centers[np.array(valid_bins)]**2))
 
 # 2. Fit the model (OLS = Ordinary Least Squares)
-model = sm.OLS(medians, X)
+model = sm.WLS(medians[np.array(valid_bins)], X, weights=weights[np.array(valid_bins)])
 results = model.fit()
 
 # 3. Get the stats
@@ -3428,7 +3572,7 @@ for date in ML_low_dates:
 total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
 
-#%%% Plot boxplot of DBZH/ZDR as vertical profiles (ML attenuation)
+#%%% DEPRECATED Plot boxplot of DBZH/ZDR as vertical profiles (ML attenuation)
 
 phi = "PHIDP_OC_MASKED"
 dbzh_tg = "DBZH_AC2_rain" # ZDR_EC_OC_AC2_rain
@@ -3564,7 +3708,7 @@ ymax = 2.5
 
 # WR corr based on results
 def zdr_wrc(Zm):
-    return 0.00165*Zm + 0.00021*Zm**2 # change here to adjust coefficients based on results
+    return -0.00022*Zm + 0.00032*Zm**2 # change here to adjust coefficients based on results
 
 if "_WRcorr" in dbzh_tg:
     # Correct wet-radome timesteps
@@ -3619,6 +3763,10 @@ tg_z_beambot = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["z_beambot"
 
 ref_z_beambot = np.concat([ d2.flatten() for d1,d2 in selected_ML_low["z_beambot"] ])
 
+tg_bca = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["beam_cross_angle"] ])
+
+ref_bca = np.concat([ d2.flatten() for d1,d2 in selected_ML_low["beam_cross_angle"] ])
+
 # tg_height_ml_top_qvp = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["height_ml_new_gia_fromqvp"] ])
 
 # ref_height_ml_top_qvp = np.concat([ d2.flatten() for d1,d2 in selected_ML_low["height_ml_new_gia_fromqvp"] ])
@@ -3668,7 +3816,9 @@ valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_dbzh) & np.isfinite(re
         & (tg_phi_bump > varx_range[0]) & (tg_phi_bump < varx_range[1] - varx_range[2])\
         & (tg_z_beambot > tg_height_ml_top_qvp) & (ref_z_beambot > tg_height_ml_top_qvp)\
         & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\
-        & (tg_TEMPm > 3) & (ref_TEMPm < 0)
+        & (tg_TEMPm > 3) & (ref_TEMPm < 0)\
+        & (tg_bca > 135) & (ref_bca > 135)\
+
 
 delta_dbzh = (tg_dbzh - ref_dbzh)[valid]
 tg_phi_bump = tg_phi_bump[valid]
@@ -3723,9 +3873,23 @@ lfit_m = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians
 lfit_m_rcoefs = np.round(lfit_m.convert().coef, 2)
 lfit_m_rounded = np.polynomial.Polynomial(lfit_m_rcoefs)
 lfit_m_str = str(lfit_m_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
-plt.plot([bins[0], bins[-1]], [lfit_m(bins[0]), lfit_m(bins[-1])], c="red")
-plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
-         horizontalalignment="right")
+# plt.plot([bins[0], bins[-1]], [lfit_m(bins[0]), lfit_m(bins[-1])], c="red")
+# plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
+#          horizontalalignment="right")
+
+# add a third linear fit using the medians and IQRs of each bin
+variances = np.array([vals.var(ddof=1) for vals in box_data])
+iqr = np.array([np.nanquantile(vals,0.75) for vals in box_data]) - np.array([np.nanquantile(vals,0.25) for vals in box_data])
+weights = 1 / iqr**2 # 1 / variances
+weights[~np.isfinite(weights)] = 0
+w = np.sqrt(weights)
+lfit_mw = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 1, w=w[np.array(valid_bins)])
+lfit_mw_rcoefs = np.round(lfit_mw.convert().coef, 3)
+lfit_mw_rounded = np.polynomial.Polynomial(lfit_mw_rcoefs)
+lfit_mw_str = str(lfit_mw_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
+plt.plot([bins[0], bins[-1]], [lfit_mw(bins[0]), lfit_mw(bins[-1])], c="red")
+plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_mw_str+"", transform=plt.gca().transAxes,
+         c="red", horizontalalignment="right")
 
 plt.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
 
@@ -3740,10 +3904,274 @@ for x, n in zip(bin_centers[1::2], counts[1::2]):
 plt.tight_layout()
 plt.show()
 
-# Print p value and other stats
-scipy.stats.linregress(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)])
+# # Print p value and other stats
+# scipy.stats.linregress(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)])
 
-#%%% Plot boxplot of delta DBZH/ZDR vs target ZH/RHOHV min/max in ML (ML attenuation)
+# Print p value and other stats (for weighted fit)
+# use alternative to scipy.optimize.curve_fit (there is no quadratic equivalent)
+
+# We add a column for the constant (intercept) and the squared term
+# Stack columns: [1, x]
+X = np.column_stack((np.ones_like(bin_centers[np.array(valid_bins)]), bin_centers[np.array(valid_bins)]))
+
+# 2. Fit the model (OLS = Ordinary Least Squares)
+model = sm.WLS(medians[np.array(valid_bins)], X, weights=weights[np.array(valid_bins)])
+results = model.fit()
+
+# 3. Get the stats
+print(f"R²: {results.rsquared:.4f}")
+print(f"p-values (const, x): {results.pvalues}")
+print(f"Prob (F-statistic): {results.f_pvalue}")
+
+# You can also print a comprehensive summary table
+print(results.summary())
+
+#%%% Plot histogram of delta DBZH/ZDR with and without correction
+
+phi = "PHIDP_OC_MASKED"
+dbzh_tg = "ZDR_EC_OC_AC2_rain_WRcorr" # ZDR_EC_OC_AC2_rain, DBZH_AC2_rain
+dbzh_ref = "ZDR_EC_OC3_AC2_rain" # ZDR_EC_OC3_AC2_rain, DBZH_AC2_rain
+TEMPm = "TEMPm"
+TEMP = "TEMP"
+
+yax = r"$Δ\mathrm{Z_{DR}}\ [dB]$" # label for the y axis
+xax = r"$Δ\mathrm{\Phi_{DP}^{ML}}\ [°]$" # label for the x axis
+
+varx_range = (0, 19, 1) # start, stop, step # (0.7, 0.98, 0.02)
+
+min_bin_n = 30 # min count of valid values inside bin to be included in the fitting
+
+sc = False # show boxplots caps?
+sf = False # show boxplots outliers?
+wp = 0 # position of the whiskers as proportion of (Q3-Q1), default is 1.5
+
+ymin = -3 # min and max limits for the y axis
+ymax = 2.5
+
+# ML correction coefficients
+abml = 0.025
+
+# WR corr based on results
+def zdr_wrc(Zm):
+    return -0.00022*Zm + 0.00032*Zm**2 # change here to adjust coefficients based on results
+
+if "_WRcorr" in dbzh_tg:
+    # Correct wet-radome timesteps
+    var_tg_ = "".join(dbzh_tg.split("_WRcorr"))
+    selected_ML_low[dbzh_tg] = []
+    for ti in range(len(selected_ML_low[var_tg_])):
+        # add to the new variable
+        selected_ML_low[dbzh_tg].append((selected_ML_low[var_tg_][ti][0].copy() - zdr_wrc(selected_ML_low["Zm"][ti][0].copy()),
+                                         selected_ML_low[var_tg_][ti][1].copy() - zdr_wrc(selected_ML_low["Zm"][ti][1].copy()) ))
+
+if "_WRcorr" in dbzh_ref:
+    # Correct wet-radome timesteps
+    var_ref_ = "".join(dbzh_ref.split("_WRcorr"))
+    selected_ML_low[dbzh_ref] = []
+    for ti in range(len(selected_ML_low[var_tg_])):
+        # add to the new variable
+        selected_ML_low[dbzh_ref].append((selected_ML_low[var_ref_][ti][0].copy() - zdr_wrc(selected_ML_low["Zm"][ti][0].copy()),
+                                         selected_ML_low[var_ref_][ti][1].copy() - zdr_wrc(selected_ML_low["Zm"][ti][1].copy()) ))
+
+# extract/build necessary variables
+tg_dbzh = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[dbzh_tg] ])
+
+ref_dbzh = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[dbzh_ref] ])
+
+tg_phi = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi] ])
+
+ref_phi = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi] ])
+
+tg_Zm = np.nan_to_num(np.concat([ d1.flatten() for d1,d2 in selected_ML_low["Zm"] ]))
+
+ref_Zm = np.nan_to_num(np.concat([ d2.flatten() for d1,d2 in selected_ML_low["Zm"] ]))
+
+tg_TEMPm = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[TEMPm] ])
+
+ref_TEMPm = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[TEMPm] ])
+
+tg_TEMP = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[TEMP] ])
+
+ref_TEMP = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[TEMP] ])
+
+tg_phi_bump = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi+"_MLbump"] ])
+
+ref_phi_bump = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi+"_MLbump"] ])
+
+tg_height_ml_top = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["height_ml_new_gia"] ])
+
+tg_RHOHV = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["RHOHV"] ])
+
+ref_RHOHV = np.concat([ d2.flatten() for d1,d2 in selected_ML_low["RHOHV"] ])
+
+tg_z_beambot = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["z_beambot"] ])
+
+ref_z_beambot = np.concat([ d2.flatten() for d1,d2 in selected_ML_low["z_beambot"] ])
+
+tg_bca = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["beam_cross_angle"] ])
+
+ref_bca = np.concat([ d2.flatten() for d1,d2 in selected_ML_low["beam_cross_angle"] ])
+
+# tg_height_ml_top_qvp = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["height_ml_new_gia_fromqvp"] ])
+
+# ref_height_ml_top_qvp = np.concat([ d2.flatten() for d1,d2 in selected_ML_low["height_ml_new_gia_fromqvp"] ])
+
+# # We should only use height_ml_top_qvp values from tg since ref should be above the ML
+# # fill remaining NaNs with an arbitrarely low value so it does no undesired filtering
+# tg_height_ml_top_qvp[np.isnan(tg_height_ml_top_qvp)] = 0
+# ref_height_ml_top_qvp[np.isnan(ref_height_ml_top_qvp)] = 0
+
+# Alternative: interpolate and extrapolate the ML heights for each day to fill NaNs
+tg_height_ml_top_qvp = [ pd.DataFrame(d1).ffill(axis=1).values for d1,d2 in selected_ML_low["height_ml_new_gia_fromqvp"] ]
+
+ref_height_ml_top_qvp = [ pd.DataFrame(d2).ffill(axis=1).values for d1,d2 in selected_ML_low["height_ml_new_gia_fromqvp"] ]
+
+for ts in range(len(tg_height_ml_top_qvp)):
+    # fill the NaN height_ml_top_qvp values from ref with tg
+    ref_height_ml_top_qvp[ts][np.isnan(ref_height_ml_top_qvp[ts])] = tg_height_ml_top_qvp[ts][np.isnan(ref_height_ml_top_qvp[ts])]
+
+    # remove outliers (median+-std)
+    tg_m = np.nanmedian(tg_height_ml_top_qvp[ts][:,0])
+    tg_std = np.nanstd(tg_height_ml_top_qvp[ts][:,0])
+    tg_height_ml_top_qvp[ts][tg_height_ml_top_qvp[ts] < tg_m-tg_std] = np.nan
+    tg_height_ml_top_qvp[ts][tg_height_ml_top_qvp[ts] > tg_m+tg_std] = np.nan
+    ref_m = np.nanmedian(ref_height_ml_top_qvp[ts][:,0])
+    ref_std = np.nanstd(ref_height_ml_top_qvp[ts][:,0])
+    ref_height_ml_top_qvp[ts][ref_height_ml_top_qvp[ts] < ref_m-ref_std] = np.nan
+    ref_height_ml_top_qvp[ts][ref_height_ml_top_qvp[ts] > ref_m+ref_std] = np.nan
+
+    # Interpolate and extrapolate to fill NaNs
+    tg_height_ml_top_qvp[ts] = pd.DataFrame(tg_height_ml_top_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+    ref_height_ml_top_qvp[ts] = pd.DataFrame(ref_height_ml_top_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+
+# finally, flatten
+tg_height_ml_top_qvp = np.concat([ds1.flatten() for ds1 in tg_height_ml_top_qvp])
+ref_height_ml_top_qvp = np.concat([ds2.flatten() for ds2 in ref_height_ml_top_qvp])
+
+# fill remaining NaNs with an arbitrarely low value so it does no undesired filtering
+tg_height_ml_top_qvp[np.isnan(tg_height_ml_top_qvp)] = 0
+ref_height_ml_top_qvp[np.isnan(ref_height_ml_top_qvp)] = 0
+
+# filter by valid values according to conditions
+#!!! The best filter would have ref_TEMPm < -1, but looks like no event so far
+# meets this condition. So let's use PHI and Zm as an alternative for now
+# valid = (tg_TEMPm > 3) & (np.nan_to_num(ref_phi_bump) < 1)  & (ref_phi < 5) & (ref_Zm < 5) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
+valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)\
+        & (tg_height_ml_top_qvp < 1600)\
+        & (tg_phi_bump > varx_range[0]) & (tg_phi_bump < varx_range[1] - varx_range[2])\
+        & (tg_z_beambot > tg_height_ml_top_qvp) & (ref_z_beambot > tg_height_ml_top_qvp)\
+        & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\
+        & (tg_TEMPm > 3) & (ref_TEMPm < 0)\
+        & (tg_bca > 135) & (ref_bca > 135)\
+
+
+delta_dbzh = (tg_dbzh - ref_dbzh)[valid]
+tg_phi_bump = tg_phi_bump[valid]
+
+# In case we need to filter out unrealistic values
+# tg_phi_bump = tg_phi_bump[delta_dbzh>-4]
+# delta_dbzh = delta_dbzh[delta_dbzh>-4]
+
+# Calculate best linear fit
+lfit = np.polynomial.Polynomial.fit(tg_phi_bump, delta_dbzh, 1)
+lfit_str = str(lfit.convert()).replace("x", "Phi ML bump")
+
+# Box plots like in the paper
+# Define bins
+bins = np.arange(varx_range[0], varx_range[1], varx_range[2])  # 0,1,2,3,4,5
+bin_centers = bins[:-1] + np.diff(bins).mean()/2
+
+# Digitize tg_phi_bump into bins
+bin_indices = np.digitize(tg_phi_bump, bins) - 1
+
+# Prepare data for boxplot
+box_data = [delta_dbzh[bin_indices == i] for i in range(len(bins) - 1)]
+
+# Compute counts per bin
+counts = [len(vals) for vals in box_data]
+
+# Remove bins that have less than min_bin_n valid values
+valid_bins = [ np.isfinite(arr).sum() >= min_bin_n  for arr in box_data ]
+
+# Plot
+plt.figure(figsize=(6, 3.5))
+bp = plt.boxplot(box_data, positions=bin_centers, widths=np.diff(bins).mean()/2,
+                 showmeans=True, showcaps=sc, showfliers=sf, whis=wp,
+                 medianprops={"color":"black"}, meanprops={"marker":"."})
+plt.xlim(bins[0], bins[-1])
+plt.ylim(ymin, ymax)
+plt.xlabel(xax)
+plt.ylabel(yax)
+plt.grid(True, linestyle="--", alpha=0.5)
+plt.xticks(bins, bins)
+# plt.xticks(bin_centers, [f"{round(b, 2)}-{round(b+varx_range[2], 2)}" for b in bins[:-1]])
+# plt.title("Boxplots of delta "+dbzh_tg+" vs "+phi+"_MLbump"+" bins")
+
+# # add linear fit
+# plt.plot([bins[0], bins[-1]], [lfit(bins[0]), lfit(bins[-1])])
+# plt.text(0.95, 0.9, "Linear fit: "+lfit_str, transform=plt.gca().transAxes, c="blue",
+#          horizontalalignment="right")
+
+# add a second linear fit using the medians
+medians = np.array([line.get_ydata()[0] for line in bp['medians']])
+lfit_m = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 1)
+lfit_m_rcoefs = np.round(lfit_m.convert().coef, 2)
+lfit_m_rounded = np.polynomial.Polynomial(lfit_m_rcoefs)
+lfit_m_str = str(lfit_m_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
+# plt.plot([bins[0], bins[-1]], [lfit_m(bins[0]), lfit_m(bins[-1])], c="red")
+# plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
+#          horizontalalignment="right")
+
+# add a third linear fit using the medians and IQRs of each bin
+variances = np.array([vals.var(ddof=1) for vals in box_data])
+iqr = np.array([np.nanquantile(vals,0.75) for vals in box_data]) - np.array([np.nanquantile(vals,0.25) for vals in box_data])
+weights = 1 / iqr**2 # 1 / variances
+weights[~np.isfinite(weights)] = 0
+w = np.sqrt(weights)
+lfit_mw = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 1, w=w[np.array(valid_bins)])
+lfit_mw_rcoefs = np.round(lfit_mw.convert().coef, 3)
+lfit_mw_rounded = np.polynomial.Polynomial(lfit_mw_rcoefs)
+lfit_mw_str = str(lfit_mw_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
+plt.plot([bins[0], bins[-1]], [lfit_mw(bins[0]), lfit_mw(bins[-1])], c="red")
+plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_mw_str+"", transform=plt.gca().transAxes,
+         c="red", horizontalalignment="right")
+
+plt.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
+
+# Add counts above x-tick labels (inside the plot area)
+for x, n in zip(bin_centers[::2], counts[::2]):
+    plt.text(x, plt.ylim()[0] + 0.05 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
+             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
+for x, n in zip(bin_centers[1::2], counts[1::2]):
+    plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 1% above bottom
+             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
+
+plt.tight_layout()
+plt.show()
+
+# # Print p value and other stats
+# scipy.stats.linregress(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)])
+
+# Print p value and other stats (for weighted fit)
+# use alternative to scipy.optimize.curve_fit (there is no quadratic equivalent)
+
+# We add a column for the constant (intercept) and the squared term
+# Stack columns: [1, x]
+X = np.column_stack((np.ones_like(bin_centers[np.array(valid_bins)]), bin_centers[np.array(valid_bins)]))
+
+# 2. Fit the model (OLS = Ordinary Least Squares)
+model = sm.WLS(medians[np.array(valid_bins)], X, weights=weights[np.array(valid_bins)])
+results = model.fit()
+
+# 3. Get the stats
+print(f"R²: {results.rsquared:.4f}")
+print(f"p-values (const, x): {results.pvalues}")
+print(f"Prob (F-statistic): {results.f_pvalue}")
+
+# You can also print a comprehensive summary table
+print(results.summary())
+
+#%%% DEPRECATED Plot boxplot of delta DBZH/ZDR vs target ZH/RHOHV min/max in ML (ML attenuation)
 
 varx = "DBZH_AC2_rain_MLmax" # RHOHV_MLmin
 vary = "DBZH_AC2_rain" # ZDR_EC_OC_AC2_rain
