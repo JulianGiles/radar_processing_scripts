@@ -2848,7 +2848,10 @@ ymax = 3
 
 # WR corr based on results
 def zdr_wrc(Zm):
-    return -0.0026*Zm + 0.00001*Zm**2 # change here to adjust coefficients based on results
+    Zm_ = np.where(np.nan_to_num(Zm) < 32.5,
+                   np.nan_to_num(Zm),
+                   32.5)
+    return -0.00022*Zm_ + 0.00032*Zm_**2 # change here to adjust coefficients based on results
 
 if "new" in zdr_to_plot:
     # Remove the timestep-based ZDR offsets and replace with daily offsets ignore the
@@ -3204,37 +3207,44 @@ if calc:
         ds2_zdr_offsets_comb_smooth = ds2_zdr_offsets_comb.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
 
         # Manually adjust some offsets in GZT based on ZDR medians calculated with ZH>30, RHOHV>0.99, SNRH>20, TEMP<0
-        # and taking a reference value for snow of 0.1 dB
-        # ds.ZDR_EC.where(ds.DBZH>0).where(ds.RHOHV>0.99).where(ds.SNRH>20).where(ds.TEMP<0).where(ds.Zm<15).compute().median()
-        # ds.ZDR_EC.where(ds.DBZH>0).where(ds.RHOHV>0.99).where(ds.SNRH>20).where(ds.TEMP<0).where(ds.Zm<15).compute().plot.hist(bins=30)
-        # ds.ZDR_EC.where(ds.DBZH>0).where(ds.RHOHV>0.99).where(ds.SNRH>20).where(ds.TEMP<0).where(ds.Zm<15).compute().median(("azimuth", "range")).plot(); ax2 = plt.twinx(); ds.ZDR_EC.where(ds.DBZH>0).where(ds.RHOHV>0.99).where(ds.SNRH>20).where(ds.TEMP<0).where(ds.Zm<15).compute().count(("azimuth", "range")).plot(ax=ax2, c="orange")
+        # and taking a reference value for snow of 0.2 dB
+        # ds.ZDR_EC.where(ds.DBZH>0).where(ds.DBZH<30).where(ds.RHOHV>0.99).where(ds.SNRH>20).where(ds.TEMP<0).compute().median()
+        # ds.ZDR_EC.where(ds.DBZH>0).where(ds.DBZH<30).where(ds.RHOHV>0.99).where(ds.SNRH>20).where(ds.TEMP<0).compute().plot.hist(bins=30)
+        # ds.ZDR_EC.where(ds.DBZH>0).where(ds.DBZH<30).where(ds.RHOHV>0.99).where(ds.SNRH>20).where(ds.TEMP<0).compute().median(("azimuth", "range")).plot(); ax2 = plt.twinx(); ds.ZDR_EC.where(ds.DBZH>0).where(ds.DBZH<30).where(ds.RHOHV>0.99).where(ds.SNRH>20).where(ds.TEMP<0).compute().count(("azimuth", "range")).plot(ax=ax2, c="orange")
 
-        dates_to_update = {
-        '2016-12-16': -0.16,
-        '2016-12-20': -0.25,
-        '2016-12-21': -0.13,
-        '2016-12-25': -0.1,
-        '2016-12-26': -0.1,
-        '2016-12-27': -0.14,
-        '2016-12-30': -0.21,
-        '2017-01-01': -0.29,
-        '2017-01-03': -0.22,
-        '2017-12-24': -0.1,
-        '2019-12-28': 0.08,
-        '2019-12-31': 0.,
-        '2020-01-02': 0.06,
-        '2020-01-03': 0.,
-        '2020-01-07': 0.,
-        '2020-01-16': 0.,
-        '2020-01-17': 0.08,
-        '2020-01-20': -0.1,
-        '2020-01-31': 0.06,
-        '2020-02-07': 0.15,
-        '2020-02-08': 0.,
-        '2020-02-29': 0.,
-        '2020-03-18': 0.2,
-        '2020-03-19': 0.,
-        '2020-03-20': 0.,
+        dates_to_update = { # offsets to 0.2 dB reference value
+        '2016-02-06': -0.4,
+        '2016-12-14': -0.32,
+        '2016-12-16': -0.26,
+        '2016-12-20': -0.35,
+        '2016-12-21': -0.26,
+        '2016-12-22': -0.32,
+        '2016-12-25': -0.2,
+        '2016-12-26': -0.26,
+        '2016-12-27': -0.26,
+        '2016-12-29': -0.32,
+        '2016-12-30': -0.38,
+        '2016-12-31': -0.26,
+        '2017-01-01': -0.38,
+        '2017-01-02': -0.32,
+        '2017-01-03': -0.32,
+        '2017-12-24': -0.2,
+        '2019-12-28': 0.05,
+        '2019-12-31': -0.14,
+        '2020-01-02': -0.01,
+        '2020-01-03': -0.11,
+        '2020-01-07': -0.11,
+        '2020-01-16': -0.08,
+        '2020-01-17': 0.08-0.1,
+        '2020-01-19': -0.02,
+        '2020-01-20': -0.17,
+        '2020-01-31': -0.05,
+        '2020-02-07': 0.05,
+        '2020-02-08': -0.08,
+        '2020-02-29': -0.08,
+        '2020-03-18': 0.1,
+        '2020-03-19': -0.14,
+        '2020-03-20': -0.08,
         }
 
         ds2_zdr_offsets_comb_alt = ds2_zdr_offsets_comb.copy(deep=True)
@@ -3688,7 +3698,7 @@ plt.show()
 
 phi = "PHIDP_OC_MASKED"
 dbzh_tg = "ZDR_EC_OC_AC2_rain_WRcorr" # ZDR_EC_OC_AC2_rain, DBZH_AC2_rain
-dbzh_ref = "ZDR_EC_OC3_AC2_rain" # ZDR_EC_OC3_AC2_rain, DBZH_AC2_rain
+dbzh_ref = "ZDR_EC_OC3" # ZDR_EC_OC3_AC2_rain, DBZH_AC2_rain
 TEMPm = "TEMPm"
 TEMP = "TEMP"
 
@@ -3708,7 +3718,10 @@ ymax = 2.5
 
 # WR corr based on results
 def zdr_wrc(Zm):
-    return -0.00022*Zm + 0.00032*Zm**2 # change here to adjust coefficients based on results
+    Zm_ = np.where(np.nan_to_num(Zm) < 32.5,
+                   np.nan_to_num(Zm),
+                   32.5)
+    return -0.00022*Zm_ + 0.00032*Zm_**2 # change here to adjust coefficients based on results
 
 if "_WRcorr" in dbzh_tg:
     # Correct wet-radome timesteps
@@ -3930,12 +3943,13 @@ print(results.summary())
 
 phi = "PHIDP_OC_MASKED"
 dbzh_tg = "ZDR_EC_OC_AC2_rain_WRcorr" # ZDR_EC_OC_AC2_rain, DBZH_AC2_rain
+dbzh_tg_uncorr = "ZDR_EC_OC" # ZDR_EC_OC_AC2_rain, DBZH_AC2_rain # in case we want to compare to the original values without any correction
 dbzh_ref = "ZDR_EC_OC3_AC2_rain" # ZDR_EC_OC3_AC2_rain, DBZH_AC2_rain
 TEMPm = "TEMPm"
 TEMP = "TEMP"
 
-yax = r"$Δ\mathrm{Z_{DR}}\ [dB]$" # label for the y axis
-xax = r"$Δ\mathrm{\Phi_{DP}^{ML}}\ [°]$" # label for the x axis
+xax = r"$Δ\mathrm{Z_{DR}}\ [dB]$" # label for the x axis
+unit = re.search(r"\[(.*?)\]", xax).group(1)
 
 varx_range = (0, 19, 1) # start, stop, step # (0.7, 0.98, 0.02)
 
@@ -3949,11 +3963,14 @@ ymin = -3 # min and max limits for the y axis
 ymax = 2.5
 
 # ML correction coefficients
-abml = 0.025
+abml = -0.025
 
 # WR corr based on results
 def zdr_wrc(Zm):
-    return -0.00022*Zm + 0.00032*Zm**2 # change here to adjust coefficients based on results
+    Zm_ = np.where(np.nan_to_num(Zm) < 32.5,
+                   np.nan_to_num(Zm),
+                   32.5)
+    return -0.00022*Zm_ + 0.00032*Zm_**2 # change here to adjust coefficients based on results
 
 if "_WRcorr" in dbzh_tg:
     # Correct wet-radome timesteps
@@ -3973,10 +3990,17 @@ if "_WRcorr" in dbzh_ref:
         selected_ML_low[dbzh_ref].append((selected_ML_low[var_ref_][ti][0].copy() - zdr_wrc(selected_ML_low["Zm"][ti][0].copy()),
                                          selected_ML_low[var_ref_][ti][1].copy() - zdr_wrc(selected_ML_low["Zm"][ti][1].copy()) ))
 
+# ML atten correction based on results
+def mlc(phi_bump):
+    phi_bump_ = np.where(phi_bump >= 0, phi_bump, 0)
+    return abml*phi_bump_ # change here to adjust coefficients based on results
+
 # extract/build necessary variables
 tg_dbzh = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[dbzh_tg] ])
 
 ref_dbzh = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[dbzh_ref] ])
+
+tg_dbzh_uncorr = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[dbzh_tg_uncorr] ])
 
 tg_phi = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi] ])
 
@@ -4058,7 +4082,7 @@ ref_height_ml_top_qvp[np.isnan(ref_height_ml_top_qvp)] = 0
 # valid = (tg_TEMPm > 3) & (np.nan_to_num(ref_phi_bump) < 1)  & (ref_phi < 5) & (ref_Zm < 5) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
 valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)\
         & (tg_height_ml_top_qvp < 1600)\
-        & (tg_phi_bump > varx_range[0]) & (tg_phi_bump < varx_range[1] - varx_range[2])\
+        & (tg_phi_bump > varx_range[0])\
         & (tg_z_beambot > tg_height_ml_top_qvp) & (ref_z_beambot > tg_height_ml_top_qvp)\
         & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\
         & (tg_TEMPm > 3) & (ref_TEMPm < 0)\
@@ -4066,110 +4090,60 @@ valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_dbzh) & np.isfinite(re
 
 
 delta_dbzh = (tg_dbzh - ref_dbzh)[valid]
+delta_dbzh_uncorr = (tg_dbzh_uncorr - ref_dbzh)[valid] # in case we want to compare to the original values without any correction
 tg_phi_bump = tg_phi_bump[valid]
 
-# In case we need to filter out unrealistic values
-# tg_phi_bump = tg_phi_bump[delta_dbzh>-4]
-# delta_dbzh = delta_dbzh[delta_dbzh>-4]
+delta_dbzh_mlc = delta_dbzh - mlc(tg_phi_bump)
 
-# Calculate best linear fit
-lfit = np.polynomial.Polynomial.fit(tg_phi_bump, delta_dbzh, 1)
-lfit_str = str(lfit.convert()).replace("x", "Phi ML bump")
+fig, ax = plt.subplots(figsize=(4.5, 3.5))
 
-# Box plots like in the paper
-# Define bins
-bins = np.arange(varx_range[0], varx_range[1], varx_range[2])  # 0,1,2,3,4,5
+# --- Config ---
+# bins = np.arange(-15.5, 15.5, 1)  # bin edges
+bins = np.arange(-2.05, 2.15, 0.1)  # bin edges
 bin_centers = bins[:-1] + np.diff(bins).mean()/2
+bin_width = np.diff(bins).mean()
 
-# Digitize tg_phi_bump into bins
-bin_indices = np.digitize(tg_phi_bump, bins) - 1
+# --- Compute histograms (as frequency %) ---
+n1, _ = np.histogram(delta_dbzh, bins=bins)
+n2, _ = np.histogram(delta_dbzh_mlc, bins=bins)
 
-# Prepare data for boxplot
-box_data = [delta_dbzh[bin_indices == i] for i in range(len(bins) - 1)]
+freq1 = n1 / n1.sum() * 100
+freq2 = n2 / n2.sum() * 100
 
-# Compute counts per bin
-counts = [len(vals) for vals in box_data]
+# --- Stats for legend ---
+mean1 = np.nanmean(delta_dbzh)
+std1  = np.nanstd(delta_dbzh)
+median1 = np.nanmedian(delta_dbzh)
+mean2 = np.nanmean(delta_dbzh_mlc)
+std2  = np.nanstd(delta_dbzh_mlc)
+median2 = np.nanmedian(delta_dbzh_mlc)
 
-# Remove bins that have less than min_bin_n valid values
-valid_bins = [ np.isfinite(arr).sum() >= min_bin_n  for arr in box_data ]
+# --- Plot histograms ---
+ax.bar(bin_centers, freq1, width=bin_width,
+       color="gray", alpha=1.0, label=f"No ML corr.\nMean={mean1:.2f} {unit}\nSt_Dev={std1:.2f} {unit}\nMedian={median1:.2f} {unit}")
+ax.bar(bin_centers, freq2, width=bin_width,
+       color="#00000000", edgecolor="black", linewidth=0.8,
+       label=f"ML corrected\nMean={mean2:.2f} {unit}\nSt_Dev={std2:.2f} {unit}\nMedian={median2:.2f} {unit}")
 
-# Plot
-plt.figure(figsize=(6, 3.5))
-bp = plt.boxplot(box_data, positions=bin_centers, widths=np.diff(bins).mean()/2,
-                 showmeans=True, showcaps=sc, showfliers=sf, whis=wp,
-                 medianprops={"color":"black"}, meanprops={"marker":"."})
-plt.xlim(bins[0], bins[-1])
-plt.ylim(ymin, ymax)
-plt.xlabel(xax)
-plt.ylabel(yax)
-plt.grid(True, linestyle="--", alpha=0.5)
-plt.xticks(bins, bins)
-# plt.xticks(bin_centers, [f"{round(b, 2)}-{round(b+varx_range[2], 2)}" for b in bins[:-1]])
-# plt.title("Boxplots of delta "+dbzh_tg+" vs "+phi+"_MLbump"+" bins")
+# --- Normal distribution curve fitted to delta_dbzh_mlc ---
+x_dense = np.linspace(bins[0], bins[-1], 300)
+pdf = scipy.stats.norm.pdf(x_dense, mean2, std2)
+# Scale pdf to match histogram (frequency % with bin width 1)
+pdf_scaled = pdf * bin_width * 100
+ax.plot(x_dense, pdf_scaled, color="red", linewidth=1.5)
 
-# # add linear fit
-# plt.plot([bins[0], bins[-1]], [lfit(bins[0]), lfit(bins[-1])])
-# plt.text(0.95, 0.9, "Linear fit: "+lfit_str, transform=plt.gca().transAxes, c="blue",
-#          horizontalalignment="right")
-
-# add a second linear fit using the medians
-medians = np.array([line.get_ydata()[0] for line in bp['medians']])
-lfit_m = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 1)
-lfit_m_rcoefs = np.round(lfit_m.convert().coef, 2)
-lfit_m_rounded = np.polynomial.Polynomial(lfit_m_rcoefs)
-lfit_m_str = str(lfit_m_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
-# plt.plot([bins[0], bins[-1]], [lfit_m(bins[0]), lfit_m(bins[-1])], c="red")
-# plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
-#          horizontalalignment="right")
-
-# add a third linear fit using the medians and IQRs of each bin
-variances = np.array([vals.var(ddof=1) for vals in box_data])
-iqr = np.array([np.nanquantile(vals,0.75) for vals in box_data]) - np.array([np.nanquantile(vals,0.25) for vals in box_data])
-weights = 1 / iqr**2 # 1 / variances
-weights[~np.isfinite(weights)] = 0
-w = np.sqrt(weights)
-lfit_mw = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 1, w=w[np.array(valid_bins)])
-lfit_mw_rcoefs = np.round(lfit_mw.convert().coef, 3)
-lfit_mw_rounded = np.polynomial.Polynomial(lfit_mw_rcoefs)
-lfit_mw_str = str(lfit_mw_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
-plt.plot([bins[0], bins[-1]], [lfit_mw(bins[0]), lfit_mw(bins[-1])], c="red")
-plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_mw_str+"", transform=plt.gca().transAxes,
-         c="red", horizontalalignment="right")
-
-plt.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
-
-# Add counts above x-tick labels (inside the plot area)
-for x, n in zip(bin_centers[::2], counts[::2]):
-    plt.text(x, plt.ylim()[0] + 0.05 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
-             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
-for x, n in zip(bin_centers[1::2], counts[1::2]):
-    plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 1% above bottom
-             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
+# --- Cosmetics ---
+ax.set_xlabel(xax)
+ax.set_ylabel("Frequency (%)")
+ax.set_xlim(bins[0], bins[-1])
+ax.set_ylim(0, None)
+# ax.set_xticks(np.arange(bins[0]+1, bins[-1], 2))
+ax.grid(True, linestyle="--", alpha=0.4)
+ax.legend(loc="upper right", fontsize=8, frameon=True,
+          handlelength=1.5, handleheight=1.5)
 
 plt.tight_layout()
 plt.show()
-
-# # Print p value and other stats
-# scipy.stats.linregress(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)])
-
-# Print p value and other stats (for weighted fit)
-# use alternative to scipy.optimize.curve_fit (there is no quadratic equivalent)
-
-# We add a column for the constant (intercept) and the squared term
-# Stack columns: [1, x]
-X = np.column_stack((np.ones_like(bin_centers[np.array(valid_bins)]), bin_centers[np.array(valid_bins)]))
-
-# 2. Fit the model (OLS = Ordinary Least Squares)
-model = sm.WLS(medians[np.array(valid_bins)], X, weights=weights[np.array(valid_bins)])
-results = model.fit()
-
-# 3. Get the stats
-print(f"R²: {results.rsquared:.4f}")
-print(f"p-values (const, x): {results.pvalues}")
-print(f"Prob (F-statistic): {results.f_pvalue}")
-
-# You can also print a comprehensive summary table
-print(results.summary())
 
 #%%% DEPRECATED Plot boxplot of delta DBZH/ZDR vs target ZH/RHOHV min/max in ML (ML attenuation)
 
