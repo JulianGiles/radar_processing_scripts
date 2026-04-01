@@ -508,7 +508,7 @@ for ff in files:
 #%% Attenuation correction (NOT PROVED THAT IT WORKS NICELY ABOVE THE ML)
     if X_PHI in ds.data_vars:
         # First we calculate atten correction only in rain, as backup
-        ds = utils.attenuation_corr_linear(ds, alpha = 0.01, beta = 0.035, alphaml = 0, betaml = 0,
+        ds = utils.attenuation_corr_linear(ds, alpha = 0.14, beta = 0.025, alphaml = 0, betaml = 0,
                                            dbzh=X_DBZH,
                                            zdr=["ZDR", "ZDR_EC", "ZDR_EC_OC", "ZDR_EC_OC_WRC", "ZDR_EC_WRC"],
                                            phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
@@ -519,7 +519,7 @@ for ff in files:
         ds = ds.rename({vv: vv+"_rain" for vv in ds.data_vars if "_AC" in vv})
 
         # Then we calculate the atten correction both in rain and the ML (this are the final values used)
-        ds = utils.attenuation_corr_linear(ds, alpha = 0.01, beta = 0.035, alphaml = 0.2, betaml = 0.02,
+        ds = utils.attenuation_corr_linear(ds, alpha = 0.14, beta = 0.025, alphaml = 0.25, betaml = 0.025,
                                            dbzh=X_DBZH,
                                            zdr=["ZDR", "ZDR_EC", "ZDR_EC_OC", "ZDR_EC_OC_WRC", "ZDR_EC_WRC"],
                                            phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
