@@ -1585,6 +1585,7 @@ vv_to_extract = ["DBZH", "DBZH_AC",
                  "TEMP", "TEMPm",
                  "TEMP_p25", "TEMP_p75", "TEMP_p50", # percentiles of TEMP along the ray
                  "ZDR_EC_OC_p25", "ZDR_EC_OC_p75", "ZDR_EC_OC_p50", # percentiles of ZDR along the ray
+                 "ZDR_EC_OC_mpath", # weighted mean of ZDR along the path
                  "z", "z_beamtop",
                  "height_ml_bottom_new_gia", "height_ml_bottom_new_gia_fromqvp",
                  "RHOHV",
@@ -1957,6 +1958,73 @@ for date in ML_high_dates:
                     dsx_tg = dsx_tg.assign( dsx_percentiles.copy() )
                     dsy_rf = dsy_rf.assign( dsy_percentiles.copy() )
 
+                if vi not in dsx_tg and vi == "ZDR_EC_OC_mpath":
+                    vio = vi.split("_mpath")[0] # original variable name
+
+                    # 1. Extract raw numpy arrays to avoid xarray overhead in the loop
+                    dsx_tg_vals = dsx_tg[vio].values
+                    dsy_rf_vals = dsy_rf[vio].values
+
+                    dsx_tg_valszhl = dsx_tg["DBZH"].pipe(wrl.trafo.idecibel).values
+                    dsy_rf_valszhl = dsy_rf["DBZH"].pipe(wrl.trafo.idecibel).values
+
+                    # 2. Initialize output arrays with NaNs
+                    # We'll create three separate arrays for the percentiles
+                    shape_dsx = dsx_tg_vals.shape
+                    shape_dsy = dsy_rf_vals.shape
+
+                    dsx_tg_vals_mpath = np.full(shape_dsx, np.nan, dtype=np.float32)
+                    dsy_rf_vals_mpath = np.full(shape_dsy, np.nan, dtype=np.float32)
+
+                    # 3. Get the indices where the mask is True
+                    t_idx, a_idx, r_idx = np.where(mask_tg_ref.values)
+                    t_idy, a_idy, r_idy = np.where(mask_rf_ref.values)
+
+                    # 4. Iterate only over the selected points
+                    # We use a warning filter because slicing an array of pure NaNs
+                    # may trigger a RuntimeWarning
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", category=RuntimeWarning)
+
+                        # for dsx
+                        for t, a, r in zip(t_idx, a_idx, r_idx):
+                            # Slice along the range dimension up to the current point (inclusive)
+                            data_slice = dsx_tg_vals[t, a, :r+1]
+                            data_slice_zhl = dsx_tg_valszhl[t, a, :r+1]
+
+                            # Calculate the weighted mean, ignoring NaNs in the data
+                            dsx_tg_vals_mpath[t, a, r] = np.nansum(data_slice*data_slice_zhl)/np.nansum(data_slice_zhl)
+
+                        # for dsy
+                        for t, a, r in zip(t_idy, a_idy, r_idy):
+                            # Slice along the range dimension up to the current point (inclusive)
+                            data_slice = dsy_rf_vals[t, a, :r+1]
+                            data_slice_zhl = dsy_rf_valszhl[t, a, :r+1]
+
+                            # Calculate the weighted mean, ignoring NaNs in the data
+                            dsy_rf_vals_mpath[t, a, r] = np.nansum(data_slice*data_slice_zhl)/np.nansum(data_slice_zhl)
+
+                    # 5. Reconstruct the results into a new xarray Dataset and assign to the original
+
+                    dsx_mpath = xr.Dataset(
+                        {
+                            vi: (["time", "azimuth", "range"],
+                                          dsx_tg_vals_mpath)
+                        },
+                        coords=dsx_tg[vio].coords
+                    )
+
+                    dsy_mpath = xr.Dataset(
+                        {
+                            vi: (["time", "azimuth", "range"],
+                                          dsy_rf_vals_mpath)
+                        },
+                        coords=dsy_rf[vio].coords
+                    )
+
+                    dsx_tg = dsx_tg.assign( dsx_mpath.copy() )
+                    dsy_rf = dsy_rf.assign( dsy_mpath.copy() )
+
             # Extract variables
             for vi in vv_to_extract:
                 if vi not in dsx_tg:
@@ -2060,9 +2128,7 @@ tg_ZDR75 = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_p75
 
 ref_ZDR75 = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_p75"] ])
 
-tg_ZDR = np.concat([ d1.flatten() for d1,d2 in selected_ML_high[dbzh] ])
-
-ref_ZDR = np.concat([ d2.flatten() for d1,d2 in selected_ML_high[dbzh] ])
+tg_ZDRmpath = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_mpath"] ])
 
 # tg_height_ml_bot_qvp = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ])
 
@@ -2115,6 +2181,7 @@ valid = np.isfinite(delta_dbzh) & (ref_phi<ref_phi_max) & (np.isfinite(tg_phi))\
         & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\
         & (tg_TEMP > 3) & (ref_TEMP > 3) \
         & (tg_bca > 135) & (ref_bca > 135)\
+        # & (tg_ZDRmpath > 0) & (tg_ZDRmpath < 1)
         # & (tg_ZDR25 > -0.25) & (tg_ZDR25 < 0.25) & (tg_ZDR75 > 0) & (tg_ZDR75 < 5)
         # & (tg_binvol/ref_binvol > 0.5)
         # & (tg_z_beamtop < tg_height_ml_bot_qvp) & (ref_z_beamtop < ref_height_ml_bot_qvp)\
@@ -4169,7 +4236,7 @@ delta_dbzh_mlc = delta_dbzh - mlc(tg_phi_bump)
 fig, ax = plt.subplots(figsize=(4.5, 3.5))
 
 # --- Config ---
-# bins = np.arange(-15.5, 15.5, 1)  # bin edges
+# bins = np.arange(-15.5, 16.5, 1)  # bin edges
 bins = np.arange(-2.05, 2.15, 0.1)  # bin edges
 bin_centers = bins[:-1] + np.diff(bins).mean()/2
 bin_width = np.diff(bins).mean()
@@ -4213,6 +4280,64 @@ ax.grid(True, linestyle="--", alpha=0.4)
 ax.legend(loc="upper right", fontsize=8, frameon=True,
           handlelength=1.5, handleheight=1.5)
 
+plt.tight_layout()
+plt.show()
+
+#%%% Plot QVPs with and without correction for one event (like figure 11 of Yu et al.)
+
+#%%%% Load the files
+from pathlib import Path
+ff = glob.glob("/automount/realpep/upload/jgiles/dmi/qvps_2020-03-13/2020/2020-03/2020-03-13/HTY/*/*/*h5netcdf.nc")
+
+ds_qvps = {Path(f).parent.name: xr.open_dataset(f) for f in ff}
+
+elevs = sorted([float(k) for k in ds_qvps.keys()])
+
+#%%%% Plot
+
+# 1. Define your time selection and variable
+# (e.g., a specific hour, a range of indices, or the whole day)
+# Example: first 10 timesteps. Change this to your specific selection.
+time_selection = slice("2020-03-13T07:00", "2020-03-13T08:00")
+vv = "DBZH_AC" # ZDR_EC_OC_WRC_AC, DBZH_AC
+units = "dBZ"
+
+# 2. Setup the plot
+plt.figure(figsize=(4, 5))
+plt.title(f"Median {vv} Profiles by Elevation")
+plt.xlabel(f"{vv} [{units}]")
+plt.ylabel("Height (km a.s.l.)")
+
+# 3. Create a color mapping based on your elevation range
+norm = plt.Normalize(vmin=min(elevs), vmax=max(elevs))
+norm = plt.Normalize(vmin=0, vmax=len(elevs))
+colormap = mpl.cm.YlOrRd_r  # You can use 'plasma', 'inferno', etc.
+
+# 4. Iterate through the sorted elevations and plot
+for en, e in enumerate(elevs):
+    # Access the dataset (keys in your dict are strings like '0.7')
+    ds = ds_qvps[str(e)]
+
+    # Select timesteps and calculate the median along the time dimension
+    # .sel(time=...) also works if you have specific datetime strings
+    profile = ds[vv].sel(time=time_selection).median(dim="time")
+
+    # Get color for this elevation
+    color = colormap(norm(en))
+
+    # Plot DBZH_AC vs z
+    plt.plot(profile, ds.z/1000, label=f"{e}°", color=color, lw=2)
+
+# 5. Add a colorbar and legend
+# sm = mpl.cm.ScalarMappable(cmap=colormap, norm=norm)
+# sm.set_array([])
+# cbar = plt.colorbar(sm)
+# cbar.set_label('Elevation Angle')
+
+plt.ylim(0,8)
+plt.xlim(0,35)
+plt.grid(True, alpha=0.3)
+plt.legend(title="Elevation", bbox_to_anchor=(1.05, 1), loc='upper left')
 plt.tight_layout()
 plt.show()
 
