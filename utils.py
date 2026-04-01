@@ -5337,7 +5337,7 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
 
 #### Wet radome correction
 
-def zdr_wr_offset_zm_cuadratic(Zm, a=0.00165, b=0.00021):
+def zdr_wr_offset_zm_cuadratic(Zm, a=-0.00022, b=0.00032, max_zm=32.5):
     r"""
     Corrects higher ZDR values due to wet radome based on a reference cuadratic fit.
 
@@ -5348,14 +5348,16 @@ def zdr_wr_offset_zm_cuadratic(Zm, a=0.00165, b=0.00021):
         It must be free of NaNs (set them to zero before).
     a : linear coefficient of the fit
     b : quadratic coefficient of the fit
+    max_zm : maximum value of Zm until where the correction is valid.
 
     Returns
     ----------
     value for correction: ZDR_WRcorrected = ZDR - zdr_wr_offset_zm_cuadratic(Zm)
     """
-    # The fitting is derived for Zm until 35 dBZ, so we need to cut the correction there
-    Zm = Zm.where(Zm<35, other=35)
-    return a*Zm + b*Zm**2
+
+    Zm_ = Zm.fillna(0).where(Zm.fillna(0)<max_zm, other=max_zm)
+
+    return a*Zm_ + b*Zm_**2
 
 
 #### Attenuation correction
