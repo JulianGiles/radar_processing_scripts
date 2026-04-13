@@ -471,15 +471,19 @@ for ff in files:
     if X_PHI in ds.data_vars:
         moments={X_DBZH: (10., 60.), X_RHO: (0.65, 1.), X_PHI: (-20, 180)}
 
-        ds_qvp_ra = utils.melting_layer_qvp_X_new(ds_qvp_ra.where(ds_qvp_ra_count>20), moments=moments, dim="z", fmlh=0.3, grad_thresh=grad_thresh,
+        ds_qvp_ra_ml = utils.melting_layer_qvp_X_new(ds_qvp_ra.where(ds_qvp_ra_count>20), moments=moments, dim="z", fmlh=0.3, grad_thresh=grad_thresh,
                  xwin=xwin0, ywin=ywin0, min_h=min_height, rhohv_thresh_gia=rhohv_thresh_gia, all_data=True, clowres=clowres0)
 
         #### Assign ML values to dataset
+        ds_qvp_ra = ds_qvp_ra.assign_coords({'height_ml': ds_qvp_ra_ml.height_ml})
+        ds_qvp_ra = ds_qvp_ra.assign_coords({'height_ml_bottom': ds_qvp_ra_ml.height_ml_bottom})
+        ds_qvp_ra = ds_qvp_ra.assign_coords({'height_ml_new_gia': ds_qvp_ra_ml.height_ml_new_gia})
+        ds_qvp_ra = ds_qvp_ra.assign_coords({'height_ml_bottom_new_gia': ds_qvp_ra_ml.height_ml_bottom_new_gia})
 
-        ds = ds.assign_coords({'height_ml': ds_qvp_ra.height_ml})
-        ds = ds.assign_coords({'height_ml_bottom': ds_qvp_ra.height_ml_bottom})
-        ds = ds.assign_coords({'height_ml_new_gia': ds_qvp_ra.height_ml_new_gia})
-        ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp_ra.height_ml_bottom_new_gia})
+        ds = ds.assign_coords({'height_ml': ds_qvp_ra_ml.height_ml})
+        ds = ds.assign_coords({'height_ml_bottom': ds_qvp_ra_ml.height_ml_bottom})
+        ds = ds.assign_coords({'height_ml_new_gia': ds_qvp_ra_ml.height_ml_new_gia})
+        ds = ds.assign_coords({'height_ml_bottom_new_gia': ds_qvp_ra_ml.height_ml_bottom_new_gia})
 
     # rechunk to avoid problems
     ds = ds.chunk({"time":10, "azimuth":-1, "range":-1})
@@ -638,6 +642,8 @@ for ff in files:
         ds_qvp_ra = ds_qvp_ra.assign( utils.compute_qvp(xr.merge([retrievals, ds_zphi[attach_vars]]), min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min, "SNRHC":SNRH_min, "SQIH":0.5})[[vv for vv in retrievals.data_vars]] )
 
 #%% Save qvp
+    for vv in ds_qvp_ra.data_vars:
+                    ds_qvp_ra[vv].encoding = {'zlib': True, 'complevel': 6}
     # save file
     ds_qvp_ra.to_netcdf(savepath)
 
