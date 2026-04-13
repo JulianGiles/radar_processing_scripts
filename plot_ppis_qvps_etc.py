@@ -38,6 +38,7 @@ import hvplot
 import hvplot.xarray
 import holoviews as hv
 # hv.extension("bokeh", "matplotlib") # better to put this each time this kind of plot is needed
+from scipy.ndimage import binary_opening
 
 import panel as pn
 from bokeh.resources import INLINE
@@ -1484,7 +1485,11 @@ plt.title(mom+elevtitle+". "+str(datasel.time.values).split(".")[0])
 # Load only events with ML detected (pre-condition for stratiform)
 ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2015/*/*/pro/vol5minng01/07/ML_detected.txt"
 # ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2020/*/*/SVS/*/*/ML_detected.txt"
+ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps_selected_for_calibration_attenuation/20*/*/*/HTY/*/*/DONE.txt"
 ff_ML_glob = glob.glob(ff_ML)
+
+realpep_path = "/automount/realpep/"
+loc_riming = "hty" # location for loading the riming classif
 
 if "dmi" in ff_ML:
     # create a function to only select the elevation closer to 10 for each date
@@ -1537,6 +1542,37 @@ allcond_daily = allcond_daily.where(allcond_daily, drop=True)
 # (not efficient and not elegant but I could not find other solution)
 ds_qvps = ds_qvps.isel(time=[date.values in  allcond_daily.time.dt.date for date in ds_qvps.time.dt.date])
 
+# Add riming
+print("... Loading pre-calculated riming ...")
+riming_classif = {}
+X_DBZH = "DBZH_AC"
+X_ZDR = "ZDR_EC_OC_WRC_AC"
+suffix_name = "_calibration_attenuation_HTYGZT"
+
+for stratname in ["unfiltered"]:
+    if stratname not in riming_classif.keys():
+        riming_classif[stratname] = {}
+    elif type(riming_classif[stratname]) is not dict:
+        riming_classif[stratname] = {}
+    print("Loading "+stratname+" riming classification ...")
+    for ll in [loc_riming]: # ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']:
+        if ll not in riming_classif[stratname].keys():
+            riming_classif[stratname][ll] = xr.Dataset()
+        elif type(riming_classif[stratname][ll]) is not xr.Dataset:
+            riming_classif[stratname][ll] = xr.Dataset()
+
+        for xx in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_'+X_ZDR+'_'+X_DBZH,
+                   ]:
+            try:
+                riming_classif[stratname][ll] = riming_classif[stratname][ll].assign( xr.open_dataset(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc") )
+                print(ll+" "+xx+" riming_classif loaded")
+            except:
+                if stratname == "unfiltered":
+                    pass
+
+        # delete entry if empty
+        if not riming_classif[stratname][ll]:
+            del riming_classif[stratname][ll]
 
 #%% Plot QPVs interactive, with matplotlib backend (working) fix in holoviews/plotting/mpl/raster.py
 # this works with a manual fix in the holoviews files.
@@ -1558,8 +1594,10 @@ var_options = ['RHOHV', 'ZDR_OC', 'KDP_ML_corrected', 'ZDR',
                 'KDP', 'RHOHV_NC', 'UPHIDP_OC']
 
 
-vars_to_plot = ['DBZH_AC', 'KDP_ML_corrected_EC', 'KDP', 'ZDR_EC_OC_AC', 'RHOHV_NC',
-                'UPHIDP_OC', 'ZDR_EC_OC', 'RHOHV', "DBZH", "ZDR_EC"]
+vars_to_plot = ['DBZH_AC', 'KDP_ML_corrected_EC', 'KDP', 'ZDR_EC_OC_WRC_AC', 'RHOHV_NC',
+                'PHIDP_OC', 'ZDR_EC_OC_WRC', 'RHOHV', "DBZH", 'ZDR_EC_OC', "ZDR_EC"]
+
+riming_to_plot = "riming_ZDR_EC_OC_WRC_AC_DBZH_AC"
 
 # add missing units for PHIDP variables in turkish data (this was fixed on 28/12/23 but previous calculations have missing units)
 for vv in ds_qvps.data_vars:
@@ -1592,7 +1630,7 @@ def cbar_hook(hv_plot, _, cmap_extend, ticklist, norm, label):
 
 
 # Define the function to update plots
-def update_plots(selected_day, show_ML_lines, show_min_entropy):
+def update_plots(selected_day, show_ML_lines, show_min_entropy, show_riming):
     selected_data = ds_qvps.sel(time=selected_day, z=slice(0, max_height)).dropna("z", how="all")
     available_vars = vars_to_plot
 
@@ -1661,6 +1699,26 @@ def update_plots(selected_day, show_ML_lines, show_min_entropy):
                 )
             quadmesh = (quadmesh * min_entropy_shading)
 
+        # Add shading for riming
+        if show_riming:
+            selected_riming = riming_classif['unfiltered']['hty'][riming_to_plot].sel(time=selected_day, z=slice(0, max_height)).dropna("z", how="all").fillna(0)
+
+            cleaned_mask = binary_opening(selected_riming.values, structure=np.ones((3, 3))).astype(float)
+
+            riming_values = selected_riming.copy(data=cleaned_mask)
+            # riming_values = selected_riming.where(selected_riming>=0).chunk(dict(z=-1)).interpolate_na(dim="z").compute()
+
+            riming_shading = riming_values.hvplot.quadmesh(
+                x='time', y='z',
+                xlabel='Time', ylabel='Height (m)', colorbar=False,
+                width=500, height=250,
+            ).opts(
+                    cmap=['#ffffff00', "#B5B1B1", '#ffffff00'],
+                    color_levels=[0, min_entropy_thresh,1, 1.1],
+                    clim=(0, 1.1),
+                    alpha=0.8
+                )
+            quadmesh = (quadmesh * riming_shading)
 
         plots.append(quadmesh)
 
@@ -1689,35 +1747,53 @@ show_ML_lines_toggle = pn.widgets.Toggle(name='Show ML Lines', value=True)
 
 show_min_entropy_toggle = pn.widgets.Toggle(name='Show Entropy over '+str(min_entropy_thresh), value=True)
 
-@pn.depends(selected_day_slider.param.value, show_ML_lines_toggle, show_min_entropy_toggle)
+show_riming_toggle = pn.widgets.Toggle(name='Show Riming classification', value=False)
+
+overlay_mode = pn.widgets.RadioButtonGroup(name='Overlay', options=['None','Entropy','Riming'], value='None')
+
+@pn.depends(selected_day_slider.param.value, show_ML_lines_toggle, overlay_mode)
 # Define the function to update plots based on widget values
+# def update_plots_callback(event):
+#     selected_day = str(selected_day_slider.value)
+#     show_ML_lines = show_ML_lines_toggle.value
+#     show_min_entropy = show_min_entropy_toggle.value
+#     show_riming = show_riming_toggle.value
+#     plot = update_plots(selected_day, show_ML_lines, show_min_entropy, show_riming)
+#     plot_panel[0] = plot
 def update_plots_callback(event):
     selected_day = str(selected_day_slider.value)
     show_ML_lines = show_ML_lines_toggle.value
-    show_min_entropy = show_min_entropy_toggle.value
-    plot = update_plots(selected_day, show_ML_lines, show_min_entropy)
+    show_min_entropy = (overlay_mode.value == 'Entropy')
+    show_riming = (overlay_mode.value == 'Riming')
+    plot = update_plots(selected_day, show_ML_lines, show_min_entropy, show_riming)
     plot_panel[0] = plot
 
 selected_day_slider.param.watch(update_plots_callback, 'value')
 show_ML_lines_toggle.param.watch(update_plots_callback, 'value')
-show_min_entropy_toggle.param.watch(update_plots_callback, 'value')
+overlay_mode.param.watch(update_plots_callback, 'value')
+# show_min_entropy_toggle.param.watch(update_plots_callback, 'value')
+# show_riming_toggle.param.watch(update_plots_callback, 'value')
 
 # Create the initial plot
 initial_day = str(start_date)
 initial_ML_lines = True
-initial_min_entropy = True
+initial_overlay = 'None'
+show_min_entropy0, show_riming0 = (initial_overlay == 'Entropy', initial_overlay == 'Riming')
+# initial_min_entropy = False
+# initial_show_riming = False
 
-plot_panel = pn.Row(update_plots(initial_day, initial_ML_lines, initial_min_entropy))
+# plot_panel = pn.Row(update_plots(initial_day, initial_ML_lines, initial_min_entropy, initial_show_riming))
+plot_panel = pn.Row(update_plots(initial_day, initial_ML_lines, show_min_entropy0, show_riming0))
 
 # Create the Panel layout
 layout = pn.Column(
     selected_day_slider,
-    pn.Row(show_ML_lines_toggle, show_min_entropy_toggle),
+    # pn.Row(show_ML_lines_toggle, show_min_entropy_toggle, show_riming_toggle),
+    pn.Row(show_ML_lines_toggle, overlay_mode),
     plot_panel
 )
 
-
-layout.save("/user/jgiles/qvps_pro_2015_stratiform.html", resources=INLINE, embed=True,
+layout.save("/user/jgiles/qvps_hty_calibration_attenuation_dates.html", resources=INLINE, embed=True,
             max_states=1000, max_opts=1000)
 
 
