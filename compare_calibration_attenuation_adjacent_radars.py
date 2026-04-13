@@ -1589,7 +1589,8 @@ vv_to_extract = ["DBZH", "DBZH_AC",
                  "z", "z_beamtop",
                  "height_ml_bottom_new_gia", "height_ml_bottom_new_gia_fromqvp",
                  "RHOHV",
-                 "binvol", "beam_cross_angle"
+                 "binvol", "beam_cross_angle",
+                 "riming"
                  ] # all variables to extract from the datasets, DBZH must be the first
 
 elev_ml_bottom_fromqvp = ["10.0", "12.0", "8.0"] # elevations to try to load the height of the ML from QVP files, in order of preference
@@ -1684,6 +1685,72 @@ if calc:
 
         ds1_mlb_qvp = xr.open_dataset(realpep_path+"/upload/jgiles/radar_stats/stratiform_ML/hty_ML_bottom.nc")
         ds2_mlb_qvp = xr.open_dataset(realpep_path+"/upload/jgiles/radar_stats/stratiform_ML/gzt_ML_bottom.nc")
+
+    if "riming" in vv_to_extract:
+        ## Process the riming classification
+        print("... Loading pre-calculated riming ...")
+        riming_classif = {}
+        X_DBZH = "DBZH_AC"
+        X_ZDR = "ZDR_EC_OC_WRC_AC"
+        suffix_name = "_calibration_attenuation_HTYGZT"
+
+        for stratname in ["unfiltered"]:
+            if stratname not in riming_classif.keys():
+                riming_classif[stratname] = {}
+            elif type(riming_classif[stratname]) is not dict:
+                riming_classif[stratname] = {}
+            print("Loading "+stratname+" riming classification ...")
+            for ll in ["hty"]: # ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']:
+                if ll not in riming_classif[stratname].keys():
+                    riming_classif[stratname][ll] = xr.Dataset()
+                elif type(riming_classif[stratname][ll]) is not xr.Dataset:
+                    riming_classif[stratname][ll] = xr.Dataset()
+
+                for xx in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_'+X_ZDR+'_'+X_DBZH,
+                           ]:
+                    try:
+                        riming_classif[stratname][ll] = riming_classif[stratname][ll].assign( xr.open_dataset(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc") )
+                        print(ll+" "+xx+" riming_classif loaded")
+                    except:
+                        if stratname == "unfiltered":
+                            pass
+
+                # delete entry if empty
+                if not riming_classif[stratname][ll]:
+                    del riming_classif[stratname][ll]
+
+
+        selected_ML_high_riming = {}
+
+        for date in ML_high_dates:
+            # 1. Clean the data
+            riming_date = riming_classif['unfiltered']['hty']['riming_ZDR_EC_OC_WRC_AC_DBZH_AC'].sel(time=date).copy().dropna("z", how="all").fillna(0)
+            cleaned_mask = binary_opening(riming_date.values, structure=np.ones((3, 3))).astype(float)
+
+            # Put the cleaned numpy array back into a DataArray so we can use xarray's spatial logic
+            da_clean = riming_date.copy(data=cleaned_mask)
+
+            # 2. Define the Melting Layer boundaries
+            ml_top = da_clean.height_ml_new_gia_clean
+            roi_top = ml_top + 300
+
+            # 3. Create a boolean mask for the 300m region of interest (ROI) above the ML
+            roi_mask = (da_clean.z >= ml_top) & (da_clean.z <= roi_top)
+
+            # 4. Calculate the fraction of rimed pixels (1s) within that specific 300m layer per time step
+            # Sum of 1s in the ROI
+            riming_in_roi = (da_clean == 1).where(roi_mask, 0).sum(dim="z")
+            # Total number of pixels in the ROI
+            total_in_roi = roi_mask.sum(dim="z")
+
+            # Calculate fraction (using .where to avoid division by zero if a profile has no valid z pixels in that range)
+            riming_fraction = riming_in_roi / total_in_roi.where(total_in_roi > 0)
+
+            # 5. Identify the profiles (times) that meet >= 80% condition
+            valid_profiles = riming_fraction >= 0.8
+
+            # 6. assign the final values
+            selected_ML_high_riming[date] = valid_profiles.copy()
 
 for date in ML_high_dates:
     print("Processing "+date)
@@ -1830,6 +1897,9 @@ for date in ML_high_dates:
             if "beam_cross_angle" in vv_to_extract:
                 dsx.coords["beam_cross_angle"] = utils.compute_crossing_angle_cartesian(dsx, (dsx.x[:,0].mean(), dsx.y[:,0].mean(), dsx.z[:,0].mean()), (dsy.x[:,0].mean(), dsy.y[:,0].mean(), dsy.z[:,0].mean()))
                 dsy.coords["beam_cross_angle"] = utils.compute_crossing_angle_cartesian(dsy, (dsx.x[:,0].mean(), dsx.y[:,0].mean(), dsx.z[:,0].mean()), (dsy.x[:,0].mean(), dsy.y[:,0].mean(), dsy.z[:,0].mean()))
+
+            if "riming" in vv_to_extract:
+                dsx.coords["riming"] = (selected_ML_high_riming[date].astype(int).interp_like(dsx.time)>0.5).astype(int)
 
             # Add the additional DBZH threshold
             dsx = utils.apply_min_max_thresh(dsx, {"DBZH":DBZH_min},
@@ -2130,6 +2200,8 @@ ref_ZDR75 = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_p7
 
 tg_ZDRmpath = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_mpath"] ])
 
+tg_riming = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["riming"] ])
+
 # tg_height_ml_bot_qvp = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ])
 
 # ref_height_ml_bot_qvp = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ])
@@ -2181,6 +2253,7 @@ valid = np.isfinite(delta_dbzh) & (ref_phi<ref_phi_max) & (np.isfinite(tg_phi))\
         & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\
         & (tg_TEMP > 3) & (ref_TEMP > 3) \
         & (tg_bca > 135) & (ref_bca > 135)\
+        # & (tg_riming==0)
         # & (tg_ZDRmpath > 0) & (tg_ZDRmpath < 1)
         # & (tg_ZDR25 > -0.25) & (tg_ZDR25 < 0.25) & (tg_ZDR75 > 0) & (tg_ZDR75 < 5)
         # & (tg_binvol/ref_binvol > 0.5)
@@ -2300,7 +2373,7 @@ X = np.column_stack((np.ones_like(bin_centers[np.array(valid_bins)]), bin_center
 
 # 2. Fit the model (OLS = Ordinary Least Squares)
 model = sm.WLS(medians[np.array(valid_bins)], X, weights=weights[np.array(valid_bins)])
-results = model.fit()
+results = model.fit(cov_type='HC3')
 
 # 3. Get the stats
 print(f"R²: {results.rsquared:.4f}")
@@ -2872,7 +2945,7 @@ X = np.column_stack((np.ones_like(bin_centers[np.array(valid_bins)]), bin_center
 
 # 2. Fit the model (OLS = Ordinary Least Squares)
 model = sm.WLS(medians[np.array(valid_bins)], X, weights=weights[np.array(valid_bins)])
-results = model.fit()
+results = model.fit(cov_type='HC3')
 
 # 3. Get the stats
 print(f"R²: {results.rsquared:.4f}")
@@ -3146,7 +3219,7 @@ X = np.column_stack((np.ones_like(bin_centers[np.array(valid_bins)]), bin_center
 
 # 2. Fit the model (OLS = Ordinary Least Squares)
 model = sm.WLS(medians[np.array(valid_bins)], X, weights=weights[np.array(valid_bins)])
-results = model.fit()
+results = model.fit(cov_type='HC3')
 
 # 3. Get the stats
 print(f"R²: {results.rsquared:.4f}")
@@ -3189,12 +3262,14 @@ vv_to_extract = ["DBZH", "DBZH_AC_rain", "DBZH_AC",
                  "z_beambot",
                  "height_ml_new_gia_fromqvp",
                  "PHIDP_OC_MASKED_MLbump", #"PHIDP_OC_SMOOTH_MLbump",
+                 "PHIDP_OC_MASKED_MLbump_safer",
                  # "DBZH_AC_rain_MLmax",
                  # "DBZH_AC2_rain_MLmax",
                  # "RHOHV_MLmin",
                  "RHOHV",
                  "binvol", "beam_cross_angle",
-                 "riming"
+                 "riming",
+                 "range_MLbump", "range_MLbump_safer" # safer means with larger tolerance of 500 m around ML
                  ] # all variables to extract from the datasets, DBZH must be the first
 
 elev_ml_top_fromqvp = ["10.0", "12.0", "8.0"] # elevations to try to load the height of the ML from QVP files, in order of preference
@@ -3481,8 +3556,11 @@ for date in ML_low_dates:
                 ds2 = ds2.assign(ds2_AC2_rain.rename(vars_rename)[list(vars_rename.values())])
 
             # add ML bump/min/max variables
-            vv_bump = [vv for vv in vv_to_extract if "_MLbump" in vv]
-            vv_nobump = [vv.split("_MLbump")[0] for vv in vv_to_extract if "MLbump" in vv]
+            vv_bump = [vv for vv in vv_to_extract if "_MLbump" in vv and "_safer" not in vv]
+            vv_nobump = [vv.split("_MLbump")[0] for vv in vv_to_extract if "MLbump" in vv and "_safer" not in vv]
+
+            vv_bump_safer = [vv for vv in vv_to_extract if "_MLbump" in vv and "_safer" in vv]
+            vv_nobump_safer = [vv.split("_MLbump")[0] for vv in vv_to_extract if "MLbump" in vv and "_safer" in vv]
 
             vv_min = [vv for vv in vv_to_extract if "_MLmin" in vv]
             vv_nomin = [vv.split("_MLmin")[0] for vv in vv_to_extract if "MLmin" in vv]
@@ -3491,6 +3569,12 @@ for date in ML_low_dates:
             vv_nomax = [vv.split("_MLmax")[0] for vv in vv_to_extract if "MLmax" in vv]
 
             if len(vv_bump) > 0:
+
+                if "range" in vv_nobump:
+                    vv_nobump = ["range_" if x=="range" else x for x in vv_nobump]
+                    ds1 = ds1.assign({"range_": ds1["range"]})
+                    ds2 = ds2.assign({"range_": ds2["range"]})
+
                 # for ds1
                 below_ml = ds1[vv_nobump].where(ds1.z < ds1.height_ml_bottom_new_gia).where(ds1.z > ds1.height_ml_bottom_new_gia - 100)
                 above_ml = ds1[vv_nobump].where(ds1.z > ds1.height_ml_new_gia).where(ds1.z < ds1.height_ml_new_gia + 100)
@@ -3516,6 +3600,39 @@ for date in ML_low_dates:
                 ds2 = ds2.assign( xr.where(ds2.height_ml_bottom_new_gia.notnull(),
                                            bump_ml.rename(dict(zip(vv_nobump, vv_bump))),
                                            bump_ml_TEMP.rename(dict(zip(vv_nobump, vv_bump))) ) )
+
+            if len(vv_bump_safer) > 0:
+
+                if "range" in vv_nobump_safer:
+                    vv_nobump_safer = ["range_" if x=="range" else x for x in vv_nobump_safer]
+                    ds1 = ds1.assign({"range_": ds1["range"]})
+                    ds2 = ds2.assign({"range_": ds2["range"]})
+
+                # for ds1
+                below_ml = ds1[vv_nobump_safer].where(ds1.z < ds1.height_ml_bottom_new_gia).where(ds1.z > ds1.height_ml_bottom_new_gia - 500)
+                above_ml = ds1[vv_nobump_safer].where(ds1.z > ds1.height_ml_new_gia).where(ds1.z < ds1.height_ml_new_gia + 500)
+                below_ml_TEMP = ds1[vv_nobump_safer].where(ds1.TEMP>3).where(ds1.TEMP<3.5).where(~ds1.height_ml_bottom_new_gia.notnull())
+                above_ml_TEMP = ds1[vv_nobump_safer].where(ds1.TEMP<-1).where(ds1.TEMP>-1-0.5).where(~ds1.height_ml_new_gia.notnull())
+
+                bump_ml = above_ml.bfill("range").head(range=1).isel(range=0) - below_ml.ffill("range").tail(range=1).isel(range=0)
+                bump_ml_TEMP = above_ml_TEMP.bfill("range").head(range=1).isel(range=0) - below_ml_TEMP.ffill("range").tail(range=1).isel(range=0)
+
+                ds1 = ds1.assign( xr.where(ds1.height_ml_bottom_new_gia.notnull(),
+                                           bump_ml.rename(dict(zip(vv_nobump_safer, vv_bump_safer))),
+                                           bump_ml_TEMP.rename(dict(zip(vv_nobump_safer, vv_bump_safer))) ) )
+
+                # for ds2 (by definition this will be NaN for the cases we will select, but we still need the variable for completion)
+                below_ml = ds2[vv_nobump_safer].where(ds2.z < ds2.height_ml_bottom_new_gia).where(ds2.z > ds2.height_ml_bottom_new_gia - 500)
+                above_ml = ds2[vv_nobump_safer].where(ds2.z > ds2.height_ml_new_gia).where(ds2.z < ds2.height_ml_new_gia + 500)
+                below_ml_TEMP = ds2[vv_nobump_safer].where(ds2.TEMP>4).where(ds2.TEMP<4.5).where(~ds2.height_ml_bottom_new_gia.notnull())
+                above_ml_TEMP = ds2[vv_nobump_safer].where(ds2.TEMP<-1.5).where(ds2.TEMP>-1.5-0.5).where(~ds2.height_ml_new_gia.notnull())
+
+                bump_ml = above_ml.bfill("range").head(range=1).isel(range=0) - below_ml.ffill("range").tail(range=1).isel(range=0)
+                bump_ml_TEMP = above_ml_TEMP.bfill("range").head(range=1).isel(range=0) - below_ml_TEMP.ffill("range").tail(range=1).isel(range=0)
+
+                ds2 = ds2.assign( xr.where(ds2.height_ml_bottom_new_gia.notnull(),
+                                           bump_ml.rename(dict(zip(vv_nobump_safer, vv_bump_safer))),
+                                           bump_ml_TEMP.rename(dict(zip(vv_nobump_safer, vv_bump_safer))) ) )
 
             if len(vv_nomin) > 0 or len(vv_nomax) > 0:
                 # for ds1
@@ -3900,9 +4017,9 @@ tg_TEMP = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[TEMP] ])
 
 ref_TEMP = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[TEMP] ])
 
-tg_phi_bump = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi+"_MLbump"] ])
+tg_phi_bump = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi+"_MLbump"] ]) # _MLbump_safer
 
-ref_phi_bump = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi+"_MLbump"] ])
+ref_phi_bump = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi+"_MLbump"] ]) # _MLbump_safer
 
 tg_height_ml_top = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["height_ml_new_gia"] ])
 
@@ -4067,7 +4184,252 @@ X = np.column_stack((np.ones_like(bin_centers[np.array(valid_bins)]), bin_center
 
 # 2. Fit the model (OLS = Ordinary Least Squares)
 model = sm.WLS(medians[np.array(valid_bins)], X, weights=weights[np.array(valid_bins)])
-results = model.fit()
+results = model.fit(cov_type='HC3')
+
+# 3. Get the stats
+print(f"R²: {results.rsquared:.4f}")
+print(f"p-values (const, x): {results.pvalues}")
+print(f"Prob (F-statistic): {results.f_pvalue}")
+
+# You can also print a comprehensive summary table
+print(results.summary())
+
+#%%% Plot boxplot of delta DBZH/ZDR vs target range ML bump (ML attenuation, analogous to previous one but for ADP)
+
+phi = "range"
+dbzh_tg = "ZDR_EC_OC_AC2_rain_WRcorr" # ZDR_EC_OC_AC2_rain, DBZH_AC2_rain
+dbzh_ref = "ZDR_EC_OC3" # ZDR_EC_OC3_AC2_rain, DBZH_AC2_rain
+TEMPm = "TEMPm"
+TEMP = "TEMP"
+
+yax = r"$Δ\mathrm{Z_{DR}}\ [dB]$" # label for the y axis
+xax = r"$Δ\mathrm{range^{ML}}\ [km]$" # label for the x axis
+
+varx_range = (0, 41, 1) # start, stop, step # (0.7, 0.98, 0.02)
+
+min_bin_n = 30 # min count of valid values inside bin to be included in the fitting
+
+sc = False # show boxplots caps?
+sf = False # show boxplots outliers?
+wp = 0 # position of the whiskers as proportion of (Q3-Q1), default is 1.5
+
+ymin = -3 # min and max limits for the y axis
+ymax = 2.5
+
+# WR corr based on results
+def zdr_wrc(Zm):
+    Zm_ = np.where(np.nan_to_num(Zm) < 32.5,
+                   np.nan_to_num(Zm),
+                   32.5)
+    return -0.00022*Zm_ + 0.00032*Zm_**2 # change here to adjust coefficients based on results
+
+if "_WRcorr" in dbzh_tg:
+    # Correct wet-radome timesteps
+    var_tg_ = "".join(dbzh_tg.split("_WRcorr"))
+    selected_ML_low[dbzh_tg] = []
+    for ti in range(len(selected_ML_low[var_tg_])):
+        # add to the new variable
+        selected_ML_low[dbzh_tg].append((selected_ML_low[var_tg_][ti][0].copy() - zdr_wrc(selected_ML_low["Zm"][ti][0].copy()),
+                                         selected_ML_low[var_tg_][ti][1].copy() - zdr_wrc(selected_ML_low["Zm"][ti][1].copy()) ))
+
+if "_WRcorr" in dbzh_ref:
+    # Correct wet-radome timesteps
+    var_ref_ = "".join(dbzh_ref.split("_WRcorr"))
+    selected_ML_low[dbzh_ref] = []
+    for ti in range(len(selected_ML_low[var_tg_])):
+        # add to the new variable
+        selected_ML_low[dbzh_ref].append((selected_ML_low[var_ref_][ti][0].copy() - zdr_wrc(selected_ML_low["Zm"][ti][0].copy()),
+                                         selected_ML_low[var_ref_][ti][1].copy() - zdr_wrc(selected_ML_low["Zm"][ti][1].copy()) ))
+
+# extract/build necessary variables
+tg_dbzh = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[dbzh_tg] ])
+
+ref_dbzh = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[dbzh_ref] ])
+
+# tg_phi = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi] ])
+
+# ref_phi = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi] ])
+
+tg_Zm = np.nan_to_num(np.concat([ d1.flatten() for d1,d2 in selected_ML_low["Zm"] ]))
+
+ref_Zm = np.nan_to_num(np.concat([ d2.flatten() for d1,d2 in selected_ML_low["Zm"] ]))
+
+tg_TEMPm = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[TEMPm] ])
+
+ref_TEMPm = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[TEMPm] ])
+
+tg_TEMP = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[TEMP] ])
+
+ref_TEMP = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[TEMP] ])
+
+tg_phi_bump = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi+"_MLbump"] ])/1000 # _MLbump_safer
+
+ref_phi_bump = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi+"_MLbump"] ])/1000 # _MLbump_safer
+
+tg_height_ml_top = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["height_ml_new_gia"] ])
+
+tg_RHOHV = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["RHOHV"] ])
+
+ref_RHOHV = np.concat([ d2.flatten() for d1,d2 in selected_ML_low["RHOHV"] ])
+
+tg_z_beambot = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["z_beambot"] ])
+
+ref_z_beambot = np.concat([ d2.flatten() for d1,d2 in selected_ML_low["z_beambot"] ])
+
+tg_bca = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["beam_cross_angle"] ])
+
+ref_bca = np.concat([ d2.flatten() for d1,d2 in selected_ML_low["beam_cross_angle"] ])
+
+# tg_height_ml_top_qvp = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["height_ml_new_gia_fromqvp"] ])
+
+# ref_height_ml_top_qvp = np.concat([ d2.flatten() for d1,d2 in selected_ML_low["height_ml_new_gia_fromqvp"] ])
+
+# # We should only use height_ml_top_qvp values from tg since ref should be above the ML
+# # fill remaining NaNs with an arbitrarely low value so it does no undesired filtering
+# tg_height_ml_top_qvp[np.isnan(tg_height_ml_top_qvp)] = 0
+# ref_height_ml_top_qvp[np.isnan(ref_height_ml_top_qvp)] = 0
+
+# Alternative: interpolate and extrapolate the ML heights for each day to fill NaNs
+tg_height_ml_top_qvp = [ pd.DataFrame(d1).ffill(axis=1).values for d1,d2 in selected_ML_low["height_ml_new_gia_fromqvp"] ]
+
+ref_height_ml_top_qvp = [ pd.DataFrame(d2).ffill(axis=1).values for d1,d2 in selected_ML_low["height_ml_new_gia_fromqvp"] ]
+
+for ts in range(len(tg_height_ml_top_qvp)):
+    # fill the NaN height_ml_top_qvp values from ref with tg
+    ref_height_ml_top_qvp[ts][np.isnan(ref_height_ml_top_qvp[ts])] = tg_height_ml_top_qvp[ts][np.isnan(ref_height_ml_top_qvp[ts])]
+
+    # remove outliers (median+-std)
+    tg_m = np.nanmedian(tg_height_ml_top_qvp[ts][:,0])
+    tg_std = np.nanstd(tg_height_ml_top_qvp[ts][:,0])
+    tg_height_ml_top_qvp[ts][tg_height_ml_top_qvp[ts] < tg_m-tg_std] = np.nan
+    tg_height_ml_top_qvp[ts][tg_height_ml_top_qvp[ts] > tg_m+tg_std] = np.nan
+    ref_m = np.nanmedian(ref_height_ml_top_qvp[ts][:,0])
+    ref_std = np.nanstd(ref_height_ml_top_qvp[ts][:,0])
+    ref_height_ml_top_qvp[ts][ref_height_ml_top_qvp[ts] < ref_m-ref_std] = np.nan
+    ref_height_ml_top_qvp[ts][ref_height_ml_top_qvp[ts] > ref_m+ref_std] = np.nan
+
+    # Interpolate and extrapolate to fill NaNs
+    tg_height_ml_top_qvp[ts] = pd.DataFrame(tg_height_ml_top_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+    ref_height_ml_top_qvp[ts] = pd.DataFrame(ref_height_ml_top_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+
+# finally, flatten
+tg_height_ml_top_qvp = np.concat([ds1.flatten() for ds1 in tg_height_ml_top_qvp])
+ref_height_ml_top_qvp = np.concat([ds2.flatten() for ds2 in ref_height_ml_top_qvp])
+
+# fill remaining NaNs with an arbitrarely low value so it does no undesired filtering
+tg_height_ml_top_qvp[np.isnan(tg_height_ml_top_qvp)] = 0
+ref_height_ml_top_qvp[np.isnan(ref_height_ml_top_qvp)] = 0
+
+# filter by valid values according to conditions
+#!!! The best filter would have ref_TEMPm < -1, but looks like no event so far
+# meets this condition. So let's use PHI and Zm as an alternative for now
+# valid = (tg_TEMPm > 3) & (np.nan_to_num(ref_phi_bump) < 1)  & (ref_phi < 5) & (ref_Zm < 5) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
+valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)\
+        & (tg_height_ml_top_qvp < 1600)\
+        & (tg_phi_bump > varx_range[0]) & (tg_phi_bump < varx_range[1] - varx_range[2])\
+        & (tg_z_beambot > tg_height_ml_top_qvp) & (ref_z_beambot > tg_height_ml_top_qvp)\
+        & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\
+        & (tg_TEMPm > 3) & (ref_TEMPm < 0)\
+        & (tg_bca > 135) & (ref_bca > 135)\
+
+
+delta_dbzh = (tg_dbzh - ref_dbzh)[valid]
+tg_phi_bump = tg_phi_bump[valid]
+
+# In case we need to filter out unrealistic values
+# tg_phi_bump = tg_phi_bump[delta_dbzh>-4]
+# delta_dbzh = delta_dbzh[delta_dbzh>-4]
+
+# Calculate best linear fit
+lfit = np.polynomial.Polynomial.fit(tg_phi_bump, delta_dbzh, 1)
+lfit_str = str(lfit.convert()).replace("x", "range ML bump")
+
+# Box plots like in the paper
+# Define bins
+bins = np.arange(varx_range[0], varx_range[1], varx_range[2])  # 0,1,2,3,4,5
+bin_centers = bins[:-1] + np.diff(bins).mean()/2
+
+# Digitize tg_phi_bump into bins
+bin_indices = np.digitize(tg_phi_bump, bins) - 1
+
+# Prepare data for boxplot
+box_data = [delta_dbzh[bin_indices == i] for i in range(len(bins) - 1)]
+
+# Compute counts per bin
+counts = [len(vals) for vals in box_data]
+
+# Remove bins that have less than min_bin_n valid values
+valid_bins = [ np.isfinite(arr).sum() >= min_bin_n  for arr in box_data ]
+
+# Plot
+plt.figure(figsize=(6, 3.5))
+bp = plt.boxplot(box_data, positions=bin_centers, widths=np.diff(bins).mean()/2,
+                 showmeans=True, showcaps=sc, showfliers=sf, whis=wp,
+                 medianprops={"color":"black"}, meanprops={"marker":"."})
+plt.xlim(bins[0], bins[-1])
+plt.ylim(ymin, ymax)
+plt.xlabel(xax)
+plt.ylabel(yax)
+plt.grid(True, linestyle="--", alpha=0.5)
+plt.xticks(bins, np.round(bins).astype("int")) # convert to km
+# plt.xticks(bin_centers, [f"{round(b, 2)}-{round(b+varx_range[2], 2)}" for b in bins[:-1]])
+# plt.title("Boxplots of delta "+dbzh_tg+" vs "+phi+"_MLbump"+" bins")
+
+# # add linear fit
+# plt.plot([bins[0], bins[-1]], [lfit(bins[0]), lfit(bins[-1])])
+# plt.text(0.95, 0.9, "Linear fit: "+lfit_str, transform=plt.gca().transAxes, c="blue",
+#          horizontalalignment="right")
+
+# add a second linear fit using the medians
+medians = np.array([line.get_ydata()[0] for line in bp['medians']])
+lfit_m = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 1)
+lfit_m_rcoefs = np.round(lfit_m.convert().coef, 2)
+lfit_m_rounded = np.polynomial.Polynomial(lfit_m_rcoefs)
+lfit_m_str = str(lfit_m_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
+# plt.plot([bins[0], bins[-1]], [lfit_m(bins[0]), lfit_m(bins[-1])], c="red")
+# plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
+#          horizontalalignment="right")
+
+# add a third linear fit using the medians and IQRs of each bin
+variances = np.array([vals.var(ddof=1) for vals in box_data])
+iqr = np.array([np.nanquantile(vals,0.75) for vals in box_data]) - np.array([np.nanquantile(vals,0.25) for vals in box_data])
+weights = 1 / iqr**2 # 1 / variances
+weights[~np.isfinite(weights)] = 0
+w = np.sqrt(weights)
+lfit_mw = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 1, w=w[np.array(valid_bins)])
+lfit_mw_rcoefs = np.round(lfit_mw.convert().coef, 3)
+lfit_mw_rounded = np.polynomial.Polynomial(lfit_mw_rcoefs)
+lfit_mw_str = str(lfit_mw_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
+plt.plot([bins[0], bins[-1]], [lfit_mw(bins[0]), lfit_mw(bins[-1])], c="red")
+plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_mw_str+"", transform=plt.gca().transAxes,
+         c="red", horizontalalignment="right")
+
+plt.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
+
+# Add counts above x-tick labels (inside the plot area)
+for x, n in zip(bin_centers[::2], counts[::2]):
+    plt.text(x, plt.ylim()[0] + 0.05 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
+             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
+for x, n in zip(bin_centers[1::2], counts[1::2]):
+    plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 1% above bottom
+             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
+
+plt.tight_layout()
+plt.show()
+
+# # Print p value and other stats
+# scipy.stats.linregress(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)])
+
+# Print p value and other stats (for weighted fit)
+# use alternative to scipy.optimize.curve_fit (there is no quadratic equivalent)
+
+# We add a column for the constant (intercept) and the squared term
+# Stack columns: [1, x]
+X = np.column_stack((np.ones_like(bin_centers[np.array(valid_bins)]), bin_centers[np.array(valid_bins)]))
+
+# 2. Fit the model (OLS = Ordinary Least Squares)
+model = sm.WLS(medians[np.array(valid_bins)], X, weights=weights[np.array(valid_bins)])
+results = model.fit(cov_type='HC3')
 
 # 3. Get the stats
 print(f"R²: {results.rsquared:.4f}")
@@ -4287,7 +4649,7 @@ plt.show()
 
 #%%%% Load the files
 from pathlib import Path
-ff = glob.glob("/automount/realpep/upload/jgiles/dmi/qvps_2020-03-13/2020/2020-03/2020-03-13/HTY/*/*/*h5netcdf.nc")
+ff = glob.glob("/automount/realpep/upload/jgiles/dmi/qvps/2020/2020-03/2020-03-13/HTY/*/*/*h5netcdf.nc")
 
 ds_qvps = {Path(f).parent.name: xr.open_dataset(f) for f in ff}
 
@@ -4301,6 +4663,7 @@ elevs = sorted([float(k) for k in ds_qvps.keys()])
 time_selection = slice("2020-03-13T07:00", "2020-03-13T08:00")
 vv = "DBZH_AC" # ZDR_EC_OC_WRC_AC, DBZH_AC
 units = "dBZ"
+min_count = 20
 
 # 2. Setup the plot
 plt.figure(figsize=(4, 5))
@@ -4320,7 +4683,7 @@ for en, e in enumerate(elevs):
 
     # Select timesteps and calculate the median along the time dimension
     # .sel(time=...) also works if you have specific datetime strings
-    profile = ds[vv].sel(time=time_selection).median(dim="time")
+    profile = ds[vv].where(ds["DBZH_qvp_count"]>=min_count).sel(time=time_selection).median(dim="time")
 
     # Get color for this elevation
     color = colormap(norm(en))
@@ -4730,7 +5093,7 @@ X = np.column_stack((np.ones_like(bin_centers[np.array(valid_bins)]), bin_center
 
 # 2. Fit the model (OLS = Ordinary Least Squares)
 model = sm.WLS(medians[np.array(valid_bins)], X, weights=weights[np.array(valid_bins)])
-results = model.fit()
+results = model.fit(cov_type='HC3')
 
 # 3. Get the stats
 print(f"R²: {results.rsquared:.4f}")
