@@ -1593,7 +1593,7 @@ vv_to_extract = ["DBZH", "DBZH_AC",
                  "riming"
                  ] # all variables to extract from the datasets, DBZH must be the first
 
-elev_ml_bottom_fromqvp = ["10.0", "12.0", "8.0"] # elevations to try to load the height of the ML from QVP files, in order of preference
+elev_ml_bottom_fromqvp = ["10.0", "12.0", "8.0", "7.0", "15.0"] # elevations to try to load the height of the ML from QVP files, in order of preference
 
 # Some dates do not have reliable ML heights from QVPs, replace them by NaNs
 remove_ml_dates = {
@@ -1849,34 +1849,31 @@ for date in ML_high_dates:
                 dsx = dsx.assign_coords({"TEMPm": dsx["TEMP"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsx["DBZH"]) })
                 dsy = dsy.assign_coords({"TEMPm": dsy["TEMP"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")).broadcast_like(dsy["DBZH"]) })
 
-            # if we want z or ML heights we need to broadcast them
-            if "z" in vv_to_extract:
-                dsx["z"] = dsx["z"]
-                dsy["z"] = dsy["z"]
-
-            if "height_ml_bottom_new_gia" in vv_to_extract:
-                dsx.coords["height_ml_bottom_new_gia"] = dsx["height_ml_bottom_new_gia"]
-                dsy.coords["height_ml_bottom_new_gia"] = dsy["height_ml_bottom_new_gia"]
-
+            # add ML height from QVP
             if "height_ml_bottom_new_gia_fromqvp" in vv_to_extract:
-                try:
-                    for qvp_elev in elev_ml_bottom_fromqvp:
+                for qvp_elev in elev_ml_bottom_fromqvp:
+                    try:
                         qvp_glob = glob.glob("/".join(HTY_file.replace("final_ppis","qvps").split("/")[:-3])+"/*/"+qvp_elev+"/*.nc")
                         if len(qvp_glob)>0:
                             qvp_for_ml = xr.open_dataset(qvp_glob[0])
                             dsx.coords["height_ml_bottom_new_gia_fromqvp"] = qvp_for_ml.sel(time=date)["height_ml_bottom_new_gia"].interp_like(dsx.time, method="nearest")
                             break
-                except:
-                    dsx.coords["height_ml_bottom_new_gia_fromqvp"] = ds1_mlb_qvp.sel(time=date)["height_ml_bottom_new_gia"].interp_like(dsx.time, method="nearest")
-                try:
-                    for qvp_elev in elev_ml_bottom_fromqvp:
+                    except:
+                        continue
+                if "height_ml_bottom_new_gia_fromqvp" not in dsx.coords: # if that did not work, just fill with NaNs
+                    dsx.coords["height_ml_bottom_new_gia_fromqvp"] = dsx.coords["height_ml_bottom_new_gia"]*np.nan
+
+                for qvp_elev in elev_ml_bottom_fromqvp:
+                    try:
                         qvp_glob = glob.glob("/".join(GZT_file.replace("final_ppis","qvps").split("/")[:-3])+"/*/"+qvp_elev+"/*.nc")
                         if len(qvp_glob)>0:
                             qvp_for_ml = xr.open_dataset(qvp_glob[0])
                             dsy.coords["height_ml_bottom_new_gia_fromqvp"] = qvp_for_ml.sel(time=date)["height_ml_bottom_new_gia"].interp_like(dsy.time, method="nearest")
                             break
-                except:
-                    dsy.coords["height_ml_bottom_new_gia_fromqvp"] = ds2_mlb_qvp.sel(time=date)["height_ml_bottom_new_gia"].interp_like(dsy.time, method="nearest")
+                    except:
+                        continue
+                if "height_ml_bottom_new_gia_fromqvp" not in dsy.coords: # if that did not work, just fill with NaNs
+                    dsy.coords["height_ml_bottom_new_gia_fromqvp"] = dsy.coords["height_ml_bottom_new_gia"]*np.nan
 
             if "z_beamtop" in vv_to_extract:
                 # we just copy the original coordinates and add half beamwidth, then georeference again
@@ -3260,7 +3257,7 @@ vv_to_extract = ["DBZH", "DBZH_AC_rain", "DBZH_AC",
                  "TEMP", "TEMPm", "z",
                  "height_ml_bottom_new_gia", "height_ml_new_gia",
                  "z_beambot",
-                 "height_ml_new_gia_fromqvp",
+                 "height_ml_new_gia_fromqvp", "height_ml_bottom_new_gia_fromqvp",
                  "PHIDP_OC_MASKED_MLbump", #"PHIDP_OC_SMOOTH_MLbump",
                  "PHIDP_OC_MASKED_MLbump_safer",
                  # "DBZH_AC_rain_MLmax",
@@ -3269,10 +3266,10 @@ vv_to_extract = ["DBZH", "DBZH_AC_rain", "DBZH_AC",
                  "RHOHV",
                  "binvol", "beam_cross_angle",
                  "riming",
-                 "range_MLbump", "range_MLbump_safer" # safer means with larger tolerance of 500 m around ML
+                 "range_MLbump", "range_MLbump_safer" # safer means with larger tolerance of 500 m around qvp-ML
                  ] # all variables to extract from the datasets, DBZH must be the first
 
-elev_ml_top_fromqvp = ["10.0", "12.0", "8.0"] # elevations to try to load the height of the ML from QVP files, in order of preference
+elev_ml_top_fromqvp = ["10.0", "12.0", "8.0", "7.0", "15.0"] # elevations to try to load the height of the ML from QVP files, in order of preference
 
 # Some dates do not have reliable ML heights from QVPs, replace them by NaNs
 remove_ml_dates = {
@@ -3394,12 +3391,6 @@ if calc:
         ds2_zdr_offsets_comb_alt = ds2_zdr_offsets_comb.copy(deep=True)
         ds2_zdr_offsets_comb_alt.loc[list(dates_to_update.keys())] = list(dates_to_update.values())
         ds2_zdr_offsets_comb_alt_smooth = ds2_zdr_offsets_comb_alt.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
-
-    if "height_ml_new_gia_fromqvp" in vv_to_extract:
-        print("Loading ML top heights from QVP stats")
-        # ML_bottom files contain also ML height in its coords
-        ds1_mlb_qvp = xr.open_dataset(realpep_path+"/upload/jgiles/radar_stats/stratiform_ML/hty_ML_bottom.nc")
-        ds2_mlb_qvp = xr.open_dataset(realpep_path+"/upload/jgiles/radar_stats/stratiform_ML/gzt_ML_bottom.nc")
 
     if "riming" in vv_to_extract:
         ## Process the riming classification
@@ -3572,8 +3563,8 @@ for date in ML_low_dates:
 
                 if "range" in vv_nobump:
                     vv_nobump = ["range_" if x=="range" else x for x in vv_nobump]
-                    ds1 = ds1.assign({"range_": ds1["range"]})
-                    ds2 = ds2.assign({"range_": ds2["range"]})
+                    ds1 = ds1.assign({"range_": ds1["range"].broadcast_like(ds1.DBZH)})
+                    ds2 = ds2.assign({"range_": ds2["range"].broadcast_like(ds2.DBZH)})
 
                 # for ds1
                 below_ml = ds1[vv_nobump].where(ds1.z < ds1.height_ml_bottom_new_gia).where(ds1.z > ds1.height_ml_bottom_new_gia - 100)
@@ -3601,36 +3592,111 @@ for date in ML_low_dates:
                                            bump_ml.rename(dict(zip(vv_nobump, vv_bump))),
                                            bump_ml_TEMP.rename(dict(zip(vv_nobump, vv_bump))) ) )
 
+            if "z_beambot" in vv_to_extract or len(vv_bump_safer) > 0:
+                # we just copy the original coordinates and subtract half beamwidth, then georeference again
+                ds1_beambot = ds1["DBZH"].copy()
+                ds1_beambot['elevation'] = ds1_beambot['elevation'] - 0.5
+                ds1_beambot = wrl.georef.georeference(ds1_beambot, crs=proj)
+                ds1.coords["z_beambot"] = ds1_beambot["z"].broadcast_like(ds1["DBZH"]).reset_coords(drop=True)
+
+                ds2_beambot = ds2["DBZH"].copy()
+                ds2_beambot['elevation'] = ds2_beambot['elevation'] - 0.5
+                ds2_beambot = wrl.georef.georeference(ds2_beambot, crs=proj)
+                ds2.coords["z_beambot"] = ds2_beambot["z"].broadcast_like(ds2["DBZH"]).reset_coords(drop=True)
+
+            if "z_beamtop" in vv_to_extract or len(vv_bump_safer) > 0:
+                # we just copy the original coordinates and add half beamwidth, then georeference again
+                ds1_beamtop = ds1["DBZH"].copy()
+                ds1_beamtop['elevation'] = ds1_beamtop['elevation'] + 0.5
+                ds1_beamtop = wrl.georef.georeference(ds1_beamtop, crs=proj)
+                ds1.coords["z_beamtop"] = ds1_beamtop["z"].broadcast_like(ds1["DBZH"]).reset_coords(drop=True)
+
+                ds2_beamtop = ds2["DBZH"].copy()
+                ds2_beamtop['elevation'] = ds2_beamtop['elevation'] + 0.5
+                ds2_beamtop = wrl.georef.georeference(ds2_beamtop, crs=proj)
+                ds2.coords["z_beamtop"] = ds2_beamtop["z"].broadcast_like(ds2["DBZH"]).reset_coords(drop=True)
+
+            # add ML height from QVP
+            if "height_ml_new_gia_fromqvp" in vv_to_extract or len(vv_bump_safer) > 0:
+                for qvp_elev in elev_ml_top_fromqvp:
+                    try:
+                        qvp_glob = glob.glob("/".join(HTY_file.replace("final_ppis","qvps").split("/")[:-3])+"/*/"+qvp_elev+"/*.nc")
+                        if len(qvp_glob)>0:
+                            qvp_for_ml = xr.open_dataset(qvp_glob[0])
+                            ds1.coords["height_ml_new_gia_fromqvp"] = qvp_for_ml.sel(time=date)["height_ml_new_gia"].interp_like(ds1.time, method="nearest")
+                            break
+                    except:
+                        continue
+                if "height_ml_new_gia_fromqvp" not in ds1.coords: # if that did not work, just fill with NaNs
+                    ds1.coords["height_ml_new_gia_fromqvp"] = ds1.coords["height_ml_new_gia"]*np.nan
+
+                for qvp_elev in elev_ml_top_fromqvp:
+                    try:
+                        qvp_glob = glob.glob("/".join(GZT_file.replace("final_ppis","qvps").split("/")[:-3])+"/*/"+qvp_elev+"/*.nc")
+                        if len(qvp_glob)>0:
+                            qvp_for_ml = xr.open_dataset(qvp_glob[0])
+                            ds2.coords["height_ml_new_gia_fromqvp"] = qvp_for_ml.sel(time=date)["height_ml_new_gia"].interp_like(ds2.time, method="nearest")
+                            break
+                    except:
+                        continue
+                if "height_ml_new_gia_fromqvp" not in ds2.coords: # if that did not work, just fill with NaNs
+                    ds2.coords["height_ml_new_gia_fromqvp"] = ds2.coords["height_ml_new_gia"]*np.nan
+
+            if "height_ml_bottom_new_gia_fromqvp" in vv_to_extract or len(vv_bump_safer) > 0:
+                for qvp_elev in elev_ml_top_fromqvp:
+                    try:
+                        qvp_glob = glob.glob("/".join(HTY_file.replace("final_ppis","qvps").split("/")[:-3])+"/*/"+qvp_elev+"/*.nc")
+                        if len(qvp_glob)>0:
+                            qvp_for_ml = xr.open_dataset(qvp_glob[0])
+                            ds1.coords["height_ml_bottom_new_gia_fromqvp"] = qvp_for_ml.sel(time=date)["height_ml_bottom_new_gia"].interp_like(ds1.time, method="nearest")
+                            break
+                    except:
+                        continue
+                if "height_ml_bottom_new_gia_fromqvp" not in ds1.coords: # if that did not work, just fill with NaNs
+                    ds1.coords["height_ml_bottom_new_gia_fromqvp"] = ds1.coords["height_ml_bottom_new_gia"]*np.nan
+
+                for qvp_elev in elev_ml_top_fromqvp:
+                    try:
+                        qvp_glob = glob.glob("/".join(GZT_file.replace("final_ppis","qvps").split("/")[:-3])+"/*/"+qvp_elev+"/*.nc")
+                        if len(qvp_glob)>0:
+                            qvp_for_ml = xr.open_dataset(qvp_glob[0])
+                            ds2.coords["height_ml_bottom_new_gia_fromqvp"] = qvp_for_ml.sel(time=date)["height_ml_bottom_new_gia"].interp_like(ds2.time, method="nearest")
+                            break
+                    except:
+                        continue
+                if "height_ml_bottom_new_gia_fromqvp" not in ds2.coords: # if that did not work, just fill with NaNs
+                    ds2.coords["height_ml_bottom_new_gia_fromqvp"] = ds2.coords["height_ml_bottom_new_gia"]*np.nan
+
             if len(vv_bump_safer) > 0:
 
                 if "range" in vv_nobump_safer:
                     vv_nobump_safer = ["range_" if x=="range" else x for x in vv_nobump_safer]
-                    ds1 = ds1.assign({"range_": ds1["range"]})
-                    ds2 = ds2.assign({"range_": ds2["range"]})
+                    ds1 = ds1.assign({"range_": ds1["range"].broadcast_like(ds1.DBZH)})
+                    ds2 = ds2.assign({"range_": ds2["range"].broadcast_like(ds2.DBZH)})
 
                 # for ds1
-                below_ml = ds1[vv_nobump_safer].where(ds1.z < ds1.height_ml_bottom_new_gia).where(ds1.z > ds1.height_ml_bottom_new_gia - 500)
-                above_ml = ds1[vv_nobump_safer].where(ds1.z > ds1.height_ml_new_gia).where(ds1.z < ds1.height_ml_new_gia + 500)
-                below_ml_TEMP = ds1[vv_nobump_safer].where(ds1.TEMP>3).where(ds1.TEMP<3.5).where(~ds1.height_ml_bottom_new_gia.notnull())
-                above_ml_TEMP = ds1[vv_nobump_safer].where(ds1.TEMP<-1).where(ds1.TEMP>-1-0.5).where(~ds1.height_ml_new_gia.notnull())
+                below_ml = ds1[vv_nobump_safer].where(ds1.z_beamtop < ds1.height_ml_bottom_new_gia_fromqvp).where(ds1.z_beamtop > ds1.height_ml_bottom_new_gia_fromqvp - 100)
+                above_ml = ds1[vv_nobump_safer].where(ds1.z_beambot > ds1.height_ml_new_gia_fromqvp).where(ds1.z_beambot < ds1.height_ml_new_gia_fromqvp + 100)
+                below_ml_TEMP = ds1[vv_nobump_safer].where(ds1.TEMP>3).where(ds1.TEMP<3.5).where(~ds1.height_ml_bottom_new_gia_fromqvp.notnull())
+                above_ml_TEMP = ds1[vv_nobump_safer].where(ds1.TEMP<-1).where(ds1.TEMP>-1-0.5).where(~ds1.height_ml_new_gia_fromqvp.notnull())
 
                 bump_ml = above_ml.bfill("range").head(range=1).isel(range=0) - below_ml.ffill("range").tail(range=1).isel(range=0)
                 bump_ml_TEMP = above_ml_TEMP.bfill("range").head(range=1).isel(range=0) - below_ml_TEMP.ffill("range").tail(range=1).isel(range=0)
 
-                ds1 = ds1.assign( xr.where(ds1.height_ml_bottom_new_gia.notnull(),
+                ds1 = ds1.assign( xr.where(ds1.height_ml_bottom_new_gia_fromqvp.notnull(),
                                            bump_ml.rename(dict(zip(vv_nobump_safer, vv_bump_safer))),
                                            bump_ml_TEMP.rename(dict(zip(vv_nobump_safer, vv_bump_safer))) ) )
 
                 # for ds2 (by definition this will be NaN for the cases we will select, but we still need the variable for completion)
-                below_ml = ds2[vv_nobump_safer].where(ds2.z < ds2.height_ml_bottom_new_gia).where(ds2.z > ds2.height_ml_bottom_new_gia - 500)
-                above_ml = ds2[vv_nobump_safer].where(ds2.z > ds2.height_ml_new_gia).where(ds2.z < ds2.height_ml_new_gia + 500)
-                below_ml_TEMP = ds2[vv_nobump_safer].where(ds2.TEMP>4).where(ds2.TEMP<4.5).where(~ds2.height_ml_bottom_new_gia.notnull())
-                above_ml_TEMP = ds2[vv_nobump_safer].where(ds2.TEMP<-1.5).where(ds2.TEMP>-1.5-0.5).where(~ds2.height_ml_new_gia.notnull())
+                below_ml = ds2[vv_nobump_safer].where(ds2.z_beamtop < ds2.height_ml_bottom_new_gia_fromqvp).where(ds2.z_beamtop > ds2.height_ml_bottom_new_gia_fromqvp - 100)
+                above_ml = ds2[vv_nobump_safer].where(ds2.z_beambot > ds2.height_ml_new_gia_fromqvp).where(ds2.z_beambot < ds2.height_ml_new_gia_fromqvp + 100)
+                below_ml_TEMP = ds2[vv_nobump_safer].where(ds2.TEMP>3).where(ds2.TEMP<3.5).where(~ds2.height_ml_bottom_new_gia_fromqvp.notnull())
+                above_ml_TEMP = ds2[vv_nobump_safer].where(ds2.TEMP<-1).where(ds2.TEMP>-1-0.5).where(~ds2.height_ml_new_gia_fromqvp.notnull())
 
                 bump_ml = above_ml.bfill("range").head(range=1).isel(range=0) - below_ml.ffill("range").tail(range=1).isel(range=0)
                 bump_ml_TEMP = above_ml_TEMP.bfill("range").head(range=1).isel(range=0) - below_ml_TEMP.ffill("range").tail(range=1).isel(range=0)
 
-                ds2 = ds2.assign( xr.where(ds2.height_ml_bottom_new_gia.notnull(),
+                ds2 = ds2.assign( xr.where(ds2.height_ml_bottom_new_gia_fromqvp.notnull(),
                                            bump_ml.rename(dict(zip(vv_nobump_safer, vv_bump_safer))),
                                            bump_ml_TEMP.rename(dict(zip(vv_nobump_safer, vv_bump_safer))) ) )
 
@@ -3703,51 +3769,6 @@ for date in ML_low_dates:
             # Analogously, add the TEMP close to the radar as a measure of below/above ML
             dsx = dsx.assign_coords({"TEMPm": dsx["TEMP"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")) })
             dsy = dsy.assign_coords({"TEMPm": dsy["TEMP"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")) })
-
-            # if we want z or ML heights we need to broadcast them
-            if "z" in vv_to_extract:
-                dsx["z"] = dsx["z"]
-                dsy["z"] = dsy["z"]
-
-            if "height_ml_bottom_new_gia" in vv_to_extract:
-                dsx["height_ml_bottom_new_gia"] = dsx["height_ml_bottom_new_gia"]
-                dsy["height_ml_bottom_new_gia"] = dsy["height_ml_bottom_new_gia"]
-
-            if "height_ml_new_gia" in vv_to_extract:
-                dsx["height_ml_new_gia"] = dsx["height_ml_new_gia"]
-                dsy["height_ml_new_gia"] = dsy["height_ml_new_gia"]
-
-            if "height_ml_new_gia_fromqvp" in vv_to_extract:
-                try:
-                    for qvp_elev in elev_ml_top_fromqvp:
-                        qvp_glob = glob.glob("/".join(HTY_file.replace("final_ppis","qvps").split("/")[:-3])+"/*/"+qvp_elev+"/*.nc")
-                        if len(qvp_glob)>0:
-                            qvp_for_ml = xr.open_dataset(qvp_glob[0])
-                            dsx.coords["height_ml_new_gia_fromqvp"] = qvp_for_ml.sel(time=date)["height_ml_new_gia"].interp_like(dsx.time, method="nearest")
-                            break
-                except:
-                    dsx.coords["height_ml_new_gia_fromqvp"] = ds1_mlb_qvp.sel(time=date)["height_ml_new_gia"].interp_like(dsx.time, method="nearest")
-                try:
-                    for qvp_elev in elev_ml_top_fromqvp:
-                        qvp_glob = glob.glob("/".join(GZT_file.replace("final_ppis","qvps").split("/")[:-3])+"/*/"+qvp_elev+"/*.nc")
-                        if len(qvp_glob)>0:
-                            qvp_for_ml = xr.open_dataset(qvp_glob[0])
-                            dsy.coords["height_ml_new_gia_fromqvp"] = qvp_for_ml.sel(time=date)["height_ml_new_gia"].interp_like(dsy.time, method="nearest")
-                            break
-                except:
-                    dsy.coords["height_ml_new_gia_fromqvp"] = ds2_mlb_qvp.sel(time=date)["height_ml_new_gia"].interp_like(dsy.time, method="nearest")
-
-            if "z_beambot" in vv_to_extract:
-                # we just copy the original coordinates and subtract half beamwidth, then georeference again
-                dsx_beambot = dsx["DBZH"].copy()
-                dsx_beambot['elevation'] = dsx_beambot['elevation'] - 0.5
-                dsx_beambot = wrl.georef.georeference(dsx_beambot, crs=proj)
-                dsx.coords["z_beambot"] = dsx_beambot["z"].broadcast_like(dsx["DBZH"]).reset_coords(drop=True)
-
-                dsy_beambot = dsy["DBZH"].copy()
-                dsy_beambot['elevation'] = dsy_beambot['elevation'] - 0.5
-                dsy_beambot = wrl.georef.georeference(dsy_beambot, crs=proj)
-                dsy.coords["z_beambot"] = dsy_beambot["z"].broadcast_like(dsy["DBZH"]).reset_coords(drop=True)
 
             if "binvol" in vv_to_extract:
                 dsx.coords["binvol"] = dsx.range.wrl.qual.pulse_volume(dsx.range.diff("range").median(), 1)
@@ -4196,7 +4217,8 @@ print(results.summary())
 
 #%%% Plot boxplot of delta DBZH/ZDR vs target range ML bump (ML attenuation, analogous to previous one but for ADP)
 
-phi = "range"
+phi = "PHIDP_OC_MASKED"
+vrange = "range"
 dbzh_tg = "ZDR_EC_OC_AC2_rain_WRcorr" # ZDR_EC_OC_AC2_rain, DBZH_AC2_rain
 dbzh_ref = "ZDR_EC_OC3" # ZDR_EC_OC3_AC2_rain, DBZH_AC2_rain
 TEMPm = "TEMPm"
@@ -4206,6 +4228,7 @@ yax = r"$Δ\mathrm{Z_{DR}}\ [dB]$" # label for the y axis
 xax = r"$Δ\mathrm{range^{ML}}\ [km]$" # label for the x axis
 
 varx_range = (0, 41, 1) # start, stop, step # (0.7, 0.98, 0.02)
+phi_range = (0, 19, 1)
 
 min_bin_n = 30 # min count of valid values inside bin to be included in the fitting
 
@@ -4262,9 +4285,9 @@ tg_TEMP = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[TEMP] ])
 
 ref_TEMP = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[TEMP] ])
 
-tg_phi_bump = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi+"_MLbump"] ])/1000 # _MLbump_safer
+tg_phi_bump = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[phi+"_MLbump"] ]) # _MLbump_safer
 
-ref_phi_bump = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi+"_MLbump"] ])/1000 # _MLbump_safer
+ref_phi_bump = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[phi+"_MLbump"] ]) # _MLbump_safer
 
 tg_height_ml_top = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["height_ml_new_gia"] ])
 
@@ -4279,6 +4302,10 @@ ref_z_beambot = np.concat([ d2.flatten() for d1,d2 in selected_ML_low["z_beambot
 tg_bca = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["beam_cross_angle"] ])
 
 ref_bca = np.concat([ d2.flatten() for d1,d2 in selected_ML_low["beam_cross_angle"] ])
+
+tg_range_bump = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[vrange+"_MLbump"] ])/1000 # _MLbump_safer
+
+ref_range_bump = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[vrange+"_MLbump"] ])/1000 # _MLbump_safer
 
 # tg_height_ml_top_qvp = np.concat([ d1.flatten() for d1,d2 in selected_ML_low["height_ml_new_gia_fromqvp"] ])
 
@@ -4308,17 +4335,17 @@ for ts in range(len(tg_height_ml_top_qvp)):
     ref_height_ml_top_qvp[ts][ref_height_ml_top_qvp[ts] < ref_m-ref_std] = np.nan
     ref_height_ml_top_qvp[ts][ref_height_ml_top_qvp[ts] > ref_m+ref_std] = np.nan
 
-    # Interpolate and extrapolate to fill NaNs
-    tg_height_ml_top_qvp[ts] = pd.DataFrame(tg_height_ml_top_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
-    ref_height_ml_top_qvp[ts] = pd.DataFrame(ref_height_ml_top_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+    # # Interpolate and extrapolate to fill NaNs
+    # tg_height_ml_top_qvp[ts] = pd.DataFrame(tg_height_ml_top_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+    # ref_height_ml_top_qvp[ts] = pd.DataFrame(ref_height_ml_top_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
 
 # finally, flatten
 tg_height_ml_top_qvp = np.concat([ds1.flatten() for ds1 in tg_height_ml_top_qvp])
 ref_height_ml_top_qvp = np.concat([ds2.flatten() for ds2 in ref_height_ml_top_qvp])
 
-# fill remaining NaNs with an arbitrarely low value so it does no undesired filtering
-tg_height_ml_top_qvp[np.isnan(tg_height_ml_top_qvp)] = 0
-ref_height_ml_top_qvp[np.isnan(ref_height_ml_top_qvp)] = 0
+# # fill remaining NaNs with an arbitrarely low value so it does no undesired filtering
+# tg_height_ml_top_qvp[np.isnan(tg_height_ml_top_qvp)] = 0
+# ref_height_ml_top_qvp[np.isnan(ref_height_ml_top_qvp)] = 0
 
 # filter by valid values according to conditions
 #!!! The best filter would have ref_TEMPm < -1, but looks like no event so far
@@ -4326,7 +4353,8 @@ ref_height_ml_top_qvp[np.isnan(ref_height_ml_top_qvp)] = 0
 # valid = (tg_TEMPm > 3) & (np.nan_to_num(ref_phi_bump) < 1)  & (ref_phi < 5) & (ref_Zm < 5) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
 valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)\
         & (tg_height_ml_top_qvp < 1600)\
-        & (tg_phi_bump > varx_range[0]) & (tg_phi_bump < varx_range[1] - varx_range[2])\
+        & (tg_range_bump > varx_range[0]) & (tg_range_bump < varx_range[1] - varx_range[2])\
+        & (tg_phi_bump > phi_range[0]) & (tg_phi_bump < phi_range[1] - phi_range[2])\
         & (tg_z_beambot > tg_height_ml_top_qvp) & (ref_z_beambot > tg_height_ml_top_qvp)\
         & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\
         & (tg_TEMPm > 3) & (ref_TEMPm < 0)\
@@ -4334,14 +4362,15 @@ valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_dbzh) & np.isfinite(re
 
 
 delta_dbzh = (tg_dbzh - ref_dbzh)[valid]
+tg_range_bump = tg_range_bump[valid]
 tg_phi_bump = tg_phi_bump[valid]
 
 # In case we need to filter out unrealistic values
-# tg_phi_bump = tg_phi_bump[delta_dbzh>-4]
+# tg_range_bump = tg_range_bump[delta_dbzh>-4]
 # delta_dbzh = delta_dbzh[delta_dbzh>-4]
 
 # Calculate best linear fit
-lfit = np.polynomial.Polynomial.fit(tg_phi_bump, delta_dbzh, 1)
+lfit = np.polynomial.Polynomial.fit(tg_range_bump, delta_dbzh, 1)
 lfit_str = str(lfit.convert()).replace("x", "range ML bump")
 
 # Box plots like in the paper
@@ -4349,8 +4378,8 @@ lfit_str = str(lfit.convert()).replace("x", "range ML bump")
 bins = np.arange(varx_range[0], varx_range[1], varx_range[2])  # 0,1,2,3,4,5
 bin_centers = bins[:-1] + np.diff(bins).mean()/2
 
-# Digitize tg_phi_bump into bins
-bin_indices = np.digitize(tg_phi_bump, bins) - 1
+# Digitize tg_range_bump into bins
+bin_indices = np.digitize(tg_range_bump, bins) - 1
 
 # Prepare data for boxplot
 box_data = [delta_dbzh[bin_indices == i] for i in range(len(bins) - 1)]
