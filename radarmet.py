@@ -184,6 +184,17 @@ try: # try to register in case it is not there
 except ValueError:
     pass
 
+cmap_homeyer = plt.colormaps.get_cmap('HomeyerRainbow')
+n_colors = 14
+samples = np.linspace(0, 1, n_colors)
+colors = cmap_homeyer(samples)
+cmap_homeyer_disc = mpl.colors.ListedColormap(colors)
+try: # try to register in case it is not there
+    mpl.colormaps.register(name="HomeyerRainbow_disc", cmap=cmap_homeyer_disc)
+except ValueError:
+    pass
+
+
 visdict14 = dict(ZH=dict(ticks=np.arange(-10,55,5),
                          contours=[0, 5, 10, 15, 20, 25, 30, 35],
                           cmap="miub2",
