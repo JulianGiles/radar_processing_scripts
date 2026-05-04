@@ -1484,6 +1484,43 @@ ML_high_dates = [
     "2020-10-01"
 ]
 
+# new clean list of dates where only dates with valid value-pairs after filtering are kept
+# Dates with #< have only a few valid matches
+ML_high_dates = [
+    "2016-05-31", #<
+    "2016-09-22", # Wet radome in GZT
+    "2016-10-18", #< #### no valid matches: 3.0-0.5
+    "2016-10-28",
+    "2017-04-12",
+    "2017-04-13", #<
+    "2017-05-18", #<
+    "2017-05-22", #<  #### no valid matches: 2.2-0.5, 3.0-0.5
+    "2019-10-17", #<
+    "2019-10-20", #<
+    "2019-10-21", #### no valid matches: 3.0-0.5
+    "2019-10-22", #< #### no valid matches: 3.0-0.5
+    "2020-03-12", #### no valid matches: 3.0-0.5
+    "2020-03-13", #### no valid matches: 3.0-0.5
+
+    # New dates
+    "2016-06-07", #<
+    "2016-06-30", #<
+    "2016-08-15", #<
+    "2016-08-17",
+    "2016-09-03",
+    "2016-09-04",
+    "2016-09-05", #<
+    "2016-09-13",
+    "2016-09-14",
+    "2016-09-15",
+    "2016-09-20", #<
+    "2016-09-21", #<
+    "2019-09-14", #<
+    "2020-09-02", #<
+    "2020-09-25", #<
+    "2020-09-30", #<
+    "2020-10-01" #<
+]
 
 # # X means that this date does not have ML low enough, so I removed it
 # # XX means that the ML is not low enough but it is very close, I could leave it if it works.
@@ -1561,6 +1598,29 @@ ML_low_dates = [
     "2020-03-19",
     "2020-03-20",
 ]
+
+# new clean list of dates where only dates with valid value-pairs after filtering are kept
+ML_low_dates = [
+    "2016-12-14",
+    "2016-12-16",
+    "2016-12-20",
+    "2016-12-21",
+    "2016-12-22",
+    "2016-12-29",
+    "2016-12-31",
+    "2017-01-01",
+    "2017-01-02",
+    "2020-01-19", # XX
+
+    # New dates
+    "2016-12-25", # only 21 valid value pairs after filtering
+    "2017-01-03",
+    "2019-12-28",
+    "2020-01-02", # only 21 valid value pairs after filtering
+    "2020-02-07", # only 71 valid value pairs after filtering
+    #"2020-03-20",  # only 95 valid value pairs after filtering and very ugly results.
+]
+
 
 #%%% Start the loop for dates for rain attenuation and wet radome analyses
 token = secrets['EARTHDATA_TOKEN']
@@ -3260,13 +3320,15 @@ vv_to_extract = ["DBZH", "DBZH_AC_rain", "DBZH_AC",
                  "height_ml_new_gia_fromqvp", "height_ml_bottom_new_gia_fromqvp",
                  "PHIDP_OC_MASKED_MLbump", #"PHIDP_OC_SMOOTH_MLbump",
                  "PHIDP_OC_MASKED_MLbump_safer",
+                 "PHIDP_OC_MASKED_MLbump_strict",
                  # "DBZH_AC_rain_MLmax",
                  # "DBZH_AC2_rain_MLmax",
                  # "RHOHV_MLmin",
                  "RHOHV",
                  "binvol", "beam_cross_angle",
                  "riming",
-                 "range_MLbump", "range_MLbump_safer" # safer means with larger tolerance of 500 m around qvp-ML
+                 "range_MLbump", "range_MLbump_safer", # safer means using beam top and bottom to avoid any contact with the QVP-ML
+                 "range_MLbump_strict", # strict means getting as close to the QVP-ML as possible (beam center and QVP-based ML heights)
                  ] # all variables to extract from the datasets, DBZH must be the first
 
 elev_ml_top_fromqvp = ["10.0", "12.0", "8.0", "7.0", "15.0"] # elevations to try to load the height of the ML from QVP files, in order of preference
@@ -3358,19 +3420,19 @@ if calc:
         '2016-12-14': -0.32,
         '2016-12-16': -0.26,
         '2016-12-20': -0.35,
-        '2016-12-21': -0.26,
+        '2016-12-21': -0.36, # New value upon revision, old value: -0.26,
         '2016-12-22': -0.32,
         '2016-12-25': -0.2,
         '2016-12-26': -0.26,
         '2016-12-27': -0.26,
-        '2016-12-29': -0.32,
+        '2016-12-29': -0.5, # New value upon revision, old value: -0.32,
         '2016-12-30': -0.38,
         '2016-12-31': -0.26,
         '2017-01-01': -0.38,
         '2017-01-02': -0.32,
         '2017-01-03': -0.32,
         '2017-12-24': -0.2,
-        '2019-12-28': 0.05,
+        '2019-12-28': 0.2, # New value upon revision, old value: 0.05
         '2019-12-31': -0.14,
         '2020-01-02': -0.01,
         '2020-01-03': -0.11,
@@ -3547,11 +3609,14 @@ for date in ML_low_dates:
                 ds2 = ds2.assign(ds2_AC2_rain.rename(vars_rename)[list(vars_rename.values())])
 
             # add ML bump/min/max variables
-            vv_bump = [vv for vv in vv_to_extract if "_MLbump" in vv and "_safer" not in vv]
-            vv_nobump = [vv.split("_MLbump")[0] for vv in vv_to_extract if "MLbump" in vv and "_safer" not in vv]
+            vv_bump = [vv for vv in vv_to_extract if "_MLbump" in vv and "_safer" not in vv and "_strict" not in vv]
+            vv_nobump = [vv.split("_MLbump")[0] for vv in vv_to_extract if "MLbump" in vv and "_safer" not in vv and "_strict" not in vv]
 
             vv_bump_safer = [vv for vv in vv_to_extract if "_MLbump" in vv and "_safer" in vv]
             vv_nobump_safer = [vv.split("_MLbump")[0] for vv in vv_to_extract if "MLbump" in vv and "_safer" in vv]
+
+            vv_bump_strict = [vv for vv in vv_to_extract if "_MLbump" in vv and "_strict" in vv]
+            vv_nobump_strict = [vv.split("_MLbump")[0] for vv in vv_to_extract if "MLbump" in vv and "_strict" in vv]
 
             vv_min = [vv for vv in vv_to_extract if "_MLmin" in vv]
             vv_nomin = [vv.split("_MLmin")[0] for vv in vv_to_extract if "MLmin" in vv]
@@ -3617,7 +3682,7 @@ for date in ML_low_dates:
                 ds2.coords["z_beamtop"] = ds2_beamtop["z"].broadcast_like(ds2["DBZH"]).reset_coords(drop=True)
 
             # add ML height from QVP
-            if "height_ml_new_gia_fromqvp" in vv_to_extract or len(vv_bump_safer) > 0:
+            if "height_ml_new_gia_fromqvp" in vv_to_extract or len(vv_bump_safer) > 0 or len(vv_bump_strict) > 0:
                 for qvp_elev in elev_ml_top_fromqvp:
                     try:
                         qvp_glob = glob.glob("/".join(HTY_file.replace("final_ppis","qvps").split("/")[:-3])+"/*/"+qvp_elev+"/*.nc")
@@ -3642,7 +3707,7 @@ for date in ML_low_dates:
                 if "height_ml_new_gia_fromqvp" not in ds2.coords: # if that did not work, just fill with NaNs
                     ds2.coords["height_ml_new_gia_fromqvp"] = ds2.coords["height_ml_new_gia"]*np.nan
 
-            if "height_ml_bottom_new_gia_fromqvp" in vv_to_extract or len(vv_bump_safer) > 0:
+            if "height_ml_bottom_new_gia_fromqvp" in vv_to_extract or len(vv_bump_safer) > 0 or len(vv_bump_strict) > 0:
                 for qvp_elev in elev_ml_top_fromqvp:
                     try:
                         qvp_glob = glob.glob("/".join(HTY_file.replace("final_ppis","qvps").split("/")[:-3])+"/*/"+qvp_elev+"/*.nc")
@@ -3699,6 +3764,39 @@ for date in ML_low_dates:
                 ds2 = ds2.assign( xr.where(ds2.height_ml_bottom_new_gia_fromqvp.notnull(),
                                            bump_ml.rename(dict(zip(vv_nobump_safer, vv_bump_safer))),
                                            bump_ml_TEMP.rename(dict(zip(vv_nobump_safer, vv_bump_safer))) ) )
+
+            if len(vv_bump_strict) > 0:
+
+                if "range" in vv_nobump_strict:
+                    vv_nobump_strict = ["range_" if x=="range" else x for x in vv_nobump_strict]
+                    ds1 = ds1.assign({"range_": ds1["range"].broadcast_like(ds1.DBZH)})
+                    ds2 = ds2.assign({"range_": ds2["range"].broadcast_like(ds2.DBZH)})
+
+                # for ds1
+                below_ml = ds1[vv_nobump_strict].where(ds1.z < ds1.height_ml_bottom_new_gia_fromqvp).where(ds1.z > ds1.height_ml_bottom_new_gia_fromqvp - 100)
+                above_ml = ds1[vv_nobump_strict].where(ds1.z > ds1.height_ml_new_gia_fromqvp).where(ds1.z < ds1.height_ml_new_gia_fromqvp + 100)
+                below_ml_TEMP = ds1[vv_nobump_strict].where(ds1.TEMP>3).where(ds1.TEMP<3.5).where(~ds1.height_ml_bottom_new_gia_fromqvp.notnull())
+                above_ml_TEMP = ds1[vv_nobump_strict].where(ds1.TEMP<-1).where(ds1.TEMP>-1-0.5).where(~ds1.height_ml_new_gia_fromqvp.notnull())
+
+                bump_ml = above_ml.bfill("range").head(range=1).isel(range=0) - below_ml.ffill("range").tail(range=1).isel(range=0)
+                bump_ml_TEMP = above_ml_TEMP.bfill("range").head(range=1).isel(range=0) - below_ml_TEMP.ffill("range").tail(range=1).isel(range=0)
+
+                ds1 = ds1.assign( xr.where(ds1.height_ml_bottom_new_gia_fromqvp.notnull(),
+                                           bump_ml.rename(dict(zip(vv_nobump_strict, vv_bump_strict))),
+                                           bump_ml_TEMP.rename(dict(zip(vv_nobump_strict, vv_bump_strict))) ) )
+
+                # for ds2 (by definition this will be NaN for the cases we will select, but we still need the variable for completion)
+                below_ml = ds2[vv_nobump_strict].where(ds2.z < ds2.height_ml_bottom_new_gia_fromqvp).where(ds2.z > ds2.height_ml_bottom_new_gia_fromqvp - 100)
+                above_ml = ds2[vv_nobump_strict].where(ds2.z > ds2.height_ml_new_gia_fromqvp).where(ds2.z < ds2.height_ml_new_gia_fromqvp + 100)
+                below_ml_TEMP = ds2[vv_nobump_strict].where(ds2.TEMP>3).where(ds2.TEMP<3.5).where(~ds2.height_ml_bottom_new_gia_fromqvp.notnull())
+                above_ml_TEMP = ds2[vv_nobump_strict].where(ds2.TEMP<-1).where(ds2.TEMP>-1-0.5).where(~ds2.height_ml_new_gia_fromqvp.notnull())
+
+                bump_ml = above_ml.bfill("range").head(range=1).isel(range=0) - below_ml.ffill("range").tail(range=1).isel(range=0)
+                bump_ml_TEMP = above_ml_TEMP.bfill("range").head(range=1).isel(range=0) - below_ml_TEMP.ffill("range").tail(range=1).isel(range=0)
+
+                ds2 = ds2.assign( xr.where(ds2.height_ml_bottom_new_gia_fromqvp.notnull(),
+                                           bump_ml.rename(dict(zip(vv_nobump_strict, vv_bump_strict))),
+                                           bump_ml_TEMP.rename(dict(zip(vv_nobump_strict, vv_bump_strict))) ) )
 
             if len(vv_nomin) > 0 or len(vv_nomax) > 0:
                 # for ds1
@@ -4468,7 +4566,7 @@ print(f"Prob (F-statistic): {results.f_pvalue}")
 # You can also print a comprehensive summary table
 print(results.summary())
 
-#%%% Plot histogram of delta DBZH/ZDR with and without correction
+#%%% Plot histogram of delta DBZH/ZDR with and without correction (also possible for combined plot with selected_ML_high events)
 
 phi = "PHIDP_OC_MASKED"
 dbzh_tg = "ZDR_EC_OC_AC2_rain_WRcorr" # ZDR_EC_OC_AC2_rain, DBZH_AC2_rain
@@ -4477,10 +4575,15 @@ dbzh_ref = "ZDR_EC_OC3_AC2_rain" # ZDR_EC_OC3_AC2_rain, DBZH_AC2_rain
 TEMPm = "TEMPm"
 TEMP = "TEMP"
 
+# repeat for the selected_ML_high cases (or set to None to ignore)
+dbzh_tg_0 = "ZDR_EC_OC_AC_WRcorr" # ZDR_EC_OC_AC2_rain, DBZH_AC2_rain
+dbzh_tg_uncorr_0 = "ZDR_EC_OC" # ZDR_EC_OC_AC2_rain, DBZH_AC2_rain # in case we want to compare to the original values without any correction
+dbzh_ref_0 = "ZDR_EC_OC_AC_WRcorr" # ZDR_EC_OC3_AC2_rain, DBZH_AC2_rain
+
 xax = r"$Δ\mathrm{Z_{DR}}\ [dB]$" # label for the x axis
 unit = re.search(r"\[(.*?)\]", xax).group(1)
 
-varx_range = (0, 19, 1) # start, stop, step # (0.7, 0.98, 0.02)
+varx_range = (5, 19, 1) # start, stop, step # (0.7, 0.98, 0.02)
 
 min_bin_n = 30 # min count of valid values inside bin to be included in the fitting
 
@@ -4514,17 +4617,36 @@ if "_WRcorr" in dbzh_ref:
     # Correct wet-radome timesteps
     var_ref_ = "".join(dbzh_ref.split("_WRcorr"))
     selected_ML_low[dbzh_ref] = []
-    for ti in range(len(selected_ML_low[var_tg_])):
+    for ti in range(len(selected_ML_low[var_ref_])):
         # add to the new variable
         selected_ML_low[dbzh_ref].append((selected_ML_low[var_ref_][ti][0].copy() - zdr_wrc(selected_ML_low["Zm"][ti][0].copy()),
                                          selected_ML_low[var_ref_][ti][1].copy() - zdr_wrc(selected_ML_low["Zm"][ti][1].copy()) ))
+
+if dbzh_tg_0 is not None:
+    if "_WRcorr" in dbzh_tg_0:
+        # Correct wet-radome timesteps
+        var_tg_ = "".join(dbzh_tg_0.split("_WRcorr"))
+        selected_ML_high[dbzh_tg_0] = []
+        for ti in range(len(selected_ML_high[var_tg_])):
+            # add to the new variable
+            selected_ML_high[dbzh_tg_0].append((selected_ML_high[var_tg_][ti][0].copy() - zdr_wrc(selected_ML_high["Zm"][ti][0].copy()),
+                                             selected_ML_high[var_tg_][ti][1].copy() - zdr_wrc(selected_ML_high["Zm"][ti][1].copy()) ))
+
+    if "_WRcorr" in dbzh_ref_0:
+        # Correct wet-radome timesteps
+        var_ref_ = "".join(dbzh_ref_0.split("_WRcorr"))
+        selected_ML_high[dbzh_ref_0] = []
+        for ti in range(len(selected_ML_high[var_ref_])):
+            # add to the new variable
+            selected_ML_high[dbzh_ref_0].append((selected_ML_high[var_ref_][ti][0].copy() - zdr_wrc(selected_ML_high["Zm"][ti][0].copy()),
+                                             selected_ML_high[var_ref_][ti][1].copy() - zdr_wrc(selected_ML_high["Zm"][ti][1].copy()) ))
 
 # ML atten correction based on results
 def mlc(phi_bump):
     phi_bump_ = np.where(phi_bump >= 0, phi_bump, 0)
     return abml*phi_bump_ # change here to adjust coefficients based on results
 
-# extract/build necessary variables
+# extract/build necessary variables (selected_ML_low cases)
 tg_dbzh = np.concat([ d1.flatten() for d1,d2 in selected_ML_low[dbzh_tg] ])
 
 ref_dbzh = np.concat([ d2.flatten() for d1,d2 in selected_ML_low[dbzh_ref] ])
@@ -4624,7 +4746,98 @@ tg_phi_bump = tg_phi_bump[valid]
 
 delta_dbzh_mlc = delta_dbzh - mlc(tg_phi_bump)
 
+# extract/build necessary variables (selected_ML_high cases)
+if dbzh_tg_0 is not None:
+    tg_dbzh_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_high[dbzh_tg_0] ])
+
+    tg_dbzh_uncorr_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_high[dbzh_tg_uncorr_0] ])
+
+    ref_dbzh_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_high[dbzh_ref_0] ])
+
+    tg_phi_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_high[phi] ])
+
+    ref_phi_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_high[phi] ])
+
+    tg_Zm_0 = np.nan_to_num(np.concat([ d1.flatten() for d1,d2 in selected_ML_high["Zm"] ]))
+
+    ref_Zm_0 = np.nan_to_num(np.concat([ d2.flatten() for d1,d2 in selected_ML_high["Zm"] ]))
+
+    tg_height_ml_bot_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["height_ml_bottom_new_gia"] ])
+
+    ref_height_ml_bot_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["height_ml_bottom_new_gia"] ])
+
+    tg_z_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["z"] ])
+
+    ref_z_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["z"] ])
+
+    tg_TEMP_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["TEMP"] ])
+
+    ref_TEMP_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["TEMP"] ])
+
+    tg_RHOHV_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["RHOHV"] ])
+
+    ref_RHOHV_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["RHOHV"] ])
+
+    tg_bca_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["beam_cross_angle"] ])
+
+    ref_bca_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["beam_cross_angle"] ])
+
+    # interpolate and extrapolate the ML heights for each day to fill NaNs
+    tg_height_ml_bot_qvp_0 = [ pd.DataFrame(d1).ffill(axis=1).values for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ]
+
+    ref_height_ml_bot_qvp_0 = [ pd.DataFrame(d2).ffill(axis=1).values for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ]
+
+    for ts in range(len(tg_height_ml_bot_qvp_0)):
+        # fill the NaN height_ml_bot_qvp values from tg with ref and viceversa
+        tg_height_ml_bot_qvp_0[ts][np.isnan(tg_height_ml_bot_qvp_0[ts])] = ref_height_ml_bot_qvp_0[ts][np.isnan(tg_height_ml_bot_qvp_0[ts])]
+        ref_height_ml_bot_qvp_0[ts][np.isnan(ref_height_ml_bot_qvp_0[ts])] = tg_height_ml_bot_qvp_0[ts][np.isnan(ref_height_ml_bot_qvp_0[ts])]
+
+        # remove outliers (median+-std)
+        tg_m = np.nanmedian(tg_height_ml_bot_qvp_0[ts][:,0])
+        tg_std = np.nanstd(tg_height_ml_bot_qvp_0[ts][:,0])
+        tg_height_ml_bot_qvp_0[ts][tg_height_ml_bot_qvp_0[ts] < tg_m-tg_std] = np.nan
+        tg_height_ml_bot_qvp_0[ts][tg_height_ml_bot_qvp_0[ts] > tg_m+tg_std] = np.nan
+        ref_m = np.nanmedian(ref_height_ml_bot_qvp_0[ts][:,0])
+        ref_std = np.nanstd(ref_height_ml_bot_qvp_0[ts][:,0])
+        ref_height_ml_bot_qvp_0[ts][ref_height_ml_bot_qvp_0[ts] < ref_m-ref_std] = np.nan
+        ref_height_ml_bot_qvp_0[ts][ref_height_ml_bot_qvp_0[ts] > ref_m+ref_std] = np.nan
+
+        # Interpolate and extrapolate to fill NaNs
+        tg_height_ml_bot_qvp_0[ts] = pd.DataFrame(tg_height_ml_bot_qvp_0[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+        ref_height_ml_bot_qvp_0[ts] = pd.DataFrame(ref_height_ml_bot_qvp_0[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+
+    # finally, flatten
+    tg_height_ml_bot_qvp_0 = np.concat([ds1.flatten() for ds1 in tg_height_ml_bot_qvp_0])
+    ref_height_ml_bot_qvp_0 = np.concat([ds2.flatten() for ds2 in ref_height_ml_bot_qvp_0])
+
+    # fill remaining NaNs with an arbitrarely high value so it does no undesired filtering
+    tg_height_ml_bot_qvp_0[np.isnan(tg_height_ml_bot_qvp_0)] = 4000
+    ref_height_ml_bot_qvp_0[np.isnan(ref_height_ml_bot_qvp_0)] = 4000
+
+    # filter by valid values according to conditions
+    valid_0 = np.isfinite(tg_dbzh_0) & np.isfinite(ref_dbzh_0) & (np.isfinite(tg_phi_0))\
+            & (tg_phi_0 > varx_range[0])\
+            & (tg_z_0 < tg_height_ml_bot_qvp_0) & (ref_z_0 < ref_height_ml_bot_qvp_0)\
+            & (tg_RHOHV_0 > 0.97) & (ref_RHOHV_0 > 0.97)\
+            & (tg_TEMP_0 > 3) & (ref_TEMP_0 > 3) \
+            & (tg_bca_0 > 135) & (ref_bca_0 > 135)\
+            # & (ref_phi_0<ref_phi_max)
+            # & (ref_Zm_0<Zm_max) & (tg_Zm_0<Zm_max)\
+
+    delta_dbzh_0 = (tg_dbzh_0 - ref_dbzh_0)[valid_0]
+    delta_dbzh_uncorr_0 = (tg_dbzh_uncorr_0 - ref_dbzh_0)[valid_0] # in case we want to compare to the original values without any correction
+
+    # Join both datasets
+
+    delta_dbzh = np.concat((delta_dbzh, delta_dbzh_0))
+    delta_dbzh_uncorr = np.concat((delta_dbzh_uncorr, delta_dbzh_uncorr_0))
+
+    delta_dbzh_mlc = np.concat((delta_dbzh_mlc, delta_dbzh_0))
+
+# --- Initialize plot ---
 fig, ax = plt.subplots(figsize=(4.5, 3.5))
+
+delta_ref = delta_dbzh_uncorr # delta_dbzh or delta_dbzh_uncorr
 
 # --- Config ---
 # bins = np.arange(-15.5, 16.5, 1)  # bin edges
@@ -4633,26 +4846,26 @@ bin_centers = bins[:-1] + np.diff(bins).mean()/2
 bin_width = np.diff(bins).mean()
 
 # --- Compute histograms (as frequency %) ---
-n1, _ = np.histogram(delta_dbzh, bins=bins)
+n1, _ = np.histogram(delta_ref, bins=bins)
 n2, _ = np.histogram(delta_dbzh_mlc, bins=bins)
 
 freq1 = n1 / n1.sum() * 100
 freq2 = n2 / n2.sum() * 100
 
 # --- Stats for legend ---
-mean1 = np.nanmean(delta_dbzh)
-std1  = np.nanstd(delta_dbzh)
-median1 = np.nanmedian(delta_dbzh)
+mean1 = np.nanmean(delta_ref)
+std1  = np.nanstd(delta_ref)
+median1 = np.nanmedian(delta_ref)
 mean2 = np.nanmean(delta_dbzh_mlc)
 std2  = np.nanstd(delta_dbzh_mlc)
 median2 = np.nanmedian(delta_dbzh_mlc)
 
 # --- Plot histograms ---
 ax.bar(bin_centers, freq1, width=bin_width,
-       color="gray", alpha=1.0, label=f"No ML corr.\nMean={mean1:.2f} {unit}\nSt_Dev={std1:.2f} {unit}\nMedian={median1:.2f} {unit}")
+       color="gray", alpha=1.0, label=f"Mean={mean1:.2f} {unit}\nSt_Dev={std1:.2f} {unit}\nMedian={median1:.2f} {unit}")
 ax.bar(bin_centers, freq2, width=bin_width,
        color="#00000000", edgecolor="black", linewidth=0.8,
-       label=f"ML corrected\nMean={mean2:.2f} {unit}\nSt_Dev={std2:.2f} {unit}\nMedian={median2:.2f} {unit}")
+       label=f"Mean={mean2:.2f} {unit}\nSt_Dev={std2:.2f} {unit}\nMedian={median2:.2f} {unit}")
 
 # --- Normal distribution curve fitted to delta_dbzh_mlc ---
 x_dense = np.linspace(bins[0], bins[-1], 300)
