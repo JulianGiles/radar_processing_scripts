@@ -686,24 +686,34 @@ ax.gridlines(draw_labels=[ "bottom", "left"], linewidth=0.5, linestyle=":", colo
 ds1_sel = ds1.sel(time=tsel, method="nearest")[vv]
 ds2_sel = ds2.sel(time=tsel, method="nearest")[vv]
 
+# Set colorbar settings
+ticks = radarmet.visdict14[vv.split("_")[0]]["ticks"]
+cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
+cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
+# norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
+# cmap = "miub2"
+norm = utils.get_discrete_norm(ticks, cmap.N, extend="both")
+
 # Get lon/lat arrays (they should be coordinates after georeferencing)
 # If your datasets have 'lon' and 'lat' coords use them directly;
 # otherwise use wradlib's georef to get them
 ds1_sel.wrl.vis.plot(
     ax=ax,
     crs=proj,           # the CRS the x/y data is in (from get_common_projection)
-    alpha=0.3,
+    alpha=1, #0.3,
     vmin=vmin, vmax=vmax,
     add_colorbar=False,
-    zorder=1
+    zorder=1,
+    cmap=cmap, norm=norm, extend="both"
 )
 pm = ds2_sel.wrl.vis.plot(
     ax=ax,
     crs=proj,
-    alpha=0.3,
+    alpha=1, #0.3,
     vmin=vmin, vmax=vmax,
     add_colorbar=False,
-    zorder=1
+    zorder=1,
+    cmap=cmap, norm=norm, extend="both"
 )
 
 ax.autoscale(enable=False, axis='both', tight=True)
@@ -724,7 +734,7 @@ add_range_circle(ax, lon2, lat2, ds2.range.max().values,
                  facecolor="none", edgecolor="black", linewidth=1, zorder=4)
 
 # --- Colorbar and title ---
-plt.colorbar(pm, ax=ax, label=vv, shrink=0.7)
+plt.colorbar(pm, ax=ax, label=ds1_sel.units, shrink=0.7)
 ax.set_title(f"{vv} {tsel}")
 plt.tight_layout()
 plt.show()
@@ -1082,10 +1092,19 @@ ax.text(dsy_.x[0,0], dsy_.y[0,0]-30, "GZT")
 plt.title(vv+" "+tsel)
 
 #%% Plot initial mask (with zoom and scatter of points)
-dsx_plot = dsx_[vv].where(mask1_ref).sel(time=tsel, method="nearest").where(dsx_["bca"]>bca_min).wrl.vis.plot(alpha=0.5, vmin=-40, vmax=50)
+# Set colorbar settings
+ticks = radarmet.visdict14[vv.split("_")[0]]["ticks"]
+cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
+cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
+# norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
+# cmap = "miub2"
+norm = utils.get_discrete_norm(ticks, cmap.N, extend="both")
+
+
+dsx_plot = dsx_[vv].where(mask1_ref).sel(time=tsel, method="nearest").where(dsx_["bca"]>bca_min).wrl.vis.plot(alpha=0.8, cmap=cmap, norm=norm, extend="both")
 dsx_plot.colorbar.set_label(dsx_[vv].units)
 ax = plt.gca()
-dsy_[vv].where(mask2_ref).sel(time=tsel, method="nearest").where(dsy_["bca"]>bca_min).wrl.vis.plot(ax=ax, alpha=0.5, vmin=-40, vmax=50, xlim=(-7, 3), ylim=(-7, 3), add_colorbar=False)
+dsy_[vv].where(mask2_ref).sel(time=tsel, method="nearest").where(dsy_["bca"]>bca_min).wrl.vis.plot(ax=ax, alpha=0.8, xlim=(-25, -15), ylim=(12, 22), add_colorbar=False, cmap=cmap, norm=norm, extend="both")
 
 plt.gca().set_ylabel("North-south distance from center [km]")
 plt.gca().set_xlabel("West-east distance from center [km]")
@@ -1099,7 +1118,7 @@ y2 = dsy_.y.where(mask2_ref_).sel(time=tsel, method="nearest").where(dsy_["bca"]
 ax.scatter(x1, y1, s=1, marker="o")
 ax.scatter(x2, y2, s=1, c="r", marker="x")
 
-plt.title(vv+" "+tsel)
+plt.title("")
 
 
 #%% Rain path attenuation check
