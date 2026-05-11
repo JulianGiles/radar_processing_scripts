@@ -137,7 +137,8 @@ min_rngs_ZDR = {
 # All items in zdrofffile will be tested in each zdroffdir to load the data.
 zdroffdir = ["/calibration/zdr/VP/", "/calibration/zdr/LR_consistency/", "/calibration/zdr/QVP/",]# "/calibration/zdr/falseQVP/"] # subfolder(s) where to find the zdr offset data
 zdrofffile = ["*zdr_offset_belowML_00*",  "*zdr_offset_below1C_00*", "*zdr_offset_below3C_00*", "*zdr_offset_wholecol_00*",
-              "*zdr_offset_belowML_07*", "*zdr_offset_below1C_07*", "*zdr_offset_below3C_07*",
+              "*zdr_offset_belowML_noWR_0*", "*zdr_offset_below1C_noWR_0*", "*zdr_offset_below3C_noWR_0*",
+              "*zdr_offset_belowML_0*", "*zdr_offset_below1C_0*", "*zdr_offset_below3C_0*",
               "*zdr_offset_belowML_noWR-*", "*zdr_offset_below1C_noWR-*", "*zdr_offset_below3C_noWR-*",
               "*zdr_offset_belowML-*", "*zdr_offset_below1C-*", "*zdr_offset_below3C-*",
               "*zdr_offset_belowML_2*", "*zdr_offset_below1C_2*", "*zdr_offset_below3C_2*", # this line is for boxpol
@@ -145,7 +146,7 @@ zdrofffile = ["*zdr_offset_belowML_00*",  "*zdr_offset_below1C_00*", "*zdr_offse
 
 # like the previous one but for timestep-based correction
 zdrofffile_ts = ["*zdr_offset_belowML_timesteps_00*",  "*zdr_offset_below1C_timesteps_00*", "*zdr_offset_below3C_timesteps_00*", #"*zdr_offset_wholecol_timesteps_00*",
-              "*zdr_offset_belowML_timesteps_07*", "*zdr_offset_below1C_timesteps_07*", "*zdr_offset_below3C_timesteps_07*",
+              "*zdr_offset_belowML_timesteps_0*", "*zdr_offset_below1C_timesteps_0*", "*zdr_offset_below3C_timesteps_0*",
               "*zdr_offset_belowML_timesteps-*", "*zdr_offset_below1C_timesteps-*", "*zdr_offset_below3C_timesteps-*",
               "*zdr_offset_belowML_timesteps_2*", "*zdr_offset_below1C_timesteps_2*", "*zdr_offset_below3C_timesteps_2*", # this line is for boxpol
               ] # pattern to select the appropriate file (careful with the zdr_offset_belowML_timesteps)
@@ -272,6 +273,13 @@ def get_phase_proc_params(path):
         return phase_proc_params["boxpol"]
     else:
         raise ValueError("No default phase_proc_params dictionary could be inferred from path")
+
+# Parameters for attenuation correction
+attenuation_corr_linear_coefs = {
+    "dwd": {"alpha": 0.08, "beta": 0.02, "alphaml": 0.08, "betaml": 0.02},
+    "dmi": {"alpha": 0.14, "beta": 0.025, "alphaml": 0.25, "betaml": 0.025},
+    }
+
 
 # set ERA5 directory
 if os.path.exists("/automount/ags/jgiles/ERA5/hourly/"):
@@ -1038,6 +1046,116 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
         qvps = qvps.assign(assign)
 
     return qvps
+
+#### Calculate beam blockage
+def calc_beam_blockage(ds,
+                        dem_resolution=3,
+                        bw=1.0,
+                        wradlib_token: str = None):
+    """
+    Compute PBB and CBB for a polar radar dataset `ds`.
+
+    Parameters
+    ----------
+    ds : xarray.Dataset or xarray.DataArray
+        Radar data in polar coordinates. Must have dims (azimuth, range) (for one elevation)
+        or (time, azimuth, range) etc  but we only consider one elevation sweep at a time.
+        It must have range, azimuth, and should allow georeferencing via wradlib.
+    dem_resolution : int, default 3
+        Resolution (arc-seconds) for SRTM fetch (1, 3, or 30).
+    bw : float, default 1.0
+        Beam-width scaling (for half power radius).
+    wradlib_token : str, optional
+        WRADLIB Earthdata bearer token (if needed for DEM access).
+
+    Returns
+    -------
+    pbb_da : xarray.DataArray
+      Partial beam blockage fraction (dims: azimuth × range)
+    cbb_da : xarray.DataArray
+      Cumulative beam blockage fraction, same dims
+    """
+
+    # If token is given, set environment (for remote DEM fetch)
+    if wradlib_token is not None:
+        os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = wradlib_token
+
+    # 1. Georeference the radar sweep
+    # Let ds be a 2D sweep (azimuth × range). If it has extra dims, you may select one slice.
+    # Use wradlib’s xarray accessor if available:
+    # e.g., if ds is a Wradlib-xarray object:
+    wgs84 = osr.SpatialReference()
+    wgs84.ImportFromEPSG(4326)
+    ds_geo = ds.pipe(wrl.georef.georeference, crs=wgs84)  # this gives ds with x, y, z coords attached
+
+    # After georeferencing, ds_geo should have coords: x (az, range), y, z (altitude of beam center)
+    # E.g., ds_geo.x.values, ds_geo.y.values, ds_geo.z.values
+
+    xs = ds_geo.x.values     # shape (az, range)
+    ys = ds_geo.y.values
+    zs = ds_geo.z.values     # same shape or broadcastable (beam center altitudes)
+
+    # 2. Determine DEM bounding box from radar footprint
+    # Use wradlib.zonalstats.get_bbox which returns a dict-like:
+    bbox = wrl.zonalstats.get_bbox(xs, ys)
+    # bbox has keys "left", "bottom", "right", "top"
+    left, bottom, right, top = bbox["left"], bbox["bottom"], bbox["right"], bbox["top"]
+
+    # 3. Fetch DEM (SRTM) over that bounding box
+    dem = wrl.io.dem.get_srtm([left, right, bottom, top], resolution=dem_resolution, merge=True)
+
+    # 4. Extract DEM raster arrays and coords
+    rastervalues, rastercoords, dem_proj = wrl.georef.extract_raster_dataset(dem, nodata=-32768.0)
+
+    # 5. Clip DEM to radar bounding box
+    rlimits = (left, bottom, right, top)
+    ind = wrl.util.find_bbox_indices(rastercoords, rlimits)
+    rastercoords_clip = rastercoords[ind[1]:ind[3], ind[0]:ind[2], :]
+    rastervalues_clip = rastervalues[ind[1]:ind[3], ind[0]:ind[2]]
+
+    # 6. Prepare polar grid (x,y) as points for interpolation
+    polcoords = np.dstack((xs, ys))  # shape (az, range, 2)
+
+    # 7. Interpolate DEM heights to the polar coords
+    # The result is the “terrain height under each bin” (shape az × range)
+    # polar_terrain = wrl.ipol.cart_to_irregular_spline(
+    #     rastercoords_clip, rastervalues_clip, polcoords,
+    #     order=3, prefilter=False
+    # )
+
+    # 7. Interpolate DEM heights to the polar coords
+    # Pass the full, unclipped arrays. Coordinates falling outside the
+    # downloaded DEM (i.e., the missing open ocean) will default to 0.0.
+    polar_terrain = wrl.ipol.cart_to_irregular_spline(
+            rastercoords, rastervalues, polcoords,
+            order=3, prefilter=False
+        )
+
+    # 8. Compute beam radius (half power) for each range bin
+    r = ds_geo.range.values   # 1D array (range)
+    beamradius = wrl.util.half_power_radius(r, bw)  # gives 1D array (range,)
+
+    # Broadcast to 2D: for each azimuth replicate beamradius
+    beamradius2d = np.broadcast_to(beamradius, xs.shape)
+
+    # 9. Compute partial beam blockage
+    PBB = wrl.qual.beam_block_frac(polar_terrain, zs, beamradius2d)
+    PBB = np.ma.masked_invalid(PBB)
+
+    # 10. Compute cumulative beam blockage
+    CBB = wrl.qual.cum_beam_block_frac(PBB)
+
+    # 11. Wrap as xarray DataArrays
+    pbb_da = xr.DataArray(PBB.filled(np.nan),
+                          dims=("azimuth", "range"),
+                          coords={"azimuth": ds_geo.azimuth, "range": ds_geo.range},
+                          name="PBB")
+    cbb_da = xr.DataArray(CBB,
+                          dims=("azimuth", "range"),
+                          coords={"azimuth": ds_geo.azimuth, "range": ds_geo.range},
+                          name="CBB")
+
+    return pbb_da, cbb_da
 
 #### Loading ZDR offsets and RHOHV noise corrected
 
