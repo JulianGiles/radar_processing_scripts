@@ -35,6 +35,28 @@ except ModuleNotFoundError:
     import utils
     import radarmet
 
+import dotenv
+secrets_paths =[
+    "/user/jgiles/secrets.env",
+    "/p/home/jusers/giles1/juwels/secrets.env"
+    ]
+for secrets_path in secrets_paths:
+    if os.path.exists(secrets_path):
+        secrets = dotenv.dotenv_values(secrets_path)
+        break
+
+# set earthdata token (this may change, only lasts a few months)
+os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = secrets['EARTHDATA_TOKEN']
+
+wrldata_paths =[
+    "/home/jgiles/wradlib-data-main",
+    "/p/scratch/detectrea2/giles1/wradlib-data-main"
+    ]
+for wrldata_path in wrldata_paths:
+    if os.path.exists(wrldata_path):
+        os.environ['WRADLIB_DATA'] = wrldata_path
+        break
+
 import time
 start_time = time.time()
 
@@ -231,6 +253,17 @@ for ff in files:
 #%% Georeference
     swp = data.pipe(wrl.georef.georeference)
 
+#%% Calculate beam blockage
+    token = secrets['EARTHDATA_TOKEN']
+
+    dem_res = 1
+
+    swp_pbb, swp_cbb = utils.calc_beam_blockage(swp.isel(time=0),
+                                                dem_resolution=dem_res,
+                                                wradlib_token = token)
+
+    swp = swp.assign({"PBB": swp_pbb, "CBB": swp_cbb})
+
 #%% Check variable names and add corrections and calibrations
     min_height = min_hgt+swp["altitude"].values
 
@@ -361,7 +394,9 @@ for ff in files:
 
         # correct WR
         swp = swp.assign({X_ZDR+"_WRC": swp[X_ZDR] - utils.zdr_wr_offset_zm_cuadratic(swp["Zm"]) })
+        swp[X_ZDR+"_WRC"].attrs = swp[X_ZDR].attrs
         X_ZDR = X_ZDR+"_WRC"
+
 
 #%% Correct PHIDP
     ################## Before entropy calculation we need to use the melting layer detection algorithm
@@ -459,8 +494,9 @@ for ff in files:
 
 #%% Compute QVP
     ## Only data with a cross-correlation coefficient ρHV above 0.7 are used to calculate their azimuthal median at all ranges (from Trömel et al 2019).
-    ## Also added further filtering (TH>0, ZDR>-1)
-    ds_qvp_ra, ds_qvp_ra_count = utils.compute_qvp(ds, min_thresh={X_RHO:0.7, X_TH:0, X_ZDR:-1,
+    ## Also added further filtering (TH>0, ZDR>-1, CBB<0.05)
+    ds_qvp_ra, ds_qvp_ra_count = utils.compute_qvp(ds.reset_coords("gr").where(ds["CBB"] < 0.05),
+                                                   min_thresh={X_RHO:0.7, X_TH:0, X_ZDR:-1,
                                                   "SNRH":SNRH_min, "SNRHC":SNRH_min, "SQIH":0.5},
                                   output_count=True)
 
@@ -511,8 +547,19 @@ for ff in files:
 
 #%% Attenuation correction (NOT PROVED THAT IT WORKS NICELY ABOVE THE ML)
     if X_PHI in ds.data_vars:
+        # Set the correction coefficients:
+        # Defaults (for C band):
+        alpha = alphaml = 0.08
+        beta = betaml = 0.02
+
+        # get specific coefficients according to country:
+        try:
+            alpha, beta, alphaml, betaml = utils.attenuation_corr_linear_coefs[country].values()
+        except:
+            warnings.warn("Attenuation correction: specific attenuation correction coefficients could not be determined for country="+country+". Using default coefficients for C-band")
+
         # First we calculate atten correction only in rain, as backup
-        ds = utils.attenuation_corr_linear(ds, alpha = 0.14, beta = 0.025, alphaml = 0, betaml = 0,
+        ds = utils.attenuation_corr_linear(ds, alpha = alpha, beta = beta, alphaml = 0, betaml = 0,
                                            dbzh=X_DBZH,
                                            zdr=["ZDR", "ZDR_EC", "ZDR_EC_OC", "ZDR_EC_OC_WRC", "ZDR_EC_WRC"],
                                            phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
@@ -523,7 +570,7 @@ for ff in files:
         ds = ds.rename({vv: vv+"_rain" for vv in ds.data_vars if "_AC" in vv})
 
         # Then we calculate the atten correction both in rain and the ML (this are the final values used)
-        ds = utils.attenuation_corr_linear(ds, alpha = 0.14, beta = 0.025, alphaml = 0.25, betaml = 0.025,
+        ds = utils.attenuation_corr_linear(ds, alpha = alpha, beta = beta, alphaml = alphaml, betaml = betaml,
                                            dbzh=X_DBZH,
                                            zdr=["ZDR", "ZDR_EC", "ZDR_EC_OC", "ZDR_EC_OC_WRC", "ZDR_EC_WRC"],
                                            phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
@@ -531,7 +578,7 @@ for ff in files:
                                            temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
                                            interpolate_deltabump = True )
 
-        ds_qvp_ra = ds_qvp_ra.assign( utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5})[[vv for vv in ds if "_AC" in vv]] )
+        ds_qvp_ra = ds_qvp_ra.assign( utils.compute_qvp(ds.where(ds["CBB"] < 0.05), min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5})[[vv for vv in ds if "_AC" in vv]] )
         X_DBZH = X_DBZH+"_AC"
         X_ZDR = X_ZDR+"_AC"
 
@@ -568,7 +615,7 @@ for ff in files:
         # Mask KDP_ML_correction with PHIDP_OC_MASKED
         ds["KDP_ML_corrected"] = ds["KDP_ML_corrected"].where(ds[X_PHI+"_MASKED"].notnull())
 
-        ds_qvp_ra = ds_qvp_ra.assign({"KDP_ML_corrected": utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5})["KDP_ML_corrected"]})
+        ds_qvp_ra = ds_qvp_ra.assign({"KDP_ML_corrected": utils.compute_qvp(ds.where(ds["CBB"] < 0.05), min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5})["KDP_ML_corrected"]})
 
         # Correct KDP elevation dependency
         try:
@@ -611,7 +658,7 @@ for ff in files:
                                   X_DBZH="DBZH", X_ZDR=["_".join(X_ZDR.split("_")[:-1]) if "_AC" in X_ZDR else X_ZDR][0],
                                   X_PHI=X_PHI+"_MASKED")
 
-        ds_qvp_ra = ds_qvp_ra.assign( utils.compute_qvp(ds_zphi, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5})[["AH"]] )
+        ds_qvp_ra = ds_qvp_ra.assign( utils.compute_qvp(ds_zphi.where(ds["CBB"] < 0.05), min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5})[["AH"]] )
 
         # filter out values close to the ground
         ds_qvp_ra = ds_qvp_ra.where(ds_qvp_ra["z"]>min_height)
@@ -639,7 +686,7 @@ for ff in files:
         attach_vars = []
         for vv in [X_RHO, X_TH, X_ZDR, "SNRH", "SNRHC", "SQIH"]:
             if vv in ds_zphi: attach_vars.append(vv)
-        ds_qvp_ra = ds_qvp_ra.assign( utils.compute_qvp(xr.merge([retrievals, ds_zphi[attach_vars]]), min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min, "SNRHC":SNRH_min, "SQIH":0.5})[[vv for vv in retrievals.data_vars]] )
+        ds_qvp_ra = ds_qvp_ra.assign( utils.compute_qvp(xr.merge([retrievals, ds_zphi[attach_vars]]).where(ds["CBB"] < 0.05), min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min, "SNRHC":SNRH_min, "SQIH":0.5})[[vv for vv in retrievals.data_vars]] )
 
 #%% Save qvp
     for vv in ds_qvp_ra.data_vars:

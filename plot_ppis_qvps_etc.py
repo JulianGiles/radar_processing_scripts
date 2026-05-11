@@ -57,12 +57,26 @@ except ModuleNotFoundError:
 
 
 import dotenv
+secrets_paths =[
+    "/user/jgiles/secrets.env",
+    "/p/home/jusers/giles1/juwels/secrets.env"
+    ]
+for secrets_path in secrets_paths:
+    if os.path.exists(secrets_path):
+        secrets = dotenv.dotenv_values(secrets_path)
+        break
 
-secrets = dotenv.dotenv_values("/user/jgiles/secrets.env")
-
-os.environ['WRADLIB_DATA'] = '/home/jgiles/wradlib-data-main'
 # set earthdata token (this may change, only lasts a few months)
 os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = secrets['EARTHDATA_TOKEN']
+
+wrldata_paths =[
+    "/home/jgiles/wradlib-data-main",
+    "/p/scratch/detectrea2/giles1/wradlib-data-main"
+    ]
+for wrldata_path in wrldata_paths:
+    if os.path.exists(wrldata_path):
+        os.environ['WRADLIB_DATA'] = wrldata_path
+        break
 
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -186,6 +200,18 @@ elif os.path.exists("/p/largedata2/detectdata/projects/A04/ERA5/hourly/"):
 #### Georeference
 
 ds = ds.pipe(wrl.georef.georeference)
+
+#### Calculate beam blockage
+if not isvolume:
+    token = secrets['EARTHDATA_TOKEN']
+
+    dem_res = 1
+
+    swp_pbb, swp_cbb = utils.calc_beam_blockage(ds.isel(time=0),
+                                                dem_resolution=dem_res,
+                                                wradlib_token = token)
+
+    ds = ds.assign({"PBB": swp_pbb, "CBB": swp_cbb})
 
 #### Define minimum height of usable data
 
@@ -323,6 +349,7 @@ if not isvolume:
 
         # correct WR
         ds = ds.assign({X_ZDR+"_WRC": ds[X_ZDR] - utils.zdr_wr_offset_zm_cuadratic(ds["Zm"]) })
+        ds[X_ZDR+"_WRC"].attrs = ds[X_ZDR].attrs
         X_ZDR = X_ZDR+"_WRC"
 
 #### Phase processing
@@ -421,12 +448,14 @@ for vv in era5_vars_rename.values():
 
 if isvolume:
     print("Computing RD-QVP")
-    ds_qvp = utils.compute_rdqvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5},
+    ds_qvp = utils.compute_rdqvp(ds,
+                                 min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5},
                                  max_range=30000.)
     ds_qvp_for_ml = ds_qvp.copy()
 else:
     print("Computing QVP")
-    ds_qvp, ds_qvp_count = utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5},
+    ds_qvp, ds_qvp_count = utils.compute_qvp(ds.reset_coords("gr").where(ds["CBB"] < 0.05),
+                                             min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5},
                                output_count=True)
     ds_qvp = ds_qvp.assign({"DBZH_qvp_count": ds_qvp_count["DBZH"]})
     ds_qvp_for_ml = ds_qvp.where(ds_qvp_count>20)
@@ -484,8 +513,19 @@ if "height_ml_new_gia" in ds_qvp:
 if not isvolume:
     #### Attenuation correction (NOT PROVED THAT IT WORKS NICELY ABOVE THE ML)
     if X_PHI in ds.data_vars:
+        # Set the correction coefficients:
+        # Defaults (for C band):
+        alpha = alphaml = 0.08
+        beta = betaml = 0.02
+
+        # get specific coefficients according to country:
+        try:
+            alpha, beta, alphaml, betaml = utils.attenuation_corr_linear_coefs[country].values()
+        except:
+            warnings.warn("Attenuation correction: specific attenuation correction coefficients could not be determined for country="+country+". Using default coefficients for C-band")
+
         # First we calculate atten correction only in rain, as backup
-        ds = utils.attenuation_corr_linear(ds, alpha = 0.1, beta = 0.035, alphaml = 0, betaml = 0,
+        ds = utils.attenuation_corr_linear(ds, alpha = alpha, beta = beta, alphaml = 0, betaml = 0,
                                            dbzh="DBZH",
                                            zdr=["ZDR", "ZDR_EC", "ZDR_EC_OC", "ZDR_EC_OC_WRC", "ZDR_EC_WRC"],
                                            phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
@@ -496,7 +536,7 @@ if not isvolume:
         ds = ds.rename({vv: vv+"_rain" for vv in ds.data_vars if "_AC" in vv})
 
         # Then we calculate the atten correction both in rain and the ML (this are the final values used)
-        ds = utils.attenuation_corr_linear(ds, alpha = 0.1, beta = 0.035, alphaml = 0.2, betaml = 0.02,
+        ds = utils.attenuation_corr_linear(ds, alpha = alpha, beta = beta, alphaml = alphaml, betaml = betaml,
                                            dbzh="DBZH",
                                            zdr=["ZDR", "ZDR_EC", "ZDR_EC_OC", "ZDR_EC_OC_WRC", "ZDR_EC_WRC"],
                                            phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
@@ -504,7 +544,7 @@ if not isvolume:
                                            temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
                                            interpolate_deltabump = True )
 
-        ds_qvp = ds_qvp.assign( utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5})[[vv for vv in ds if "_AC" in vv]] )
+        ds_qvp = ds_qvp.assign( utils.compute_qvp(ds.where(ds["CBB"] < 0.05), min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5})[[vv for vv in ds if "_AC" in vv]] )
         X_DBZH = X_DBZH+"_AC"
         X_ZDR = X_ZDR+"_AC"
 
@@ -534,7 +574,7 @@ if not isvolume:
         # Mask KDP_ML_correction with PHIDP_OC_MASKED
         ds["KDP_ML_corrected"] = ds["KDP_ML_corrected"].where(ds[X_PHI+"_MASKED"].notnull())
 
-        ds_qvp = ds_qvp.assign({"KDP_ML_corrected": utils.compute_qvp(ds, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5})["KDP_ML_corrected"]})
+        ds_qvp = ds_qvp.assign({"KDP_ML_corrected": utils.compute_qvp(ds.where(ds["CBB"] < 0.05), min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5})["KDP_ML_corrected"]})
 
     #### Correct KDP elevation dependency
     try:
@@ -576,7 +616,7 @@ ds_zphi = utils.attenuation_corr_zphi(ds , alpha = 0.08, beta = 0.02,
                           X_DBZH="DBZH", X_ZDR=["_".join(X_ZDR.split("_")[:-1]) if "_AC" in X_ZDR else X_ZDR][0],
                           X_PHI=X_PHI+"_MASKED")
 
-ds_qvp = ds_qvp.assign( utils.compute_qvp(ds_zphi, min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5})[["AH"]] )
+ds_qvp = ds_qvp.assign( utils.compute_qvp(ds_zphi.where(ds["CBB"] < 0.05), min_thresh = {X_RHO:0.7, X_TH:0, X_ZDR:-1, "SNRH":SNRH_min,"SNRHC":SNRH_min, "SQIH":0.5})[["AH"]] )
 
 # filter out values close to the ground
 ds_qvp = ds_qvp.where(ds_qvp["z"]>min_height)
@@ -842,43 +882,88 @@ else:
     datasel = ds_qvp.loc[{"time": tsel, "z": slice(0, max_height)}]
 
 # New Colormap
-colors = ["#2B2540", "#4F4580", "#5a77b1",
-          "#84D9C9", "#A4C286", "#ADAA74", "#997648", "#994E37", "#82273C", "#6E0C47", "#410742", "#23002E", "#14101a"]
+
+radar_colors = [
+    "#969696", # < -10          "#1a1a1a" darker
+    "#B5B5B5", # -10 to -5      "#292929" darker
+    "#C9C9C9", # -5 to 0        "#383838" darker
+    "#006A7D", # 0 to 5 (Contrast break at 0)
+    "#007a87", # 5 to 10
+    "#3c8f3e", # 10 to 15 (Start of rain)
+    "#7cb342", # 15 to 20
+    "#c0ca33", # 20 to 25 (Ochre for visibility)
+    "#fbc02d", # 25 to 30 (Gold/Amber)
+    "#ffa726", # 30 to 35
+    "#ff8a65", # 35 to 40
+    "#f06292", # 40 to 45
+    "#A65DB3", # 45 to 50
+    "#90519C"  # > 50
+]
 
 
-mom = "DBZH"
+mom = "ZDR_EC_OC"
 min_entropy_thresh = 0.99
 
 datasel = datasel.assign_coords(z=datasel.z / 1000)
+
+fig = plt.figure(figsize=(6, 3))
+# [left, bottom, width, height]
+# ax = fig.add_axes([0.12, 0.2, 0.65, 0.7])
+# cax = fig.add_axes([0.82, 0.2, 0.03, 0.7])
+ax = fig.add_axes([0.1, 0.18, 0.75, 0.78])
+cax = fig.add_axes([0.89, 0.18, 0.02, 0.78])
 
 try:
     ticks = radarmet.visdict14[mom.split("_")[0]]["ticks"]
     cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
     cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
     # norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
-    cmap = "miub2"
-    norm = utils.get_discrete_norm(ticks, cmap, extend="both")
-    qvp_plot = datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm, figsize=(7,3))
+    # cmap = "miub2"
+    norm = utils.get_discrete_norm(ticks, cmap.N, extend="both")
+    qvp_plot = datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm, extend="both", ax=ax, add_colorbar=False)
 except:
-    qvp_plot = datasel[mom].wrl.plot(x="time", figsize=(7,3))
+    qvp_plot = datasel[mom].wrl.plot(x="time", extend="both", ax=ax, add_colorbar=False)
+
+cb = fig.colorbar(qvp_plot, cax=cax, extend="both")
+
 datasel["min_entropy"].compute().dropna("z", how="all").interpolate_na(dim="z").plot.contourf(
+    ax=ax,
     x="time", levels=[min_entropy_thresh, 1], hatches=["", "XXX", ""], colors=[(1,1,1,0)],
     add_colorbar=False, extend="both")
-qvp_plot.colorbar.set_label(datasel[mom].units)
-plt.gca().xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only the hour in the x-axis
-(datasel["height_ml_new_gia_clean"]/1000).plot(c="black")
-(datasel["height_ml_bottom_new_gia_clean"]/1000).plot(c="black")
-plt.gca().set_ylabel("Height [km a.s.l.]")
+
+# qvp_plot.colorbar.set_label(datasel[mom].units)
+qvp_plot.colorbar.ax.yaxis.set_label_coords(0.5, -0.07) # (x, y) coordinates
+qvp_plot.colorbar.ax.yaxis.label.set(
+    rotation="horizontal",
+    ha="center",
+    va="top",
+    text=datasel[mom].units,
+    # position = (-10000.0, -0.025)
+)
+ax.xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only the hour in the x-axis
+(datasel["height_ml_new_gia_clean"]/1000).plot(ax=ax, c="black")
+(datasel["height_ml_bottom_new_gia_clean"]/1000).plot(ax=ax, c="black")
+ax.set_ylabel("Height [km a.s.l.]")
 
 # # Plot reflectivity as lines to check wet radome effect
-# ax2 = plt.gca().twinx()
-# ds["Zm"].plot(ax=ax2, c="dodgerblue")
-# ax2.yaxis.label.set_color("dodgerblue")
-# ax2.spines['left'].set_position(('outward', 60))
-# ax2.tick_params(axis='y', labelcolor="dodgerblue")  # Add padding to the ticks
-# ax2.yaxis.labelpad = -400  # Add padding to the y-axis label
+# zm_c = "MediumBlue"
+# ax2 = ax.twinx()
+# datasel["Zm"].plot(ax=ax2, c=zm_c)
+# # ax2.spines['left'].set_position(('outward', 60))
+# ax2.tick_params(axis='y', labelcolor=zm_c, direction="in")  # Add padding to the ticks
+# # ax2.yaxis.labelpad = -400  # Add padding to the y-axis label
+# ax2.set_ylabel("dBZ",
+#                color=zm_c,
+#                rotation="horizontal",
+#                ha="center",   # Horizontal alignment
+#                va="top",  # Vertical alignment at the bottom
+#                labelpad=10,
+#                y=0)          # 0 is bottom, 1 is top, 0.5 is center
+# ax2.yaxis.set_label_coords(1, -0.017)
+# # ax2.set_ylim(-60, 30)
+# # ax2.yaxis.set_ticks([0,10, 20], labels=["0", "10", "20"])
 # ax2.set_title("")
-# plt.xlim((datetime.datetime(2015,3,11,6), datetime.datetime(2015,3,11,12)))
+# # plt.xlim((datetime.datetime(2015,3,11,6), datetime.datetime(2015,3,11,12)))
 
 # # Plot zdrcal values
 # ax3 = plt.gca().twinx()
@@ -901,7 +986,9 @@ else:
             except:
                 elevtitle = " "+str(np.round(datasel["elevation"].values, 2))+"°"
 
-plt.title(mom+elevtitle+". "+str(datasel.time.values[0]).split(".")[0])
+#plt.title(mom+elevtitle+". "+str(datasel.time.values[0]).split(".")[0])
+# plt.title("")
+ax.set_title("")
 plt.show()
 plt.close()
 
