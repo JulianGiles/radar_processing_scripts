@@ -37,8 +37,18 @@ except ModuleNotFoundError:
 import time
 start_time = time.time()
 
-realpep_path = "/automount/realpep/"
-
+dwdref_paths =[
+    "/automount/realpep//upload/jgiles/reference_files/reference_dwd_rhohv_nc_file/ras07-90gradstarng01_sweeph5onem_rhohv_nc_00-2015010100042300-pro-10392-hd5",
+    "/p/scratch/detectrea2/giles1/reference_files/reference_dwd_rhohv_nc_file/ras07-90gradstarng01_sweeph5onem_rhohv_nc_00-2015010100042300-pro-10392-hd5"
+    ]
+for dwdref_path in dwdref_paths:
+    if os.path.exists(dwdref_path):
+        dwd_rhohv_nc_reference_file = dwdref_path
+        break
+try:
+    _ = dwd_rhohv_nc_reference_file
+except:
+    raise FileNotFoundError("DWD RHOHV reference file not found")
 #%% Set paths and options
 # paths for testing
 # path="/automount/realpep/upload/jgiles/dwd/2017/2017-09/2017-09-30/tur/vol5minng01/01/*hd5" # for QVPs: /home/jgiles/
@@ -46,8 +56,6 @@ realpep_path = "/automount/realpep/"
 
 path0 = sys.argv[1]
 overwrite = False # overwrite existing files?
-
-dwd_rhohv_nc_reference_file = realpep_path+"/upload/jgiles/reference_files/reference_dwd_rhohv_nc_file/ras07-90gradstarng01_sweeph5onem_rhohv_nc_00-2015010100042300-pro-10392-hd5"
 
 dbzh_names = ["DBZH"] # names to look for the DBZH variable, in order of preference
 rhohv_names = ["RHOHV"] # same but for RHOHV

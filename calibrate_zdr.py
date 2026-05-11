@@ -52,6 +52,30 @@ except ModuleNotFoundError:
     import utils
     import radarmet
 
+import dotenv
+secrets_paths =[
+    "/user/jgiles/secrets.env",
+    "/p/home/jusers/giles1/juwels/secrets.env"
+    ]
+for secrets_path in secrets_paths:
+    if os.path.exists(secrets_path):
+        secrets = dotenv.dotenv_values(secrets_path)
+        break
+
+# set earthdata token (this may change, only lasts a few months)
+try:
+    os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = secrets['EARTHDATA_TOKEN']
+except: raise FileNotFoundError("secrets file not found")
+
+wrldata_paths =[
+    "/home/jgiles/wradlib-data-main",
+    "/p/scratch/detectrea2/giles1/wradlib-data-main"
+    ]
+for wrldata_path in wrldata_paths:
+    if os.path.exists(wrldata_path):
+        os.environ['WRADLIB_DATA'] = wrldata_path
+        break
+
 import time
 start_time = time.time()
 
@@ -235,19 +259,33 @@ for ff in files:
 
     print("processing "+ff)
     if "dwd" in ff:
+        country = "dwd"
         data = utils.load_dwd_preprocessed(ff) # this already loads the first elev available in the files and fixes time coord
 
     elif "dmi" in ff:
+        country = "dmi"
         # data=xr.open_dataset(ff)
         data = utils.load_dmi_preprocessed(ff) # this loads DMI file and flips phidp and fixes time coord
 
     elif "boxpol" in ff:
+        country = "boxpol"
         data=xr.open_mfdataset(ff)
     else:
         raise NotImplementedError("Only DWD or DMI data supported at the moment")
 
     if data.range.diff("range").median() > 750:
         clowres0=True
+
+#%% Calculate beam blockage
+    token = secrets['EARTHDATA_TOKEN']
+
+    dem_res = 1
+
+    pbb, cbb = utils.calc_beam_blockage(data.isel(time=0),
+                                                dem_resolution=dem_res,
+                                                wradlib_token = token)
+
+    data = data.assign({"PBB": pbb, "CBB": cbb})
 
 #%% Load noise corrected RHOHV if available
     for rhoncfile0 in rhoncfile:
@@ -426,7 +464,7 @@ for ff in files:
         # We consider PHIDP<5 to be insignificant attenuation
         # Important to use PHIDP_OC_SMOOTH here because the _MASKED it may be too much masked and we throw away many ZDR values
         data = utils.apply_min_max_thresh(data, {"SNRH":20, "SNRHC":20, "SQIH":0.5},
-                                          {X_PHI+"_OC_SMOOTH": 5}, skipfullna=True)\
+                                          {X_PHI+"_OC_SMOOTH": 5, "CBB":0.05}, skipfullna=True)\
                 .sel(range=slice(min_range_zdr,None))
         try:
             angle = float(data.elevation.mean())
