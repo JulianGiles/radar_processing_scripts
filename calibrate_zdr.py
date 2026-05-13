@@ -223,14 +223,14 @@ for ff in files:
 
         if 2 in calib_types:
             savepath = make_savedir(ff, "LR_consistency")
-            if len(os.listdir(os.path.dirname(savepath))) >= 8: # this number must match the min expected outputs (see how many below)
+            if len(os.listdir(os.path.dirname(savepath))) >= 6: # this number must match the min expected outputs (see how many below)
                 calib_2 = False
         else: calib_2 = False
 
         if 3 in calib_types:
             savepathqvp = make_savedir(ff, "QVP")
             savepathfalseqvp = make_savedir(ff, "falseQVP")
-            if ( len(os.listdir(os.path.dirname(savepathqvp))) >= 12 ): # this number must match the min expected outputs (see how many below)
+            if ( len(os.listdir(os.path.dirname(savepathqvp))) >= 6 ): # this number must match the min expected outputs (see how many below)
                 # to include non-QVP calculations add:  and ( len(os.listdir(os.path.dirname(savepathfalseqvp))) >= 12 )
                 calib_3 = False
         else: calib_3 = False
@@ -585,22 +585,22 @@ for ff in files:
                 filename = ("zdr_offset_belowML_noWR").join(savepath.split(separator))
                 zdr_offset.to_netcdf(filename)
 
-                # Calculate offset below ML for full timespan with only wet radome
-                try:
-                    zdr_offset = utils.zhzdr_lr_consistency(data.sel(time=data.time.where(data["Zm"]>Zm_WR, drop=True)),
-                                                            zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO,
-                                                            mlbottom="height_ml_bottom_new_gia_clean",
-                                                            min_h=min_height, timemode="all", band=band)
+                # # Calculate offset below ML for full timespan with only wet radome
+                # try:
+                #     zdr_offset = utils.zhzdr_lr_consistency(data.sel(time=data.time.where(data["Zm"]>Zm_WR, drop=True)),
+                #                                             zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO,
+                #                                             mlbottom="height_ml_bottom_new_gia_clean",
+                #                                             min_h=min_height, timemode="all", band=band)
 
-                    # Copy encodings
-                    zdr_offset.encoding = data[X_ZDR].encoding
-                except: # if the above fails because there are no timesteps, just take the previous one and make it NaN
-                    zdr_offset = (zdr_offset*np.nan)
+                #     # Copy encodings
+                #     zdr_offset.encoding = data[X_ZDR].encoding
+                # except: # if the above fails because there are no timesteps, just take the previous one and make it NaN
+                #     zdr_offset = (zdr_offset*np.nan)
 
-                # save the arrays
-                savepath = make_savedir(ff, "LR_consistency")
-                filename = ("zdr_offset_belowML_WR").join(savepath.split(separator))
-                zdr_offset.to_netcdf(filename)
+                # # save the arrays
+                # savepath = make_savedir(ff, "LR_consistency")
+                # filename = ("zdr_offset_belowML_WR").join(savepath.split(separator))
+                # zdr_offset.to_netcdf(filename)
 
             # Calculate offset below 1 degree C per timestep
             zdr_offset = utils.zhzdr_lr_consistency(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=1, min_h=min_height, timemode="step", band=band)
@@ -641,22 +641,22 @@ for ff in files:
             filename = ("zdr_offset_below1C_noWR").join(savepath.split(separator))
             zdr_offset.to_netcdf(filename)
 
-            # Calculate offset below 1 degree C for full timespan with only wet radome
-            try:
-                zdr_offset = utils.zhzdr_lr_consistency(data.sel(time=data.time.where(data["Zm"]>Zm_WR, drop=True)),
-                                                        zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO,
-                                                        mlbottom=1,
-                                                        min_h=min_height, timemode="all", band=band)
+            # # Calculate offset below 1 degree C for full timespan with only wet radome
+            # try:
+            #     zdr_offset = utils.zhzdr_lr_consistency(data.sel(time=data.time.where(data["Zm"]>Zm_WR, drop=True)),
+            #                                             zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO,
+            #                                             mlbottom=1,
+            #                                             min_h=min_height, timemode="all", band=band)
 
-                # Copy encodings
-                zdr_offset.encoding = data[X_ZDR].encoding
-            except: # if the above fails because there are no timesteps, just take the previous one and make it NaN
-                zdr_offset = (zdr_offset*np.nan)
+            #     # Copy encodings
+            #     zdr_offset.encoding = data[X_ZDR].encoding
+            # except: # if the above fails because there are no timesteps, just take the previous one and make it NaN
+            #     zdr_offset = (zdr_offset*np.nan)
 
-            # save the arrays
-            savepath = make_savedir(ff, "LR_consistency")
-            filename = ("zdr_offset_below1C_WR").join(savepath.split(separator))
-            zdr_offset.to_netcdf(filename)
+            # # save the arrays
+            # savepath = make_savedir(ff, "LR_consistency")
+            # filename = ("zdr_offset_below1C_WR").join(savepath.split(separator))
+            # zdr_offset.to_netcdf(filename)
 
         if 3 in calib_types and calib_3:
             # We ask for at least 3 km of consecutive ZDR values in each QVP to be included in the calculation
@@ -689,49 +689,50 @@ for ff in files:
                         filename = ("zdr_offset_belowML"+fn_app).join(savepath.split(separator))
                         zdr_offset.to_netcdf(filename)
 
-                        # Calculate offset below ML without wet radome
-                        try:
-                            zdr_offset = utils.zdr_offset_detection_qvps(data.sel(time=data.time.where(data["Zm"]<Zm_WR, drop=True)),
-                                                                         zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, azmed=azmed,
-                                                                         mlbottom="height_ml_bottom_new_gia_clean",
-                                                                        min_h=min_height, timemode=timemode, minbins=minbins).compute()
+                        # Calculate offset below ML without wet radome (only for "all")
+                        if timemode == "all":
+                            try:
+                                zdr_offset = utils.zdr_offset_detection_qvps(data.sel(time=data.time.where(data["Zm"]<Zm_WR, drop=True)),
+                                                                             zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, azmed=azmed,
+                                                                             mlbottom="height_ml_bottom_new_gia_clean",
+                                                                            min_h=min_height, timemode=timemode, minbins=minbins).compute()
 
-                            # Copy encodings
-                            zdr_offset["ZDR_offset"].encoding = data[X_ZDR].encoding
-                            zdr_offset["ZDR_max_from_offset"].encoding = data[X_ZDR].encoding
-                            zdr_offset["ZDR_min_from_offset"].encoding = data[X_ZDR].encoding
-                            zdr_offset["ZDR_std_from_offset"].encoding = data[X_ZDR].encoding
-                            zdr_offset["ZDR_sem_from_offset"].encoding = data[X_RHO].encoding
-                        except: # if the above fails because there are no timesteps, just take the previous one and make it NaN
-                            zdr_offset = (zdr_offset*np.nan)
+                                # Copy encodings
+                                zdr_offset["ZDR_offset"].encoding = data[X_ZDR].encoding
+                                zdr_offset["ZDR_max_from_offset"].encoding = data[X_ZDR].encoding
+                                zdr_offset["ZDR_min_from_offset"].encoding = data[X_ZDR].encoding
+                                zdr_offset["ZDR_std_from_offset"].encoding = data[X_ZDR].encoding
+                                zdr_offset["ZDR_sem_from_offset"].encoding = data[X_RHO].encoding
+                            except: # if the above fails because there are no timesteps, just take the previous one and make it NaN
+                                zdr_offset = (zdr_offset*np.nan)
 
-                        # save the arrays
-                        if azmed: savepath = make_savedir(ff, "QVP")
-                        else: savepath = make_savedir(ff, "falseQVP")
-                        filename = ("zdr_offset_belowML_noWR"+fn_app).join(savepath.split(separator))
-                        zdr_offset.to_netcdf(filename)
+                            # save the arrays
+                            if azmed: savepath = make_savedir(ff, "QVP")
+                            else: savepath = make_savedir(ff, "falseQVP")
+                            filename = ("zdr_offset_belowML_noWR"+fn_app).join(savepath.split(separator))
+                            zdr_offset.to_netcdf(filename)
 
-                        # Calculate offset below ML with only wet radome
-                        try:
-                            zdr_offset = utils.zdr_offset_detection_qvps(data.sel(time=data.time.where(data["Zm"]>Zm_WR, drop=True)),
-                                                                         zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, azmed=azmed,
-                                                                         mlbottom="height_ml_bottom_new_gia_clean",
-                                                                        min_h=min_height, timemode=timemode, minbins=minbins).compute()
+                        # # Calculate offset below ML with only wet radome
+                        # try:
+                        #     zdr_offset = utils.zdr_offset_detection_qvps(data.sel(time=data.time.where(data["Zm"]>Zm_WR, drop=True)),
+                        #                                                  zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, azmed=azmed,
+                        #                                                  mlbottom="height_ml_bottom_new_gia_clean",
+                        #                                                 min_h=min_height, timemode=timemode, minbins=minbins).compute()
 
-                            # Copy encodings
-                            zdr_offset["ZDR_offset"].encoding = data[X_ZDR].encoding
-                            zdr_offset["ZDR_max_from_offset"].encoding = data[X_ZDR].encoding
-                            zdr_offset["ZDR_min_from_offset"].encoding = data[X_ZDR].encoding
-                            zdr_offset["ZDR_std_from_offset"].encoding = data[X_ZDR].encoding
-                            zdr_offset["ZDR_sem_from_offset"].encoding = data[X_RHO].encoding
-                        except: # if the above fails because there are no timesteps, just take the previous one and make it NaN
-                            zdr_offset = (zdr_offset*np.nan)
+                        #     # Copy encodings
+                        #     zdr_offset["ZDR_offset"].encoding = data[X_ZDR].encoding
+                        #     zdr_offset["ZDR_max_from_offset"].encoding = data[X_ZDR].encoding
+                        #     zdr_offset["ZDR_min_from_offset"].encoding = data[X_ZDR].encoding
+                        #     zdr_offset["ZDR_std_from_offset"].encoding = data[X_ZDR].encoding
+                        #     zdr_offset["ZDR_sem_from_offset"].encoding = data[X_RHO].encoding
+                        # except: # if the above fails because there are no timesteps, just take the previous one and make it NaN
+                        #     zdr_offset = (zdr_offset*np.nan)
 
-                        # save the arrays
-                        if azmed: savepath = make_savedir(ff, "QVP")
-                        else: savepath = make_savedir(ff, "falseQVP")
-                        filename = ("zdr_offset_belowML_WR"+fn_app).join(savepath.split(separator))
-                        zdr_offset.to_netcdf(filename)
+                        # # save the arrays
+                        # if azmed: savepath = make_savedir(ff, "QVP")
+                        # else: savepath = make_savedir(ff, "falseQVP")
+                        # filename = ("zdr_offset_belowML_WR"+fn_app).join(savepath.split(separator))
+                        # zdr_offset.to_netcdf(filename)
 
                     # calculate offset below 1 degree C
                     zdr_offset = utils.zdr_offset_detection_qvps(data, zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=1, azmed=azmed,
@@ -750,47 +751,48 @@ for ff in files:
                     filename = ("zdr_offset_below1C"+fn_app).join(savepath.split(separator))
                     zdr_offset.to_netcdf(filename)
 
-                    # calculate offset below 1 degree C without wet radome
-                    try:
-                        zdr_offset = utils.zdr_offset_detection_qvps(data.sel(time=data.time.where(data["Zm"]<Zm_WR, drop=True)),
-                                                                     zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=1, azmed=azmed,
-                                                                    min_h=min_height, timemode=timemode, minbins=minbins).compute()
+                    # calculate offset below 1 degree C without wet radome (only for "all")
+                    if timemode == "all":
+                        try:
+                            zdr_offset = utils.zdr_offset_detection_qvps(data.sel(time=data.time.where(data["Zm"]<Zm_WR, drop=True)),
+                                                                         zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=1, azmed=azmed,
+                                                                        min_h=min_height, timemode=timemode, minbins=minbins).compute()
 
-                        # Copy encodings
-                        zdr_offset["ZDR_offset"].encoding = data[X_ZDR].encoding
-                        zdr_offset["ZDR_max_from_offset"].encoding = data[X_ZDR].encoding
-                        zdr_offset["ZDR_min_from_offset"].encoding = data[X_ZDR].encoding
-                        zdr_offset["ZDR_std_from_offset"].encoding = data[X_ZDR].encoding
-                        zdr_offset["ZDR_sem_from_offset"].encoding = data[X_RHO].encoding
-                    except: # if the above fails because there are no timesteps, just take the previous one and make it NaN
-                        zdr_offset = (zdr_offset*np.nan)
+                            # Copy encodings
+                            zdr_offset["ZDR_offset"].encoding = data[X_ZDR].encoding
+                            zdr_offset["ZDR_max_from_offset"].encoding = data[X_ZDR].encoding
+                            zdr_offset["ZDR_min_from_offset"].encoding = data[X_ZDR].encoding
+                            zdr_offset["ZDR_std_from_offset"].encoding = data[X_ZDR].encoding
+                            zdr_offset["ZDR_sem_from_offset"].encoding = data[X_RHO].encoding
+                        except: # if the above fails because there are no timesteps, just take the previous one and make it NaN
+                            zdr_offset = (zdr_offset*np.nan)
 
-                    # save the arrays
-                    if azmed: savepath = make_savedir(ff, "QVP")
-                    else: savepath = make_savedir(ff, "falseQVP")
-                    filename = ("zdr_offset_below1C_noWR"+fn_app).join(savepath.split(separator))
-                    zdr_offset.to_netcdf(filename)
+                        # save the arrays
+                        if azmed: savepath = make_savedir(ff, "QVP")
+                        else: savepath = make_savedir(ff, "falseQVP")
+                        filename = ("zdr_offset_below1C_noWR"+fn_app).join(savepath.split(separator))
+                        zdr_offset.to_netcdf(filename)
 
-                    # calculate offset below 1 degree C with only wet radome
-                    try:
-                        zdr_offset = utils.zdr_offset_detection_qvps(data.sel(time=data.time.where(data["Zm"]>Zm_WR, drop=True)),
-                                                                     zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=1, azmed=azmed,
-                                                                    min_h=min_height, timemode=timemode, minbins=minbins).compute()
+                    # # calculate offset below 1 degree C with only wet radome
+                    # try:
+                    #     zdr_offset = utils.zdr_offset_detection_qvps(data.sel(time=data.time.where(data["Zm"]>Zm_WR, drop=True)),
+                    #                                                  zdr=X_ZDR, dbzh=X_DBZH, rhohv=X_RHO, mlbottom=1, azmed=azmed,
+                    #                                                 min_h=min_height, timemode=timemode, minbins=minbins).compute()
 
-                        # Copy encodings
-                        zdr_offset["ZDR_offset"].encoding = data[X_ZDR].encoding
-                        zdr_offset["ZDR_max_from_offset"].encoding = data[X_ZDR].encoding
-                        zdr_offset["ZDR_min_from_offset"].encoding = data[X_ZDR].encoding
-                        zdr_offset["ZDR_std_from_offset"].encoding = data[X_ZDR].encoding
-                        zdr_offset["ZDR_sem_from_offset"].encoding = data[X_RHO].encoding
-                    except: # if the above fails because there are no timesteps, just take the previous one and make it NaN
-                        zdr_offset = (zdr_offset*np.nan)
+                    #     # Copy encodings
+                    #     zdr_offset["ZDR_offset"].encoding = data[X_ZDR].encoding
+                    #     zdr_offset["ZDR_max_from_offset"].encoding = data[X_ZDR].encoding
+                    #     zdr_offset["ZDR_min_from_offset"].encoding = data[X_ZDR].encoding
+                    #     zdr_offset["ZDR_std_from_offset"].encoding = data[X_ZDR].encoding
+                    #     zdr_offset["ZDR_sem_from_offset"].encoding = data[X_RHO].encoding
+                    # except: # if the above fails because there are no timesteps, just take the previous one and make it NaN
+                    #     zdr_offset = (zdr_offset*np.nan)
 
-                    # save the arrays
-                    if azmed: savepath = make_savedir(ff, "QVP")
-                    else: savepath = make_savedir(ff, "falseQVP")
-                    filename = ("zdr_offset_below1C_WR"+fn_app).join(savepath.split(separator))
-                    zdr_offset.to_netcdf(filename)
+                    # # save the arrays
+                    # if azmed: savepath = make_savedir(ff, "QVP")
+                    # else: savepath = make_savedir(ff, "falseQVP")
+                    # filename = ("zdr_offset_below1C_WR"+fn_app).join(savepath.split(separator))
+                    # zdr_offset.to_netcdf(filename)
 
 #%% print how much time did it take
 total_time = time.time() - start_time
