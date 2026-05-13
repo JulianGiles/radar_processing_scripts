@@ -55,29 +55,6 @@ except ModuleNotFoundError:
     import radarmet
     # import colormap_generator
 
-
-import dotenv
-secrets_paths =[
-    "/user/jgiles/secrets.env",
-    "/p/home/jusers/giles1/juwels/secrets.env"
-    ]
-for secrets_path in secrets_paths:
-    if os.path.exists(secrets_path):
-        secrets = dotenv.dotenv_values(secrets_path)
-        break
-
-# set earthdata token (this may change, only lasts a few months)
-os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = secrets['EARTHDATA_TOKEN']
-
-wrldata_paths =[
-    "/home/jgiles/wradlib-data-main",
-    "/p/scratch/detectrea2/giles1/wradlib-data-main"
-    ]
-for wrldata_path in wrldata_paths:
-    if os.path.exists(wrldata_path):
-        os.environ['WRADLIB_DATA'] = wrldata_path
-        break
-
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
@@ -157,15 +134,20 @@ if "dwd" in ff and "vol5minng01" in ff:
 if "ANK" in ff:
     min_hgt = min_hgts["ANK"]
     min_range = min_rngs["ANK"]
+    loc = "ank"
 if "GZT" in ff:
     min_hgt = min_hgts["GZT"]
     min_range = min_rngs["GZT"]
+    loc = "gzt"
 if "AFY" in ff:
     min_range = min_rngs["AFY"]
+    loc = "afy"
 if "SVS" in ff:
     min_range = min_rngs["SVS"]
+    loc = "svs"
 if "HTY" in ff:
     min_range = min_rngs["HTY"]
+    loc = "hty"
 
 if type(min_range) == dict:
     for yy in min_range.keys():
@@ -203,13 +185,16 @@ ds = ds.pipe(wrl.georef.georeference)
 
 #### Calculate beam blockage
 if not isvolume:
-    token = secrets['EARTHDATA_TOKEN']
+    try: # try to use pre-computed DEM
+        dem_path = os.path.join(os.environ['WRADLIB_DATA'], f"geo/dem1_{loc}.tif")
+    except:
+        dem_path = None
 
     dem_res = 1
 
     swp_pbb, swp_cbb = utils.calc_beam_blockage(ds.isel(time=0),
                                                 dem_resolution=dem_res,
-                                                wradlib_token = token)
+                                                dem_path = dem_path)
 
     ds = ds.assign({"PBB": swp_pbb, "CBB": swp_cbb})
 

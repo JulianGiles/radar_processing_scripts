@@ -31,7 +31,29 @@ import time
 try: import pyinterp
 except: None
 from scipy.spatial import KDTree
-import re
+from osgeo import gdal
+
+import dotenv
+secrets_paths =[
+    "/user/jgiles/secrets.env",
+    "/p/home/jusers/giles1/juwels/secrets.env"
+    ]
+for secrets_path in secrets_paths:
+    if os.path.exists(secrets_path):
+        secrets = dotenv.dotenv_values(secrets_path)
+        break
+
+# set earthdata token (this may change, only lasts a few months)
+os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = secrets['EARTHDATA_TOKEN']
+
+wrldata_paths =[
+    "/home/jgiles/wradlib-data-main",
+    "/p/scratch/detectrea2/giles1/wradlib-data-main"
+    ]
+for wrldata_path in wrldata_paths:
+    if os.path.exists(wrldata_path):
+        os.environ['WRADLIB_DATA'] = wrldata_path
+        break
 
 #### Helper functions and definitions
 
@@ -1048,8 +1070,65 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
     return qvps
 
 #### Calculate beam blockage
+
+def compute_dem(ds,
+                dem_resolution=3,
+                wradlib_token: str = None,
+                savepath = os.path.join(os.environ['WRADLIB_DATA'], "geo/test_dem.tif")):
+    """
+    Compute the DEM and save it to a file. Can be then passed to calc_beam_blockage
+    to avoid checking tile files and/or fetching them from the internet. By default
+    saves the DEM in the wradlib-data folder.
+
+    Parameters
+    ----------
+    ds : xarray.Dataset or xarray.DataArray
+        Radar data in polar coordinates. Must have dims (azimuth, range) (for one elevation)
+        or (time, azimuth, range) etc  but we only consider one elevation sweep at a time.
+        It must have range, azimuth, and should allow georeferencing via wradlib.
+    dem_resolution : int, default 3
+        Resolution (arc-seconds) for SRTM fetch (1, 3, or 30).
+    wradlib_token : str, optional
+        WRADLIB Earthdata bearer token (if needed for DEM access).
+
+    Returns
+    -------
+    None
+    """
+    # If token is given, set environment (for remote DEM fetch)
+    if wradlib_token is not None:
+        os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = wradlib_token
+
+    # 1. Georeference the radar sweep
+    # Let ds be a 2D sweep (azimuth × range). If it has extra dims, you may select one slice.
+    # Use wradlib’s xarray accessor if available:
+    # e.g., if ds is a Wradlib-xarray object:
+    wgs84 = osr.SpatialReference()
+    wgs84.ImportFromEPSG(4326)
+    ds_geo = ds.pipe(wrl.georef.georeference, crs=wgs84)  # this gives ds with x, y, z coords attached
+
+    # After georeferencing, ds_geo should have coords: x (az, range), y, z (altitude of beam center)
+    # E.g., ds_geo.x.values, ds_geo.y.values, ds_geo.z.values
+
+    xs = ds_geo.x.values     # shape (az, range)
+    ys = ds_geo.y.values
+
+    # 2. Determine DEM bounding box from radar footprint
+    # Use wradlib.zonalstats.get_bbox which returns a dict-like:
+    bbox = wrl.zonalstats.get_bbox(xs, ys)
+    # bbox has keys "left", "bottom", "right", "top"
+    left, bottom, right, top = bbox["left"], bbox["bottom"], bbox["right"], bbox["top"]
+
+    # 3. Fetch DEM (SRTM) over that bounding box
+    dem = wrl.io.dem.get_srtm([left, right, bottom, top], resolution=dem_resolution, merge=True)
+
+    # 4. Save DEM to file
+    gdal.Translate(savepath, dem, format="GTiff")
+
+
 def calc_beam_blockage(ds,
                         dem_resolution=3,
+                        dem_path=None,
                         bw=1.0,
                         wradlib_token: str = None):
     """
@@ -1063,6 +1142,9 @@ def calc_beam_blockage(ds,
         It must have range, azimuth, and should allow georeferencing via wradlib.
     dem_resolution : int, default 3
         Resolution (arc-seconds) for SRTM fetch (1, 3, or 30).
+    dem_path : str
+        Path to a GeoTIFF file containing a pre-calculated DEM. If provided,
+        skip the DEM construction and use the provided DEM directly.
     bw : float, default 1.0
         Beam-width scaling (for half power radius).
     wradlib_token : str, optional
@@ -1101,8 +1183,11 @@ def calc_beam_blockage(ds,
     # bbox has keys "left", "bottom", "right", "top"
     left, bottom, right, top = bbox["left"], bbox["bottom"], bbox["right"], bbox["top"]
 
-    # 3. Fetch DEM (SRTM) over that bounding box
-    dem = wrl.io.dem.get_srtm([left, right, bottom, top], resolution=dem_resolution, merge=True)
+    # 3. Check if DEM was provided or fetch DEM (SRTM) over the bounding box
+    if dem_path is not None:
+        dem = wrl.io.open_raster(dem_path)
+    else:
+        dem = wrl.io.dem.get_srtm([left, right, bottom, top], resolution=dem_resolution, merge=True)
 
     # 4. Extract DEM raster arrays and coords
     rastervalues, rastercoords, dem_proj = wrl.georef.extract_raster_dataset(dem, nodata=-32768.0)

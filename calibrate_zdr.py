@@ -52,30 +52,6 @@ except ModuleNotFoundError:
     import utils
     import radarmet
 
-import dotenv
-secrets_paths =[
-    "/user/jgiles/secrets.env",
-    "/p/home/jusers/giles1/juwels/secrets.env"
-    ]
-for secrets_path in secrets_paths:
-    if os.path.exists(secrets_path):
-        secrets = dotenv.dotenv_values(secrets_path)
-        break
-
-# set earthdata token (this may change, only lasts a few months)
-try:
-    os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = secrets['EARTHDATA_TOKEN']
-except: raise FileNotFoundError("secrets file not found")
-
-wrldata_paths =[
-    "/home/jgiles/wradlib-data-main",
-    "/p/scratch/detectrea2/giles1/wradlib-data-main"
-    ]
-for wrldata_path in wrldata_paths:
-    if os.path.exists(wrldata_path):
-        os.environ['WRADLIB_DATA'] = wrldata_path
-        break
-
 import time
 start_time = time.time()
 
@@ -113,19 +89,24 @@ if "ANK" in path0:
     min_hgt = min_hgts["ANK"]
     min_range = min_rngs["ANK"]
     min_range_zdr = min_rngs_zdr["ANK"]
+    loc = "ank"
 if "GZT" in path0:
     min_hgt = min_hgts["GZT"]
     min_range = min_rngs["GZT"]
     min_range_zdr = min_rngs_zdr["GZT"]
+    loc = "gzt"
 if "AFY" in path0:
     min_range = min_rngs["AFY"]
     min_range_zdr = min_rngs_zdr["AFY"]
+    loc = "afy"
 if "SVS" in path0:
     min_range = min_rngs["SVS"]
     min_range_zdr = min_rngs_zdr["SVS"]
+    loc = "svs"
 if "HTY" in path0:
     min_range = min_rngs["HTY"]
     min_range_zdr = min_rngs_zdr["HTY"]
+    loc = "hty"
 
 if type(min_range) == dict:
     for yy in min_range.keys():
@@ -277,13 +258,17 @@ for ff in files:
         clowres0=True
 
 #%% Calculate beam blockage
-    token = secrets['EARTHDATA_TOKEN']
+    try: # try to use pre-computed DEM
+        dem_path = os.path.join(os.environ['WRADLIB_DATA'], f"geo/dem1_{loc}.tif")
+    except:
+        dem_path = None
 
     dem_res = 1
 
     pbb, cbb = utils.calc_beam_blockage(data.isel(time=0),
                                                 dem_resolution=dem_res,
-                                                wradlib_token = token)
+                                                dem_path=dem_path
+                                                )
 
     data = data.assign({"PBB": pbb, "CBB": cbb})
 
