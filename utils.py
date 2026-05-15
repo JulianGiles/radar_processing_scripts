@@ -444,7 +444,7 @@ def reduce_duplicate_timesteps(ds):
                                         count+=1
 
                 # Merge all variables into a single dataset
-                reduced_vars_ds = xr.merge(reduced_vars)
+                reduced_vars_ds = xr.merge(reduced_vars, compat='no_conflicts')
 
                 # Add the current timestep data to the new dataset
                 ds_reduced = xr.concat([ds_reduced, reduced_vars_ds], dim="time")
@@ -542,7 +542,7 @@ def unfold_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, phidp_lim
 
                         # compute also the mode (most frequent value) of the whole distribution
                         ds_phi_hist = histogram(ds_phi, bins=np.arange(-180, 184, 4), block_size=None) # block_size=None to avoid a bug
-                        ds_phi_mode = ds_phi_hist[ds_phi_hist.argmax().compute()][X_PHI+"_bin"].values
+                        ds_phi_mode = ds_phi_hist[np.argmax(ds_phi_hist.values)][X_PHI+"_bin"].values
 
                         # if the mode is < phidp_min and the count of valid phidp values
                         # between 0-90 degrees is greater than the count between 90-180
@@ -863,7 +863,7 @@ def load_dwd_raw(filepath):
         sys.exit("Script terminated early. "+date+" "+mom+": Error opening files. Some file is corrupt or truncated.")
 
     # merge all moments
-    return xr.merge(vardict.values())
+    return xr.merge(vardict.values(), compat='no_conflicts')
 
 def load_dmi_preprocessed(filepath):
     """
@@ -1211,10 +1211,16 @@ def calc_beam_blockage(ds,
     # 7. Interpolate DEM heights to the polar coords
     # Pass the full, unclipped arrays. Coordinates falling outside the
     # downloaded DEM (i.e., the missing open ocean) will default to 0.0.
-    polar_terrain = wrl.ipol.cart_to_irregular_spline(
-            rastercoords, rastervalues, polcoords,
-            order=3, prefilter=False
-        )
+    try:
+        polar_terrain = wrl.ipol.map_coordinates(
+                rastercoords, rastervalues, polcoords,
+                order=3, prefilter=False
+            )
+    except AttributeError: # fallback to old method
+        polar_terrain = wrl.ipol.cart_to_irregular_spline(
+                rastercoords, rastervalues, polcoords,
+                order=3, prefilter=False
+            )
 
     # 8. Compute beam radius (half power) for each range bin
     r = ds_geo.range.values   # 1D array (range)
@@ -1460,9 +1466,7 @@ def load_best_ZDR_offset(ds, X_ZDR, zdr_off_paths={}, daily_zdr_off_paths={},
             for zdroffv in daily_zdr_off_paths[zdroff]:
                 try:
                     daily_zdr_off[zdroff].append( xr.open_mfdataset(zdroffv) )
-                    try:
-                        _ = float(daily_zdr_off[zdroff][-1][zdr_off_name])
-                    except TypeError:
+                    if len(daily_zdr_off[zdroff][-1][zdr_off_name]) > 1:
                         raise TypeError("load_best_ZDR_offset: daily offset has more than one value: "+zdroffv)
                 except:
                     warnings.warn("load_best_ZDR_offset: unable to load "+zdroffv)
@@ -1927,7 +1931,7 @@ def Entropy_timesteps_over_azimuth_different_vars_schneller(ds, n_az=360, zhlin=
 
 
 
-    entropy_all_xr = xr.merge([entropy_zhlin, entropy_zdrlin, entropy_RHOHV, entropy_KDP ])
+    entropy_all_xr = xr.merge([entropy_zhlin, entropy_zdrlin, entropy_RHOHV, entropy_KDP ], compat='no_conflicts')
 
     return entropy_all_xr
 
@@ -1983,7 +1987,7 @@ def calculate_pseudo_entropy(ds, dim='azimuth', var_names=["zhlin", "zdrlin", "R
     for vv in var_names:
         pseudo_entropy_list.append( calc_pseudo_entropy(ds[vv]).rename("entropy_"+vv) )
 
-    return xr.merge(pseudo_entropy_list)
+    return xr.merge(pseudo_entropy_list, compat='no_conflicts')
 
 def calculate_binned_normalized_entropy(ds, dim='azimuth', var_names=["zhlin", "zdrlin", "RHOHV_NC", "KDP_ML_corrected"],
                                         n_lowest=30, bins=50, remove_empty_bins=False):
@@ -2068,7 +2072,7 @@ def calculate_binned_normalized_entropy(ds, dim='azimuth', var_names=["zhlin", "
                                                  dask_gufunc_kwargs={"allow_rechunk":True}
                                                  ).rename("entropy_"+vv) )
 
-    return xr.merge(norm_entropy_list)
+    return xr.merge(norm_entropy_list, compat='no_conflicts')
 
 def calculate_std(ds, dim='azimuth', var_names=["zhlin", "zdrlin", "RHOHV_NC", "KDP_ML_corrected"], n_lowest=30, normlims=None):
 
@@ -2120,7 +2124,7 @@ def calculate_std(ds, dim='azimuth', var_names=["zhlin", "zdrlin", "RHOHV_NC", "
                                                  dask_gufunc_kwargs={"allow_rechunk":True}
                                                  ).rename("std_"+vv) )
 
-    return xr.merge(norm_std_list)
+    return xr.merge(norm_std_list, compat='no_conflicts')
 
 
 #### Melting Layer after Wolfensberger et al 2016 but refined for PHIDP correction using Silke's style from Trömel 2019 and Giangrande refinement
@@ -3305,12 +3309,28 @@ def era5_to_radar_volume(radar_volume, site=None, path=None, convert_to_C=True,
                             np.repeat(mod_y[np.newaxis, :], alt_era5.shape[0], axis=0).ravel(),
                             alt_era5.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
 
-        mesh = pyinterp.RTree(ecef=False)
+        try:
+            mesh = pyinterp.RTree(ecef=False)
+        except: # New pyinterp versions
+            mesh = pyinterp.RTree3D(spheroid=pyinterp.core.geometry.geographic.Spheroid())
         if pre_interpolate_z:
-            mesh.packing(src, data.isel(time=0).stack(stacked=['z', 'latitude', 'longitude']))
+            mesh.packing(src, data.isel(time=0).stack(stacked=['z', 'latitude', 'longitude']).values)
         else:
-            mesh.packing(src, data.isel(time=0).stack(stacked=['lvl', 'latitude', 'longitude']))
-        data_interp, neighbors = mesh.inverse_distance_weighting(trg, within=False, k=k_n, p=2) # k=1 is like nearest neighbors
+            mesh.packing(src, data.isel(time=0).stack(stacked=['lvl', 'latitude', 'longitude']).values)
+        try:
+            data_interp, neighbors = mesh.inverse_distance_weighting(trg, within=False, k=k_n, p=2) # k=1 is like nearest neighbors
+        except: # New pyinterp versions
+            # 1. Create the IDW configuration object
+            # .with_k(k_n) replaces k=k_n
+            # .with_p(2) replaces p=2
+            # Note: 'within=False' is now handled by the default behavior
+            # of the IDW config (it will search for 'k' neighbors regardless of bounds)
+            idw_config = pyinterp.config.rtree.InverseDistanceWeighting().with_k(k_n).with_p(2)
+
+            # 2. Call the method using the config object
+            # coordinates must be the first positional argument, config must be the second
+            data_interp, neighbors = mesh.inverse_distance_weighting(trg, config=idw_config)
+
         data_interp_reshape = data_interp.reshape(radar_volume["x"].shape)
         data_interp_reshape_xr = xr.DataArray(data_interp_reshape,
                                                 coords=radar_volume["x"].coords,
@@ -3397,7 +3417,7 @@ def attach_ERA5_fields(radar_volume, site=None, path=None, convert_to_C=True,
     era5_vol = era5_to_radar_volume(radar_volume, site=site, path=path, convert_to_C=convert_to_C,
                              variables=variables, rename=rename, k_n=k_n, pre_interpolate_z=pre_interpolate_z)
 
-    radar_volume_era5 = xr.merge((radar_volume, era5_vol.interp({"time": radar_volume["time"]}, method="linear")))
+    radar_volume_era5 = xr.merge((radar_volume, era5_vol.interp({"time": radar_volume["time"]}, method="linear")), compat='no_conflicts')
     if set_as_coords:
         radar_volume_era5 = radar_volume_era5.set_coords([vv for vv in era5_vol.data_vars])
 
@@ -3433,11 +3453,17 @@ def interp_to_ht_parallel(ds, ht=np.arange(0,50000,50)):
 
     results = []
 
-    with Pool() as P:
-        results = P.map( interp_to_ht_partial,
-                        [ds.isel({"time":tt, "longitude":lon, "latitude":lat}) for tt in range(len(ds.time)) for lon in range(len(ds.longitude)) for lat in range(len(ds.latitude)) ] )
+    tasks = (ds.isel({"time":tt, "longitude":lon, "latitude":lat})
+         for tt in range(len(ds.time))
+         for lon in range(len(ds.longitude))
+         for lat in range(len(ds.latitude)))
 
-    ds_interp = xr.combine_by_coords([ds.expand_dims(("time", "longitude", "latitude")) for ds in results])
+    with Pool() as P:
+        # results = P.map( interp_to_ht_partial,
+        #                 [ds.isel({"time":tt, "longitude":lon, "latitude":lat}) for tt in range(len(ds.time)) for lon in range(len(ds.longitude)) for lat in range(len(ds.latitude)) ] )
+        results = P.map(interp_to_ht_partial, tasks)
+
+    ds_interp = xr.combine_by_coords([ds.expand_dims(("time", "longitude", "latitude")) for ds in results], coords="different", compat="no_conflicts")
 
     # Fix Temperature below first measurement and above last one
     ds_interp = ds_interp.bfill(dim="height")
@@ -5910,7 +5936,7 @@ def phase_zphi(phi, rng=1000.):
                            start_range_idx.rename("first_idx"),
                            last.rename("last"),
                            stop_range_idx.rename("last_idx"),
-                          ])
+                          ], compat='no_conflicts')
 
 #### Microphysical retrievals
 
@@ -8307,7 +8333,7 @@ def icon_to_radar_volume_old(icon_field, radar_volume):
     # Regridding took 14.92 minutes to run for temp, u, v
     # Regridding took 4.58 minutes to run for temp
 
-    return xr.merge([icon_vol, icon_vol_hl])
+    return xr.merge([icon_vol, icon_vol_hl], compat='no_conflicts')
 
 def icon_to_radar_volume(icon_field, radar_volume):
     """
@@ -8494,7 +8520,7 @@ def icon_to_radar_volume(icon_field, radar_volume):
     # Regridding took 4.58 minutes to run for temp
 
     if len(vars_to_compute) > 0 and len(vars_to_compute_hl) > 0:
-        return xr.merge([icon_vol, icon_vol_hl])
+        return xr.merge([icon_vol, icon_vol_hl], compat='no_conflicts')
     elif len(vars_to_compute) > 0 :
         return icon_vol
     elif len(vars_to_compute_hl) > 0 :

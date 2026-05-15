@@ -69,6 +69,8 @@ realpep_path = "/automount/realpep/"
 
 suffix_name = "" # suffix to add to folder names, for special cases (like computing only a selection of cases)
 
+print("!!!! Future proofing: maybe adding guard is needed for multiprocessing !!!!")
+#if __name__ == "__main__": # set guard
 #%% Load QVPs for stratiform-case CFTDs
 
 calculate_retrievals = True # Calculate retrievals based on the QVPs?

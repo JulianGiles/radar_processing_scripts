@@ -64,6 +64,9 @@ def find_loc(locs, path):
 
 locs = ["boxpol", "pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs"]
 
+print("!!!! Future proofing: maybe adding guard is needed for multiprocessing !!!!")
+#if __name__ == "__main__": # set guard
+
 #%% Initial definitions
 # Create a feature for States/Admin 1 regions at 1:50m from Natural Earth
 states_provinces = cfeature.NaturalEarthFeature(
@@ -3379,7 +3382,7 @@ for it in range(len(icon_field["time"])):
                                           name=vv).expand_dims(dim={"time": icon_field["time"][it].expand_dims("time")}, axis=0)
                         )
 
-icon_volume_test = xr.merge(interp_field)
+icon_volume_test = xr.merge(interp_field, compat='no_conflicts')
 
 total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
@@ -3415,7 +3418,7 @@ icon_volume_new = utils.calc_microphys(icon_volume, mom=2)
 elev = 7
 
 radar_volume_new = xr.merge([radar_volume.sel(time=slice(icon_volume_new.time[0].values, icon_volume_new.time[-1].values)),
-                             icon_volume_new])
+                             icon_volume_new], compat='no_conflicts')
 qvps = utils.compute_qvp(radar_volume_new.isel(elevation=elev), min_thresh = {"RHOHV":0.9, "DBZH":0, "ZDR":-1, "SNRH":10,"SNRHC":10, "SQIH":0.5} )
 
 #%% TEST Load DETECT ICON-EMVORADO files and apply microphysics calculations
@@ -3453,7 +3456,7 @@ icon_volume_new = utils.calc_microphys(icon_volume, mom=2)
 elev = 7
 
 radar_volume_new = xr.merge([radar_volume.sel(time=slice(icon_volume_new.time[0].values, icon_volume_new.time[-1].values)),
-                             icon_volume_new])
+                             icon_volume_new], compat='no_conflicts')
 qvps = utils.compute_qvp(radar_volume_new.isel(sweep_fixed_angle=elev), min_thresh = {"RHOHV":0.9, "DBZH":0, "ZDR":-1, "SNRH":10,"SNRHC":10, "SQIH":0.5} )
 
 #%% TEST Load DETECT or Operation Hydrometeors ICON-EMVORADO files and compute QVPs (must have pre-computed volume files)
@@ -3472,7 +3475,7 @@ test["ZDR_AC"].attrs = test["ZDR"].attrs
 test_merge = xr.merge([
                 test.isel({"sweep_fixed_angle":7}),
                 test_icon.isel({"sweep_fixed_angle":7}),
-                          ])
+                          ], compat='no_conflicts')
 ds_qvp= utils.compute_qvp(test_merge)
 
 
