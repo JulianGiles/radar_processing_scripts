@@ -851,7 +851,7 @@ def load_dwd_raw(filepath):
             # open the odim files (single moment and elevation, several timesteps)
             llmom = sorted([ff for ff in files if "_"+mom+"_" in ff])
 
-            vardict[mom] = xr.open_mfdataset(llmom, engine="odim", combine="nested", concat_dim="time", preprocess=align)
+            vardict[mom] = xr.open_mfdataset(llmom, engine="odim", combine="nested", concat_dim="time", preprocess=align, compat='no_conflicts')
 
             vardict[mom] = fix_flipped_phidp(unfold_phidp(fix_time_in_coords(vardict[mom])))
 
@@ -882,9 +882,9 @@ def load_dmi_preprocessed(filepath):
 
     # open files
     if len(files) == 1:
-        dmidata = xr.open_mfdataset(files[0])
+        dmidata = xr.open_mfdataset(files[0], compat='no_conflicts')
     if len(files) >= 1:
-        dmidata = xr.open_mfdataset(files)
+        dmidata = xr.open_mfdataset(files, compat='no_conflicts')
 
     return fix_flipped_phidp(unfold_phidp(fix_time_in_coords(dmidata)))
 
@@ -907,9 +907,9 @@ def load_dmi_raw(filepath): # THIS IS NOT IMPLEMENTED YET # !!!
 
     # open files
     if len(files) == 1:
-        dmidata = xr.open_mfdataset(files[0])
+        dmidata = xr.open_mfdataset(files[0], compat='no_conflicts')
     if len(files) >= 1:
-        dmidata = xr.open_mfdataset(files)
+        dmidata = xr.open_mfdataset(files, compat='no_conflicts')
 
     return fix_flipped_phidp(unfold_phidp(fix_time_in_coords(dmidata)))
 
@@ -1031,14 +1031,14 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
         files = sorted(glob.glob(filepath))
 
     if len(files)==1:
-        qvps = xr.open_mfdataset(files)
+        qvps = xr.open_mfdataset(files, compat='no_conflicts')
     else:
         # there are slight differences (noise) in z coord sometimes so we have to align all datasets
         # since the time coord has variable length, we cannot use join="override" so we define a function to copy
         # the z coord from the first dataset into the rest with preprocessing
         # There could also be some time values missing, ignore those
         # Some files do not have TEMP data, fill with nan
-        first_file = xr.open_mfdataset(files[0])
+        first_file = xr.open_mfdataset(files[0], compat='no_conflicts')
         first_file_z = first_file.z.copy()
         def fix_coords(ds, align_z=True, fix_TEMP=True):
             if align_z:
@@ -1050,14 +1050,14 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
             return ds
 
         try:
-            qvps = xr.open_mfdataset(files, preprocess=partial(fix_coords, align_z=align_z, fix_TEMP=fix_TEMP))
+            qvps = xr.open_mfdataset(files, preprocess=partial(fix_coords, align_z=align_z, fix_TEMP=fix_TEMP), compat='no_conflicts', join='outer')
         except:
             if align_z:
                 print("Aligning z coord may have failed, attempting to load without alignment...")
             try:
-                qvps = xr.open_mfdataset(files, combine="nested", concat_dim="time")
+                qvps = xr.open_mfdataset(files, combine="nested", concat_dim="time", compat='no_conflicts', join='outer')
             except:
-                qvps = xr.open_mfdataset(files)
+                qvps = xr.open_mfdataset(files, compat='no_conflicts')
 
     if fillna:
         assign = dict()
@@ -1279,7 +1279,7 @@ def load_ZDR_offset(ds, X_ZDR, zdr_off, zdr_off_name="ZDR_offset", zdr_oc_name="
     """
 
     if isinstance(zdr_off, str):
-        zdr_offset = xr.open_mfdataset(zdr_off)
+        zdr_offset = xr.open_mfdataset(zdr_off, compat='no_conflicts')
     elif isinstance(zdr_off, xr.Dataset):
         zdr_offset = zdr_off.copy()
     else:
@@ -1465,7 +1465,7 @@ def load_best_ZDR_offset(ds, X_ZDR, zdr_off_paths={}, daily_zdr_off_paths={},
             daily_zdr_off[zdroff] = []
             for zdroffv in daily_zdr_off_paths[zdroff]:
                 try:
-                    daily_zdr_off[zdroff].append( xr.open_mfdataset(zdroffv) )
+                    daily_zdr_off[zdroff].append( xr.open_mfdataset(zdroffv, compat='no_conflicts') )
                     if len(daily_zdr_off[zdroff][-1][zdr_off_name]) > 1:
                         raise TypeError("load_best_ZDR_offset: daily offset has more than one value: "+zdroffv)
                 except:
@@ -1596,7 +1596,7 @@ def load_best_ZDR_offset(ds, X_ZDR, zdr_off_paths={}, daily_zdr_off_paths={},
             zdr_off[zdroff] = []
             for zdroffv in zdr_off_paths[zdroff]:
                 try:
-                    zdr_off[zdroff].append( xr.open_mfdataset(zdroffv).sel(time=ds.time, method="nearest", tolerance=t_tolerance).assign_coords(time=ds.time) )
+                    zdr_off[zdroff].append( xr.open_mfdataset(zdroffv, compat='no_conflicts').sel(time=ds.time, method="nearest", tolerance=t_tolerance).assign_coords(time=ds.time) )
                 except:
                     warnings.warn("load_best_ZDR_offset: unable to load "+zdroffv)
 
@@ -1723,7 +1723,7 @@ def load_corrected_RHOHV(ds, rho_nc_path, rho_nc_name="RHOHV_NC"):
         Dataset with original data plus noise corrected RHOHV
     """
 
-    rho_nc = xr.open_mfdataset(rho_nc_path)
+    rho_nc = xr.open_mfdataset(rho_nc_path, compat='no_conflicts')
 
     if rho_nc[rho_nc_name].notnull().any():
 
@@ -3217,9 +3217,9 @@ def era5_to_radar_volume(radar_volume, site=None, path=None, convert_to_C=True,
     try:
         era5_g = xr.open_mfdataset(reversed(sorted(glob.glob(era5_dir+"geopotential/*"+str(startdt.year)+"*"),
                                                    key=lambda file_name: int(file_name.split("/")[-1].split('_')[1]))),
-                                   concat_dim="lvl", combine="nested")
+                                   concat_dim="lvl", combine="nested", compat='no_conflicts')
     except ValueError:
-        era5_g = xr.open_mfdataset(sorted(glob.glob(era5_dir+"geopotential/*"+str(startdt.year)+"*"))).rename(
+        era5_g = xr.open_mfdataset(sorted(glob.glob(era5_dir+"geopotential/*"+str(startdt.year)+"*")), compat='no_conflicts').rename(
                         {"valid_time":"time", "pressure_level":"lvl"})
 
     # select the desired period and area and compute z coord
@@ -3238,9 +3238,9 @@ def era5_to_radar_volume(radar_volume, site=None, path=None, convert_to_C=True,
         try:
             era5_fields[vv] = xr.open_mfdataset(reversed(sorted(glob.glob(era5_dir+vv+"/*"+str(startdt.year)+"*"),
                                                        key=lambda file_name: int(file_name.split("/")[-1].split('_')[1]))),
-                                       concat_dim="lvl", combine="nested")
+                                       concat_dim="lvl", combine="nested", compat='no_conflicts')
         except ValueError:
-            era5_fields[vv] = xr.open_mfdataset(sorted(glob.glob(era5_dir+vv+"/*"+str(startdt.year)+"*"))).rename(
+            era5_fields[vv] = xr.open_mfdataset(sorted(glob.glob(era5_dir+vv+"/*"+str(startdt.year)+"*")), compat='no_conflicts').rename(
                         {"valid_time":"time", "pressure_level":"lvl"})
 
         # select time slice
@@ -3569,8 +3569,8 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
                 if start_year_month <= tuple(map(int, file.split('_')[-1].split('.')[0].split('-'))) <= end_year_month
             ]
 
-        era5_t = xr.open_mfdataset(era5_t_files).rename({"pressure_level": "lvl"})
-        era5_g = xr.open_mfdataset(era5_g_files).rename({"pressure_level": "lvl"})
+        era5_t = xr.open_mfdataset(era5_t_files, compat='no_conflicts').rename({"pressure_level": "lvl"})
+        era5_g = xr.open_mfdataset(era5_g_files, compat='no_conflicts').rename({"pressure_level": "lvl"})
 
         if "valid_time" in era5_t:
             era5_t = era5_t.rename({"valid_time": "time"})
@@ -4747,6 +4747,14 @@ def zdr_elev_corr(ds, angle, zdr=["ZDR"]):
             ds1 = ds1.assign({zdrn+"_EC": (ds[zdrn]/corr_factor).assign_attrs(ds[zdrn].attrs)})
 
     return ds1
+
+#### Calculate depolarization ratio
+def calc_depolarization(da, zdr="ZDR_OC", rho="RHOHV_NC"):
+    # Wrapper around wrl.dp.depolarization
+    return xr.apply_ufunc(wrl.dp.depolarization,
+                          da[zdr], da[rho].where(da[rho]<1),
+                        dask='parallelized',
+    )
 
 #### Calibration of ZDR with light-rain consistency
 from matplotlib import pyplot as plt
@@ -7944,7 +7952,7 @@ def load_emvorado_to_radar_volume(path_or_data, rename=False):
     if type(path_or_data) is xr.Dataset:
         data_emvorado_xr = path_or_data
     else:
-        data_emvorado_xr = xr.open_mfdataset(path_or_data, concat_dim="time", combine="nested")
+        data_emvorado_xr = xr.open_mfdataset(path_or_data, concat_dim="time", combine="nested", compat='no_conflicts')
 
     try:
         data = data_emvorado_xr.rename_dims({"n_range": "range", "n_azimuth": "azimuth"})
@@ -8099,7 +8107,7 @@ def load_icon(files, file_z=None):
     data_vol : xarray.Dataset
     """
 
-    icon_field = xr.open_mfdataset(files)
+    icon_field = xr.open_mfdataset(files, compat='no_conflicts')
 
     if file_z is not None:
         icon_field_z = xr.open_dataset(file_z)
