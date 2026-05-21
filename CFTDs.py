@@ -102,7 +102,7 @@ path_qvps = realpep_path+"/upload/jgiles/boxpol/qvps/20*/*/2017-07-25/n_ppi_110d
 
 #### Set variable names
 X_DBZH = "DBZH_AC"
-X_RHO = "RHOHV_NC" # if RHOHV_NC is set here, it is then checked agains the original RHOHV in the next cell
+X_RHO = "RHOHV_NC" # if RHOHV_NC is set here, it is then checked against the original RHOHV in the next cell
 X_ZDR = "ZDR_EC_OC_AC"
 X_KDP = "KDP_ML_corrected_EC"
 X_PHI = "UPHIDP_OC_MASKED"
@@ -118,7 +118,7 @@ elif "dmi" in path_qvps:
     country="dmi"
     X_TH = "DBZH"
     X_PHI = "PHIDP_OC_MASKED"
-
+    X_ZDR = "ZDR_EC_OC_WRC_AC"
 
 ff_glob = glob.glob(path_qvps)
 
@@ -596,9 +596,9 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
             stats[stratname][ll][xx].to_netcdf(realpep_path+"/upload/jgiles/radar_stats"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc")
 
 
-#### Calculate riming
+#### Load riming
 # We do this for both qvps_strat_fil and relaxed qvps_strat_relaxed_fil
-print("Calculating riming ...")
+print("Loading riming ...")
 
 # We will put the final riming classification in a dict
 try: # check if exists, if not, create it
@@ -608,159 +608,43 @@ except NameError:
 
 loc = find_loc(locs, ff[0])
 
-# try to load the riming model. Will only work with older sklearn version (wradlib5 env)
-try:
-    with open('/automount/agradar/jgiles/riming_model/gbm_model_23.10.2024.pkl', 'rb') as f:
-        riming_model = pickle.load(f)
-
-    with open('/automount/agradar/jgiles/riming_model/gbm_zh_zdr_model_23.10.2024.pkl', 'rb') as f:
-        riming_model_zh_zdr = pickle.load(f)
-
-    def calc_depolarization(da, zdr="ZDR_OC", rho="RHOHV_NC"):
-        return xr.apply_ufunc(wrl.dp.depolarization,
-                              da[zdr], da[rho].where(da[rho]<1),
-                            dask='parallelized',
-        )
-
-
-    for stratname, stratqvp in [("unfiltered", qvps.copy()),
-                                ("stratiform", qvps_strat_fil.copy()),
-                                ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
-                                ("stratiform_ML", qvps_strat_ML_fil.copy())]:
-        print("   ... for "+stratname)
-
+filtered_qvps = {"stratiform": qvps_strat_fil.copy(),
+                 "stratiform_relaxed": qvps_strat_relaxed_fil.copy(),
+                 "stratiform_ML": qvps_strat_ML_fil.copy()}
+for stratname in ["unfiltered", "stratiform", "stratiform_relaxed", "stratiform_ML"]:
+    if stratname not in riming_classif.keys():
         riming_classif[stratname] = {}
-        riming_classif[stratname][loc] = xr.Dataset()
+    elif type(riming_classif[stratname]) is not dict:
+        riming_classif[stratname] = {}
+    print("Loading "+stratname+" riming classification ...")
+    for ll in [loc]: # ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']:
+        if ll not in riming_classif[stratname].keys():
+            riming_classif[stratname][ll] = xr.Dataset()
+        elif type(riming_classif[stratname][ll]) is not xr.Dataset:
+            riming_classif[stratname][ll] = xr.Dataset()
 
-        if stratname == "unfiltered":
-            # First calculate for all qvps to save it to a file just once, and
-            # then just filter this result using the filtered qvps.
+        for xx in ['riming_DR_'+"_".join([X_ZDR, X_DBZH]),
+                   'riming_'+"_".join([X_ZDR, X_DBZH]),
+                   ]:
+            try:
+                riming_classif[stratname][ll] = riming_classif[stratname][ll].assign( xr.open_dataset(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc") )
+                print(ll+" "+xx+" riming_classif loaded")
+            except:
+                if stratname == "unfiltered":
+                    pass
+                else:
+                    riming_classif[stratname][ll] = riming_classif["unfiltered"][ll].where(filtered_qvps[stratname][X_DBZH].notnull())
+                    for xx in ['riming_DR_'+"_".join([X_ZDR, X_DBZH]),
+                               'riming_'+"_".join([X_ZDR, X_DBZH]),
+                               ]:
+                        if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname):
+                            os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname)
+                        riming_classif[stratname][ll][xx].to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+loc+"_"+xx+".nc")
+                    break
 
-            if "DR" not in stratqvp:
-                DR = calc_depolarization(stratqvp, X_ZDR, X_RHO)
-                assign = dict(DR = DR.assign_attrs(
-                    {'long_name': 'Depolarization ratio based on '+X_ZDR+' and '+X_RHO,
-                     'standard_name': 'depolarization_ratio',
-                     'units': 'dB'}
-                    ))
-                riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
-
-            if "UDR" not in stratqvp:
-                UDR = calc_depolarization(stratqvp, "ZDR", "RHOHV")
-                assign = dict(UDR = UDR.assign_attrs(
-                    {'long_name': 'Depolarization ratio based on ZDR and RHOHV',
-                     'standard_name': 'depolarization_ratio',
-                     'units': 'dB'}
-                    ))
-                riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
-
-            # predict riming with the model
-            for XDR, XZDR, XZH in [("DR", X_ZDR, X_DBZH), ("UDR", "ZDR", "DBZH")]:
-
-                idx = np.isfinite(riming_classif[stratname][loc][XDR].values.flatten() + \
-                                  stratqvp[XZDR].values.flatten() + \
-                                      stratqvp[XZH].values.flatten())
-                X = np.concatenate((riming_classif[stratname][loc][XDR].values.flatten()[idx].reshape(-1, 1), \
-                                    stratqvp[XZDR].values.flatten()[idx].reshape(-1, 1), \
-                                        stratqvp[XZH].values.flatten()[idx].reshape(-1, 1)), axis=1)
-
-                pred = riming_model.predict(X)
-
-                pred_riming = np.zeros_like(riming_classif[stratname][loc][XDR]).flatten() + np.nan
-                pred_riming[idx] = pred
-                pred_riming = xr.zeros_like(riming_classif[stratname][loc][XDR]) + pred_riming.reshape(riming_classif[stratname][loc][XDR].shape)
-
-                varname = "riming_"+XDR
-
-                pred_riming = pred_riming.assign_attrs({
-                    'long_name': 'Riming prediction based on '+XDR+', '+XZDR+' and '+XZH+' with gradient boosting model',
-                     'standard_name': 'riming_prediction',
-                    }).rename(varname)
-
-                assign = {varname: pred_riming.copy()}
-                riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
-
-                # save to file
-                if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname):
-                    os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname)
-
-                pred_riming.to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+loc+"_"+varname+".nc")
-
-            # predict riming with the model that uses only zh and zdr
-            for XZDR, XZH in [(X_ZDR, X_DBZH), ("ZDR", "DBZH")]:
-
-                idx = np.isfinite(stratqvp[XZDR].values.flatten() + \
-                                  stratqvp[XZH].values.flatten())
-                X = np.concatenate((stratqvp[XZDR].values.flatten()[idx].reshape(-1, 1), \
-                                    stratqvp[XZH].values.flatten()[idx].reshape(-1, 1)), axis=1)
-
-                pred = riming_model_zh_zdr.predict(X)
-
-                pred_riming = np.zeros_like(stratqvp[XZH]).flatten() + np.nan
-                pred_riming[idx] = pred
-                pred_riming = xr.zeros_like(stratqvp[XZH]) + pred_riming.reshape(stratqvp[XZH].shape)
-
-                varname = "riming_"+XZDR+"_"+XZH
-
-                pred_riming = pred_riming.assign_attrs({
-                    'long_name': 'Riming prediction based on '+XZDR+' and '+XZH+' with gradient boosting model',
-                     'standard_name': 'riming_prediction',
-                    }).rename(varname)
-
-                assign = {varname: pred_riming.copy()}
-                riming_classif[stratname][loc] = riming_classif[stratname][loc].assign(assign)
-
-                # save to file
-                if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname):
-                    os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname)
-
-                pred_riming.to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+loc+"_"+varname+".nc")
-
-        else:
-            riming_classif[stratname][loc] = riming_classif["unfiltered"][loc].where(stratqvp[X_DBZH].notnull())
-            for xx in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_'+X_ZDR+'_'+X_DBZH,
-                       ]:
-                if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname):
-                    os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname)
-                riming_classif[stratname][loc][xx].to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+loc+"_"+xx+".nc")
-
-except ModuleNotFoundError:
-    print("... Loading the riming model failed, trying to reload pre-calculated riming ...")
-    filtered_qvps = {"stratiform": qvps_strat_fil.copy(),
-                     "stratiform_relaxed": qvps_strat_relaxed_fil.copy(),
-                     "stratiform_ML": qvps_strat_ML_fil.copy()}
-    for stratname in ["unfiltered", "stratiform", "stratiform_relaxed", "stratiform_ML"]:
-        if stratname not in riming_classif.keys():
-            riming_classif[stratname] = {}
-        elif type(riming_classif[stratname]) is not dict:
-            riming_classif[stratname] = {}
-        print("Loading "+stratname+" riming classification ...")
-        for ll in [loc]: # ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']:
-            if ll not in riming_classif[stratname].keys():
-                riming_classif[stratname][ll] = xr.Dataset()
-            elif type(riming_classif[stratname][ll]) is not xr.Dataset:
-                riming_classif[stratname][ll] = xr.Dataset()
-
-            for xx in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_'+X_ZDR+'_'+X_DBZH,
-                       ]:
-                try:
-                    riming_classif[stratname][ll] = riming_classif[stratname][ll].assign( xr.open_dataset(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc") )
-                    print(ll+" "+xx+" riming_classif loaded")
-                except:
-                    if stratname == "unfiltered":
-                        pass
-                    else:
-                        riming_classif[stratname][ll] = riming_classif["unfiltered"][ll].where(filtered_qvps[stratname][X_DBZH].notnull())
-                        for xx in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_'+X_ZDR+'_'+X_DBZH,
-                                   ]:
-                            if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname):
-                                os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname)
-                            riming_classif[stratname][ll][xx].to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+loc+"_"+xx+".nc")
-                        break
-
-            # delete entry if empty
-            if not riming_classif[stratname][ll]:
-                del riming_classif[stratname][ll]
+        # delete entry if empty
+        if not riming_classif[stratname][ll]:
+            del riming_classif[stratname][ll]
 
 # Assign
 qvps_strat_fil = qvps_strat_fil.assign( riming_classif['stratiform'][loc] )
