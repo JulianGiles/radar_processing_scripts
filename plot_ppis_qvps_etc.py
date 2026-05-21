@@ -1558,11 +1558,16 @@ if __name__ == "__main__": # set guard
     # Load only events with ML detected (pre-condition for stratiform)
     ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2015/*/*/pro/vol5minng01/07/ML_detected.txt"
     # ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2020/*/*/SVS/*/*/ML_detected.txt"
-    ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps_selected_for_calibration_attenuation/20*/*/*/HTY/*/*/DONE.txt"
+    # ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps_selected_for_calibration_attenuation/20*/*/*/HTY/*/*/DONE.txt"
     ff_ML_glob = glob.glob(ff_ML)
 
     realpep_path = "/automount/realpep/"
-    loc_riming = "hty" # location for loading the riming classif
+    loc_riming = "pro" # location for loading the riming classif
+
+    X_DBZH = "DBZH_AC" # variables for the riming variant to load
+    X_ZDR = "ZDR_EC_OC_AC"
+    if "dmi" in ff_ML: X_ZDR = "ZDR_EC_OC_WRC_AC"
+    suffix_name = "" # suffix to add to folder names, for special cases (like computing only a selection of cases)
 
     if "dmi" in ff_ML:
         # create a function to only select the elevation closer to 10 for each date
@@ -1618,9 +1623,6 @@ if __name__ == "__main__": # set guard
     # Add riming
     print("... Loading pre-calculated riming ...")
     riming_classif = {}
-    X_DBZH = "DBZH_AC"
-    X_ZDR = "ZDR_EC_OC_WRC_AC"
-    suffix_name = "_calibration_attenuation_HTYGZT"
 
     for stratname in ["unfiltered"]:
         if stratname not in riming_classif.keys():
@@ -1634,7 +1636,8 @@ if __name__ == "__main__": # set guard
             elif type(riming_classif[stratname][ll]) is not xr.Dataset:
                 riming_classif[stratname][ll] = xr.Dataset()
 
-            for xx in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_'+X_ZDR+'_'+X_DBZH,
+            for xx in ['riming_DR_'+"_".join([X_ZDR, X_DBZH]),
+                       'riming_'+"_".join([X_ZDR, X_DBZH]),
                        ]:
                 try:
                     riming_classif[stratname][ll] = riming_classif[stratname][ll].assign( xr.open_dataset(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc") )
@@ -1667,10 +1670,10 @@ if __name__ == "__main__": # set guard
                     'KDP', 'RHOHV_NC', 'UPHIDP_OC']
 
 
-    vars_to_plot = ['DBZH_AC', 'KDP_ML_corrected_EC', 'KDP', 'ZDR_EC_OC_WRC_AC', 'RHOHV_NC',
-                    'PHIDP_OC', 'ZDR_EC_OC_WRC', 'RHOHV', "DBZH", 'ZDR_EC_OC', "ZDR_EC"]
+    vars_to_plot = ['DBZH_AC', 'KDP_ML_corrected_EC', 'KDP', 'ZDR_EC_OC_AC', 'RHOHV_NC',
+                    'UPHIDP_OC', 'ZDR_EC_OC', 'RHOHV', "DBZH", 'ZDR_EC_OC', "ZDR_EC"]
 
-    riming_to_plot = "riming_ZDR_EC_OC_WRC_AC_DBZH_AC"
+    riming_to_plot = "riming_DR_ZDR_EC_OC_AC_DBZH_AC"
 
     # add missing units for PHIDP variables in turkish data (this was fixed on 28/12/23 but previous calculations have missing units)
     for vv in ds_qvps.data_vars:
@@ -1774,7 +1777,7 @@ if __name__ == "__main__": # set guard
 
             # Add shading for riming
             if show_riming:
-                selected_riming = riming_classif['unfiltered']['hty'][riming_to_plot].sel(time=selected_day, z=slice(0, max_height)).dropna("z", how="all").fillna(0)
+                selected_riming = riming_classif['unfiltered'][loc_riming][riming_to_plot].sel(time=selected_day, z=slice(0, max_height)).dropna("z", how="all").fillna(0)
 
                 cleaned_mask = binary_opening(selected_riming.values, structure=np.ones((3, 3))).astype(float)
 
@@ -1866,9 +1869,8 @@ if __name__ == "__main__": # set guard
         plot_panel
     )
 
-    layout.save("/user/jgiles/qvps_hty_calibration_attenuation_dates.html", resources=INLINE, embed=True,
+    layout.save(f"/user/jgiles/qvps_{loc_riming}_2015_stratiform.html", resources=INLINE, embed=True,
                 max_states=1000, max_opts=1000)
-
 
 
     #%% Plot QPVs interactive, with matplotlib backend, variable selector (working) fix in holoviews/plotting/mpl/raster.py
