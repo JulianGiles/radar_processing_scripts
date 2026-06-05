@@ -7,10 +7,21 @@ Created on Wed Dec 14 11:22:35 2022
 """
 
 import os
-try:
-    os.chdir('/home/jgiles/')
-except FileNotFoundError:
-    None
+import sys
+
+# List all possible paths where this script might live
+possible_paths = [
+    '/home/jgiles/Scripts/python/radar_processing_scripts',              # Office PC
+    '/p/scratch/detectrea2/giles1/radar_processing_scripts',             # JUWELS Scratch
+]
+
+# Find the one that exists on the current machine and add it
+for script_dir in possible_paths:
+    if os.path.exists(script_dir):
+        if script_dir not in sys.path:
+            sys.path.insert(0, script_dir)
+        break  # Stop checking once we find the right one
+
 os.environ["WRADLIB_DATA"] = '/home/jgiles/wradlib-data-main'
 
 import wradlib as wrl
@@ -19,7 +30,6 @@ import matplotlib as mpl
 import warnings
 #warnings.filterwarnings('ignore')
 import numpy as np
-import sys
 import glob
 import datetime as dt
 import cartopy.crs as ccrs
@@ -42,14 +52,9 @@ from bokeh.resources import INLINE
 from osgeo import osr
 from functools import partial
 
-try:
-    from Scripts.python.radar_processing_scripts import utils
-    from Scripts.python.radar_processing_scripts import radarmet
-    from Scripts.python.radar_processing_scripts.classify_precip_typ import classify_precip_typ
-except ModuleNotFoundError:
-    import utils
-    import radarmet
-    from classify_precip_typ import classify_precip_typ
+import utils
+import radarmet
+from classify_precip_typ import classify_precip_typ
 
 realpep_path = "/automount/realpep/"
 

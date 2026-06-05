@@ -8,21 +8,21 @@
 dir=/automount/realpep/upload/jgiles/dwd/
 
 # Which location to process
-loc=umd
-date_file="/automount/realpep/upload/jgiles/dwd/umd_selected_dates.txt"
+loc=tur
+date_file="/automount/realpep/upload/jgiles/dwd/tur_selected_dates_2020.txt"
 
 # Read the dates from the file into an array
 mapfile -t valid_dates < "$date_file"
 
 
 # Set the type of calibration method
-calibtype=1
+calibtype=23
 
 max_attempts=5  # Maximum number of restart attempts
 max_execution_time=1200  # Maximum execution time in seconds
 
 # Create a list of all files that include *allmoms* in their name
-files=$(find $dir -name "*90grad*allm*_00-*$loc*" -type f -not -path "*qvp*" -not -path "*ppis*"  -not -path "*WIND*" -not -path "*SURVEILLANCE*" -not -path "*RHI1*" | sort -u) # *VOL_B*allmoms*10.0*$loc*"
+files=$(find $dir -name "*vol5*allm*_07-*$loc*" -type f -not -path "*qvp*" -not -path "*ppis*"  -not -path "*WIND*" -not -path "*SURVEILLANCE*" -not -path "*RHI1*" | sort -u) # "*90grad*allm*_00-*$loc*" *VOL_B*allmoms*10.0*$loc*"
 
 # Loop through each file in the list
 for file in $files; do
@@ -37,7 +37,7 @@ for file in $files; do
         while [ $attempt -le $max_attempts ]; do
 
             # Invoke the Python script with the file path as an argument
-            python /home/jgiles/Scripts/python/radar_processing_scripts/calibrate_zdr.py $file $calibtype &
+            python /home/jgiles/Scripts/python/radar_processing_scripts/calibrate_zdr_WRtest.py $file $calibtype &
 
             # Get the process ID of the background script
             script_pid=$!
@@ -65,7 +65,7 @@ for file in $files; do
             kill $script_pid
             echo "Script exceeded time limit. Killing and retrying..."
             # clean the created folder
-            newfolder="${file/${dir}/${dir}rhohv_nc/}"
+            newfolder="${file/${dir}/${dir}calibration_WRtest/}"
             newfolder=$(dirname "$newfolder")
             if [ -d "$newfolder" ]; then
                 rm -r "$newfolder" # clean the created folder

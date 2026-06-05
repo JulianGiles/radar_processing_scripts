@@ -11,28 +11,30 @@ Script for noise-correcting RHOHV.
 
 
 import os
-try:
-    os.chdir('/home/jgiles/')
-except FileNotFoundError:
-    None
+import sys
 
+# List all possible paths where this script might live
+possible_paths = [
+    '/home/jgiles/Scripts/python/radar_processing_scripts',              # Office PC
+    '/p/scratch/detectrea2/giles1/radar_processing_scripts',             # JUWELS Scratch
+]
 
-# NEEDS WRADLIB 1.19 !! (OR GREATER?)
+# Find the one that exists on the current machine and add it
+for script_dir in possible_paths:
+    if os.path.exists(script_dir):
+        if script_dir not in sys.path:
+            sys.path.insert(0, script_dir)
+        break  # Stop checking once we find the right one
 
 import numpy as np
-import sys
 import glob
 import xarray as xr
 
 import warnings
 warnings.filterwarnings('ignore')
 
-try:
-    from Scripts.python.radar_processing_scripts import utils
-    from Scripts.python.radar_processing_scripts import radarmet
-except ModuleNotFoundError:
-    import utils
-    import radarmet
+import utils
+import radarmet
 
 import time
 start_time = time.time()

@@ -8,6 +8,22 @@ Created on Mon Apr 15 13:20:30 2024
 Script for preprocessing gridded datasets and perform accumulations and regridding.
 """
 
+import os
+import sys
+
+# List all possible paths where this script might live
+possible_paths = [
+    '/home/jgiles/Scripts/python/radar_processing_scripts',              # Office PC
+    '/p/scratch/detectrea2/giles1/radar_processing_scripts',             # JUWELS Scratch
+]
+
+# Find the one that exists on the current machine and add it
+for script_dir in possible_paths:
+    if os.path.exists(script_dir):
+        if script_dir not in sys.path:
+            sys.path.insert(0, script_dir)
+        break  # Stop checking once we find the right one
+
 import matplotlib
 
 import matplotlib.pyplot as plt
@@ -21,7 +37,6 @@ import pandas as pd
 import xarray as xr
 from datetime import datetime
 import matplotlib.colors as mcolors
-import os
 from matplotlib import gridspec
 import scipy.stats
 from scipy import signal
@@ -42,19 +57,8 @@ import warnings
 # warnings.filterwarnings("ignore", message="Setting the 'color' property will override the edgecolor or facecolor properties.")
 # warnings.filterwarnings("ignore", category=FutureWarning)
 
-try:
-    os.chdir('/home/jgiles/')
-except FileNotFoundError:
-    None
-
-try:
-    from Scripts.python.radar_processing_scripts import utils
-    from Scripts.python.radar_processing_scripts import radarmet
-    # from Scripts.python.radar_processing_scripts import colormap_generator
-except ModuleNotFoundError:
-    import utils
-    import radarmet
-    # import colormap_generator
+import utils
+import radarmet
 
 
 proj = ccrs.PlateCarree(central_longitude=0.0)

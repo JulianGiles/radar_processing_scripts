@@ -9,17 +9,23 @@ Script for calculating CFTDS
 """
 
 import os
-try:
-    os.chdir('/home/jgiles/')
-except FileNotFoundError:
-    None
+import sys
 
+# List all possible paths where this script might live
+possible_paths = [
+    '/home/jgiles/Scripts/python/radar_processing_scripts',              # Office PC
+    '/p/scratch/detectrea2/giles1/radar_processing_scripts',             # JUWELS Scratch
+]
 
-# NEEDS WRADLIB 2.0.2 !! (OR GREATER)
+# Find the one that exists on the current machine and add it
+for script_dir in possible_paths:
+    if os.path.exists(script_dir):
+        if script_dir not in sys.path:
+            sys.path.insert(0, script_dir)
+        break  # Stop checking once we find the right one
 
 import wradlib as wrl
 import numpy as np
-import sys
 import glob
 import xarray as xr
 import datetime as dt
@@ -40,19 +46,15 @@ import scipy
 from joblib import Parallel, delayed
 from itertools import combinations_with_replacement
 
-try:
-    from Scripts.python.radar_processing_scripts import utils
-    from Scripts.python.radar_processing_scripts import radarmet
-    # from Scripts.python.radar_processing_scripts import colormap_generator
-except ModuleNotFoundError:
-    import utils
-    import radarmet
-    # import colormap_generator
+import utils
+import radarmet
 
 
 
 import warnings
-warnings.filterwarnings('ignore')
+warnings.filterwarnings('ignore', category=RuntimeWarning)
+warnings.simplefilter('ignore', np.exceptions.RankWarning)
+warnings.filterwarnings("ignore", message="Polyfit may be poorly conditioned")
 
 # we define a funtion to look for loc inside a path string
 def find_loc(locs, path):
@@ -105,7 +107,7 @@ X_DBZH = "DBZH_AC"
 X_RHO = "RHOHV_NC" # if RHOHV_NC is set here, it is then checked against the original RHOHV in the next cell
 X_ZDR = "ZDR_EC_OC_AC"
 X_KDP = "KDP_ML_corrected_EC"
-X_PHI = "UPHIDP_OC_MASKED"
+X_PHI = "UPHIDP_UF_OC_MASKED"
 
 if "dwd" in path_qvps:
     country="dwd"
@@ -113,11 +115,11 @@ if "dwd" in path_qvps:
 if "boxpol" in path_qvps:
     country="boxpol"
     X_TH = "DBTH"
-    X_PHI = "PHIDP_OC_MASKED"
+    X_PHI = "PHIDP_UF_OC_MASKED"
 elif "dmi" in path_qvps:
     country="dmi"
     X_TH = "DBZH"
-    X_PHI = "PHIDP_OC_MASKED"
+    X_PHI = "PHIDP_UF_OC_MASKED"
     X_ZDR = "ZDR_EC_OC_WRC_AC"
 
 ff_glob = glob.glob(path_qvps)
@@ -212,10 +214,12 @@ if "TEMP" not in qvps.coords:
 total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
 
-#%% Filters (conditions for stratiform)
-#### Filters
-start_time = time.time()
-print("Filtering stratiform conditions...")
+#%% Process QVPs
+# Conditions to clean ML height values
+max_change = 400 # set a maximum value of ML height change from one timestep to another (in m)
+max_std = 200 # set a maximum value of ML std from one timestep to another (in m)
+time_window = 5 # set timestep window for the std computation (centered)
+min_period = 3 # set minimum number of valid ML values in the window (centered)
 
 # min value for SNRH thresholding. This has a significant influence in the KDP calculation and also affects the QVPs computations.
 # Here is just redundant but I add it anyways
@@ -225,6 +229,17 @@ min_entropy_thresh = 0.85
 # Filter only stratiform events (min entropy >= min_entropy_thresh) and ML detected
 # with ProgressBar():
 #     qvps_strat = qvps.where( (qvps["min_entropy"]>=min_entropy_thresh) & (qvps.height_ml_bottom_new_gia.notnull()), drop=True).compute()
+
+riming_varnames =['riming_DR_'+"_".join([X_ZDR, X_DBZH]),
+               'riming_'+"_".join([X_ZDR, X_DBZH]),
+               ]
+
+start_time = time.time()
+print("Processing QVPs...")
+
+loc = find_loc(locs, ff[0])
+
+#### RHOHV noise correction verification
 
 # Check that RHOHV_NC is actually better (less std) than RHOHV, otherwise just use RHOHV, on a per-day basis
 std_tolerance = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_tolerance), otherwise use RHOHV
@@ -254,96 +269,11 @@ if "_NC" in X_RHO:
     # Redefine RHOHV_NC: keep it in the valid datetimes, put RHOHV in the rest
     qvps[X_RHO] = qvps[X_RHO].where(valid_datetimes_xr, qvps["RHOHV"])
 
-# Conditions to clean ML height values
-max_change = 400 # set a maximum value of ML height change from one timestep to another (in m)
-max_std = 200 # set a maximum value of ML std from one timestep to another (in m)
-time_window = 5 # set timestep window for the std computation (centered)
-min_period = 3 # set minimum number of valid ML values in the window (centered)
-
-cond_ML_bottom_change = abs(qvps["height_ml_bottom_new_gia"].diff("time").compute())<max_change
-cond_ML_bottom_std = qvps["height_ml_bottom_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
-# cond_ML_bottom_minlen = qvps["height_ml_bottom_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
-
-cond_ML_top_change = abs(qvps["height_ml_new_gia"].diff("time").compute())<max_change
-cond_ML_top_std = qvps["height_ml_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
-# cond_ML_top_minlen = qvps["height_ml_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
-
-allcond = cond_ML_bottom_change * cond_ML_bottom_std * cond_ML_top_change * cond_ML_top_std
-
-# Filter only fully stratiform pixels (min entropy >= min_entropy_thresh and ML detected)
-qvps_strat = qvps.where( (qvps["min_entropy"]>=min_entropy_thresh).compute() & allcond, drop=True)
-if "TEMP" not in qvps_strat or "height_ml_new_gia" not in qvps_strat: #!!! For some reason, AFY triggers an issue where it drops the TEMP and ML height coordinates even if there are valid values, so this is a temporary fix
-    qvps_strat = qvps.where( (qvps["min_entropy"]>=min_entropy_thresh).compute() & allcond).dropna("time",how="all").dropna("z",how="all")
-
-# Relaxed alternative: Filter qvps with at least 50% of stratiform pixels (min entropy >= min_entropy_thresh and ML detected)
-qvps_strat_relaxed = qvps.where( ( (qvps["min_entropy"]>=min_entropy_thresh).sum("z").compute() >= qvps[X_DBZH].count("z").compute()/2 ) & allcond, drop=True)
-
-# Only-ML alternative: Filter qvps with ML detected
-qvps_strat_ML = qvps.where( allcond, drop=True)
-if "TEMP" not in qvps_strat_ML or "height_ml_new_gia" not in qvps_strat_ML: #!!! For some reason, AFY triggers an issue where it drops the TEMP and ML height coordinates even if there are valid values, so this is a temporary fix
-    qvps_strat_ML = qvps.where( allcond).dropna("time",how="all").dropna("z",how="all")
-
-# Filter out non relevant values
-qvps_strat_fil = qvps_strat.where((qvps_strat[X_TH] > -10 )&
-                                  (qvps_strat[X_KDP].fillna(0.) > -0.1)&
-                                  (qvps_strat[X_KDP].fillna(0.) < 3)&
-                                  (qvps_strat[X_RHO] > 0.7)&
-                                  (qvps_strat[X_ZDR] > -1) &
-                                  (qvps_strat[X_ZDR] < 3))
-
-qvps_strat_relaxed_fil = qvps_strat_relaxed.where((qvps_strat_relaxed[X_TH] > -10 )&
-                                  (qvps_strat_relaxed[X_KDP].fillna(0.) > -0.1)&
-                                  (qvps_strat_relaxed[X_KDP].fillna(0.) < 3)&
-                                  (qvps_strat_relaxed[X_RHO] > 0.7)&
-                                  (qvps_strat_relaxed[X_ZDR] > -1) &
-                                  (qvps_strat_relaxed[X_ZDR] < 3))
-
-qvps_strat_ML_fil = qvps_strat_ML.where((qvps_strat_ML[X_TH] > -10 )&
-                                  (qvps_strat_ML[X_KDP].fillna(0.) > -0.1)&
-                                  (qvps_strat_ML[X_KDP].fillna(0.) < 3)&
-                                  (qvps_strat_ML[X_RHO] > 0.7)&
-                                  (qvps_strat_ML[X_ZDR] > -1) &
-                                  (qvps_strat_ML[X_ZDR] < 3))
-
-try:
-    qvps_strat_fil = qvps_strat_fil.where(qvps_strat_fil["SNRHC"]>SNRH_min)
-    qvps_strat_relaxed_fil = qvps_strat_relaxed_fil.where(qvps_strat_relaxed_fil["SNRHC"]>SNRH_min)
-    qvps_strat_ML_fil = qvps_strat_ML_fil.where(qvps_strat_ML_fil["SNRHC"]>SNRH_min)
-except KeyError:
-    qvps_strat_fil = qvps_strat_fil.where(qvps_strat_fil["SNRH"]>SNRH_min)
-    qvps_strat_relaxed_fil = qvps_strat_relaxed_fil.where(qvps_strat_relaxed_fil["SNRH"]>SNRH_min)
-    qvps_strat_ML_fil = qvps_strat_ML_fil.where(qvps_strat_ML_fil["SNRH"]>SNRH_min)
-except:
-    print("Could not filter out low SNR")
-
-total_time = time.time() - start_time
-print(f"took {total_time/60:.2f} minutes.")
-
-#### Temporarely save filtered QVPs to files (for conflictive cases, like TUR) and reload
-loc = find_loc(locs, ff[0])
-if loc in ["tur", "hty"]:
-    print("Temporarely saving filtered QVPs to files and reloading...")
-    for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
-                                ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
-                                ("stratiform_ML", qvps_strat_ML_fil.copy())]:
-        print("   ... "+stratname)
-        # save to file
-        if not os.path.exists(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/"+stratname):
-            os.makedirs(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/"+stratname)
-
-        for vv in stratqvp.data_vars:
-            stratqvp[vv].encoding = {'zlib': True, 'complevel': 6}
-        stratqvp.to_netcdf(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/"+stratname+"/"+loc+".nc")
-
-    qvps_strat_fil = xr.open_dataset(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/stratiform/"+loc+".nc")
-    qvps_strat_relaxed_fil = xr.open_dataset(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/stratiform_relaxed/"+loc+".nc")
-    qvps_strat_ML_fil = xr.open_dataset(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/stratiform_ML/"+loc+".nc")
-
 #### Calculate retrievals
+p_time = time.time()
+print("Calculating and/or extracting microphysical retrievals...")
 if calculate_retrievals:
     # We do this for both qvps_strat_fil and relaxed qvps_strat_relaxed_fil
-    start_time = time.time()
-    print("Calculating microphysical retrievals...")
 
     # to check the wavelength of each radar, in cm for DWD, in 1/100 cm for DMI ()
     # filewl = ""
@@ -361,12 +291,12 @@ if calculate_retrievals:
     except NameError:
         retrievals_qvpbased = {}
 
-    for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
-                                ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
-                                ("stratiform_ML", qvps_strat_ML_fil.copy())]:
-        print("   ... for "+stratname)
+    # Calculate only for unfiltered QVPs, then we will filter them later
+    for stratname, stratqvp in [("unfiltered", qvps.copy()),
+                                ]:
+        # print("   ... for "+stratname)
         retrievals_qvpbased[stratname] = {}
-        retrievals_qvpbased[stratname][find_loc(locs, ff[0])] = utils.calc_microphys_retrievals(stratqvp, Lambda = Lambda, mu=0.33,
+        retrievals_qvpbased[stratname][loc] = utils.calc_microphys_retrievals(stratqvp, Lambda = Lambda, mu=0.33,
                                       X_DBZH=X_DBZH, X_ZDR=X_ZDR, X_KDP=X_KDP, X_TEMP="TEMP",
                                       X_PHI=X_PHI )
 
@@ -376,15 +306,14 @@ if calculate_retrievals:
         for ll in retrievals_qvpbased[stratname].keys():
             retrievals_qvpbased[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname+"/"+ll+".nc")
 
-# Check also if the retrievals are already in the QVP
+# Check also if the retrievals are already in the QVP and pull them into a new dict
 try: # check if exists, if not, create it
     retrievals
 except NameError:
     retrievals = {}
 
-for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
-                            ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
-                            ("stratiform_ML", qvps_strat_ML_fil.copy())]:
+for stratname, stratqvp in [("unfiltered", qvps.copy()),
+                            ]:
     retrievals_namelist = [
         "lwc_zh_zdr_reimann2021",
         "lwc_zh_zdr_rhyzkov2022",
@@ -411,7 +340,7 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
         "Nt_rain_zh_zdr_rhyzkov2020",
         ]
     retrievals[stratname] = {}
-    retrievals[stratname][find_loc(locs, ff[0])] = xr.Dataset({key: stratqvp[key] for key in retrievals_namelist if key in stratqvp.data_vars})
+    retrievals[stratname][loc] = xr.Dataset({key: stratqvp[key] for key in retrievals_namelist if key in stratqvp.data_vars})
 
     # Save retrievals
     if not os.path.exists(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname):
@@ -419,10 +348,198 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
     for ll in retrievals[stratname].keys():
         retrievals[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname+"/"+ll+".nc")
 
+partial_time = time.time() - p_time
+print(f"... took {partial_time/60:.2f} minutes.")
+
+#### Load riming
+# We do this for both qvps_strat_fil and relaxed qvps_strat_relaxed_fil
+print("Loading riming ...")
+p_time = time.time()
+
+# We will put the final riming classification in a dict
+try: # check if exists, if not, create it
+    riming_classif
+except NameError:
+    riming_classif = {}
+
+for stratname in ["unfiltered"]:
+    if stratname not in riming_classif.keys():
+        riming_classif[stratname] = {}
+    elif type(riming_classif[stratname]) is not dict:
+        riming_classif[stratname] = {}
+    # print("Loading "+stratname+" riming classification ...")
+    for ll in [loc]: # ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']:
+        if ll not in riming_classif[stratname].keys():
+            riming_classif[stratname][ll] = xr.Dataset()
+        elif type(riming_classif[stratname][ll]) is not xr.Dataset:
+            riming_classif[stratname][ll] = xr.Dataset()
+
+        for xx in riming_varnames:
+            try:
+                riming_classif[stratname][ll] = riming_classif[stratname][ll].assign( xr.open_dataset(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc") )
+                print(ll+" "+xx+" riming_classif loaded")
+            except:
+                print("!! Not able to load "+stratname+" riming classification !!")
+
+        # delete entry if empty
+        if not riming_classif[stratname][ll]:
+            del riming_classif[stratname][ll]
+
+# Assign
+qvps = qvps.assign( riming_classif['unfiltered'][loc] )
+
+partial_time = time.time() - p_time
+print(f"... took {partial_time/60:.2f} minutes.")
+
+#### Clean ML height values, apply thresholds and make stratiform selections
+print("Filtering desired stratiform conditions ...")
+p_time = time.time()
+
+cond_ML_bottom_change = abs(qvps["height_ml_bottom_new_gia"].diff("time").compute())<max_change
+cond_ML_bottom_std = qvps["height_ml_bottom_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
+# cond_ML_bottom_minlen = qvps["height_ml_bottom_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
+
+cond_ML_top_change = abs(qvps["height_ml_new_gia"].diff("time").compute())<max_change
+cond_ML_top_std = qvps["height_ml_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
+# cond_ML_top_minlen = qvps["height_ml_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
+
+allcond = cond_ML_bottom_change * cond_ML_bottom_std * cond_ML_top_change * cond_ML_top_std
+
+# Filter out non relevant values
+qvps_fil = qvps.where((qvps[X_TH] > -10 )&
+                    (qvps[X_KDP].fillna(0.) > -0.1)&
+                    (qvps[X_KDP].fillna(0.) < 3)&
+                    (qvps[X_RHO] > 0.7)&
+                    (qvps[X_ZDR] > -1) &
+                    (qvps[X_ZDR] < 3))
+
+try:
+    qvps_fil = qvps_fil.where(qvps_fil["SNRHC"]>SNRH_min)
+except KeyError:
+    qvps_fil = qvps_fil.where(qvps_fil["SNRH"]>SNRH_min)
+except:
+    print("Could not filter out low SNR")
+
+# Filter based on conditions
+# 1st only ML
+qvps_strat_ML_fil = qvps_fil.where( allcond)
+# 2nd fully stratiform pixels (min_entropy >= min_entropy_thresh and ML detected)
+qvps_strat_fil = qvps_strat_ML_fil.where( (qvps_strat_ML_fil["min_entropy"]>=min_entropy_thresh).compute())
+# 3d Relaxed alternative: at least 50% of stratiform pixels (min entropy >= min_entropy_thresh and ML detected)
+qvps_strat_relaxed_fil = qvps_strat_ML_fil.where( ( (qvps_strat_ML_fil["min_entropy"]>=min_entropy_thresh).sum("z").compute() >= qvps_strat_ML_fil[X_DBZH].count("z").compute()/2 ) )
+
+# Remove all-NaN slices to reduce size
+qvps_strat_ML_fil = qvps_strat_ML_fil.dropna("time",how="all").dropna("z",how="all")
+qvps_strat_fil = qvps_strat_fil.dropna("time",how="all").dropna("z",how="all")
+qvps_strat_relaxed_fil = qvps_strat_relaxed_fil.dropna("time",how="all").dropna("z",how="all")
+
+partial_time = time.time() - p_time
+print(f"... took {partial_time/60:.2f} minutes.")
+
+# #### Uncomment if necessary: Temporarely save filtered QVPs to files (for conflictive cases, like TUR) and reload
+# loc = find_loc(locs, ff[0])
+# if loc in ["tur", "hty"]:
+#     print("Temporarely saving filtered QVPs to files and reloading...")
+#     for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
+#                                 ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
+#                                 ("stratiform_ML", qvps_strat_ML_fil.copy())]:
+#         print("   ... "+stratname)
+#         # save to file
+#         if not os.path.exists(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/"+stratname):
+#             os.makedirs(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/"+stratname)
+
+#         for vv in stratqvp.data_vars:
+#             stratqvp[vv].encoding = {'zlib': True, 'complevel': 6}
+#         stratqvp.to_netcdf(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/"+stratname+"/"+loc+".nc")
+
+#     qvps_strat_fil = xr.open_dataset(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/stratiform/"+loc+".nc")
+#     qvps_strat_relaxed_fil = xr.open_dataset(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/stratiform_relaxed/"+loc+".nc")
+#     qvps_strat_ML_fil = xr.open_dataset(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/stratiform_ML/"+loc+".nc")
+
+#### Save filtered QVPs to files
+print("Saving filtered QVPs to files ...")
+p_time = time.time()
+
+for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
+                            ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
+                            ("stratiform_ML", qvps_strat_ML_fil.copy())]:
+    print("   ... "+stratname)
+    # save to file
+    if not os.path.exists(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/"+stratname):
+        os.makedirs(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/"+stratname)
+
+    for vv in stratqvp.data_vars:
+        stratqvp[vv].encoding = {'zlib': True, 'complevel': 6}
+
+    stratqvp.to_netcdf(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/"+stratname+"/"+loc+".nc")
+
+# Reload
+qvps_strat_fil = xr.open_dataset(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform/"+loc+".nc")
+qvps_strat_relaxed_fil = xr.open_dataset(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform_relaxed/"+loc+".nc")
+qvps_strat_ML_fil = xr.open_dataset(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform_ML/"+loc+".nc")
+
+partial_time = time.time() - p_time
+print(f"... took {partial_time/60:.2f} minutes.")
+
+#### Filter retrievals and riming like the QVPs
+print("Filter retrievals and riming like the QVPs ...")
+p_time = time.time()
+
+if calculate_retrievals:
+    for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
+                                ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
+                                ("stratiform_ML", qvps_strat_ML_fil.copy())]:
+
+        retrievals_qvpbased[stratname] = {}
+        retrievals_qvpbased[stratname][loc] = retrievals_qvpbased["unfiltered"][loc].where(stratqvp[X_TH])
+
+        # Save retrievals
+        if not os.path.exists(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname):
+            os.makedirs(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname)
+        for ll in retrievals_qvpbased[stratname].keys():
+            retrievals_qvpbased[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname+"/"+ll+".nc")
+
+for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
+                            ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
+                            ("stratiform_ML", qvps_strat_ML_fil.copy())]:
+
+    retrievals[stratname] = {}
+    retrievals[stratname][loc] = retrievals["unfiltered"][loc].where(stratqvp[X_TH])
+
+    # Save retrievals
+    if not os.path.exists(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname):
+        os.makedirs(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname)
+    for ll in retrievals[stratname].keys():
+        retrievals[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname+"/"+ll+".nc")
+
+for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
+                            ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
+                            ("stratiform_ML", qvps_strat_ML_fil.copy())]:
+    if stratname not in riming_classif.keys():
+        riming_classif[stratname] = {}
+    elif type(riming_classif[stratname]) is not dict:
+        riming_classif[stratname] = {}
+    # print("Loading "+stratname+" riming classification ...")
+    for ll in [loc]: # ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']:
+        riming_classif[stratname][ll] = stratqvp[riming_varnames]
+
+        # Save riming to files
+        for xx in riming_varnames:
+            try:
+                riming_classif[stratname][ll][xx].to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc")
+            except:
+                print("!! Not able to extract "+stratname+" riming classification !!")
+
+        # delete entry if empty
+        if not riming_classif[stratname][ll]:
+            del riming_classif[stratname][ll]
+
+partial_time = time.time() - p_time
+print(f"... took {partial_time/60:.2f} minutes.")
+
 #### General statistics
 print("Calculating statistics ...")
-
-# We do this for both qvps_strat_fil and relaxed qvps_strat_relaxed_fil
+p_time = time.time()
 
 z_snow_over_ML = 300 # set the height above the ML from where to consider snow. 300 m like in https://doi.org/10.1175/JAMC-D-19-0128.1
 z_rain_below_ML = 300 # set the height below the ML from where to consider rain. 300 m like in https://doi.org/10.1175/JAMC-D-19-0128.1
@@ -443,9 +560,12 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
 
     values_sfc = stratqvp.where( (stratqvp["z"] < (stratqvp["height_ml_bottom_new_gia"]+stratqvp["z"][0])/2) ).bfill("z").isel({"z": 0}) # selects the closest value to the ground starting from below half of the ML height (with respect to the radar altitude)
     values_snow = stratqvp.where( (stratqvp["z"] > stratqvp["height_ml_new_gia"]) ).sel({"z": stratqvp["height_ml_new_gia"] + z_snow_over_ML}, method="nearest", tolerance=z_snow_over_ML)
-    values_rain = stratqvp.where( (stratqvp["z"] < stratqvp["height_ml_bottom_new_gia"]) ).sel({"z": stratqvp["height_ml_bottom_new_gia"] - z_rain_below_ML}, method="nearest", tolerance=z_rain_below_ML)
+    values_rain = stratqvp.where( (stratqvp["z"] < stratqvp["height_ml_bottom_new_gia"]) )\
+                    .sel({"z": (stratqvp["height_ml_bottom_new_gia"] - z_rain_below_ML)\
+                          .clip(min=stratqvp["z"].min()-z_rain_below_ML)}, # added clip because rounding errors may cause the ML bot to be slighly below the minimum z
+                    method="nearest", tolerance=z_rain_below_ML)
 
-    #### ML statistics
+    ##### ML statistics
     # select values inside the ML
     qvps_ML = stratqvp.where( (stratqvp["z"] < stratqvp["height_ml_new_gia"]) & \
                                    (stratqvp["z"] > stratqvp["height_ml_bottom_new_gia"]), drop=True)
@@ -541,7 +661,7 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
     cloudtop_TEMP_10dbz = stratqvp["TEMP"].sel({"z": cloudtop_10dbz}, method="nearest")
 
 
-    #### DGL statistics
+    ##### DGL statistics
     # select values in the DGL
     qvps_DGL = stratqvp.where(((stratqvp["TEMP"] >= -20)&(stratqvp["TEMP"] <= -10)).compute(), drop=True)
 
@@ -549,7 +669,7 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
     values_DGL_min = qvps_DGL.min(dim="z")
     values_DGL_mean = qvps_DGL.mean(dim="z")
 
-    #### Needle zone statistics
+    ##### Needle zone statistics
     # select values in the NZ
     # qvps_NZ = stratqvp.where(((stratqvp["TEMP"] >= -8)&(stratqvp["TEMP"] <= -1)).compute(), drop=True).unify_chunks()
     qvps_NZ = stratqvp.where(((stratqvp["TEMP"] >= -8)&(stratqvp["TEMP"] <= -1)).compute())
@@ -559,33 +679,33 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
     values_NZ_mean = qvps_NZ.mean(dim="z")
 
     # Put in the dictionary
-    stats[stratname][find_loc(locs, ff[0])] = {"values_sfc": values_sfc.compute().copy(deep=True).assign_attrs({"Description": "value closest to the ground (at least lower than half of the ML height)"}),
-                                       "values_snow": values_snow.compute().copy(deep=True).assign_attrs({"Description": "value in snow ("" m above the ML)"}),
-                                       "values_rain": values_rain.compute().copy(deep=True).assign_attrs({"Description": "value in rain ("+str(z_rain_below_ML)+" m above the ML)"}),
-                                       "values_ML_max": values_ML_max.compute().copy(deep=True).assign_attrs({"Description": "maximum value within the ML"}),
-                                       "values_ML_min": values_ML_min.compute().copy(deep=True).assign_attrs({"Description": "minimum value within the ML"}),
-                                       "values_ML_mean": values_ML_mean.compute().copy(deep=True).assign_attrs({"Description": "mean value within the ML"}),
-                                       "height_ML_max": height_ML_max.compute().copy(deep=True).assign_attrs({"Description": "height (z) of the maximum value within the ML"}),
-                                       "height_ML_min": height_ML_min.compute().copy(deep=True).assign_attrs({"Description": "height (z) of the minimum value within the ML"}),
-                                       "ML_thickness": ML_thickness.compute().copy(deep=True).assign_attrs({"Description": "thickness of the ML (in m)"}),
-                                       "ML_bottom": ML_bottom.compute().copy(deep=True).assign_attrs({"Description": "height of the ML bottom (in m)"}),
-                                       "ML_thickness_TEMP": ML_thickness_TEMP.compute().copy(deep=True).assign_attrs({"Description": "thickness of the ML (in temperature)"}),
-                                       "ML_bottom_TEMP": ML_bottom_TEMP.compute().copy(deep=True).assign_attrs({"Description": "height of the ML bottom (in temperature)"}),
-                                       "values_DGL_max": values_DGL_max.compute().copy(deep=True).assign_attrs({"Description": "maximum value within the DGL"}),
-                                       "values_DGL_min": values_DGL_min.compute().copy(deep=True).assign_attrs({"Description": "minimum value within the DGL"}),
-                                       "values_DGL_mean": values_DGL_mean.compute().copy(deep=True).assign_attrs({"Description": "mean value within the DGL"}),
-                                       "values_NZ_max": values_NZ_max.compute().copy(deep=True).assign_attrs({"Description": "maximum value within the NZ"}),
-                                       "values_NZ_min": values_NZ_min.compute().copy(deep=True).assign_attrs({"Description": "minimum value within the NZ"}),
-                                       "values_NZ_mean": values_NZ_mean.compute().copy(deep=True).assign_attrs({"Description": "mean value within the NZ"}),
-                                       "beta": beta.compute().copy(deep=True).assign_attrs({"Description": "Gradient from "+str(z_snow_over_ML)+" to "+str(z_grad_above_ML)+" m above the ML"}),
-                                       "beta_belowDGL": beta_belowDGL.compute().copy(deep=True).assign_attrs({"Description": "Gradient from "+str(z_snow_over_ML)+" m above the ML to DGL bottom"}),
-                                       "beta_belowML": beta_belowML.compute().copy(deep=True).assign_attrs({"Description": "Gradient from the first valid value to "+str(z_rain_below_ML)+" m below the ML"}),
-                                       "cloudtop": cloudtop.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest not-null ZH value)"}),
-                                       "cloudtop_5dbz": cloudtop_5dbz.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest ZH value > 5 dBZ)"}),
-                                       "cloudtop_10dbz": cloudtop_10dbz.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest ZH value > 10 dBZ)"}),
-                                       "cloudtop_TEMP": cloudtop_TEMP.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest not-null ZH value)"}),
-                                       "cloudtop_TEMP_5dbz": cloudtop_TEMP_5dbz.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest ZH value > 5 dBZ)"}),
-                                       "cloudtop_TEMP_10dbz": cloudtop_TEMP_10dbz.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest ZH value > 10 dBZ)"}),
+    stats[stratname][loc] = {"values_sfc": values_sfc.compute().copy(deep=True).assign_attrs({"Description": "value closest to the ground (at least lower than half of the ML height)"}),
+                            "values_snow": values_snow.compute().copy(deep=True).assign_attrs({"Description": "value in snow ("" m above the ML)"}),
+                            "values_rain": values_rain.compute().copy(deep=True).assign_attrs({"Description": "value in rain ("+str(z_rain_below_ML)+" m above the ML)"}),
+                            "values_ML_max": values_ML_max.compute().copy(deep=True).assign_attrs({"Description": "maximum value within the ML"}),
+                            "values_ML_min": values_ML_min.compute().copy(deep=True).assign_attrs({"Description": "minimum value within the ML"}),
+                            "values_ML_mean": values_ML_mean.compute().copy(deep=True).assign_attrs({"Description": "mean value within the ML"}),
+                            "height_ML_max": height_ML_max.compute().copy(deep=True).assign_attrs({"Description": "height (z) of the maximum value within the ML"}),
+                            "height_ML_min": height_ML_min.compute().copy(deep=True).assign_attrs({"Description": "height (z) of the minimum value within the ML"}),
+                            "ML_thickness": ML_thickness.compute().copy(deep=True).assign_attrs({"Description": "thickness of the ML (in m)"}),
+                            "ML_bottom": ML_bottom.compute().copy(deep=True).assign_attrs({"Description": "height of the ML bottom (in m)"}),
+                            "ML_thickness_TEMP": ML_thickness_TEMP.compute().copy(deep=True).assign_attrs({"Description": "thickness of the ML (in temperature)"}),
+                            "ML_bottom_TEMP": ML_bottom_TEMP.compute().copy(deep=True).assign_attrs({"Description": "height of the ML bottom (in temperature)"}),
+                            "values_DGL_max": values_DGL_max.compute().copy(deep=True).assign_attrs({"Description": "maximum value within the DGL"}),
+                            "values_DGL_min": values_DGL_min.compute().copy(deep=True).assign_attrs({"Description": "minimum value within the DGL"}),
+                            "values_DGL_mean": values_DGL_mean.compute().copy(deep=True).assign_attrs({"Description": "mean value within the DGL"}),
+                            "values_NZ_max": values_NZ_max.compute().copy(deep=True).assign_attrs({"Description": "maximum value within the NZ"}),
+                            "values_NZ_min": values_NZ_min.compute().copy(deep=True).assign_attrs({"Description": "minimum value within the NZ"}),
+                            "values_NZ_mean": values_NZ_mean.compute().copy(deep=True).assign_attrs({"Description": "mean value within the NZ"}),
+                            "beta": beta.compute().copy(deep=True).assign_attrs({"Description": "Gradient from "+str(z_snow_over_ML)+" to "+str(z_grad_above_ML)+" m above the ML"}),
+                            "beta_belowDGL": beta_belowDGL.compute().copy(deep=True).assign_attrs({"Description": "Gradient from "+str(z_snow_over_ML)+" m above the ML to DGL bottom"}),
+                            "beta_belowML": beta_belowML.compute().copy(deep=True).assign_attrs({"Description": "Gradient from the first valid value to "+str(z_rain_below_ML)+" m below the ML"}),
+                            "cloudtop": cloudtop.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest not-null ZH value)"}),
+                            "cloudtop_5dbz": cloudtop_5dbz.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest ZH value > 5 dBZ)"}),
+                            "cloudtop_10dbz": cloudtop_10dbz.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest ZH value > 10 dBZ)"}),
+                            "cloudtop_TEMP": cloudtop_TEMP.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest not-null ZH value)"}),
+                            "cloudtop_TEMP_5dbz": cloudtop_TEMP_5dbz.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest ZH value > 5 dBZ)"}),
+                            "cloudtop_TEMP_10dbz": cloudtop_TEMP_10dbz.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest ZH value > 10 dBZ)"}),
         }
 
     # Save stats
@@ -595,61 +715,451 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
         for xx in stats[stratname][ll].keys():
             stats[stratname][ll][xx].to_netcdf(realpep_path+"/upload/jgiles/radar_stats"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc")
 
+partial_time = time.time() - p_time
+print(f"... took {partial_time/60:.2f} minutes.")
 
-#### Load riming
-# We do this for both qvps_strat_fil and relaxed qvps_strat_relaxed_fil
-print("Loading riming ...")
+total_time = time.time() - start_time
+print(f"Total time {total_time/60:.2f} minutes.")
 
-# We will put the final riming classification in a dict
-try: # check if exists, if not, create it
-    riming_classif
-except NameError:
-    riming_classif = {}
 
-loc = find_loc(locs, ff[0])
+#%% Filters (conditions for stratiform) #!!! DEPRECATE
+#### Filters
+# start_time = time.time()
+# print("Filtering stratiform conditions...")
 
-filtered_qvps = {"stratiform": qvps_strat_fil.copy(),
-                 "stratiform_relaxed": qvps_strat_relaxed_fil.copy(),
-                 "stratiform_ML": qvps_strat_ML_fil.copy()}
-for stratname in ["unfiltered", "stratiform", "stratiform_relaxed", "stratiform_ML"]:
-    if stratname not in riming_classif.keys():
-        riming_classif[stratname] = {}
-    elif type(riming_classif[stratname]) is not dict:
-        riming_classif[stratname] = {}
-    print("Loading "+stratname+" riming classification ...")
-    for ll in [loc]: # ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']:
-        if ll not in riming_classif[stratname].keys():
-            riming_classif[stratname][ll] = xr.Dataset()
-        elif type(riming_classif[stratname][ll]) is not xr.Dataset:
-            riming_classif[stratname][ll] = xr.Dataset()
+# # min value for SNRH thresholding. This has a significant influence in the KDP calculation and also affects the QVPs computations.
+# # Here is just redundant but I add it anyways
+# SNRH_min = 15
 
-        for xx in ['riming_DR_'+"_".join([X_ZDR, X_DBZH]),
-                   'riming_'+"_".join([X_ZDR, X_DBZH]),
-                   ]:
-            try:
-                riming_classif[stratname][ll] = riming_classif[stratname][ll].assign( xr.open_dataset(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc") )
-                print(ll+" "+xx+" riming_classif loaded")
-            except:
-                if stratname == "unfiltered":
-                    pass
-                else:
-                    riming_classif[stratname][ll] = riming_classif["unfiltered"][ll].where(filtered_qvps[stratname][X_DBZH].notnull())
-                    for xx in ['riming_DR_'+"_".join([X_ZDR, X_DBZH]),
-                               'riming_'+"_".join([X_ZDR, X_DBZH]),
-                               ]:
-                        if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname):
-                            os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname)
-                        riming_classif[stratname][ll][xx].to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+loc+"_"+xx+".nc")
-                    break
+# min_entropy_thresh = 0.85
+# # Filter only stratiform events (min entropy >= min_entropy_thresh) and ML detected
+# # with ProgressBar():
+# #     qvps_strat = qvps.where( (qvps["min_entropy"]>=min_entropy_thresh) & (qvps.height_ml_bottom_new_gia.notnull()), drop=True).compute()
 
-        # delete entry if empty
-        if not riming_classif[stratname][ll]:
-            del riming_classif[stratname][ll]
+# # Check that RHOHV_NC is actually better (less std) than RHOHV, otherwise just use RHOHV, on a per-day basis
+# std_tolerance = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_tolerance), otherwise use RHOHV
+# min_rho = 0.7 # min RHOHV value for filtering. Only do this test with the highest values to avoid wrong results
+# mean_tolerance = 0.02 # 2% tolerance, for checking if RHOHV_NC is actually larger than RHOHV (overall higher values)
 
-# Assign
-qvps_strat_fil = qvps_strat_fil.assign( riming_classif['stratiform'][loc] )
-qvps_strat_relaxed_fil = qvps_strat_relaxed_fil.assign( riming_classif['stratiform_relaxed'][loc] )
-qvps_strat_ML_fil = qvps_strat_ML_fil.assign( riming_classif['stratiform_ML'][loc] )
+# if "_NC" in X_RHO:
+#     # Check that the corrected RHOHV does not have higher STD than the original (1 + std_tolerance)
+#     # if that is the case we take it that the correction did not work well so we won't use it
+#     cond_rhohv1 = (
+#                     qvps[X_RHO].where(qvps[X_RHO]>min_rho).resample({"time":"D"}).std(dim=("time", "z")) < \
+#                     qvps["RHOHV"].where(qvps["RHOHV"]>min_rho).resample({"time":"D"}).std(dim=("time", "z"))*(1+std_tolerance)
+#                     ).compute()
+
+#     # Check that the corrected RHOHV have overall higher mean than the original (1 - mean_tolerance)
+#     # if that is the case we take it that the correction did not work well so we won't use it
+#     cond_rhohv2 = ( qvps[X_RHO].resample({"time":"D"}).mean(dim=("time", "z")) > \
+#                    qvps["RHOHV"].resample({"time":"D"}).mean(dim=("time", "z"))*(1-mean_tolerance) ).compute()
+
+#     cond_rhohv = cond_rhohv1 * cond_rhohv2
+
+#     # create an xarray.Dataarray with the valid timesteps
+#     valid_dates = cond_rhohv.where(cond_rhohv, drop=True).time.dt.date
+#     valid_datetimes = [date.values in valid_dates for date in qvps.time.dt.date]
+#     valid_datetimes_xr = xr.DataArray(valid_datetimes, coords={"time": qvps["time"]})
+
+#     # Redefine RHOHV_NC: keep it in the valid datetimes, put RHOHV in the rest
+#     qvps[X_RHO] = qvps[X_RHO].where(valid_datetimes_xr, qvps["RHOHV"])
+
+# # Conditions to clean ML height values
+# max_change = 400 # set a maximum value of ML height change from one timestep to another (in m)
+# max_std = 200 # set a maximum value of ML std from one timestep to another (in m)
+# time_window = 5 # set timestep window for the std computation (centered)
+# min_period = 3 # set minimum number of valid ML values in the window (centered)
+
+# cond_ML_bottom_change = abs(qvps["height_ml_bottom_new_gia"].diff("time").compute())<max_change
+# cond_ML_bottom_std = qvps["height_ml_bottom_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
+# # cond_ML_bottom_minlen = qvps["height_ml_bottom_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
+
+# cond_ML_top_change = abs(qvps["height_ml_new_gia"].diff("time").compute())<max_change
+# cond_ML_top_std = qvps["height_ml_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute()<max_std
+# # cond_ML_top_minlen = qvps["height_ml_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
+
+# allcond = cond_ML_bottom_change * cond_ML_bottom_std * cond_ML_top_change * cond_ML_top_std
+
+# # Filter only fully stratiform pixels (min entropy >= min_entropy_thresh and ML detected)
+# qvps_strat = qvps.where( (qvps["min_entropy"]>=min_entropy_thresh).compute() & allcond, drop=True)
+# if "TEMP" not in qvps_strat or "height_ml_new_gia" not in qvps_strat: #!!! For some reason, AFY triggers an issue where it drops the TEMP and ML height coordinates even if there are valid values, so this is a temporary fix
+#     qvps_strat = qvps.where( (qvps["min_entropy"]>=min_entropy_thresh).compute() & allcond).dropna("time",how="all").dropna("z",how="all")
+
+# # Relaxed alternative: Filter qvps with at least 50% of stratiform pixels (min entropy >= min_entropy_thresh and ML detected)
+# qvps_strat_relaxed = qvps.where( ( (qvps["min_entropy"]>=min_entropy_thresh).sum("z").compute() >= qvps[X_DBZH].count("z").compute()/2 ) & allcond, drop=True)
+
+# # Only-ML alternative: Filter qvps with ML detected
+# qvps_strat_ML = qvps.where( allcond, drop=True)
+# if "TEMP" not in qvps_strat_ML or "height_ml_new_gia" not in qvps_strat_ML: #!!! For some reason, AFY triggers an issue where it drops the TEMP and ML height coordinates even if there are valid values, so this is a temporary fix
+#     qvps_strat_ML = qvps.where( allcond).dropna("time",how="all").dropna("z",how="all")
+
+# # Filter out non relevant values
+# qvps_strat_fil = qvps_strat.where((qvps_strat[X_TH] > -10 )&
+#                                   (qvps_strat[X_KDP].fillna(0.) > -0.1)&
+#                                   (qvps_strat[X_KDP].fillna(0.) < 3)&
+#                                   (qvps_strat[X_RHO] > 0.7)&
+#                                   (qvps_strat[X_ZDR] > -1) &
+#                                   (qvps_strat[X_ZDR] < 3))
+
+# qvps_strat_relaxed_fil = qvps_strat_relaxed.where((qvps_strat_relaxed[X_TH] > -10 )&
+#                                   (qvps_strat_relaxed[X_KDP].fillna(0.) > -0.1)&
+#                                   (qvps_strat_relaxed[X_KDP].fillna(0.) < 3)&
+#                                   (qvps_strat_relaxed[X_RHO] > 0.7)&
+#                                   (qvps_strat_relaxed[X_ZDR] > -1) &
+#                                   (qvps_strat_relaxed[X_ZDR] < 3))
+
+# qvps_strat_ML_fil = qvps_strat_ML.where((qvps_strat_ML[X_TH] > -10 )&
+#                                   (qvps_strat_ML[X_KDP].fillna(0.) > -0.1)&
+#                                   (qvps_strat_ML[X_KDP].fillna(0.) < 3)&
+#                                   (qvps_strat_ML[X_RHO] > 0.7)&
+#                                   (qvps_strat_ML[X_ZDR] > -1) &
+#                                   (qvps_strat_ML[X_ZDR] < 3))
+
+# try:
+#     qvps_strat_fil = qvps_strat_fil.where(qvps_strat_fil["SNRHC"]>SNRH_min)
+#     qvps_strat_relaxed_fil = qvps_strat_relaxed_fil.where(qvps_strat_relaxed_fil["SNRHC"]>SNRH_min)
+#     qvps_strat_ML_fil = qvps_strat_ML_fil.where(qvps_strat_ML_fil["SNRHC"]>SNRH_min)
+# except KeyError:
+#     qvps_strat_fil = qvps_strat_fil.where(qvps_strat_fil["SNRH"]>SNRH_min)
+#     qvps_strat_relaxed_fil = qvps_strat_relaxed_fil.where(qvps_strat_relaxed_fil["SNRH"]>SNRH_min)
+#     qvps_strat_ML_fil = qvps_strat_ML_fil.where(qvps_strat_ML_fil["SNRH"]>SNRH_min)
+# except:
+#     print("Could not filter out low SNR")
+
+# total_time = time.time() - start_time
+# print(f"took {total_time/60:.2f} minutes.")
+
+# #### Temporarely save filtered QVPs to files (for conflictive cases, like TUR) and reload
+# loc = find_loc(locs, ff[0])
+# if loc in ["tur", "hty"]:
+#     print("Temporarely saving filtered QVPs to files and reloading...")
+#     for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
+#                                 ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
+#                                 ("stratiform_ML", qvps_strat_ML_fil.copy())]:
+#         print("   ... "+stratname)
+#         # save to file
+#         if not os.path.exists(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/"+stratname):
+#             os.makedirs(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/"+stratname)
+
+#         for vv in stratqvp.data_vars:
+#             stratqvp[vv].encoding = {'zlib': True, 'complevel': 6}
+#         stratqvp.to_netcdf(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/"+stratname+"/"+loc+".nc")
+
+#     qvps_strat_fil = xr.open_dataset(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/stratiform/"+loc+".nc")
+#     qvps_strat_relaxed_fil = xr.open_dataset(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/stratiform_relaxed/"+loc+".nc")
+#     qvps_strat_ML_fil = xr.open_dataset(realpep_path+"/upload/jgiles/temp_stratiform_qvps"+suffix_name+"/stratiform_ML/"+loc+".nc")
+
+# #### Calculate retrievals
+# if calculate_retrievals:
+#     # We do this for both qvps_strat_fil and relaxed qvps_strat_relaxed_fil
+#     start_time = time.time()
+#     print("Calculating microphysical retrievals...")
+
+#     # to check the wavelength of each radar, in cm for DWD, in 1/100 cm for DMI ()
+#     # filewl = ""
+#     # xr.open_dataset(filewl, group="how") # DWD
+#     # file1 = realpep_path+"/upload/jgiles/dmi_raw/acq/OLDDATA/uza/RADAR/2015/01/01/ANK/RAW/ANK150101000008.RAW6M00"
+#     # xd.io.backends.iris.IrisRawFile(file1, loaddata=False).ingest_header["task_configuration"]["task_misc_info"]["wavelength"]
+
+#     Lambda = 53.1 # radar wavelength in mm (pro: 53.138, ANK: 53.1, AFY: 53.3, GZT: 53.3, HTY: 53.3, SVS:53.3)
+#     if country == "boxpol":
+#         Lambda = 32
+
+#     # We will put the final retrievals in a dict
+#     try: # check if exists, if not, create it
+#         retrievals_qvpbased
+#     except NameError:
+#         retrievals_qvpbased = {}
+
+#     for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
+#                                 ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
+#                                 ("stratiform_ML", qvps_strat_ML_fil.copy())]:
+#         print("   ... for "+stratname)
+#         retrievals_qvpbased[stratname] = {}
+#         retrievals_qvpbased[stratname][find_loc(locs, ff[0])] = utils.calc_microphys_retrievals(stratqvp, Lambda = Lambda, mu=0.33,
+#                                       X_DBZH=X_DBZH, X_ZDR=X_ZDR, X_KDP=X_KDP, X_TEMP="TEMP",
+#                                       X_PHI=X_PHI )
+
+#         # Save retrievals
+#         if not os.path.exists(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname):
+#             os.makedirs(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname)
+#         for ll in retrievals_qvpbased[stratname].keys():
+#             retrievals_qvpbased[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname+"/"+ll+".nc")
+
+# # Check also if the retrievals are already in the QVP
+# try: # check if exists, if not, create it
+#     retrievals
+# except NameError:
+#     retrievals = {}
+
+# for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
+#                             ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
+#                             ("stratiform_ML", qvps_strat_ML_fil.copy())]:
+#     retrievals_namelist = [
+#         "lwc_zh_zdr_reimann2021",
+#         "lwc_zh_zdr_rhyzkov2022",
+#         "lwc_kdp_reimann2021",
+#         "lwc_ah_reimann2021",
+#         "lwc_hybrid_reimann2021",
+#         "iwc_zh_t_hogan2006",
+#         "iwc_zh_t_hogan2006_model",
+#         "iwc_zh_t_hogan2006_combined",
+#         "iwc_zdr_zh_kdp_carlin2021",
+#         "Dm_ice_zh_matrosov2019",
+#         "Dm_ice_zh_kdp_carlin2021",
+#         "Dm_ice_zdp_kdp_carlin2021",
+#         "Dm_hybrid_blanke2023",
+#         "Dm_rain_zdr_chen",
+#         "Dm_rain_zdr_hu2022",
+#         "Dm_rain_zdr_bringi2009",
+#         "Nt_ice_iwc_zh_t_hu2022",
+#         "Nt_ice_iwc_zh_t_carlin2021",
+#         "Nt_ice_iwc_zh_t_combined_hu2022",
+#         "Nt_ice_iwc_zh_t_combined_carlin2021",
+#         "Nt_ice_iwc_zdr_zh_kdp_hu2022",
+#         "Nt_ice_iwc_zdr_zh_kdp_carlin2021",
+#         "Nt_rain_zh_zdr_rhyzkov2020",
+#         ]
+#     retrievals[stratname] = {}
+#     retrievals[stratname][find_loc(locs, ff[0])] = xr.Dataset({key: stratqvp[key] for key in retrievals_namelist if key in stratqvp.data_vars})
+
+#     # Save retrievals
+#     if not os.path.exists(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname):
+#         os.makedirs(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname)
+#     for ll in retrievals[stratname].keys():
+#         retrievals[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname+"/"+ll+".nc")
+
+# #### General statistics
+# print("Calculating statistics ...")
+
+# # We do this for both qvps_strat_fil and relaxed qvps_strat_relaxed_fil
+
+# z_snow_over_ML = 300 # set the height above the ML from where to consider snow. 300 m like in https://doi.org/10.1175/JAMC-D-19-0128.1
+# z_rain_below_ML = 300 # set the height below the ML from where to consider rain. 300 m like in https://doi.org/10.1175/JAMC-D-19-0128.1
+# z_grad_above_ML = 2000 # height above the ML until which to compute the gradient
+
+# # We will put the final stats in a dict
+# try: # check if exists, if not, create it
+#     stats
+# except NameError:
+#     stats = {}
+
+# for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
+#                             ("stratiform_relaxed", qvps_strat_relaxed_fil.copy()),
+#                             ("stratiform_ML", qvps_strat_ML_fil.copy())]:
+#     print("   ... for "+stratname)
+
+#     stats[stratname] = {}
+
+#     values_sfc = stratqvp.where( (stratqvp["z"] < (stratqvp["height_ml_bottom_new_gia"]+stratqvp["z"][0])/2) ).bfill("z").isel({"z": 0}) # selects the closest value to the ground starting from below half of the ML height (with respect to the radar altitude)
+#     values_snow = stratqvp.where( (stratqvp["z"] > stratqvp["height_ml_new_gia"]) ).sel({"z": stratqvp["height_ml_new_gia"] + z_snow_over_ML}, method="nearest", tolerance=z_snow_over_ML)
+#     values_rain = stratqvp.where( (stratqvp["z"] < stratqvp["height_ml_bottom_new_gia"]) ).sel({"z": stratqvp["height_ml_bottom_new_gia"] - z_rain_below_ML}, method="nearest", tolerance=z_rain_below_ML)
+
+#     #### ML statistics
+#     # select values inside the ML
+#     qvps_ML = stratqvp.where( (stratqvp["z"] < stratqvp["height_ml_new_gia"]) & \
+#                                    (stratqvp["z"] > stratqvp["height_ml_bottom_new_gia"]), drop=True)
+
+#     values_ML_max = qvps_ML.max(dim="z")
+#     values_ML_min = qvps_ML.min(dim="z")
+#     values_ML_mean = qvps_ML.mean(dim="z")
+#     ML_thickness = (qvps_ML["height_ml_new_gia"] - qvps_ML["height_ml_bottom_new_gia"]).rename("ML_thickness")
+#     ML_bottom = qvps_ML["height_ml_bottom_new_gia"]
+
+#     ML_bottom_TEMP = stratqvp["TEMP"].sel(z=stratqvp["height_ml_bottom_new_gia"], method="nearest")
+#     ML_thickness_TEMP = ML_bottom_TEMP - stratqvp["TEMP"].sel(z=stratqvp["height_ml_new_gia"], method="nearest")
+
+#     #!!! Temporary solution with np.isfinite because there are -inf and inf values in ANK data
+#     try:
+#         height_ML_max = qvps_ML.where(np.isfinite(qvps_ML)).idxmax("z", skipna=True)
+#         height_ML_min = qvps_ML.where(np.isfinite(qvps_ML)).idxmin("z", skipna=True)
+#     except xr.core.merge.MergeError:
+#         # this might fail for some unkwon reason with the range and z_idx coordinate (TUR)
+#         # remove those and try again
+#         height_ML_max = qvps_ML.where(np.isfinite(qvps_ML)).drop_vars(["range", "z_idx"]).idxmax("z", skipna=True)
+#         height_ML_min = qvps_ML.where(np.isfinite(qvps_ML)).drop_vars(["range", "z_idx"]).idxmin("z", skipna=True)
+
+#     # Silke style
+#     # select timesteps with detected ML
+#     # gradient_silke = stratqvp.where(stratqvp["height_ml_new_gia"] > stratqvp["height_ml_bottom_new_gia"], drop=True)
+#     # gradient_silke_ML = gradient_silke.sel({"z": gradient_silke["height_ml_new_gia"]}, method="nearest")
+#     # gradient_silke_ML_plus_2km = gradient_silke.sel({"z": gradient_silke_ML["z"]+2000}, method="nearest")
+#     # gradient_final = (gradient_silke_ML_plus_2km - gradient_silke_ML)/2
+#     # beta = gradient_final[X_TH] #### TH OR DBZH??
+
+#     # Gradient above the ML
+#     # We select above z_snow_over_ML and below z_snow_over_ML + z_grad_above_ML
+#     # Then we compute the gradient as the linear fit of the valid values
+
+#     stratqvp_ = stratqvp.where(stratqvp["z"] > (stratqvp["height_ml_new_gia"] + z_snow_over_ML) ) \
+#                         .where(stratqvp["z"] < (stratqvp["height_ml_new_gia"] + z_snow_over_ML + z_grad_above_ML) ).copy()
+
+#     stratqvp_TEMP = stratqvp["TEMP"].where(stratqvp["z"] > (stratqvp["height_ml_new_gia"] + z_snow_over_ML) ) \
+#                         .where(stratqvp["z"] < (stratqvp["height_ml_new_gia"] + z_snow_over_ML + z_grad_above_ML) ).copy()
+
+#     beta = stratqvp_.polyfit("z", 1, skipna=True).isel(degree=0) * 1000 # x1000 to transform the gradients to /km
+
+#     beta = beta.rename({var: var.replace("_polyfit_coefficients", "") for var in beta.data_vars}).assign_coords(
+#                             {"valid_count": stratqvp_["DBZH"].count("z"),
+#                              "valid_perc": stratqvp_["DBZH"].count("z")/stratqvp_TEMP.count("z")})
+
+#     # Variation: Gradient above the ML until the DGL bottom
+
+#     stratqvp_belowDGL_ = stratqvp.where((stratqvp["TEMP"] >= -10).compute())\
+#                         .where(stratqvp["z"] > (stratqvp["height_ml_new_gia"] + z_snow_over_ML) ) .copy()
+
+#     stratqvp_belowDGL_TEMP = stratqvp["TEMP"].where((stratqvp["TEMP"] >= -10).compute())\
+#                         .where(stratqvp["z"] > (stratqvp["height_ml_new_gia"] + z_snow_over_ML) ) .copy()
+
+#     beta_belowDGL = stratqvp_belowDGL_.polyfit("z", 1, skipna=True).isel(degree=0) * 1000 # x1000 to transform the gradients to /km
+
+#     beta_belowDGL = beta_belowDGL.rename({var: var.replace("_polyfit_coefficients", "") for var in beta_belowDGL.data_vars}).assign_coords(
+#                             {"valid_count": stratqvp_belowDGL_["DBZH"].count("z"),
+#                              "valid_perc": stratqvp_belowDGL_["DBZH"].count("z")/stratqvp_belowDGL_TEMP.count("z")})
+
+#     # Gradient below the ML
+#     # We select below z_rain_below_ML
+#     # Then we compute the gradient as the linear fit of the valid values
+
+#     stratqvp_belowML_ = stratqvp.where(stratqvp["z"] < (stratqvp["height_ml_bottom_new_gia"] - z_rain_below_ML ) ).copy()
+
+#     stratqvp_belowML_TEMP = stratqvp["TEMP"].where(stratqvp["z"] < (stratqvp["height_ml_bottom_new_gia"] - z_rain_below_ML ) ).copy()
+
+#     beta_belowML = stratqvp_belowML_.polyfit("z", 1, skipna=True).isel(degree=0) * 1000 # x1000 to transform the gradients to /km
+
+#     beta_belowML = beta_belowML.rename({var: var.replace("_polyfit_coefficients", "") for var in beta_belowML.data_vars}).assign_coords(
+#                             {"valid_count": stratqvp_belowML_["DBZH"].count("z"),
+#                              "valid_perc": stratqvp_belowML_["DBZH"].count("z")/stratqvp_belowML_TEMP.count("z")})
+
+#     # Cloud top (3 methods)
+#     # Get the height value of the last not null value with a minimum of entropy 0.2 (this min entropy is to filter out random noise pixels)
+#     cloudtop = stratqvp[X_DBZH].where(stratqvp["z"] > (stratqvp["height_ml_new_gia"]) ) \
+#                         .where(stratqvp["min_entropy"] > 0.2 ) \
+#                         .isel(z=slice(None,None,-1)).notnull().idxmax("z").rename("cloudtop")
+#     # Get the height value of the last value > 5 dBZ
+#     cloudtop_5dbz = stratqvp[X_DBZH].where(stratqvp["z"] > (stratqvp["height_ml_new_gia"]) ) \
+#                         .where(stratqvp["min_entropy"] > 0.2).where(stratqvp[X_DBZH]>5) \
+#                         .isel(z=slice(None,None,-1)).notnull().idxmax("z").rename("cloudtop 5 dBZ")
+#     # Get the height value of the last value > 10 dBZ
+#     cloudtop_10dbz = stratqvp[X_DBZH].where(stratqvp["z"] > (stratqvp["height_ml_new_gia"]) ) \
+#                         .where(stratqvp["min_entropy"] > 0.2).where(stratqvp[X_DBZH]>10) \
+#                         .isel(z=slice(None,None,-1)).notnull().idxmax("z").rename("cloudtop 10 dBZ")
+
+#     # Temperature of the cloud top (3 methods)
+#     cloudtop_TEMP = stratqvp["TEMP"].sel({"z": cloudtop}, method="nearest")
+#     cloudtop_TEMP_5dbz = stratqvp["TEMP"].sel({"z": cloudtop_5dbz}, method="nearest")
+#     cloudtop_TEMP_10dbz = stratqvp["TEMP"].sel({"z": cloudtop_10dbz}, method="nearest")
+
+
+#     #### DGL statistics
+#     # select values in the DGL
+#     qvps_DGL = stratqvp.where(((stratqvp["TEMP"] >= -20)&(stratqvp["TEMP"] <= -10)).compute(), drop=True)
+
+#     values_DGL_max = qvps_DGL.max(dim="z")
+#     values_DGL_min = qvps_DGL.min(dim="z")
+#     values_DGL_mean = qvps_DGL.mean(dim="z")
+
+#     #### Needle zone statistics
+#     # select values in the NZ
+#     # qvps_NZ = stratqvp.where(((stratqvp["TEMP"] >= -8)&(stratqvp["TEMP"] <= -1)).compute(), drop=True).unify_chunks()
+#     qvps_NZ = stratqvp.where(((stratqvp["TEMP"] >= -8)&(stratqvp["TEMP"] <= -1)).compute())
+
+#     values_NZ_max = qvps_NZ.max(dim="z")
+#     values_NZ_min = qvps_NZ.min(dim="z")
+#     values_NZ_mean = qvps_NZ.mean(dim="z")
+
+#     # Put in the dictionary
+#     stats[stratname][find_loc(locs, ff[0])] = {"values_sfc": values_sfc.compute().copy(deep=True).assign_attrs({"Description": "value closest to the ground (at least lower than half of the ML height)"}),
+#                                        "values_snow": values_snow.compute().copy(deep=True).assign_attrs({"Description": "value in snow ("" m above the ML)"}),
+#                                        "values_rain": values_rain.compute().copy(deep=True).assign_attrs({"Description": "value in rain ("+str(z_rain_below_ML)+" m above the ML)"}),
+#                                        "values_ML_max": values_ML_max.compute().copy(deep=True).assign_attrs({"Description": "maximum value within the ML"}),
+#                                        "values_ML_min": values_ML_min.compute().copy(deep=True).assign_attrs({"Description": "minimum value within the ML"}),
+#                                        "values_ML_mean": values_ML_mean.compute().copy(deep=True).assign_attrs({"Description": "mean value within the ML"}),
+#                                        "height_ML_max": height_ML_max.compute().copy(deep=True).assign_attrs({"Description": "height (z) of the maximum value within the ML"}),
+#                                        "height_ML_min": height_ML_min.compute().copy(deep=True).assign_attrs({"Description": "height (z) of the minimum value within the ML"}),
+#                                        "ML_thickness": ML_thickness.compute().copy(deep=True).assign_attrs({"Description": "thickness of the ML (in m)"}),
+#                                        "ML_bottom": ML_bottom.compute().copy(deep=True).assign_attrs({"Description": "height of the ML bottom (in m)"}),
+#                                        "ML_thickness_TEMP": ML_thickness_TEMP.compute().copy(deep=True).assign_attrs({"Description": "thickness of the ML (in temperature)"}),
+#                                        "ML_bottom_TEMP": ML_bottom_TEMP.compute().copy(deep=True).assign_attrs({"Description": "height of the ML bottom (in temperature)"}),
+#                                        "values_DGL_max": values_DGL_max.compute().copy(deep=True).assign_attrs({"Description": "maximum value within the DGL"}),
+#                                        "values_DGL_min": values_DGL_min.compute().copy(deep=True).assign_attrs({"Description": "minimum value within the DGL"}),
+#                                        "values_DGL_mean": values_DGL_mean.compute().copy(deep=True).assign_attrs({"Description": "mean value within the DGL"}),
+#                                        "values_NZ_max": values_NZ_max.compute().copy(deep=True).assign_attrs({"Description": "maximum value within the NZ"}),
+#                                        "values_NZ_min": values_NZ_min.compute().copy(deep=True).assign_attrs({"Description": "minimum value within the NZ"}),
+#                                        "values_NZ_mean": values_NZ_mean.compute().copy(deep=True).assign_attrs({"Description": "mean value within the NZ"}),
+#                                        "beta": beta.compute().copy(deep=True).assign_attrs({"Description": "Gradient from "+str(z_snow_over_ML)+" to "+str(z_grad_above_ML)+" m above the ML"}),
+#                                        "beta_belowDGL": beta_belowDGL.compute().copy(deep=True).assign_attrs({"Description": "Gradient from "+str(z_snow_over_ML)+" m above the ML to DGL bottom"}),
+#                                        "beta_belowML": beta_belowML.compute().copy(deep=True).assign_attrs({"Description": "Gradient from the first valid value to "+str(z_rain_below_ML)+" m below the ML"}),
+#                                        "cloudtop": cloudtop.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest not-null ZH value)"}),
+#                                        "cloudtop_5dbz": cloudtop_5dbz.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest ZH value > 5 dBZ)"}),
+#                                        "cloudtop_10dbz": cloudtop_10dbz.compute().copy(deep=True).assign_attrs({"Description": "Cloud top height (highest ZH value > 10 dBZ)"}),
+#                                        "cloudtop_TEMP": cloudtop_TEMP.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest not-null ZH value)"}),
+#                                        "cloudtop_TEMP_5dbz": cloudtop_TEMP_5dbz.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest ZH value > 5 dBZ)"}),
+#                                        "cloudtop_TEMP_10dbz": cloudtop_TEMP_10dbz.compute().copy(deep=True).assign_attrs({"Description": "TEMP at cloud top height (highest ZH value > 10 dBZ)"}),
+#         }
+
+#     # Save stats
+#     if not os.path.exists(realpep_path+"/upload/jgiles/radar_stats"+suffix_name+"/"+stratname):
+#         os.makedirs(realpep_path+"/upload/jgiles/radar_stats"+suffix_name+"/"+stratname)
+#     for ll in stats[stratname].keys():
+#         for xx in stats[stratname][ll].keys():
+#             stats[stratname][ll][xx].to_netcdf(realpep_path+"/upload/jgiles/radar_stats"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc")
+
+
+# #### Load riming
+# # We do this for both qvps_strat_fil and relaxed qvps_strat_relaxed_fil
+# print("Loading riming ...")
+
+# # We will put the final riming classification in a dict
+# try: # check if exists, if not, create it
+#     riming_classif
+# except NameError:
+#     riming_classif = {}
+
+# loc = find_loc(locs, ff[0])
+
+# filtered_qvps = {"stratiform": qvps_strat_fil.copy(),
+#                  "stratiform_relaxed": qvps_strat_relaxed_fil.copy(),
+#                  "stratiform_ML": qvps_strat_ML_fil.copy()}
+# for stratname in ["unfiltered", "stratiform", "stratiform_relaxed", "stratiform_ML"]:
+#     if stratname not in riming_classif.keys():
+#         riming_classif[stratname] = {}
+#     elif type(riming_classif[stratname]) is not dict:
+#         riming_classif[stratname] = {}
+#     print("Loading "+stratname+" riming classification ...")
+#     for ll in [loc]: # ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']:
+#         if ll not in riming_classif[stratname].keys():
+#             riming_classif[stratname][ll] = xr.Dataset()
+#         elif type(riming_classif[stratname][ll]) is not xr.Dataset:
+#             riming_classif[stratname][ll] = xr.Dataset()
+
+#         for xx in ['riming_DR_'+"_".join([X_ZDR, X_DBZH]),
+#                    'riming_'+"_".join([X_ZDR, X_DBZH]),
+#                    ]:
+#             try:
+#                 riming_classif[stratname][ll] = riming_classif[stratname][ll].assign( xr.open_dataset(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc") )
+#                 print(ll+" "+xx+" riming_classif loaded")
+#             except:
+#                 if stratname == "unfiltered":
+#                     pass
+#                 else:
+#                     riming_classif[stratname][ll] = riming_classif["unfiltered"][ll].where(filtered_qvps[stratname][X_DBZH].notnull())
+#                     for xx in ['riming_DR_'+"_".join([X_ZDR, X_DBZH]),
+#                                'riming_'+"_".join([X_ZDR, X_DBZH]),
+#                                ]:
+#                         if not os.path.exists(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname):
+#                             os.makedirs(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname)
+#                         riming_classif[stratname][ll][xx].to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+loc+"_"+xx+".nc")
+#                     break
+
+#         # delete entry if empty
+#         if not riming_classif[stratname][ll]:
+#             del riming_classif[stratname][ll]
+
+# # Assign
+# qvps_strat_fil = qvps_strat_fil.assign( riming_classif['stratiform'][loc] )
+# qvps_strat_relaxed_fil = qvps_strat_relaxed_fil.assign( riming_classif['stratiform_relaxed'][loc] )
+# qvps_strat_ML_fil = qvps_strat_ML_fil.assign( riming_classif['stratiform_ML'][loc] )
 
 total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
@@ -2118,7 +2628,14 @@ with mpl.rc_context({'font.size': 10}):
 
 #%% Riming statistics
 #%%% reload riming estimates
+clean_riming_noise = True
 locs_to_load = locs #[find_loc(locs, ff[0])] # by default, load only the histograms of the currently loaded QVPs.
+
+#!!! SOMETHING NEEDS TO BE DONE HERE OR SOMEWHERE SO THAT THE RIMING OF TURKISH AND GERMAN RADARS
+# CAN BE COMPARED TOGETHER (WRC IS ONLY APPLIED IN TURKEY)
+riming_varnames =['riming_DR_'+"_".join([X_ZDR, X_DBZH]),
+               'riming_'+"_".join([X_ZDR, X_DBZH]),
+               ]
 
 try: # check if exists, if not, create it
     riming_classif
@@ -2136,11 +2653,16 @@ for stratname in ["unfiltered", "stratiform", "stratiform_relaxed", "stratiform_
             riming_classif[stratname][ll] = xr.Dataset()
         elif type(riming_classif[stratname][ll]) is not xr.Dataset:
             riming_classif[stratname][ll] = xr.Dataset()
-        for xx in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_ZDR_EC_OC_AC_DBZH_AC',
-                   ]:
+        for xx in riming_varnames:
             try:
                 riming_classif[stratname][ll] = riming_classif[stratname][ll].assign( xr.open_dataset(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc") )
                 print(ll+" "+xx+" riming_classif loaded")
+                if clean_riming_noise:
+                    riming_classif[stratname][ll] = riming_classif[stratname][ll].copy(
+                                                        data = scipy.ndimage.binary_opening(
+                                                            riming_classif[stratname][ll].values,
+                                                            structure=np.ones((3, 3))).astype(float) )
+                    print(ll+" "+xx+" riming_classif noise cleaned")
             except:
                 pass
         # delete entry if empty

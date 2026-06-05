@@ -10,17 +10,23 @@ Plot PPIs, QVPs, line plots, etc
 
 
 import os
-try:
-    os.chdir('/home/jgiles/')
-except FileNotFoundError:
-    None
+import sys
 
+# List all possible paths where this script might live
+possible_paths = [
+    '/home/jgiles/Scripts/python/radar_processing_scripts',              # Office PC
+    '/p/scratch/detectrea2/giles1/radar_processing_scripts',             # JUWELS Scratch
+]
 
-# NEEDS WRADLIB 2.0.2 !! (OR GREATER?)
+# Find the one that exists on the current machine and add it
+for script_dir in possible_paths:
+    if os.path.exists(script_dir):
+        if script_dir not in sys.path:
+            sys.path.insert(0, script_dir)
+        break  # Stop checking once we find the right one
 
 import wradlib as wrl
 import numpy as np
-import sys
 import glob
 import xarray as xr
 import datetime as dt
@@ -46,14 +52,8 @@ from osgeo import osr
 
 from functools import partial
 
-try:
-    from Scripts.python.radar_processing_scripts import utils
-    from Scripts.python.radar_processing_scripts import radarmet
-    # from Scripts.python.radar_processing_scripts import colormap_generator
-except ModuleNotFoundError:
-    import utils
-    import radarmet
-    # import colormap_generator
+import utils
+import radarmet
 
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -95,10 +95,10 @@ if __name__ == "__main__": # set guard
     SNRH_min = 15 # min value for SNRH thresholding. This has a significant influence in the KDP calculation and also affects the QVPs computations.
 
     # Data file
-    ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-07-25/pro/vol5minng01/07/*allmoms*"
+    ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-08-18/pro/vol5minng01/07/*allmoms*"
     # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2019-07-17/ANK/*F/8.0/*allmoms*"
     # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-08-09/AFY/*/10.0/*allmoms*"
-    ff = "/automount/realpep/upload/jgiles/dmi/*/*/2015-03-11/HTY/*/8.0/*allmoms*"
+    ff = "/automount/realpep/upload/jgiles/dmi/*/*/2016-12-13/HTY/*/12.0/*allmoms*"
     # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2017-05-20/GZT/*/10.0/*allmoms*.nc"
     # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-04-30/SVS/*/10.0/*allmoms*.nc"
     # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-10-21/SVS/*/7.0/*allmoms*.nc"
@@ -203,13 +203,15 @@ if __name__ == "__main__": # set guard
 
     min_height = min_hgt + ds["altitude"].values
 
-    #### Define minimum range of usable data (mostly for bad PHIDP filtering)
-
-    # min_range = utils.min_rngs[min_range_key]
-
     #### Get variable names
 
     X_DBZH, X_PHI, X_RHO, X_ZDR, X_TH = utils.get_names(ds)
+
+    #### If unfolded PHIDP does not exist, we create it just copying PHIDP
+
+    if "_UF" not in X_PHI:
+        ds[X_PHI+"_UF"] = ds[X_PHI].copy()
+        X_PHI = X_PHI+"_UF"
 
     #### Load noise corrected RHOHV
 
@@ -322,17 +324,17 @@ if __name__ == "__main__": # set guard
     else:
         print("Skipped Loading ZDR offsets")
 
+    # Assign Zm
+    ds = ds.assign_coords({"Zm": utils.apply_min_max_thresh(ds, {X_RHO:0.9, "SNRH":15, "SNRHC":15, "SQIH":0.5},
+                                      {}, skipfullna=True)[X_DBZH]\
+                           .isel({"range": slice(1, None) }).sel({"range": slice(0, Zm_range)})\
+                               .compute().median(("azimuth","range")) })
+    ds["Zm"] = ds["Zm"].where(ds["Zm"]>0, other=0)# cap the negative values to 0
+    ds["Zm"].attrs = {"long_name": "Median "+X_DBZH+" in "+str(Zm_range)+" m radius"}
+
     # Correct wet radome
     if not isvolume:
         if country=="dmi":
-            # Assign Zm
-            ds = ds.assign_coords({"Zm": utils.apply_min_max_thresh(ds, {X_RHO:0.9, "SNRH":15, "SNRHC":15, "SQIH":0.5},
-                                              {}, skipfullna=True)[X_DBZH]\
-                                   .isel({"range": slice(1, None) }).sel({"range": slice(0, Zm_range)})\
-                                       .compute().median(("azimuth","range")) })
-            ds["Zm"] = ds["Zm"].where(ds["Zm"]>0, other=0)# cap the negative values to 0
-            ds["Zm"].attrs = {"long_name": "Median "+X_DBZH+" in "+str(Zm_range)+" m radius"}
-
             # correct WR
             ds = ds.assign({X_ZDR+"_WRC": ds[X_ZDR] - utils.zdr_wr_offset_zm_cuadratic(ds["Zm"]) })
             ds[X_ZDR+"_WRC"].attrs = ds[X_ZDR].attrs
@@ -376,17 +378,19 @@ if __name__ == "__main__": # set guard
         # phidp may be already preprocessed (turkish case), then only offset-correct (no smoothing) and then vulpiani
         if "PHIDP" not in X_PHI: # This is now always skipped with this definition ("PHIDP" is in both X_PHI); i.e., we apply full processing to turkish data too
             # calculate phidp offset
-            ds_phiproc = utils.phidp_offset_correction(utils.apply_min_max_thresh(ds, {"SNRH":SNRH_min, "SNRHC":SNRH_min, "SQIH":0.5}, {}, skipfullna=True),
-                                               X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
+            ds_phiproc = utils.phidp_offset_correction(ds,
+                                    additional_thresholds=[{"SNRH":SNRH_min, "SNRHC":SNRH_min, "SQIH":0.5}, {}],
+                                    X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                                  dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
                                  rng_min=1000, rng=rng, azmedian=azmedian, tolerance=(0,5)) # shorter rng, rng_min for finer turkish data
 
             phi_masked = ds_phiproc[X_PHI+"_OC"].where((ds[X_RHO] >= 0.8) * (ds[X_DBZH] >= 0.) * (ds["range"]>min_range) )
 
         else:
-            ds_phiproc = utils.phidp_processing(utils.apply_min_max_thresh(ds, {"SNRH":SNRH_min, "SNRHC":SNRH_min, "SQIH":0.5}, {}, skipfullna=True),
-                                        X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
-                                 dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
+            ds_phiproc = utils.phidp_processing(ds,
+                                    additional_thresholds=[{"SNRH":SNRH_min, "SNRHC":SNRH_min, "SQIH":0.5}, {}],
+                                    X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
+                                 dbzhmin=0., min_height=min_height, window=window0, window2=3, fix_range=fix_range,
                                  rng=rng, azmedian=azmedian, tolerance=(0,5), clean_invalid=False, fillna=False)
 
             phi_masked = ds_phiproc[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.8) * (ds[X_DBZH] >= 0.) * (ds["range"]>min_range) )
@@ -514,7 +518,7 @@ if __name__ == "__main__": # set guard
             ds = utils.attenuation_corr_linear(ds, alpha = alpha, beta = beta, alphaml = 0, betaml = 0,
                                                dbzh="DBZH",
                                                zdr=["ZDR", "ZDR_EC", "ZDR_EC_OC", "ZDR_EC_OC_WRC", "ZDR_EC_WRC"],
-                                               phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
+                                               phidp=["UPHIDP_UF_OC_MASKED", "UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_UF_OC_MASKED", "PHIDP_OC_MASKED", "PHIDP_OC"],
                                                ML_bot = "height_ml_bottom_new_gia_clean", ML_top = "height_ml_new_gia_clean",
                                                temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
                                                interpolate_deltabump = True )
@@ -525,7 +529,7 @@ if __name__ == "__main__": # set guard
             ds = utils.attenuation_corr_linear(ds, alpha = alpha, beta = beta, alphaml = alphaml, betaml = betaml,
                                                dbzh="DBZH",
                                                zdr=["ZDR", "ZDR_EC", "ZDR_EC_OC", "ZDR_EC_OC_WRC", "ZDR_EC_WRC"],
-                                               phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
+                                               phidp=["UPHIDP_UF_OC_MASKED", "UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_UF_OC_MASKED", "PHIDP_OC_MASKED", "PHIDP_OC"],
                                                ML_bot = "height_ml_bottom_new_gia_clean", ML_top = "height_ml_new_gia_clean",
                                                temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
                                                interpolate_deltabump = True )
@@ -1557,16 +1561,20 @@ if __name__ == "__main__": # set guard
     #%% Load QVPs
     # Load only events with ML detected (pre-condition for stratiform)
     ff_ML = "/automount/realpep/upload/jgiles/dwd/qvps/2015/*/*/pro/vol5minng01/07/ML_detected.txt"
-    # ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2020/*/*/SVS/*/*/ML_detected.txt"
+    ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps/2020/*/*/GZT/*/*/ML_detected.txt"
     # ff_ML = "/automount/realpep/upload/jgiles/dmi/qvps_selected_for_calibration_attenuation/20*/*/*/HTY/*/*/DONE.txt"
     ff_ML_glob = glob.glob(ff_ML)
 
     realpep_path = "/automount/realpep/"
-    loc_riming = "pro" # location for loading the riming classif
+    loc_riming = "gzt" # location for loading the riming classif
 
     X_DBZH = "DBZH_AC" # variables for the riming variant to load
     X_ZDR = "ZDR_EC_OC_AC"
-    if "dmi" in ff_ML: X_ZDR = "ZDR_EC_OC_WRC_AC"
+    riming_class = "_DR"
+    if "dmi" in ff_ML:
+        X_ZDR = "ZDR_EC_OC_WRC_AC"
+        riming_class = ""
+
     suffix_name = "" # suffix to add to folder names, for special cases (like computing only a selection of cases)
 
     if "dmi" in ff_ML:
@@ -1667,13 +1675,18 @@ if __name__ == "__main__": # set guard
                    # 'TH','UPHIDP',  # not so relevant
     #               'UVRADH', 'UZDR',  'UWRADH', 'VRADH', 'SQIH', # not implemented yet in visdict14
                    # 'WRADH', 'SNRHC', 'URHOHV', 'SNRH',
-                    'KDP', 'RHOHV_NC', 'UPHIDP_OC']
+                    'KDP', 'RHOHV_NC', 'UPHIDP_UF_OC']
 
 
-    vars_to_plot = ['DBZH_AC', 'KDP_ML_corrected_EC', 'KDP', 'ZDR_EC_OC_AC', 'RHOHV_NC',
-                    'UPHIDP_OC', 'ZDR_EC_OC', 'RHOHV', "DBZH", 'ZDR_EC_OC', "ZDR_EC"]
+    if "UPHIDP_UF_OC" in ds_qvps:
+        X_PHI = "UPHIDP_UF_OC"
+    if "PHIDP_UF_OC" in ds_qvps:
+        X_PHI = "PHIDP_UF_OC"
 
-    riming_to_plot = "riming_DR_ZDR_EC_OC_AC_DBZH_AC"
+    vars_to_plot = ['DBZH_AC', 'KDP_ML_corrected_EC', 'KDP', X_ZDR, 'RHOHV_NC',
+                    X_PHI, X_ZDR.split("_AC")[0], 'RHOHV', "DBZH", 'ZDR_EC_OC', "ZDR_EC"]
+
+    riming_to_plot = f"riming{riming_class}_{X_ZDR}_{X_DBZH}"
 
     # add missing units for PHIDP variables in turkish data (this was fixed on 28/12/23 but previous calculations have missing units)
     for vv in ds_qvps.data_vars:
@@ -1869,7 +1882,7 @@ if __name__ == "__main__": # set guard
         plot_panel
     )
 
-    layout.save(f"/user/jgiles/qvps_{loc_riming}_2015_stratiform.html", resources=INLINE, embed=True,
+    layout.save(f"/user/jgiles/qvps_{loc_riming}_2020_stratiform.html", resources=INLINE, embed=True,
                 max_states=1000, max_opts=1000)
 
 

@@ -29,15 +29,21 @@ Script for calculating ZDR calibration from different methods.
 
 
 import os
-try:
-    os.chdir('/home/jgiles/')
-except FileNotFoundError:
-    None
-
-
-# NEEDS WRADLIB 2.0.1 !! (OR GREATER?)
-
 import sys
+
+# List all possible paths where this script might live
+possible_paths = [
+    '/home/jgiles/Scripts/python/radar_processing_scripts',              # Office PC
+    '/p/scratch/detectrea2/giles1/radar_processing_scripts',             # JUWELS Scratch
+]
+
+# Find the one that exists on the current machine and add it
+for script_dir in possible_paths:
+    if os.path.exists(script_dir):
+        if script_dir not in sys.path:
+            sys.path.insert(0, script_dir)
+        break  # Stop checking once we find the right one
+
 import glob
 import xarray as xr
 import numpy as np
@@ -45,12 +51,8 @@ import numpy as np
 import warnings
 warnings.filterwarnings('ignore')
 
-try:
-    from Scripts.python.radar_processing_scripts import utils
-    from Scripts.python.radar_processing_scripts import radarmet
-except ModuleNotFoundError:
-    import utils
-    import radarmet
+import utils
+import radarmet
 
 import time
 start_time = time.time()
@@ -62,10 +64,11 @@ if __name__ == "__main__": # set guard
     calib_type = int(sys.argv[2]) # Like the numbers from the description above. Can be a multiple digit integer for simultaneous calculations
     overwrite = False # overwrite existing files?
 
-    phidp_names = ["UPHIDP", "PHIDP"] # names to look for the PHIDP variable, in order of preference
-    dbzh_names = ["DBZH"] # same but for DBZH
-    rhohv_names = ["RHOHV_NC", "RHOHV"] # same but for RHOHV
-    zdr_names = ["ZDR"]
+    phidp_names = utils.phidp_names # names to look for the PHIDP variable, in order of preference
+    dbzh_names = utils.dbzh_names # same but for DBZH
+    rhohv_names = utils.rhohv_names # same but for RHOHV
+    zdr_names = utils.zdr_names
+    th_names = utils.th_names
 
     # PHIDP processing / KDP calc parameters
     window0max = 25 # max value for window0 (only applied if window0 is given in meters)
@@ -313,6 +316,12 @@ if __name__ == "__main__": # set guard
             for X_PHI in phidp_names:
                 if X_PHI in data.data_vars:
                     break
+
+            #### If unfolded PHIDP does not exist, we create it just copying PHIDP
+            if "_UF" not in X_PHI:
+                data[X_PHI+"_UF"] = data[X_PHI].copy()
+                X_PHI = X_PHI+"_UF"
+
             # get DBZH name
             for X_DBZH in dbzh_names:
                 if X_DBZH in data.data_vars:
@@ -352,6 +361,13 @@ if __name__ == "__main__": # set guard
                 print("Not all necessary variables found in the data.")
                 sys.exit("Not all necessary variables found in the data.")
 
+            # Assign Zm
+            data = data.assign_coords({"Zm": utils.apply_min_max_thresh(data, {X_RHO:0.9, "SNRH":15, "SNRHC":15, "SQIH":0.5},
+                                              {}, skipfullna=True)[X_DBZH]\
+                                .isel({"range": slice(1, None) }).sel({"range": slice(0, Zm_range)})\
+                                    .compute().median(("azimuth","range")) })
+            data["Zm"].attrs = {"long_name": "Median "+X_DBZH+" in "+str(Zm_range)+" m radius"}
+
             ### First we need to correct PHIDP
 
             # Check that PHIDP is in data and process PHIDP, otherwise skip ML detection
@@ -384,7 +400,8 @@ if __name__ == "__main__": # set guard
                 # phidp may be already preprocessed (turkish case), then only offset-correct (no smoothing) and then vulpiani
                 if "PHIDP" not in X_PHI: # This is now always skipped with this definition ("PHIDP" is in both X_PHI); i.e., we apply full processing to turkish data too
                     # calculate phidp offset
-                    data_phiproc = utils.phidp_offset_correction(utils.apply_min_max_thresh(data, {"SNRH":10, "SNRHC":10, "SQIH":0.5}, {}, skipfullna=True),
+                    data_phiproc = utils.phidp_offset_correction(data,
+                                                                 additional_thresholds=[{"SNRH":10, "SNRHC":10, "SQIH":0.5}, {}],
                                                          X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                                          dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
                                          rng_min=1000, rng=rng, azmedian=azmedian, tolerance=(0,5)) # shorter rng, rng_min for finer turkish data
@@ -392,9 +409,10 @@ if __name__ == "__main__": # set guard
                     phi_masked = data_phiproc[X_PHI+"_OC"].where((data[X_RHO] >= 0.8) * (data[X_DBZH] >= 0.) * (data["range"]>min_range) )
 
                 else:
-                    data_phiproc = utils.phidp_processing(utils.apply_min_max_thresh(data, {"SNRH":10, "SNRHC":10, "SQIH":0.5}, {}, skipfullna=True),
+                    data_phiproc = utils.phidp_processing(data,
+                                                          additional_thresholds=[{"SNRH":10, "SNRHC":10, "SQIH":0.5}, {}],
                                                   X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
-                                         dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
+                                         dbzhmin=0., min_height=min_height, window=window0, window2=3, fix_range=fix_range,
                                          rng=rng, azmedian=azmedian, tolerance=(0,5), clean_invalid=False, fillna=False)
 
                     phi_masked = data_phiproc[X_PHI+"_OC_SMOOTH"].where((data[X_RHO] >= 0.8) * (data[X_DBZH] >= 0.) * (data["range"]>min_range) )
@@ -438,13 +456,6 @@ if __name__ == "__main__": # set guard
                     print("Calculating ML failed, skipping...")
             else:
                 print(X_PHI+" not found in the data, skipping ML detection and below-ML offset")
-
-            # Assign Zm
-            data = data.assign_coords({"Zm": utils.apply_min_max_thresh(data, {X_RHO:0.9, "SNRH":15, "SNRHC":15, "SQIH":0.5},
-                                              {}, skipfullna=True)[X_DBZH]\
-                                .isel({"range": slice(1, None) }).sel({"range": slice(0, Zm_range)})\
-                                    .compute().median(("azimuth","range")) })
-            data["Zm"].attrs = {"long_name": "Median "+X_DBZH+" in "+str(Zm_range)+" m radius"}
 
             # Apply universal filters and elevation dependency
             # For ZDR calibration: SNR> 20-25 and attenuation should be insignificant (Ryzhkov and Zrnic p. 156)

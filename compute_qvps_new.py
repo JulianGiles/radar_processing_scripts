@@ -11,16 +11,25 @@ then generates QVPs including sounding temperature values and saves to nc files.
 """
 
 import os
-try:
-    os.chdir('/home/jgiles/')
-except FileNotFoundError:
-    None
+import sys
+
+# List all possible paths where this script might live
+possible_paths = [
+    '/home/jgiles/Scripts/python/radar_processing_scripts',              # Office PC
+    '/p/scratch/detectrea2/giles1/radar_processing_scripts',             # JUWELS Scratch
+]
+
+# Find the one that exists on the current machine and add it
+for script_dir in possible_paths:
+    if os.path.exists(script_dir):
+        if script_dir not in sys.path:
+            sys.path.insert(0, script_dir)
+        break  # Stop checking once we find the right one
 
 
 # NEEDS WRADLIB 2.0 !! (OR GREATER?)
 
 import wradlib as wrl
-import sys
 import glob
 import xarray as xr
 import numpy as np
@@ -28,12 +37,8 @@ import numpy as np
 import warnings
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 
-try:
-    from Scripts.python.radar_processing_scripts import utils
-    from Scripts.python.radar_processing_scripts import radarmet
-except ModuleNotFoundError:
-    import utils
-    import radarmet
+import utils
+import radarmet
 
 import time
 start_time = time.time()
@@ -46,6 +51,7 @@ if __name__ == "__main__": # set guard
     overwrite = False # overwrite existing files?
     save_processed_ppi = False # Save PPIs after processing?
     save_retrievals_ppi = False # Save PPIs of microphysical retrievals? (this is pretty slow and uses substantial storage)
+    save_era5_ppi = False # Save PPIs of ERA5 data?
 
     # ZDR offset loading parameters
     abs_zdr_off_min_thresh = 0. # if ZDR_OC has more negative values than the original ZDR
@@ -165,12 +171,11 @@ if __name__ == "__main__": # set guard
 
 
     # names of variables
-    phidp_names = ["UPHIDP", "PHIDP"] # names to look for the PHIDP variable, in order of preference
-    dbzh_names = ["DBZH"] # same but for DBZH
-    rhohv_names = ["RHOHV"] # same but for RHOHV
-    zdr_names = ["ZDR"]
-    th_names = ["TH", "DBTH", "DBZH"]
-
+    phidp_names = utils.phidp_names # names to look for the PHIDP variable, in order of preference
+    dbzh_names = utils.dbzh_names # same but for DBZH
+    rhohv_names = utils.rhohv_names # same but for RHOHV
+    zdr_names = utils.zdr_names
+    th_names = utils.th_names
 
     # define a function to create save directory and return file save path
     def make_savedir(ff, name):
@@ -258,6 +263,12 @@ if __name__ == "__main__": # set guard
         for X_PHI in phidp_names:
             if X_PHI in swp.data_vars:
                 break
+
+        #### If unfolded PHIDP does not exist, we create it just copying PHIDP
+        if "_UF" not in X_PHI:
+            swp[X_PHI+"_UF"] = swp[X_PHI].copy()
+            X_PHI = X_PHI+"_UF"
+
         # get DBZH name
         for X_DBZH in dbzh_names:
             if X_DBZH in swp.data_vars:
@@ -370,14 +381,15 @@ if __name__ == "__main__": # set guard
             print("Loading ZDR offsets failed")
 
     #%% Correct wet radome
+        # Assign Zm
+        swp = swp.assign_coords({"Zm": utils.apply_min_max_thresh(swp, {X_RHO:0.9, "SNRH":15, "SNRHC":15, "SQIH":0.5},
+                                          {}, skipfullna=True)[X_DBZH]\
+                               .isel({"range": slice(1, None) }).sel({"range": slice(0, Zm_range)})\
+                                   .compute().median(("azimuth","range")) })
+        swp["Zm"] = swp["Zm"].where(swp["Zm"]>0, other=0)# cap the negative values to 0
+        swp["Zm"].attrs = {"long_name": "Median "+X_DBZH+" in "+str(Zm_range)+" m radius"}
+
         if country=="dmi":
-            # Assign Zm
-            swp = swp.assign_coords({"Zm": utils.apply_min_max_thresh(swp, {X_RHO:0.9, "SNRH":15, "SNRHC":15, "SQIH":0.5},
-                                              {}, skipfullna=True)[X_DBZH]\
-                                   .isel({"range": slice(1, None) }).sel({"range": slice(0, Zm_range)})\
-                                       .compute().median(("azimuth","range")) })
-            swp["Zm"] = swp["Zm"].where(swp["Zm"]>0, other=0)# cap the negative values to 0
-            swp["Zm"].attrs = {"long_name": "Median "+X_DBZH+" in "+str(Zm_range)+" m radius"}
 
             # correct WR
             swp = swp.assign({X_ZDR+"_WRC": swp[X_ZDR] - utils.zdr_wr_offset_zm_cuadratic(swp["Zm"]) })
@@ -423,7 +435,8 @@ if __name__ == "__main__": # set guard
             # phidp may be already preprocessed (turkish case), then only offset-correct (no smoothing) and then vulpiani
             if "PHIDP" not in X_PHI: # This is now always skipped with this definition ("PHIDP" is in both X_PHI); i.e., we apply full processing to turkish data too
                 # calculate phidp offset
-                ds_phiproc = utils.phidp_offset_correction(utils.apply_min_max_thresh(ds, {"SNRH":SNRH_min, "SNRHC":SNRH_min, "SQIH":0.5}, {}, skipfullna=True),
+                ds_phiproc = utils.phidp_offset_correction(ds,
+                                                           additional_thresholds=[{"SNRH":SNRH_min, "SNRHC":SNRH_min, "SQIH":0.5}, {}],
                                                    X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
                                      dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
                                      rng_min=1000, rng=rng, azmedian=azmedian, tolerance=(0,5)) # shorter rng, rng_min for finer turkish data
@@ -432,9 +445,10 @@ if __name__ == "__main__": # set guard
 
             else:
                 # process phidp (offset and smoothing)
-                ds_phiproc = utils.phidp_processing(utils.apply_min_max_thresh(ds, {"SNRH":SNRH_min, "SNRHC":SNRH_min, "SQIH":0.5}, {}, skipfullna=True),
+                ds_phiproc = utils.phidp_processing(ds,
+                                        additional_thresholds=[{"SNRH":SNRH_min, "SNRHC":SNRH_min, "SQIH":0.5}, {}],
                                             X_PHI=X_PHI, X_RHO=X_RHO, X_DBZH=X_DBZH, rhohvmin=0.9,
-                                     dbzhmin=0., min_height=min_height, window=window0, fix_range=fix_range,
+                                     dbzhmin=0., min_height=min_height, window=window0, window2=3, fix_range=fix_range,
                                      rng=rng, azmedian=azmedian, tolerance=(0,5))
 
                 phi_masked = ds_phiproc[X_PHI+"_OC_SMOOTH"].where((ds[X_RHO] >= 0.8) * (ds[X_DBZH] >= 0.) * (ds["range"]>min_range) )
@@ -474,10 +488,11 @@ if __name__ == "__main__": # set guard
                                k_n=9, pre_interpolate_z=True)
 
         # Save ERA5 ppis
-        for vv in era5_vars_rename.values():
-            ds[vv].encoding = {'zlib': True, 'complevel': 6}
-        era5_ppis_path = make_savedir(ff, "ppis_era5")
-        ds[[vv for vv in era5_vars_rename.values()]].to_netcdf(era5_ppis_path)
+        if save_era5_ppi:
+            for vv in era5_vars_rename.values():
+                ds[vv].encoding = {'zlib': True, 'complevel': 6}
+            era5_ppis_path = make_savedir(ff, "ppis_era5")
+            ds[[vv for vv in era5_vars_rename.values()]].to_netcdf(era5_ppis_path)
 
     #%% Compute QVP
         ## Only data with a cross-correlation coefficient ρHV above 0.7 are used to calculate their azimuthal median at all ranges (from Trömel et al 2019).
@@ -549,7 +564,7 @@ if __name__ == "__main__": # set guard
             ds = utils.attenuation_corr_linear(ds, alpha = alpha, beta = beta, alphaml = 0, betaml = 0,
                                                dbzh=X_DBZH,
                                                zdr=["ZDR", "ZDR_EC", "ZDR_EC_OC", "ZDR_EC_OC_WRC", "ZDR_EC_WRC"],
-                                               phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
+                                               phidp=["UPHIDP_UF_OC_MASKED", "UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_UF_OC_MASKED", "PHIDP_OC_MASKED", "PHIDP_OC"],
                                                ML_bot = "height_ml_bottom_new_gia_clean", ML_top = "height_ml_new_gia_clean",
                                                temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
                                                interpolate_deltabump = True )
@@ -560,7 +575,7 @@ if __name__ == "__main__": # set guard
             ds = utils.attenuation_corr_linear(ds, alpha = alpha, beta = beta, alphaml = alphaml, betaml = betaml,
                                                dbzh=X_DBZH,
                                                zdr=["ZDR", "ZDR_EC", "ZDR_EC_OC", "ZDR_EC_OC_WRC", "ZDR_EC_WRC"],
-                                               phidp=["UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_OC_MASKED", "PHIDP_OC"],
+                                               phidp=["UPHIDP_UF_OC_MASKED", "UPHIDP_OC_MASKED", "UPHIDP_OC", "PHIDP_UF_OC_MASKED", "PHIDP_OC_MASKED", "PHIDP_OC"],
                                                ML_bot = "height_ml_bottom_new_gia_clean", ML_top = "height_ml_new_gia_clean",
                                                temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
                                                interpolate_deltabump = True )

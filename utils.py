@@ -32,6 +32,8 @@ try: import pyinterp
 except: None
 from scipy.spatial import KDTree
 from osgeo import gdal
+from scipy.ndimage import binary_opening
+import dask
 
 import dotenv
 secrets_paths =[
@@ -58,7 +60,7 @@ for wrldata_path in wrldata_paths:
 #### Helper functions and definitions
 
 # names of variables
-phidp_names = ["UPHIDP", "PHIDP"] # names to look for the PHIDP variable, in order of preference
+phidp_names = ["UPHIDP_UF", "UPHIDP", "UPHIDP_UF", "PHIDP"] # names to look for the PHIDP variable, in order of preference
 dbzh_names = ["DBZH"] # same but for DBZH
 rhohv_names = ["RHOHV"] # same but for RHOHV
 zdr_names = ["ZDR"]
@@ -508,7 +510,118 @@ def check_time_dimension_alignment(datasets, tolerance="S"):
 
     return True, "Datasets have consistent time dimensions and delta times. It is possible to align them."
 
-def unfold_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, phidp_lims=(-30,30)):
+def unfold_phidp(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, wrap_interval=360.0, rhohv_thresh=0.8, window=3):
+    """
+    Unfold PHIDP radially (along the range dimension). Supports multiple folds.
+
+    Parameters
+    ---------
+    ds : xarray.Dataset
+        Dataset including the necessary variables for this function to work.
+    phidp_names : list
+        List of PHIDP variable names to look for in the dataset, in order of priority.
+    rhohv_names : list
+        List of RHOHV variable names to look for in the dataset, in order of priority.
+    wrap_interval : float
+        Length of the wrapping interval.
+    rhohv_thresh: float
+        Only values above rhohv_thresh are considered in the calculations.
+    window: int
+        Window for circular smoothing of PHIDP in vector space (typical value: 5). If window
+        is not larger than 0, then no smoothing is applied. In case of applying unfold_phidp
+        multiple times this value should be set to zero after the first unfolding!!
+
+    Returns
+    ---------
+    ds : xarray.Dataset
+        Original dataset with unfolded PHIDP
+    """
+    success = False
+
+    # Identify valid PHIDP and RHOHV variable names
+    X_PHI = next((phi for phi in phidp_names if phi in ds.data_vars), None)
+    X_RHO = next((rho for rho in rhohv_names if rho in ds.data_vars), None)
+
+    if X_PHI and X_RHO and ds[X_PHI].notnull().any():
+
+        # 1. Mask the data based on RHOHV to avoid unwrapping pure noise, then smooth
+        ds_phi = ds[X_PHI].where(ds[X_RHO] > rhohv_thresh)
+
+        # We also take out the first bins
+        gate_indices = xr.DataArray(
+                    np.arange(ds_phi.sizes['range']),
+                    dims=['range'],
+                    coords={'range': ds_phi.coords['range']}
+                )
+
+        ds_phi = ds_phi.where(gate_indices >= 4, 0)
+
+        # Smooth the data with circular smoothing if window > 0
+        if window > 0:
+            # Convert to radians and decompose into U and V components
+            phi_rad = np.deg2rad(ds_phi)
+            u = np.cos(phi_rad)
+            v = np.sin(phi_rad)
+
+            # Apply a rolling median to the components. A window of ~5 gates completely
+            # suppresses isolated 1-2 gate spikes while preserving actual persistent folds.
+            u_smooth = u.rolling(range=window, center=True, min_periods=window//2+1).median()
+            v_smooth = v.rolling(range=window, center=True, min_periods=window//2+1).median()
+
+            # Reconstruct the smoothed phase back into degrees [-180, 180]
+            # xr.apply_ufunc safely handles Dask-backed arrays for arctan2
+            smoothed_phi_rad = xr.apply_ufunc(
+                np.arctan2, v_smooth, u_smooth, dask="allowed"
+            )
+            smoothed_phi = np.rad2deg(smoothed_phi_rad)
+        else:
+            smoothed_phi = ds_phi.copy()
+
+        # Despeckle to remove isolated values
+        smoothed_phi_dp = smoothed_phi.copy(data=wrl.util.despeckle(smoothed_phi.values))
+
+        # 2. Forward-fill NaNs along the range dimension.
+        # This is critical so a fold separated by a few NaN gates is still detected.
+        # phi_ffill = ds_phi.ffill(dim="range")
+        phi_ffill = smoothed_phi_dp.ffill(dim="range")
+
+        # 3. Calculate the gate-to-gate phase difference using .shift()
+        # This preserves the exact dimensions and coordinates of the original array.
+        phase_diff = phi_ffill - phi_ffill.shift(range=1)
+
+        # The first gate has nothing to subtract from, so it becomes NaN. Fill it with 0.
+        phase_diff = phase_diff.fillna(0)
+
+        # 4. Detect folds (jumps greater than half the wrap interval)
+        # If the difference is strongly negative (e.g. < -180), it folded forward
+        fold_up = (phase_diff < -(wrap_interval / 2.0)).astype(int)
+        # If the difference is strongly positive (e.g. > 180), it folded backward
+        fold_down = (phase_diff > (wrap_interval / 2.0)).astype(int)
+
+        # Net folds at each gate
+        folds = fold_up - fold_down
+
+        # 5. Cumulatively sum the folds along the ray
+        fold_counts = folds.cumsum(dim="range")
+
+        # 6. Apply the unwrapping correction to the original masked data
+        # This natively allows values to exceed 360, 720, etc.
+        unwrapped_phi = ds[X_PHI] + (fold_counts * wrap_interval)
+
+        # Reassign to dataset while keeping original attributes
+        attrs = ds[X_PHI].attrs.copy()
+        ds[X_PHI+"_UF"] = unwrapped_phi
+        ds[X_PHI+"_UF"].attrs = attrs
+
+        if (fold_counts!=0).any(): print(f"{X_PHI} was unfolded radially.")
+        success = True
+
+    if not success:
+        warnings.warn("unfold_phidp: PHIDP and/or RHOHV variable not found. Nothing was done.")
+
+    return ds
+
+def unfold_phidp_old(ds, phidp_names=phidp_names, rhohv_names=rhohv_names, phidp_lims=(-30,30)):
     """
     Unfold PHIDP in case it is wrapping around the edge values, it should be defined between -180 and 180.
     The unfolding is done for the whole of ds (not per ray or per PPI).
@@ -810,10 +923,12 @@ def load_dwd_preprocessed(filepath):
             raise TypeError("More than one dataset inside the datatree. Currently not supported")
         elif len(dwd0.descendants) == 1:
             # get dataset and fix time coordinate
-            dwddata.append(fix_flipped_phidp(unfold_phidp(fix_time_in_coords(dwd0.descendants[0].to_dataset()))))
+            dwddata.append(fix_flipped_phidp(unfold_phidp(fix_time_in_coords(dwd0.descendants[0].to_dataset()),
+                                                          window=0, rhohv_thresh=0.8)))
         else:
             # get dataset and fix time coordinate
-            dwddata.append(fix_flipped_phidp(unfold_phidp(fix_time_in_coords(dwd0.to_dataset()))))
+            dwddata.append(fix_flipped_phidp(unfold_phidp(fix_time_in_coords(dwd0.to_dataset()),
+                                                          window=0, rhohv_thresh=0.8)))
 
     if len(dwddata) == 1:
         return dwddata[0]
@@ -853,7 +968,8 @@ def load_dwd_raw(filepath):
 
             vardict[mom] = xr.open_mfdataset(llmom, engine="odim", combine="nested", concat_dim="time", preprocess=align, compat='no_conflicts')
 
-            vardict[mom] = fix_flipped_phidp(unfold_phidp(fix_time_in_coords(vardict[mom])))
+            vardict[mom] = fix_flipped_phidp(unfold_phidp(fix_time_in_coords(vardict[mom]),
+                                                          window=0, rhohv_thresh=0.8))
 
     except OSError:
         pathparts = [ xx if len(xx)==8 and "20" in xx else None for xx in llmom[0].split("/") ]
@@ -886,7 +1002,7 @@ def load_dmi_preprocessed(filepath):
     if len(files) >= 1:
         dmidata = xr.open_mfdataset(files, compat='no_conflicts')
 
-    return fix_flipped_phidp(unfold_phidp(fix_time_in_coords(dmidata)))
+    return fix_flipped_phidp(unfold_phidp(fix_time_in_coords(dmidata), window=5, rhohv_thresh=0.9))
 
 
 def load_dmi_raw(filepath): # THIS IS NOT IMPLEMENTED YET # !!!
@@ -911,7 +1027,7 @@ def load_dmi_raw(filepath): # THIS IS NOT IMPLEMENTED YET # !!!
     if len(files) >= 1:
         dmidata = xr.open_mfdataset(files, compat='no_conflicts')
 
-    return fix_flipped_phidp(unfold_phidp(fix_time_in_coords(dmidata)))
+    return fix_flipped_phidp(unfold_phidp(fix_time_in_coords(dmidata), window=5, rhohv_thresh=0.9))
 
 def load_volume(filelists, func=load_dwd_preprocessed, align_time=True, tolerance="S", verbose=False):
     """
@@ -1050,7 +1166,7 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
             return ds
 
         try:
-            qvps = xr.open_mfdataset(files, preprocess=partial(fix_coords, align_z=align_z, fix_TEMP=fix_TEMP), compat='no_conflicts', join='outer')
+            qvps = xr.open_mfdataset(files, preprocess=partial(fix_coords, align_z=align_z, fix_TEMP=fix_TEMP), compat='no_conflicts', join='outer', engine='h5netcdf')
         except:
             if align_z:
                 print("Aligning z coord may have failed, attempting to load without alignment...")
@@ -4064,9 +4180,12 @@ def phidp_offset_detection(ds, phidp="PHIDP", rhohv="RHOHV", dbzh="DBZH", rhohvm
 
     return phidp_offset
 
-def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
-                     dbzhmin=0., min_height=0, window=7, fix_range=500., rng=None, rng_min=3000., azmedian=False,
-                     fillna=False, clean_invalid=False, tolerance=(0,0)):
+def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", X_Zm="Zm",
+                     rhohvmin=0.9, dbzhmin=-20., zm_max=35, min_height=0,
+                     additional_thresholds=None,
+                     window=7, window_time = 7,
+                     fix_range=500., rng=None, rng_min=3000.,
+                     fillna=False, clean_invalid=False, azmedian=False, tolerance=(0,0)):
     r"""
     Calculate PHIDP offset and attach results to the input dataset.
 
@@ -4080,110 +4199,25 @@ def phidp_offset_correction(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rh
         Name of the variable for RHOHV data in ds.
     X_DBZH : str
         Name of the variable for DBZH data in ds.
+    X_Zm : str
+        Name of the variable for Zm data in ds (near-field reflectivity for wet radome detection).
     rhohvmin : float
         Minimum value for filtering RHOHV.
     dbzhmin : float
         Minimum value for filtering DBZH.
+    zm_max : float
+        Maximum value for filtering Zm (removing wet radome effects).
     min_height : float
         Minimum height for filtering the z coordinate.
+    additional_thresholds : None, list of dict
+        List with two dictionaries with additional data quality min max thresholds, to be
+        passed on to apply_min_max_thresh(). If None, no thresholds are applied.
     fix_range : int
         Minimum range from where to consider PHIDP values.
     window : int
         Number of range bins used in calculating rng in case rng=None.
-    rng : float
-        Range in m to calculate system phase offset. If None (default), it
-        will be calculated according to window. It should be large enough to
-        allow sufficient data for offset identification (a value around 3000
-        is usually enough)
-    rng_min : float
-        Minimum value of rng. If the value of rng (either passed by the user
-        or calculated automatically) is lower than rng_min, then rng_min will be
-        used instead.
-    azmedian : bool, int
-        Passed to phidp_offset_detection. Default is False.
-    fillna : bool, float
-        If True, fill non valid values (na) in the end result with zero. If float,
-        fill the non valid values with fillna. Default is False (do not fill na).
-    clean_invalid : bool
-        If True, only outpot corrected phase for pixels with range beyond start_range + fix_range.
-        start_range is the range of the first bin with the necessary consecutive valid bins from
-        phase_offset(). Default is False (apply the offset to all ds[X_PHI]).
-    tolerance : tuple
-        If the phase offset lies between the values in tolerance, then no offset correction
-        is applied. clean_invalid and fillna are still applied.
-
-    Returns
-    ----------
-    ds : xarray Dataset
-        xarray Dataset with the original data and offset corrected PHIDP.
-
-    """
-    # Calculate range for offset calculation if rng is None
-    if rng is None:
-        rng = ds[X_PHI].range.diff("range").median().values * window
-
-    if rng < rng_min:
-        rng = rng_min
-
-    # Calculate phase offset
-    phidp_offset = phidp_offset_detection(ds, phidp=X_PHI, rhohv=X_RHO, dbzh=X_DBZH, rhohvmin=rhohvmin,
-                                          dbzhmin=dbzhmin, min_height=min_height, rng=rng, azmedian=azmedian,
-                                          min_periods=3)
-
-    off = phidp_offset["PHIDP_OFFSET"]
-    tolerance_cond = ( off<=tolerance[0] ) + ( off>tolerance[1] )
-    off = off.where(tolerance_cond, other=0)
-    start_range = phidp_offset["start_range"].fillna(0)
-
-    # apply offset
-    if clean_invalid:
-        phi_fix = ds[X_PHI].copy().where(ds[X_PHI]["range"] >= start_range + fix_range)
-    else:
-        phi_fix = ds[X_PHI].copy()
-
-    if fillna is True:
-        off_fix = off.broadcast_like(phi_fix)
-        phi_fix = phi_fix.fillna(off_fix) - off
-    elif fillna is False:
-        phi_fix = phi_fix - off
-    elif isinstance(fillna, int) or isinstance(fillna, float):
-        phi_fix = phi_fix.fillna(fillna) - off
-
-    assign = {X_PHI+"_OFFSET": off.assign_attrs(ds[X_PHI].attrs),
-              X_PHI+"_OC": phi_fix.assign_attrs(ds[X_PHI].attrs)}
-
-    return ds.assign(assign)
-
-
-def phidp_processing_old(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
-                     dbzhmin=0., min_height=0, window=7, window2 = None, fix_range=500., rng=None, rng_min=3000.,
-                     fillna=False, clean_invalid=False, azmedian=False, tolerance=(0,0)):
-    r"""
-    Calculate basic PHIDP processing including thresholding, smoothing and
-    offset correction. Attach results to the input dataset.
-
-    Parameters
-    ----------
-    ds : xarray Dataset
-        Dataset with PHIDP, RHOHV, DBZH and z (height) coord.
-    X_PHI : str
-        Name of the variable for PHIDP data in ds.
-    X_RHO : str
-        Name of the variable for RHOHV data in ds.
-    X_DBZH : str
-        Name of the variable for DBZH data in ds.
-    rhohvmin : float
-        Minimum value for filtering RHOHV.
-    dbzhmin : float
-        Minimum value for filtering DBZH.
-    min_height : float
-        Minimum height for filtering the z coordinate.
-    window : int
-        Number of range bins for PHIDP smoothing.
-    window2 : int
-        Number of azimuth bins for PHIDP smoothing.
-    fix_range : int
-        Minimum range from where to consider PHIDP values.
+    window_time : int
+        Number of time steps for PHIDP rolling median (median filter).
     rng : float
         Range in m to calculate system phase offset. If None (default), it
         will be calculated according to window. It should be large enough to
@@ -4209,9 +4243,17 @@ def phidp_processing_old(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohv
     Returns
     ----------
     ds : xarray Dataset
-        xarray Dataset with the original data and processed PHIDP.
+        xarray Dataset with the original data and offset corrected PHIDP.
 
     """
+    # apply additional thresholds
+    if additional_thresholds is not None:
+        try:
+            ds1 = apply_min_max_thresh(ds, additional_thresholds[0], additional_thresholds[1], skipfullna=True)
+        except:
+            warnings.warn("phidp_processing : additional_thresholds must be a list with two dictionaries, no thresholds were applied")
+            ds1 = ds.copy()
+
     # Calculate range for offset calculation if rng is None
     if rng is None:
         rng = ds[X_PHI].range.diff("range").median().values * window
@@ -4220,14 +4262,33 @@ def phidp_processing_old(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohv
         rng = rng_min
 
     # Calculate phase offset
-    phidp_offset = phidp_offset_detection(ds, phidp=X_PHI, rhohv=X_RHO, dbzh=X_DBZH, rhohvmin=rhohvmin,
+    phidp_offset = phidp_offset_detection(ds1, phidp=X_PHI, rhohv=X_RHO, dbzh=X_DBZH, rhohvmin=rhohvmin,
                                           dbzhmin=dbzhmin, min_height=min_height, rng=rng, azmedian=azmedian,
                                           min_periods=3)
 
     off = phidp_offset["PHIDP_OFFSET"]
     tolerance_cond = ( off<=tolerance[0] ) + ( off>tolerance[1] )
-    off = off.where(tolerance_cond, other=0)
+    off = off.where(tolerance_cond)
     start_range = phidp_offset["start_range"].fillna(0)
+
+    # Clean wet radome steps
+    if X_Zm in ds:
+        off = off.where(ds[X_Zm] < zm_max)
+    else:
+        warnings.warn(X_Zm+" not found in ds, wet radome effect not removed!")
+
+    # Register NaN locations and fill them with global median
+    valid_mask = off.notnull()
+    off = off.fillna(off.median(dim='time', skipna=True))
+
+    # Apply rolling median filter
+    off = off.compute().rolling(time=window_time, center=True).median()
+
+    # Bring back NaNs
+    off = off.where(valid_mask)
+
+    # Interpolate and extrapolate
+    off = off.interpolate_na(dim='time', method='linear').bfill(dim='time').ffill(dim='time')
 
     # apply offset
     if clean_invalid:
@@ -4243,24 +4304,15 @@ def phidp_processing_old(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohv
     elif isinstance(fillna, int) or isinstance(fillna, float):
         phi_fix = phi_fix.fillna(fillna) - off
 
-    # smooth range dim
-    phi_median = phi_fix.where((ds[X_RHO]>=rhohvmin) & (ds[X_DBZH]>=dbzhmin) & (ds["z"]>min_height) & (ds["range"]>fix_range) ).pipe(xr_rolling, window, window2=window2, method='median', min_periods=round(window/2), skipna=True)
-
-    # Apply additional smoothing
-    gkern = gauss_kernel(window, window)
-    smooth_partial = partial(smooth_data, kernel=gkern)
-    phiclean = xr.apply_ufunc(smooth_partial, phi_median.compute(),
-                              input_core_dims=[["azimuth","range"]], output_core_dims=[["azimuth","range"]],
-                              vectorize=True)
-
-    assign = {X_PHI+"_OC_SMOOTH": phiclean.assign_attrs(ds[X_PHI].attrs),
-              X_PHI+"_OFFSET": off.assign_attrs(ds[X_PHI].attrs),
+    assign = {X_PHI+"_OFFSET": off.assign_attrs(ds[X_PHI].attrs),
               X_PHI+"_OC": phi_fix.assign_attrs(ds[X_PHI].attrs)}
 
     return ds.assign(assign)
 
-def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=0.9,
-                     dbzhmin=-20., min_height=0, window=7, window2 = None,
+def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", X_Zm="Zm",
+                     rhohvmin=0.9, dbzhmin=-20., zm_max=35, min_height=0,
+                     additional_thresholds=None,
+                     window=7, window2 = None, window_time = 7,
                      gaussian_smoothing=True, gauss_rng=5, gauss_az=3,
                      fix_range=500., rng=None, rng_min=3000.,
                      fillna=False, clean_invalid=False, azmedian=False, tolerance=(0,0)):
@@ -4278,16 +4330,25 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
         Name of the variable for RHOHV data in ds.
     X_DBZH : str
         Name of the variable for DBZH data in ds.
+    X_Zm : str
+        Name of the variable for Zm data in ds (near-field reflectivity for wet radome detection).
     rhohvmin : float
         Minimum value for filtering RHOHV.
     dbzhmin : float
         Minimum value for filtering DBZH.
+    zm_max : float
+        Maximum value for filtering Zm (removing wet radome effects).
     min_height : float
         Minimum height for filtering the z coordinate.
+    additional_thresholds : None, list of dict
+        List with two dictionaries with additional data quality min max thresholds, to be
+        passed on to apply_min_max_thresh(). If None, no thresholds are applied.
     window : int
         Number of range bins for PHIDP rolling median (median filter).
     window2 : int
         Number of azimuth bins for PHIDP rolling median (median filter).
+    window_time : int
+        Number of time steps for PHIDP rolling median (median filter).
     gaussian_smoothing : bool
         If True, perform additional gaussian smoothing after median smoothing.
     gauss_rng : int
@@ -4324,9 +4385,16 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
         xarray Dataset with the original data and processed PHIDP.
 
     """
+    # apply additional thresholds
+    if additional_thresholds is not None:
+        try:
+            ds1 = apply_min_max_thresh(ds, additional_thresholds[0], additional_thresholds[1], skipfullna=True)
+        except:
+            warnings.warn("phidp_processing : additional_thresholds must be a list with two dictionaries, no thresholds were applied")
+            ds1 = ds.copy()
 
     # smooth range dim
-    phi_median = ds[X_PHI].where((ds[X_RHO]>=rhohvmin) & (ds[X_DBZH]>=dbzhmin) & (ds["z"]>min_height) & (ds["range"]>fix_range) ).pipe(xr_rolling, window, window2=window2, method='median', min_periods=window//2+1, skipna=True)
+    phi_median = ds1[X_PHI].where((ds1[X_RHO]>=rhohvmin) & (ds1[X_DBZH]>=dbzhmin) & (ds1["z"]>min_height) & (ds1["range"]>fix_range) ).pipe(xr_rolling, window, window2=window2, method='median', min_periods=window//2+1, skipna=True)
 
     # Apply additional smoothing
     if gaussian_smoothing:
@@ -4340,20 +4408,39 @@ def phidp_processing(ds, X_PHI="UPHIDP", X_RHO="RHOHV", X_DBZH="DBZH", rhohvmin=
 
     # Calculate range for offset calculation if rng is None
     if rng is None:
-        rng = ds[X_PHI].range.diff("range").median().values * window
+        rng = ds1[X_PHI].range.diff("range").median().values * window
 
     if rng < rng_min:
         rng = rng_min
 
     # Calculate phase offset
-    phidp_offset = phidp_offset_detection(ds.assign({X_PHI: phiclean}), phidp=X_PHI, rhohv=X_RHO, dbzh=X_DBZH, rhohvmin=rhohvmin,
+    phidp_offset = phidp_offset_detection(ds1.assign({X_PHI: phiclean}), phidp=X_PHI, rhohv=X_RHO, dbzh=X_DBZH, rhohvmin=rhohvmin,
                                           dbzhmin=dbzhmin, min_height=min_height, rng=rng, azmedian=azmedian,
                                           min_periods=3)
 
     off = phidp_offset["PHIDP_OFFSET"]
     tolerance_cond = ( off<=tolerance[0] ) + ( off>tolerance[1] )
-    off = off.where(tolerance_cond, other=0)
+    off = off.where(tolerance_cond)
     start_range = phidp_offset["start_range"].fillna(0)
+
+    # Clean wet radome steps
+    if X_Zm in ds:
+        off = off.where(ds[X_Zm] < zm_max)
+    else:
+        warnings.warn(X_Zm+" not found in ds, wet radome effect not removed!")
+
+    # Register NaN locations and fill them with global median
+    valid_mask = off.notnull()
+    off = off.fillna(off.median(dim='time', skipna=True))
+
+    # Apply rolling median filter
+    off = off.compute().rolling(time=window_time, center=True).median()
+
+    # Bring back NaNs
+    off = off.where(valid_mask)
+
+    # Interpolate and extrapolate
+    off = off.interpolate_na(dim='time', method='linear').bfill(dim='time').ffill(dim='time')
 
     # apply offset
     if clean_invalid:
@@ -5601,6 +5688,7 @@ def zdr_wr_offset_zm_cuadratic(Zm, a=-0.00022, b=0.00032, max_zm=32.5):
 
 def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.08, betaml = 0.02,
                             dbzh = "DBZH", zdr = "ZDR", phidp = "UPHIDP_OC",
+                            phidp_min = 0, phidp_max = 200,
                             ML_bot = "height_ml_bottom_new_gia", ML_top = "height_ml_new_gia",
                             temp = "TEMP", temp_mlbot = 3, temp_mltop = 0, z_mlbot = 2000, dz_ml = 500,
                             interpolate_deltabump = True ):
@@ -5655,6 +5743,10 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.08, betam
     phidp : str
         Name of the variable with PHIDP data. A list of strings can be used to pass more
         than one name, but only the first valid name is used.
+    phidp_min : float
+        Minimum value of PHIDP to consider. Lower values are capped.
+    phidp_max : float
+        Maximum value of PHIDP to consider. Higher values are capped.
     ML_bot : str
         Name of the variable with melting layer bottom height information. A list of
         strings can be used to pass more than one name, but only the first valid name is used.
@@ -5698,7 +5790,7 @@ def attenuation_corr_linear(ds, alpha = 0.08, beta = 0.02, alphaml = 0.08, betam
     for phidpn in phidp:
         if phidpn in ds:
             phidp = phidpn
-            ds_phidp = ds[phidp]
+            ds_phidp = ds[phidp].clip(min=phidp_min, max=phidp_max, keep_attrs=True)
             break
     if not isinstance(phidp, str):
         raise KeyError("phidp definition is not in the dataset")

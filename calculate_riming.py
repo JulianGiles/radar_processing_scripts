@@ -7,13 +7,20 @@ Created on Tue May 19 08:51:46 2026
 """
 
 import os
-try:
-    os.chdir('/home/jgiles/')
-except FileNotFoundError:
-    None
+import sys
 
+# List all possible paths where this script might live
+possible_paths = [
+    '/home/jgiles/Scripts/python/radar_processing_scripts',              # Office PC
+    '/p/scratch/detectrea2/giles1/radar_processing_scripts',             # JUWELS Scratch
+]
 
-# NEEDS WRADLIB 2.0.2 !! (OR GREATER)
+# Find the one that exists on the current machine and add it
+for script_dir in possible_paths:
+    if os.path.exists(script_dir):
+        if script_dir not in sys.path:
+            sys.path.insert(0, script_dir)
+        break  # Stop checking once we find the right one
 
 import numpy as np
 import glob
@@ -21,14 +28,8 @@ import xarray as xr
 import time
 import onnxruntime as ort
 
-try:
-    from Scripts.python.radar_processing_scripts import utils
-    from Scripts.python.radar_processing_scripts import radarmet
-    # from Scripts.python.radar_processing_scripts import colormap_generator
-except ModuleNotFoundError:
-    import utils
-    import radarmet
-    # import colormap_generator
+import utils
+import radarmet
 
 
 
@@ -87,11 +88,12 @@ if "dwd" in path_qvps:
 if "boxpol" in path_qvps:
     country="boxpol"
     X_TH = "DBTH"
-    X_PHI = "PHIDP_OC_MASKED"
+    # X_PHI = "PHIDP_OC_MASKED"
 elif "dmi" in path_qvps:
     country="dmi"
     X_TH = "DBZH"
-    X_PHI = "PHIDP_OC_MASKED"
+    X_ZDR = "ZDR_EC_OC_WRC_AC"
+    # X_PHI = "PHIDP_OC_MASKED"
 
 
 ff_glob = glob.glob(path_qvps)
