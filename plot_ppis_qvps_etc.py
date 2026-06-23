@@ -903,6 +903,9 @@ if __name__ == "__main__": # set guard
     ax = fig.add_axes([0.1, 0.18, 0.75, 0.78])
     cax = fig.add_axes([0.89, 0.18, 0.02, 0.78])
 
+    # To avoid forced tight layout in the plot pane go to
+    # Tools/Preferences/IPython Console/Plotting and disable the tight layout
+
     try:
         ticks = radarmet.visdict14[mom.split("_")[0]]["ticks"]
         cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
