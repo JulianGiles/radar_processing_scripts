@@ -4591,15 +4591,15 @@ print(results.summary())
 
 phi = "PHIDP_OC_MASKED"
 dbzh_tg = "ZDR_EC_OC_AC2_rain_WRcorr" # ZDR_EC_OC_AC2_rain, DBZH_AC2_rain
-dbzh_tg_uncorr = "ZDR_EC_OC" # ZDR_EC_OC_AC2_rain, DBZH_AC2_rain # in case we want to compare to the original values without any correction
+dbzh_tg_uncorr = "ZDR_EC_OC" # ZDR_EC_OC_AC2_rain, DBZH # in case we want to compare to the original values without any correction
 dbzh_ref = "ZDR_EC_OC3_AC2_rain" # ZDR_EC_OC3_AC2_rain, DBZH_AC2_rain
 TEMPm = "TEMPm"
 TEMP = "TEMP"
 
 # repeat for the selected_ML_high cases (or set to None to ignore)
-dbzh_tg_0 = "ZDR_EC_OC_AC_WRcorr" # ZDR_EC_OC_AC2_rain, DBZH_AC2_rain
-dbzh_tg_uncorr_0 = "ZDR_EC_OC" # ZDR_EC_OC_AC2_rain, DBZH_AC2_rain # in case we want to compare to the original values without any correction
-dbzh_ref_0 = "ZDR_EC_OC_AC_WRcorr" # ZDR_EC_OC3_AC2_rain, DBZH_AC2_rain
+dbzh_tg_0 = "ZDR_EC_OC_AC_WRcorr" # ZDR_EC_OC_AC2_rain, DBZH_AC
+dbzh_tg_uncorr_0 = "ZDR_EC_OC" # ZDR_EC_OC_AC2_rain, DBZH # in case we want to compare to the original values without any correction
+dbzh_ref_0 = "ZDR_EC_OC_AC_WRcorr" # ZDR_EC_OC3_AC2_rain, DBZH_AC
 
 xax = r"$Δ\mathrm{Z_{DR}}\ [dB]$" # label for the x axis
 unit = re.search(r"\[(.*?)\]", xax).group(1)
@@ -4718,9 +4718,9 @@ ref_bca = np.concat([ d2.flatten() for d1,d2 in selected_ML_low["beam_cross_angl
 # ref_height_ml_top_qvp[np.isnan(ref_height_ml_top_qvp)] = 0
 
 # Alternative: interpolate and extrapolate the ML heights for each day to fill NaNs
-tg_height_ml_top_qvp = [ pd.DataFrame(d1).ffill(axis=1).values for d1,d2 in selected_ML_low["height_ml_new_gia_fromqvp"] ]
+tg_height_ml_top_qvp = [ pd.DataFrame(d1).ffill(axis=1).to_numpy(copy=True) for d1,d2 in selected_ML_low["height_ml_new_gia_fromqvp"] ]
 
-ref_height_ml_top_qvp = [ pd.DataFrame(d2).ffill(axis=1).values for d1,d2 in selected_ML_low["height_ml_new_gia_fromqvp"] ]
+ref_height_ml_top_qvp = [ pd.DataFrame(d2).ffill(axis=1).to_numpy(copy=True) for d1,d2 in selected_ML_low["height_ml_new_gia_fromqvp"] ]
 
 for ts in range(len(tg_height_ml_top_qvp)):
     # fill the NaN height_ml_top_qvp values from ref with tg
@@ -4804,9 +4804,9 @@ if dbzh_tg_0 is not None:
     ref_bca_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["beam_cross_angle"] ])
 
     # interpolate and extrapolate the ML heights for each day to fill NaNs
-    tg_height_ml_bot_qvp_0 = [ pd.DataFrame(d1).ffill(axis=1).values for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ]
+    tg_height_ml_bot_qvp_0 = [ pd.DataFrame(d1).ffill(axis=1).to_numpy(copy=True) for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ]
 
-    ref_height_ml_bot_qvp_0 = [ pd.DataFrame(d2).ffill(axis=1).values for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ]
+    ref_height_ml_bot_qvp_0 = [ pd.DataFrame(d2).ffill(axis=1).to_numpy(copy=True) for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ]
 
     for ts in range(len(tg_height_ml_bot_qvp_0)):
         # fill the NaN height_ml_bot_qvp values from tg with ref and viceversa
