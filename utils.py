@@ -1171,9 +1171,9 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
             if align_z:
                 print("Aligning z coord may have failed, attempting to load without alignment...")
             try:
-                qvps = xr.open_mfdataset(files, combine="nested", concat_dim="time", compat='no_conflicts', join='outer')
+                qvps = xr.open_mfdataset(files, combine="nested", concat_dim="time", compat='no_conflicts', join='outer', engine='h5netcdf')
             except:
-                qvps = xr.open_mfdataset(files, compat='no_conflicts')
+                qvps = xr.open_mfdataset(files, compat='no_conflicts', engine='h5netcdf')
 
     if fillna:
         assign = dict()
