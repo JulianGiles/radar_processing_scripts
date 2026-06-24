@@ -1583,12 +1583,12 @@ selseas = selseaslist[0]
 selmonths = selseas[1]
 
 # Select which retrievals to plot (only works if auto_plot=False)
-IWC = "vol_qtot" # iwc_zh_t_hogan2006, iwc_zh_t_hogan2006_model, iwc_zh_t_hogan2006_combined, iwc_zdr_zh_kdp_carlin2021
-LWC = "vol_qtot" # lwc_zh_zdr_reimann2021, lwc_zh_zdr_rhyzkov2022, lwc_kdp_reimann2021, lwc_ah_reimann2021, lwc_hybrid_reimann2021
-Dm_ice = "D0_tot" # Dm_ice_zh_matrosov2019, Dm_ice_zh_kdp_carlin2021, Dm_ice_zdp_kdp_carlin2021, Dm_hybrid_blanke2023
-Dm_rain = "D0_tot" # Dm_rain_zdr_chen, Dm_rain_zdr_hu2022, Dm_rain_zdr_bringi2009
-Nt_ice = "vol_qntot" # Nt_ice_iwc_zh_t_hu2022, Nt_ice_iwc_zh_t_carlin2021, Nt_ice_iwc_zh_t_combined_hu2022, Nt_ice_iwc_zh_t_combined_carlin2021, Nt_ice_iwc_zdr_zh_kdp_hu2022, Nt_ice_iwc_zdr_zh_kdp_carlin2021
-Nt_rain = "vol_qntot" # Nt_rain_zh_zdr_rhyzkov2020
+IWC = "vol_qtot" # vol_qtotice vol_qtot
+LWC = "vol_qtot" # vol_qtotliq vol_qtot
+Dm_ice = "D0_tot" # D0_totice D0_tot
+Dm_rain = "D0_tot" # D0_totliq D0_tot
+Nt_ice = "vol_qntot" # vol_qntotice vol_qntot
+Nt_rain = "vol_qntot" # vol_qntotliq vol_qnr vol_qntot
 
 vars_to_plot = {"IWC/LWC [g/m^{3}]": [-0.1, 0.82, 0.02], # [-0.1, 0.82, 0.02],
                 "Dm [mm]": [0, 4.1, 0.1], # [0, 3.1, 0.1],
@@ -1772,12 +1772,12 @@ selseas = selseaslist[0]
 selmonths = selseas[1]
 
 # Select which retrievals to plot (only works if auto_plot=False)
-IWC = "vol_qtot" # iwc_zh_t_hogan2006, iwc_zh_t_hogan2006_model, iwc_zh_t_hogan2006_combined, iwc_zdr_zh_kdp_carlin2021
-LWC = "vol_qtot" # lwc_zh_zdr_reimann2021, lwc_zh_zdr_rhyzkov2022, lwc_kdp_reimann2021, lwc_ah_reimann2021, lwc_hybrid_reimann2021
-Dm_ice = "D0_tot" # Dm_ice_zh_matrosov2019, Dm_ice_zh_kdp_carlin2021, Dm_ice_zdp_kdp_carlin2021, Dm_hybrid_blanke2023
-Dm_rain = "D0_tot" # Dm_rain_zdr_chen, Dm_rain_zdr_hu2022, Dm_rain_zdr_bringi2009
-Nt_ice = "vol_qntot" # Nt_ice_iwc_zh_t_hu2022, Nt_ice_iwc_zh_t_carlin2021, Nt_ice_iwc_zh_t_combined_hu2022, Nt_ice_iwc_zh_t_combined_carlin2021, Nt_ice_iwc_zdr_zh_kdp_hu2022, Nt_ice_iwc_zdr_zh_kdp_carlin2021
-Nt_rain = "vol_qntot" # Nt_rain_zh_zdr_rhyzkov2020
+IWC = "vol_qtot" # vol_qtotice vol_qtot
+LWC = "vol_qtot" # vol_qtotliq vol_qtot
+Dm_ice = "D0_tot" # D0_totice D0_tot
+Dm_rain = "D0_tot" # D0_totliq D0_tot
+Nt_ice = "vol_qntot" # vol_qntotice vol_qntot
+Nt_rain = "vol_qntot" # vol_qntotliq vol_qnr vol_qntot
 
 vars_to_plot = {"IWC/LWC [g/m^{3}]": [-0.1, 0.82, 0.02], # [-0.1, 0.82, 0.02],
                 "Dm [mm]": [0, 4.1, 0.1], # [0, 3.1, 0.1],
@@ -2818,12 +2818,12 @@ selseas = selseaslist[0]
 selmonths = selseas[1]
 
 # Select which retrievals to plot (only works if auto_plot=False)
-IWC = "vol_qtotice" # iwc_zh_t_hogan2006, iwc_zh_t_hogan2006_model, iwc_zh_t_hogan2006_combined, iwc_zdr_zh_kdp_carlin2021
-LWC = "vol_qtotliq" # lwc_zh_zdr_reimann2021, lwc_zh_zdr_rhyzkov2022, lwc_kdp_reimann2021, lwc_ah_reimann2021, lwc_hybrid_reimann2021
-Dm_ice = "D0_totice" # Dm_ice_zh_matrosov2019, Dm_ice_zh_kdp_carlin2021, Dm_ice_zdp_kdp_carlin2021, Dm_hybrid_blanke2023
-Dm_rain = "D0_totliq" # Dm_rain_zdr_chen, Dm_rain_zdr_hu2022, Dm_rain_zdr_bringi2009
-Nt_ice = "vol_qntotice" # Nt_ice_iwc_zh_t_hu2022, Nt_ice_iwc_zh_t_carlin2021, Nt_ice_iwc_zh_t_combined_hu2022, Nt_ice_iwc_zh_t_combined_carlin2021, Nt_ice_iwc_zdr_zh_kdp_hu2022, Nt_ice_iwc_zdr_zh_kdp_carlin2021
-Nt_rain = "vol_qntotliq" # Nt_rain_zh_zdr_rhyzkov2020
+IWC = "vol_qtot" # vol_qtotice vol_qtot
+LWC = "vol_qtot" # vol_qtotliq vol_qtot
+Dm_ice = "D0_tot" # D0_totice D0_tot
+Dm_rain = "D0_tot" # D0_totliq D0_tot
+Nt_ice = "vol_qntot" # vol_qntotice vol_qntot
+Nt_rain = "vol_qntot" # vol_qntotliq vol_qnr vol_qntot
 
 IWC_obs = "iwc_zdr_zh_kdp_carlin2021" # iwc_zh_t_hogan2006, iwc_zh_t_hogan2006_model, iwc_zh_t_hogan2006_combined, iwc_zdr_zh_kdp_carlin2021
 LWC_obs = "lwc_hybrid_reimann2021" # lwc_zh_zdr_reimann2021, lwc_zh_zdr_rhyzkov2022, lwc_kdp_reimann2021, lwc_ah_reimann2021, lwc_hybrid_reimann2021
