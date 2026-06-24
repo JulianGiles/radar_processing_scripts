@@ -9177,28 +9177,27 @@ def calc_microphys(icon_fields, mom=2):
     except:
         warnings.warn("Creation of vol_qntot not possible")
 
-    # Generate D0_totice, D0_totliq and D0_tot
+    # Generate Dm_totice, Dm_totliq and Dm_tot
 
     try:
         icon_nc['Dm_totice'] = (mean_volume_diameter['totice'] *1000).assign_attrs(dict(
-            standard_name='mean volume diameter of total ice',
             units='mm'))
     except:
-        warnings.warn("Creation of D0_totice not possible")
+        warnings.warn("Creation of Dm_totice not possible")
 
     try:
         icon_nc['Dm_totliq'] = (mean_volume_diameter['totliq'] *1000).assign_attrs(dict(
             standard_name='mean volume diameter of total liquid',
             units='mm'))
     except:
-        warnings.warn("Creation of D0_totliq not possible")
+        warnings.warn("Creation of Dm_totliq not possible")
 
     try:
         icon_nc['Dm_tot'] = (mean_volume_diameter['tot'] *1000).assign_attrs(dict(
             standard_name='mean volume diameter of total',
             units='mm'))
     except:
-        warnings.warn("Creation of D0_tot not possible")
+        warnings.warn("Creation of Dm_tot not possible")
 
     return icon_nc
 
@@ -9258,7 +9257,7 @@ def calc_microphys_nocloud(icon_fields, mom=2):
         multimoments = calc_multimoments(multimoments, inhm=['ice', 'snow', 'graupel', 'hail',
                                                              'rain'], outhm='tot')
     else:
-        warnings.warn("WARNING calc_microphys: Results of 1-mom scheme are probably wrong (unrealistic D0 values)")
+        warnings.warn("WARNING calc_microphys: Results of 1-mom scheme are probably wrong (unrealistic Dm values)")
         multimoments = calc_multimoments(moments, inhm=['ice','snow','graupel'])
         multimoments = calc_multimoments(multimoments, inhm=['rain'], outhm='totliq')
         multimoments = calc_multimoments(multimoments, inhm=['ice', 'snow', 'graupel',
@@ -9348,28 +9347,28 @@ def calc_microphys_nocloud(icon_fields, mom=2):
     except:
         warnings.warn("Creation of vol_qntot not possible")
 
-    # Generate D0_totice, D0_totliq and D0_tot
+    # Generate Dm_totice, Dm_totliq and Dm_tot
 
     try:
         icon_nc['Dm_totice'] = (mean_volume_diameter['totice'] *1000).assign_attrs(dict(
             standard_name='mean volume diameter of total ice',
             units='mm'))
     except:
-        warnings.warn("Creation of D0_totice not possible")
+        warnings.warn("Creation of Dm_totice not possible")
 
     try:
         icon_nc['Dm_totliq'] = (mean_volume_diameter['totliq'] *1000).assign_attrs(dict(
             standard_name='mean volume diameter of total liquid',
             units='mm'))
     except:
-        warnings.warn("Creation of D0_totliq not possible")
+        warnings.warn("Creation of Dm_totliq not possible")
 
     try:
         icon_nc['Dm_tot'] = (mean_volume_diameter['tot'] *1000).assign_attrs(dict(
             standard_name='mean volume diameter of total',
             units='mm'))
     except:
-        warnings.warn("Creation of D0_tot not possible")
+        warnings.warn("Creation of Dm_tot not possible")
 
     return icon_nc
 
