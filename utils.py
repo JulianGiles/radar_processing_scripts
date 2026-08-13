@@ -410,7 +410,7 @@ def reduce_duplicate_timesteps(ds):
             # If time is not a dimension anymore
             if "time" not in ds_time.dims:
                 # then just add the current ds
-                ds_reduced = xr.concat([ds_reduced, ds_time], dim="time")
+                ds_reduced = xr.concat([ds_reduced, ds_time], dim="time", join="outer", coords="different", compat='equals')
 
             else:
                 # for each variable,
@@ -449,7 +449,7 @@ def reduce_duplicate_timesteps(ds):
                 reduced_vars_ds = xr.merge(reduced_vars, compat='no_conflicts')
 
                 # Add the current timestep data to the new dataset
-                ds_reduced = xr.concat([ds_reduced, reduced_vars_ds], dim="time")
+                ds_reduced = xr.concat([ds_reduced, reduced_vars_ds], dim="time", join="outer", coords="different", compat='equals')
 
         # delete the dummy data from the first timestep
         # Here I could also use .drop_isel but there is a bug and it does not work https://github.com/pydata/xarray/issues/6605
@@ -933,7 +933,7 @@ def load_dwd_preprocessed(filepath):
     if len(dwddata) == 1:
         return dwddata[0]
     else:
-        return xr.concat(dwddata, dim="time")
+        return xr.concat(dwddata, dim="time", join="outer", coords="different", compat='equals')
 
 def load_dwd_raw(filepath):
     """
@@ -1029,7 +1029,7 @@ def load_dmi_raw(filepath): # THIS IS NOT IMPLEMENTED YET # !!!
 
     return fix_flipped_phidp(unfold_phidp(fix_time_in_coords(dmidata), window=5, rhohv_thresh=0.9))
 
-def load_volume(filelists, func=load_dwd_preprocessed, align_time=True, tolerance="S", verbose=False):
+def load_volume(filelists, func=load_dwd_preprocessed, align_time=True, tolerance="s", verbose=False):
     """
     Full radar volume based on the data files provided.
 
@@ -1047,7 +1047,7 @@ def load_volume(filelists, func=load_dwd_preprocessed, align_time=True, toleranc
             the time dimension according to the values of the first file. Note that
             if time alignment is not done (or not possible) the resulting dataset
             may be too large to fit in memory.
-    tolerance : keyword argument for time rounding. "S" for seconds, "T" for minutes.
+    tolerance : keyword argument for time rounding. "s" for seconds, "min" for minutes.
     verbose : If True, print additional details of the ongoing processing steps.
     """
     sweeps = []
@@ -1087,13 +1087,13 @@ def load_volume(filelists, func=load_dwd_preprocessed, align_time=True, toleranc
             try:
                 for dsn in range(len(sweeps)):
                     sweeps[dsn]["time"] = sweeps[0]["time"].dt.round(tolerance) # align all datasets to the time dim of the first one
-                vol = xr.concat(sweeps, dim="sweep_fixed_angle")    # try to unify time
+                vol = xr.concat(sweeps, dim="sweep_fixed_angle", join="outer", coords="different", compat='equals')    # try to unify time
             except:
                 warnings.warn("Not possible to align time dimension. May result in increased memory usage.")
-                vol = xr.concat(sweeps, dim="sweep_fixed_angle")
+                vol = xr.concat(sweeps, dim="sweep_fixed_angle", join="outer", coords="different", compat='equals')
     else:
         if verbose:  print("Concatenating datasets ...")
-        vol = xr.concat(sweeps, dim="sweep_fixed_angle")
+        vol = xr.concat(sweeps, dim="sweep_fixed_angle", join="outer", coords="different", compat='equals')
 
     # Pass meta variables to coords to avoid some issues
     vol = vol.set_coords(("sweep_mode", "sweep_number", "prt_mode", "follow_mode"))
@@ -1969,8 +1969,8 @@ def compute_rdqvp(ds, min_thresh = {"RHOHV":0.7, "TH":0, "ZDR":-1}, max_range=50
         qvps_highres_count.append( count.interp(z=new_z) )
 
     # merge qvps into one dataset
-    qvps_highres = xr.concat(qvps_highres, dim="sweep_fixed_angle").chunk(dict(sweep_fixed_angle=-1))
-    qvps_highres_count = xr.concat(qvps_highres_count, dim="sweep_fixed_angle").chunk(dict(sweep_fixed_angle=-1))
+    qvps_highres = xr.concat(qvps_highres, dim="sweep_fixed_angle", join="outer", coords="different", compat='equals').chunk(dict(sweep_fixed_angle=-1))
+    qvps_highres_count = xr.concat(qvps_highres_count, dim="sweep_fixed_angle", join="outer", coords="different", compat='equals').chunk(dict(sweep_fixed_angle=-1))
 
     # weighted median of all elevs
     ds_qvp = qvps_highres.weighted(qvps_highres_count["DBZH"].fillna(0)).quantile(q=0.5, dim="sweep_fixed_angle")
@@ -2021,7 +2021,7 @@ def Entropy_timesteps_over_azimuth_different_vars_schneller(ds, n_az=360, zhlin=
     ######### Example how to calculate the min over the entropy calculated over the polarimetric variables
     Entropy = Entropy_timesteps_over_azimuth_different_vars_schneller(ds)
 
-    strati = xr.concat((Entropy.entropy_zdrlin, Entropy.entropy_Z, Entropy.entropy_RHOHV, Entropy.entropy_KDP),"entropy")
+    strati = xr.concat((Entropy.entropy_zdrlin, Entropy.entropy_Z, Entropy.entropy_RHOHV, Entropy.entropy_KDP),"entropy", join="outer", coords="different")
 
     min_trst_strati = strati.min("entropy")
     ds["min_entropy"] = min_trst_strati
@@ -3463,7 +3463,7 @@ def era5_to_radar_volume(radar_volume, site=None, path=None, convert_to_C=True,
             results.append(result)
 
         # Combine the results along the time dimension
-        return xr.concat(results, dim='time')
+        return xr.concat(results, dim='time', join="outer", coords="different", compat='equals')
 
     # Wrapper to process all variables in the dataset
     def process_dataset(ds_dict, func):
@@ -3723,7 +3723,7 @@ def attach_ERA5_TEMP(ds, site=None, path=None, convert_to_C=True):
         with Pool() as P:
             results = P.map( interp_to_ht_partial, [temperatures.isel(time=tt) for tt in range(len(temperatures.time)) ] )
 
-        itemp_da = xr.concat(results, "time")
+        itemp_da = xr.concat(results, "time", join="outer", coords="different", compat='equals')
 
         # Fix Temperature below first measurement and above last one
         itemp_da = itemp_da.bfill(dim="height")
@@ -5018,7 +5018,7 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
         zdr_zh_28 = zdr_zh_28.where(where_dbzh_rhohv(ds_fil, 27, 29).count(dim=dims_wotime)>=min_count)
         zdr_zh_30 = zdr_zh_30.where(where_dbzh_rhohv(ds_fil, 29, 31).count(dim=dims_wotime)>=min_count)
 
-        zdroffset = xr.concat([zdr_zh_20-ref_vals[0], zdr_zh_22-ref_vals[1], zdr_zh_24-ref_vals[2], zdr_zh_26-ref_vals[3], zdr_zh_28-ref_vals[4], zdr_zh_30-ref_vals[5]], dim='dataarrays').mean(dim='dataarrays', skipna=False, keep_attrs=True)
+        zdroffset = xr.concat([zdr_zh_20-ref_vals[0], zdr_zh_22-ref_vals[1], zdr_zh_24-ref_vals[2], zdr_zh_26-ref_vals[3], zdr_zh_28-ref_vals[4], zdr_zh_30-ref_vals[5]], dim='dataarrays', join="outer", coords="different", compat='equals').mean(dim='dataarrays', skipna=False, keep_attrs=True)
 
         # get also data quality vars
         zdr_max = where_dbzh_rhohv(ds_fil, 19, 31).max(dim=dims_wotime)
@@ -5059,7 +5059,7 @@ def zhzdr_lr_consistency(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", rhvmin=0.99,
         if where_dbzh_rhohv(ds_fil, 29, 31).count()<min_count:
             zdr_zh_30 = zdr_zh_30*np.nan
 
-        zdroffset = xr.concat([zdr_zh_20-ref_vals[0], zdr_zh_22-ref_vals[1], zdr_zh_24-ref_vals[2], zdr_zh_26-ref_vals[3], zdr_zh_28-ref_vals[4], zdr_zh_30-ref_vals[5]], dim='dataarrays', combine_attrs="override").mean(dim='dataarrays', skipna=False, keep_attrs=True)
+        zdroffset = xr.concat([zdr_zh_20-ref_vals[0], zdr_zh_22-ref_vals[1], zdr_zh_24-ref_vals[2], zdr_zh_26-ref_vals[3], zdr_zh_28-ref_vals[4], zdr_zh_30-ref_vals[5]], dim='dataarrays', combine_attrs="override", join="outer", coords="different", compat='equals').mean(dim='dataarrays', skipna=False, keep_attrs=True)
 
         # get also data quality vars
         zdr_max = where_dbzh_rhohv(ds_fil, 19, 31).max()
@@ -8409,7 +8409,7 @@ def icon_to_radar_volume_old(icon_field, radar_volume):
             results.append(result)
 
         # Combine the results along the time dimension
-        return xr.concat(results, dim='time')
+        return xr.concat(results, dim='time', join="outer", coords="different", compat='equals')
 
     # Wrapper to process all variables in the dataset
     def process_dataset(ds, func):
@@ -8549,25 +8549,36 @@ def icon_to_radar_volume(icon_field, radar_volume):
         dims3D = ['height', 'y', 'x']
         dims3D_h2 = ['height_2', 'y', 'x']
 
-    # Define the nearest neighbors indeces
+    # Define the nearest neighbors indices
 
-    if len(vars_to_compute)>0:
-        data0 = icon_field[vars_to_compute[0]].isel(time=0).values[mask]
-        mesh = pyinterp.RTree(ecef=False)
-        mesh.packing(src, data0)
-        coords, values = mesh.value(trg, k=1, within=False)
+    # Create the configuration object for k=1 and within=False
+    query_config = pyinterp.config.rtree.Query().with_k(1)
 
-        tree = KDTree(src)
-        _, indices = tree.query(coords[:,0,:], k=1)  # Find nearest neighbor indices
+    if len(vars_to_compute) > 0:
+        # Create an array of row indices to pack as the "values"
+        indices_array = np.arange(len(src), dtype=np.float64)
 
-    if len(vars_to_compute_hl)>0:
-        data0_hl = icon_field[vars_to_compute_hl[0]].isel(time=0).values[mask_hl]
-        mesh = pyinterp.RTree(ecef=False)
-        mesh.packing(src_hl, data0_hl)
-        coords_hl, values_hl = mesh.value(trg, k=1, within=False)
+        mesh = pyinterp.RTree3D(spheroid=pyinterp.core.geometry.geographic.Spheroid())
+        mesh.packing(src, indices_array)
 
-        tree = KDTree(src_hl)
-        _, indices_hl = tree.query(coords_hl[:,0,:], k=1)  # Find nearest neighbor indices
+        # .query() replaces .value() and returns (distances, values).
+        # Because we packed indices_array, 'values' contains the nearest neighbor indices!
+        # Note: 'within=False' is now handled by the default behavior
+        distances, nearest_indices = mesh.query(trg, config=query_config)
+
+        # Flatten and cast back to integers for numpy array slicing
+        indices = nearest_indices.flatten().astype(int)
+
+    if len(vars_to_compute_hl) > 0:
+        # Repeat the same direct-index packing for the half-levels
+        indices_array_hl = np.arange(len(src_hl), dtype=np.float64)
+
+        mesh_hl = pyinterp.RTree3D(spheroid=pyinterp.core.geometry.geographic.Spheroid())
+        mesh_hl.packing(src_hl, indices_array_hl)
+
+        distances_hl, nearest_indices_hl = mesh_hl.query(trg, config=query_config)
+
+        indices_hl = nearest_indices_hl.flatten().astype(int)
 
     # Define functions to select the indices
     def pyinterp_NN(data):
