@@ -8,20 +8,20 @@
 # Configurations for running in JUWELS:
 ##############################################################
 
-#SBATCH --account=detectrea
+#SBATCH --account=detectrea2
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=4
 #SBATCH --ntasks-per-node=12
-#SBATCH --time=24:00:00
-#SBATCH --job-name=generate_volumes_pro_detectrea
-#SBATCH --output=generate_volumes_pro_detectrea.out
-#SBATCH --error=generate_volumes_pro_detectrea.err
+#SBATCH --time=23:00:00
+#SBATCH --job-name=generate_volumes_pro_detectrea2
+#SBATCH --output=generate_volumes_pro_detectrea2.out
+#SBATCH --error=generate_volumes_pro_detectrea2.err
 #SBATCH --open-mode=truncate
 #SBATCH --partition=batch
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK}
 
 # Set the directory with the code (this will be the working dir)
-codedir=/p/scratch/detectrea/giles1/radar_processing_scripts/
+codedir=/p/scratch/detectrea2/giles1/radar_processing_scripts/
 cd $codedir
 
 # Define the radar code
@@ -70,7 +70,7 @@ dates=( # PRO detectrea
 )
 
 # Set the directory to look for the files
-base_path="/p/scratch/detectrea/giles1/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/"
+base_path="/p/scratch/detectrea2/giles1/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/"
 
 # set a name for the counter file (counting how many job steps running at the same time
 counterfile=$base_path/count_pro.txt
