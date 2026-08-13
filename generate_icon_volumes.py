@@ -23,6 +23,7 @@ import wradlib as wrl
 import sys
 import glob
 import xarray as xr
+from pathlib import Path
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -40,15 +41,16 @@ start_time = time.time()
 #%% Set paths and options.
 overwrite = False
 
-#path_radar = "/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/icon_2017041200/radarout/cdfin_allsim_id-010392_*"
-#path_icon = "/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/icon_2017041200/out_EU-0275_inst_DOM01_ML_20170412T*Z.nc"
-#path_icon_z = '/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/icon_2017041200/out_EU-0275_constant_20170411T220000Z.nc'
+#path_radar = "/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_2017041200/radout/cdfin_allsim_id-010392_*"
+#path_icon = "/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_2017041200/out_EU-0275_inst_DOM01_ML_20170412T*Z.nc"
+#path_icon_z = '/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/iconemvorado_2017041200/out_EU-0275_constant_20170411T220000Z.nc'
 
 radar_id = sys.argv[1] # read radar id from console
 path_radar = sys.argv[2] # read path to synthetic radar from console
 path_icon = sys.argv[3] # read path to icon from console
 path_icon_z = sys.argv[4] # read path to icon height coordinate from console
 path_save = sys.argv[5] # read path to save folder from console
+path_save_noc = str(Path(path_save).with_name(f"{Path(path_save).name}_noc")) # generate also path to save no cloud water version
 
 # attach the files wildcards
 radar_wc = "cdfin_allsim_id-"+radar_id+"_*"
@@ -93,9 +95,11 @@ for radarpath in paths_radar:
     savename_parts = os.path.basename(radarpath).split("id-")
     savename = savename_parts[0]+"icon_id-"+radar_id+"_"+timestep
 
-    if os.path.exists(path_save+"/"+savename) and not overwrite:
-        print("... processed file already exists, skipping... ")
-        continue
+    if os.path.exists(path_save+"/"+savename):
+        if os.path.exists(path_save_noc+"/"+savename):
+            if not overwrite:
+                print("... processed file already exists, skipping... ")
+                continue
 
     # load data
     data = utils.load_emvorado_to_radar_volume(radarpath, rename=True)
@@ -108,18 +112,26 @@ for radarpath in paths_radar:
     icon_volume = utils.icon_to_radar_volume(icon_field[["temp", "pres", "rh", "qv", "qc", "qi", "qr", "qs", "qg", "qh",
                                                          "qnc", "qni", "qnr", "qns", "qng", "qnh", "z_ifc"]], radar_volume)
     icon_volume["TEMP"] = icon_volume["temp"] - 273.15
+    icon_volume['TEMP'].attrs['units']="C"
 
-    # calculate microphysics
+    # calculate microphysics with and without cloud water
     icon_volume_new = utils.calc_microphys(icon_volume, mom=2)
+    icon_volume_new_noc = utils.calc_microphys_nocloud(icon_volume, mom=2)
 
     # save volumes
     if not os.path.exists(path_save):
         os.makedirs(path_save)
+    if not os.path.exists(path_save_noc):
+        os.makedirs(path_save_noc)
 
     for vv in icon_volume_new.data_vars:
         icon_volume_new[vv].encoding = {'zlib': True, 'complevel': 6}
 
+    for vv in icon_volume_new_noc.data_vars:
+        icon_volume_new_noc[vv].encoding = {'zlib': True, 'complevel': 6}
+
     icon_volume_new.to_netcdf(path_save+"/"+savename)
+    icon_volume_new_noc.to_netcdf(path_save_noc+"/"+savename)
 
     # print how much time did it take
     partial_total_time = time.time() - partial_start_time
