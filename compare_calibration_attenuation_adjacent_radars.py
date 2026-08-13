@@ -235,7 +235,7 @@ def plot_dual_scan_strategy(
             ds_srtm = dem if dem is not None else wrl.io.get_srtm(bbox, resolution=1)
             rastervalues, rastercoords, crs = wrl.georef.extract_raster_dataset(ds_srtm, nodata=-32768.0)
             # map raster values to transect lon/lats
-            terrain_heights_m = wrl.ipol.cart_to_irregular_spline(
+            terrain_heights_m = wrl.ipol.map_coordinates(
                 rastercoords, rastervalues, lonlats, order=3, prefilter=False
             )
         except Exception as exc:
@@ -817,7 +817,7 @@ def beam_blockage_from_radar_ds(ds,
 
     # 7. Interpolate DEM heights to the polar coords
     # The result is the “terrain height under each bin” (shape az × range)
-    # polar_terrain = wrl.ipol.cart_to_irregular_spline(
+    # polar_terrain = wrl.ipol.map_coordinates(
     #     rastercoords_clip, rastervalues_clip, polcoords,
     #     order=3, prefilter=False
     # )
@@ -825,7 +825,7 @@ def beam_blockage_from_radar_ds(ds,
     # 7. Interpolate DEM heights to the polar coords
     # Pass the full, unclipped arrays. Coordinates falling outside the
     # downloaded DEM (i.e., the missing open ocean) will default to 0.0.
-    polar_terrain = wrl.ipol.cart_to_irregular_spline(
+    polar_terrain = wrl.ipol.map_coordinates(
             rastercoords, rastervalues, polcoords,
             order=3, prefilter=False
         )
@@ -1666,7 +1666,12 @@ vv_to_extract = ["DBZH", "DBZH_AC",
                  "TEMP", "TEMPm",
                  "TEMP_p25", "TEMP_p75", "TEMP_p50", # percentiles of TEMP along the ray
                  "ZDR_EC_OC_p25", "ZDR_EC_OC_p75", "ZDR_EC_OC_p50", # percentiles of ZDR along the ray
-                 "ZDR_EC_OC_mpath", # weighted mean of ZDR along the path
+                 "ZDR_EC_OC_p99", "DBZH_p99",
+                 "ZDR_EC_OC_mpath", # linear-ZH weighted mean of ZDR along the path
+                 "ZDR_EC_OC_mpathKDP", # KDP weighted mean of ZDR along the path, requires KDP_ML_corrected_EC
+                 "ZDR_EC_OC_mpath_AC", # as above but corrected for atten with manual coefficients (see in code below)
+                 "ZDR_EC_OC_mpathKDP_AC", # requires PHIDP_OC_MASKED
+                 "DBZH_mean", "ZDR_EC_OC_mean",
                  "z", "z_beamtop",
                  "height_ml_bottom_new_gia", "height_ml_bottom_new_gia_fromqvp",
                  "RHOHV",
@@ -2173,6 +2178,273 @@ for date in ML_high_dates:
                     dsx_tg = dsx_tg.assign( dsx_mpath.copy() )
                     dsy_rf = dsy_rf.assign( dsy_mpath.copy() )
 
+                if vi not in dsx_tg and vi == "ZDR_EC_OC_mpathKDP":
+                    vio = vi.split("_mpath")[0] # original variable name
+
+                    # 1. Extract raw numpy arrays to avoid xarray overhead in the loop
+                    dsx_tg_vals = dsx_tg[vio].values
+                    dsy_rf_vals = dsy_rf[vio].values
+
+                    dsx_tg_valskdp = dsx_tg["KDP_ML_corrected_EC"].values
+                    dsy_rf_valskdp = dsy_rf["KDP_ML_corrected_EC"].values
+
+                    # 2. Initialize output arrays with NaNs
+                    # We'll create three separate arrays for the percentiles
+                    shape_dsx = dsx_tg_vals.shape
+                    shape_dsy = dsy_rf_vals.shape
+
+                    dsx_tg_vals_mpathkdp = np.full(shape_dsx, np.nan, dtype=np.float32)
+                    dsy_rf_vals_mpathkdp = np.full(shape_dsy, np.nan, dtype=np.float32)
+
+                    # 3. Get the indices where the mask is True
+                    t_idx, a_idx, r_idx = np.where(mask_tg_ref.values)
+                    t_idy, a_idy, r_idy = np.where(mask_rf_ref.values)
+
+                    # 4. Iterate only over the selected points
+                    # We use a warning filter because slicing an array of pure NaNs
+                    # may trigger a RuntimeWarning
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", category=RuntimeWarning)
+
+                        # for dsx
+                        for t, a, r in zip(t_idx, a_idx, r_idx):
+                            # Slice along the range dimension up to the current point (inclusive)
+                            data_slice = dsx_tg_vals[t, a, :r+1]
+                            data_slice_kdp = dsx_tg_valskdp[t, a, :r+1]
+
+                            # Calculate the weighted mean, ignoring NaNs in the data
+                            dsx_tg_vals_mpathkdp[t, a, r] = np.nansum(data_slice*data_slice_kdp)/np.nansum(data_slice_kdp)
+
+                        # for dsy
+                        for t, a, r in zip(t_idy, a_idy, r_idy):
+                            # Slice along the range dimension up to the current point (inclusive)
+                            data_slice = dsy_rf_vals[t, a, :r+1]
+                            data_slice_kdp = dsy_rf_valskdp[t, a, :r+1]
+
+                            # Calculate the weighted mean, ignoring NaNs in the data
+                            dsy_rf_vals_mpathkdp[t, a, r] = np.nansum(data_slice*data_slice_kdp)/np.nansum(data_slice_kdp)
+
+                    # 5. Reconstruct the results into a new xarray Dataset and assign to the original
+
+                    dsx_mpathkdp = xr.Dataset(
+                        {
+                            vi: (["time", "azimuth", "range"],
+                                          dsx_tg_vals_mpathkdp)
+                        },
+                        coords=dsx_tg[vio].coords
+                    )
+
+                    dsy_mpathkdp = xr.Dataset(
+                        {
+                            vi: (["time", "azimuth", "range"],
+                                          dsy_rf_vals_mpathkdp)
+                        },
+                        coords=dsy_rf[vio].coords
+                    )
+
+                    dsx_tg = dsx_tg.assign( dsx_mpathkdp.copy() )
+                    dsy_rf = dsy_rf.assign( dsy_mpathkdp.copy() )
+
+                if vi not in dsx_tg and vi == "ZDR_EC_OC_mpath_AC":
+                    vio = vi.split("_mpath")[0] # original variable name
+
+                    alpha = 0.14
+                    beta = 0.025
+                    # 1. Extract raw numpy arrays to avoid xarray overhead in the loop
+                    dsx_tg_vals = (dsx_tg[vio]+dsx_tg["PHIDP_OC_MASKED"]*beta).values
+                    dsy_rf_vals = (dsy_rf[vio]+dsy_rf["PHIDP_OC_MASKED"]*beta).values
+
+                    dsx_tg_valszhl = (dsx_tg["DBZH"]+dsx_tg["PHIDP_OC_MASKED"]*alpha).pipe(wrl.trafo.idecibel).values
+                    dsy_rf_valszhl = (dsy_rf["DBZH"]+dsy_rf["PHIDP_OC_MASKED"]*alpha).pipe(wrl.trafo.idecibel).values
+
+                    # 2. Initialize output arrays with NaNs
+                    # We'll create three separate arrays for the percentiles
+                    shape_dsx = dsx_tg_vals.shape
+                    shape_dsy = dsy_rf_vals.shape
+
+                    dsx_tg_vals_mpath = np.full(shape_dsx, np.nan, dtype=np.float32)
+                    dsy_rf_vals_mpath = np.full(shape_dsy, np.nan, dtype=np.float32)
+
+                    # 3. Get the indices where the mask is True
+                    t_idx, a_idx, r_idx = np.where(mask_tg_ref.values)
+                    t_idy, a_idy, r_idy = np.where(mask_rf_ref.values)
+
+                    # 4. Iterate only over the selected points
+                    # We use a warning filter because slicing an array of pure NaNs
+                    # may trigger a RuntimeWarning
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", category=RuntimeWarning)
+
+                        # for dsx
+                        for t, a, r in zip(t_idx, a_idx, r_idx):
+                            # Slice along the range dimension up to the current point (inclusive)
+                            data_slice = dsx_tg_vals[t, a, :r+1]
+                            data_slice_zhl = dsx_tg_valszhl[t, a, :r+1]
+
+                            # Calculate the weighted mean, ignoring NaNs in the data
+                            dsx_tg_vals_mpath[t, a, r] = np.nansum(data_slice*data_slice_zhl)/np.nansum(data_slice_zhl)
+
+                        # for dsy
+                        for t, a, r in zip(t_idy, a_idy, r_idy):
+                            # Slice along the range dimension up to the current point (inclusive)
+                            data_slice = dsy_rf_vals[t, a, :r+1]
+                            data_slice_zhl = dsy_rf_valszhl[t, a, :r+1]
+
+                            # Calculate the weighted mean, ignoring NaNs in the data
+                            dsy_rf_vals_mpath[t, a, r] = np.nansum(data_slice*data_slice_zhl)/np.nansum(data_slice_zhl)
+
+                    # 5. Reconstruct the results into a new xarray Dataset and assign to the original
+
+                    dsx_mpath = xr.Dataset(
+                        {
+                            vi: (["time", "azimuth", "range"],
+                                          dsx_tg_vals_mpath)
+                        },
+                        coords=dsx_tg[vio].coords
+                    )
+
+                    dsy_mpath = xr.Dataset(
+                        {
+                            vi: (["time", "azimuth", "range"],
+                                          dsy_rf_vals_mpath)
+                        },
+                        coords=dsy_rf[vio].coords
+                    )
+
+                    dsx_tg = dsx_tg.assign( dsx_mpath.copy() )
+                    dsy_rf = dsy_rf.assign( dsy_mpath.copy() )
+
+                if vi not in dsx_tg and vi == "ZDR_EC_OC_mpathKDP_AC":
+                    vio = vi.split("_mpath")[0] # original variable name
+
+                    alpha = 0.14
+                    beta = 0.025
+                    # 1. Extract raw numpy arrays to avoid xarray overhead in the loop
+                    dsx_tg_vals = (dsx_tg[vio]+dsx_tg["PHIDP_OC_MASKED"]*beta).values
+                    dsy_rf_vals = (dsy_rf[vio]+dsy_rf["PHIDP_OC_MASKED"]*beta).values
+
+                    dsx_tg_valskdp = dsx_tg["KDP_ML_corrected_EC"].values
+                    dsy_rf_valskdp = dsy_rf["KDP_ML_corrected_EC"].values
+
+                    # 2. Initialize output arrays with NaNs
+                    # We'll create three separate arrays for the percentiles
+                    shape_dsx = dsx_tg_vals.shape
+                    shape_dsy = dsy_rf_vals.shape
+
+                    dsx_tg_vals_mpathkdp = np.full(shape_dsx, np.nan, dtype=np.float32)
+                    dsy_rf_vals_mpathkdp = np.full(shape_dsy, np.nan, dtype=np.float32)
+
+                    # 3. Get the indices where the mask is True
+                    t_idx, a_idx, r_idx = np.where(mask_tg_ref.values)
+                    t_idy, a_idy, r_idy = np.where(mask_rf_ref.values)
+
+                    # 4. Iterate only over the selected points
+                    # We use a warning filter because slicing an array of pure NaNs
+                    # may trigger a RuntimeWarning
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", category=RuntimeWarning)
+
+                        # for dsx
+                        for t, a, r in zip(t_idx, a_idx, r_idx):
+                            # Slice along the range dimension up to the current point (inclusive)
+                            data_slice = dsx_tg_vals[t, a, :r+1]
+                            data_slice_kdp = dsx_tg_valskdp[t, a, :r+1]
+
+                            # Calculate the weighted mean, ignoring NaNs in the data
+                            dsx_tg_vals_mpathkdp[t, a, r] = np.nansum(data_slice*data_slice_kdp)/np.nansum(data_slice_kdp)
+
+                        # for dsy
+                        for t, a, r in zip(t_idy, a_idy, r_idy):
+                            # Slice along the range dimension up to the current point (inclusive)
+                            data_slice = dsy_rf_vals[t, a, :r+1]
+                            data_slice_kdp = dsy_rf_valskdp[t, a, :r+1]
+
+                            # Calculate the weighted mean, ignoring NaNs in the data
+                            dsy_rf_vals_mpathkdp[t, a, r] = np.nansum(data_slice*data_slice_kdp)/np.nansum(data_slice_kdp)
+
+                    # 5. Reconstruct the results into a new xarray Dataset and assign to the original
+
+                    dsx_mpathkdp = xr.Dataset(
+                        {
+                            vi: (["time", "azimuth", "range"],
+                                          dsx_tg_vals_mpathkdp)
+                        },
+                        coords=dsx_tg[vio].coords
+                    )
+
+                    dsy_mpathkdp = xr.Dataset(
+                        {
+                            vi: (["time", "azimuth", "range"],
+                                          dsy_rf_vals_mpathkdp)
+                        },
+                        coords=dsy_rf[vio].coords
+                    )
+
+                    dsx_tg = dsx_tg.assign( dsx_mpathkdp.copy() )
+                    dsy_rf = dsy_rf.assign( dsy_mpathkdp.copy() )
+
+                if vi not in dsx_tg and re.search(r"_mean", vi):
+                    vio = vi.split("_mean")[0] # original variable name
+
+                    # 1. Extract raw numpy arrays to avoid xarray overhead in the loop
+                    dsx_tg_vals = dsx_tg[vio].values
+                    dsy_rf_vals = dsy_rf[vio].values
+
+                    # 2. Initialize output arrays with NaNs
+                    # We'll create three separate arrays for the percentiles
+                    shape_dsx = dsx_tg_vals.shape
+                    shape_dsy = dsy_rf_vals.shape
+
+                    dsx_tg_vals_mean = np.full(shape_dsx, np.nan, dtype=np.float32)
+                    dsy_rf_vals_mean = np.full(shape_dsy, np.nan, dtype=np.float32)
+
+                    # 3. Get the indices where the mask is True
+                    t_idx, a_idx, r_idx = np.where(mask_tg_ref.values)
+                    t_idy, a_idy, r_idy = np.where(mask_rf_ref.values)
+
+                    # 4. Iterate only over the selected points
+                    # We use a warning filter because slicing an array of pure NaNs
+                    # may trigger a RuntimeWarning
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", category=RuntimeWarning)
+
+                        # for dsx
+                        for t, a, r in zip(t_idx, a_idx, r_idx):
+                            # Slice along the range dimension up to the current point (inclusive)
+                            data_slice = dsx_tg_vals[t, a, :r+1]
+
+                            # Calculate the mean, ignoring NaNs in the data
+                            dsx_tg_vals_mean[t, a, r] = np.nanmean(data_slice)
+
+                        # for dsy
+                        for t, a, r in zip(t_idy, a_idy, r_idy):
+                            # Slice along the range dimension up to the current point (inclusive)
+                            data_slice = dsy_rf_vals[t, a, :r+1]
+
+                            # Calculate the weighted mean, ignoring NaNs in the data
+                            dsy_rf_vals_mean[t, a, r] = np.nanmean(data_slice)
+
+                    # 5. Reconstruct the results into a new xarray Dataset and assign to the original
+
+                    dsx_mean = xr.Dataset(
+                        {
+                            vi: (["time", "azimuth", "range"],
+                                          dsx_tg_vals_mean)
+                        },
+                        coords=dsx_tg[vio].coords
+                    )
+
+                    dsy_mean = xr.Dataset(
+                        {
+                            vi: (["time", "azimuth", "range"],
+                                          dsy_rf_vals_mean)
+                        },
+                        coords=dsy_rf[vio].coords
+                    )
+
+                    dsx_tg = dsx_tg.assign( dsx_mean.copy() )
+                    dsy_rf = dsy_rf.assign( dsy_mean.copy() )
+
             # Extract variables
             for vi in vv_to_extract:
                 if vi not in dsx_tg:
@@ -2276,6 +2548,14 @@ tg_ZDR75 = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_p75
 
 ref_ZDR75 = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_p75"] ])
 
+tg_ZDR50 = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_p50"] ])
+
+ref_ZDR50 = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_p50"] ])
+
+tg_ZDR99 = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_p99"] ])
+
+ref_ZDR99 = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_p99"] ])
+
 tg_ZDRmpath = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_mpath"] ])
 
 tg_riming = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["riming"] ])
@@ -2298,8 +2578,20 @@ ref_height_ml_bot_qvp = [ pd.DataFrame(d2).ffill(axis=1).values for d1,d2 in sel
 
 for ts in range(len(tg_height_ml_bot_qvp)):
     # fill the NaN height_ml_bot_qvp values from tg with ref and viceversa
-    tg_height_ml_bot_qvp[ts][np.isnan(tg_height_ml_bot_qvp[ts])] = ref_height_ml_bot_qvp[ts][np.isnan(tg_height_ml_bot_qvp[ts])]
-    ref_height_ml_bot_qvp[ts][np.isnan(ref_height_ml_bot_qvp[ts])] = tg_height_ml_bot_qvp[ts][np.isnan(ref_height_ml_bot_qvp[ts])]
+    # tg_height_ml_bot_qvp[ts][np.isnan(tg_height_ml_bot_qvp[ts])] = ref_height_ml_bot_qvp[ts][np.isnan(tg_height_ml_bot_qvp[ts])]
+    # ref_height_ml_bot_qvp[ts][np.isnan(ref_height_ml_bot_qvp[ts])] = tg_height_ml_bot_qvp[ts][np.isnan(ref_height_ml_bot_qvp[ts])]
+
+    tg_height_ml_bot_qvp[ts] = np.where(
+        np.isnan(tg_height_ml_bot_qvp[ts]),   # Condition: where it is NaN
+        ref_height_ml_bot_qvp[ts],            # Value if True: take from ref
+        tg_height_ml_bot_qvp[ts]              # Value if False: keep original
+    )
+
+    ref_height_ml_bot_qvp[ts] = np.where(
+        np.isnan(ref_height_ml_bot_qvp[ts]),   # Condition: where it is NaN
+        tg_height_ml_bot_qvp[ts],            # Value if True: take from ref
+        ref_height_ml_bot_qvp[ts]              # Value if False: keep original
+    )
 
     # remove outliers (median+-std)
     tg_m = np.nanmedian(tg_height_ml_bot_qvp[ts][:,0])
@@ -2533,8 +2825,20 @@ ref_height_ml_bot_qvp = [ pd.DataFrame(d2).ffill(axis=1).values for d1,d2 in sel
 
 for ts in range(len(tg_height_ml_bot_qvp)):
     # fill the NaN height_ml_bot_qvp values from tg with ref and viceversa
-    tg_height_ml_bot_qvp[ts][np.isnan(tg_height_ml_bot_qvp[ts])] = ref_height_ml_bot_qvp[ts][np.isnan(tg_height_ml_bot_qvp[ts])]
-    ref_height_ml_bot_qvp[ts][np.isnan(ref_height_ml_bot_qvp[ts])] = tg_height_ml_bot_qvp[ts][np.isnan(ref_height_ml_bot_qvp[ts])]
+    # tg_height_ml_bot_qvp[ts][np.isnan(tg_height_ml_bot_qvp[ts])] = ref_height_ml_bot_qvp[ts][np.isnan(tg_height_ml_bot_qvp[ts])]
+    # ref_height_ml_bot_qvp[ts][np.isnan(ref_height_ml_bot_qvp[ts])] = tg_height_ml_bot_qvp[ts][np.isnan(ref_height_ml_bot_qvp[ts])]
+
+    tg_height_ml_bot_qvp[ts] = np.where(
+        np.isnan(tg_height_ml_bot_qvp[ts]),   # Condition: where it is NaN
+        ref_height_ml_bot_qvp[ts],            # Value if True: take from ref
+        tg_height_ml_bot_qvp[ts]              # Value if False: keep original
+    )
+
+    ref_height_ml_bot_qvp[ts] = np.where(
+        np.isnan(ref_height_ml_bot_qvp[ts]),   # Condition: where it is NaN
+        tg_height_ml_bot_qvp[ts],            # Value if True: take from ref
+        ref_height_ml_bot_qvp[ts]              # Value if False: keep original
+    )
 
     # remove outliers (median+-std)
     tg_m = np.nanmedian(tg_height_ml_bot_qvp[ts][:,0])
@@ -2798,6 +3102,257 @@ phi_N_ = [str(phi_N[bin_width][0])] + ["+"+str(pn0-phi_N[bin_width][0]) for pn0 
 for x, n in zip(phi_max_values, phi_N_):
     plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
              f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray', zorder=20)
+
+#%%% Plot boxplot of delta DBZH/ZDR vs target PHI (rain attenuation) by ZDR_mpath intervals
+phi = "PHIDP_OC_MASKED"
+dbzh = "DBZH" # DBZH, ZDR_EC_OC
+
+yax = r"$Δ\mathrm{Z_{H}}\ [dBZ]$" # label for the y axis
+xax = r"$\mathrm{\Phi_{DP}}\ [°]$" # label for the x axis
+
+# we need to apply additional filters that we did not apply in the previous step
+Zm_max = 15
+ref_phi_max = 2
+
+varx_range = (0, 31, 1) # start, stop, step
+min_bin_n = 30 # min count of valid values inside bin to be included in the fitting
+
+sc = False # show boxplots caps?
+sf = False # show boxplots outliers?
+wp = 0 # position of the whiskers as proportion of (Q3-Q1), default is 1.5
+
+ymin = -15 # min and max limits for the y axis
+ymax = 10
+
+# Define the intervals for tg_ZDRmpath (0 to 3 in 0.5 steps)
+zdr_limits = np.arange(0, 3.5, 0.5)
+zdr_intervals = list(zip(zdr_limits[:-1], zdr_limits[1:]))
+zdr_intervals= [(0,1), (0.5,1.5),(1,2),(1.5,2.5),(2,4)]
+
+# extract/build necessary variables
+delta_dbzh = np.concat([ (d1-d2).flatten() for d1,d2 in selected_ML_high[dbzh] ])
+
+tg_phi = np.concat([ d1.flatten() for d1,d2 in selected_ML_high[phi] ])
+
+ref_phi = np.concat([ d2.flatten() for d1,d2 in selected_ML_high[phi] ])
+
+tg_Zm = np.nan_to_num(np.concat([ d1.flatten() for d1,d2 in selected_ML_high["Zm"] ]))
+
+ref_Zm = np.nan_to_num(np.concat([ d2.flatten() for d1,d2 in selected_ML_high["Zm"] ]))
+
+tg_height_ml_bot = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["height_ml_bottom_new_gia"] ])
+
+ref_height_ml_bot = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["height_ml_bottom_new_gia"] ])
+
+tg_z = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["z"] ])
+
+ref_z = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["z"] ])
+
+tg_TEMP = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["TEMP"] ])
+
+ref_TEMP = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["TEMP"] ])
+
+tg_RHOHV = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["RHOHV"] ])
+
+ref_RHOHV = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["RHOHV"] ])
+
+tg_z_beamtop = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["z_beamtop"] ])
+
+ref_z_beamtop = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["z_beamtop"] ])
+
+tg_binvol = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["binvol"] ])
+
+ref_binvol = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["binvol"] ])
+
+tg_bca = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["beam_cross_angle"] ])
+
+ref_bca = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["beam_cross_angle"] ])
+
+tg_ZDR25 = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_p25"] ])
+
+ref_ZDR25 = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_p25"] ])
+
+tg_ZDR75 = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_p75"] ])
+
+ref_ZDR75 = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_p75"] ])
+
+tg_ZDR50 = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_p50"] ])
+
+ref_ZDR50 = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_p50"] ])
+
+tg_ZDR99 = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_p99"] ])
+
+ref_ZDR99 = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_p99"] ])
+
+tg_ZDRmpath = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_mpath"] ])
+
+tg_ZDRmpathKDP = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_mpathKDP"] ])
+
+tg_ZDRmpath_AC = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_mpath_AC"] ])
+
+tg_ZDRmpathKDP_AC = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_mpathKDP_AC"] ])
+
+tg_ZDRmean = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["ZDR_EC_OC_mean"] ])
+
+tg_riming = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["riming"] ])
+
+# tg_height_ml_bot_qvp = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ])
+
+# ref_height_ml_bot_qvp = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ])
+
+# # fill the NaN height_ml_bot_qvp values from tg with ref and viceversa, and
+# # fill remaining NaNs with an arbitrarely high value so it does no undesired filtering
+# tg_height_ml_bot_qvp[np.isnan(tg_height_ml_bot_qvp)] = ref_height_ml_bot_qvp[np.isnan(tg_height_ml_bot_qvp)]
+# ref_height_ml_bot_qvp[np.isnan(ref_height_ml_bot_qvp)] = tg_height_ml_bot_qvp[np.isnan(ref_height_ml_bot_qvp)]
+# tg_height_ml_bot_qvp[np.isnan(tg_height_ml_bot_qvp)] = 5000
+# ref_height_ml_bot_qvp[np.isnan(ref_height_ml_bot_qvp)] = 5000
+
+# Alternative: interpolate and extrapolate the ML heights for each day to fill NaNs
+tg_height_ml_bot_qvp = [ pd.DataFrame(d1).ffill(axis=1).values for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ]
+
+ref_height_ml_bot_qvp = [ pd.DataFrame(d2).ffill(axis=1).values for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ]
+
+for ts in range(len(tg_height_ml_bot_qvp)):
+    # fill the NaN height_ml_bot_qvp values from tg with ref and viceversa
+    # tg_height_ml_bot_qvp[ts][np.isnan(tg_height_ml_bot_qvp[ts])] = ref_height_ml_bot_qvp[ts][np.isnan(tg_height_ml_bot_qvp[ts])]
+    # ref_height_ml_bot_qvp[ts][np.isnan(ref_height_ml_bot_qvp[ts])] = tg_height_ml_bot_qvp[ts][np.isnan(ref_height_ml_bot_qvp[ts])]
+
+    tg_height_ml_bot_qvp[ts] = np.where(
+        np.isnan(tg_height_ml_bot_qvp[ts]),   # Condition: where it is NaN
+        ref_height_ml_bot_qvp[ts],            # Value if True: take from ref
+        tg_height_ml_bot_qvp[ts]              # Value if False: keep original
+    )
+
+    ref_height_ml_bot_qvp[ts] = np.where(
+        np.isnan(ref_height_ml_bot_qvp[ts]),   # Condition: where it is NaN
+        tg_height_ml_bot_qvp[ts],            # Value if True: take from ref
+        ref_height_ml_bot_qvp[ts]              # Value if False: keep original
+    )
+
+    # remove outliers (median+-std)
+    tg_m = np.nanmedian(tg_height_ml_bot_qvp[ts][:,0])
+    tg_std = np.nanstd(tg_height_ml_bot_qvp[ts][:,0])
+    tg_height_ml_bot_qvp[ts][tg_height_ml_bot_qvp[ts] < tg_m-tg_std] = np.nan
+    tg_height_ml_bot_qvp[ts][tg_height_ml_bot_qvp[ts] > tg_m+tg_std] = np.nan
+    ref_m = np.nanmedian(ref_height_ml_bot_qvp[ts][:,0])
+    ref_std = np.nanstd(ref_height_ml_bot_qvp[ts][:,0])
+    ref_height_ml_bot_qvp[ts][ref_height_ml_bot_qvp[ts] < ref_m-ref_std] = np.nan
+    ref_height_ml_bot_qvp[ts][ref_height_ml_bot_qvp[ts] > ref_m+ref_std] = np.nan
+
+    # Interpolate and extrapolate to fill NaNs
+    tg_height_ml_bot_qvp[ts] = pd.DataFrame(tg_height_ml_bot_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+    ref_height_ml_bot_qvp[ts] = pd.DataFrame(ref_height_ml_bot_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+
+# finally, flatten
+tg_height_ml_bot_qvp = np.concat([ds1.flatten() for ds1 in tg_height_ml_bot_qvp])
+ref_height_ml_bot_qvp = np.concat([ds2.flatten() for ds2 in ref_height_ml_bot_qvp])
+
+# fill remaining NaNs with an arbitrarely high value so it does no undesired filtering
+tg_height_ml_bot_qvp[np.isnan(tg_height_ml_bot_qvp)] = 4000
+ref_height_ml_bot_qvp[np.isnan(ref_height_ml_bot_qvp)] = 4000
+
+# Lists to store the metrics for the final scatterplot
+mean_zdr_list = []
+abs_slope_list = []
+p_value_list = []
+
+# Bin configurations
+bins = np.arange(varx_range[0], varx_range[1], varx_range[2])
+bin_centers = bins[:-1] + np.diff(bins).mean() / 2
+
+for zdr_min, zdr_max in zdr_intervals:
+    # 1. Filter by valid values dynamically for the current ZDR interval
+    valid = np.isfinite(delta_dbzh) & (ref_phi < ref_phi_max) & (np.isfinite(tg_phi)) \
+            & (ref_Zm < Zm_max) & (tg_Zm < Zm_max) \
+            & (tg_phi > varx_range[0]) & (tg_phi < varx_range[1] - varx_range[2]) \
+            & (tg_z < tg_height_ml_bot_qvp) & (ref_z < ref_height_ml_bot_qvp) \
+            & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97) \
+            & (tg_TEMP > 3) & (ref_TEMP > 3) \
+            & (tg_bca > 135) & (ref_bca > 135) \
+            & (tg_ZDRmpath > zdr_min) & (tg_ZDRmpath <= zdr_max)
+
+    # Extract filtered data for this specific loop iteration
+    loop_delta_dbzh = delta_dbzh[valid]
+    loop_tg_phi = tg_phi[valid]
+    loop_tg_ZDRmpath = tg_ZDRmpath[valid]
+
+    # Skip to next interval if no data is found
+    if len(loop_delta_dbzh) == 0:
+        continue
+
+    # 2. Digitize tg_phi into bins
+    bin_indices = np.digitize(loop_tg_phi, bins) - 1
+    box_data = [loop_delta_dbzh[bin_indices == i] for i in range(len(bins) - 1)]
+
+    # Remove bins that have less than min_bin_n valid values
+    valid_bins_mask = np.array([np.isfinite(arr).sum() >= min_bin_n for arr in box_data])
+
+    # We need at least 2 valid bins to draw a linear regression line
+    if np.sum(valid_bins_mask) < 2:
+        continue
+
+    # 3. Calculate medians and IQR for weights
+    medians = np.array([np.nanmedian(vals) if len(vals) > 0 else np.nan for vals in box_data])
+    iqr = np.array([np.nanquantile(vals, 0.75) - np.nanquantile(vals, 0.25) if len(vals) > 0 else np.nan for vals in box_data])
+
+    # Filter arrays down to just the valid bins
+    valid_medians = medians[valid_bins_mask]
+    valid_iqr = iqr[valid_bins_mask]
+    valid_bin_centers = bin_centers[valid_bins_mask]
+
+    # Generate weights: 1 / iqr**2
+    weights = 1 / (valid_iqr ** 2)
+    weights[~np.isfinite(weights)] = 0  # Fix division by zero if IQR is perfectly 0
+
+    # 4. Fit the WLS model
+    X = np.column_stack((np.ones_like(valid_bin_centers), valid_bin_centers))
+    model = sm.WLS(valid_medians, X, weights=weights)
+
+    try:
+        results = model.fit(cov_type='HC3')
+        slope = results.params[1]       # slope is index 1
+        p_val_slope = results.pvalues[1] # p-value for the slope
+
+        # Take the absolute value of the slope
+        abs_slope = abs(slope)
+
+        # Store results
+        mean_zdr_list.append(np.nanmean(loop_tg_ZDRmpath))
+        abs_slope_list.append(abs_slope)
+        p_value_list.append(p_val_slope)
+
+    except Exception as e:
+        print(f"Skipping range {zdr_min}-{zdr_max} due to fitting error: {e}")
+        continue
+
+
+# ---------------------------------------------------------
+# PLOT THE SCATTERPLOT
+# ---------------------------------------------------------
+plt.figure(figsize=(7, 5))
+
+for m_zdr, a_slope, p_val in zip(mean_zdr_list, abs_slope_list, p_value_list):
+    if p_val < 0.05:
+        # Significant: ◆ (Diamond)
+        plt.scatter(m_zdr, a_slope, marker='D', color='tab:blue', edgecolor='black', s=70, zorder=3)
+    else:
+        # Not significant: ⨯ (Cross)
+        plt.scatter(m_zdr, a_slope, marker='x', color='tab:red', s=80, zorder=3, linewidth=2)
+
+# Create custom legend entries
+plt.scatter([], [], marker='D', color='tab:blue', edgecolor='black', s=70, label='Significant ($p < 0.05$)')
+plt.scatter([], [], marker='x', color='tab:red', s=80, linewidth=2, label='Not Significant ($p \geq 0.05$)')
+
+# Formatting
+plt.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
+plt.xlabel("Mean " + r"$\mathrm{ZDR_{mpath}}\ [dB]$")
+plt.ylabel("Absolute Slope " + r"($|\Delta Z_H / \Phi_{DP}|$)")
+plt.title(f"Absolute Slopes for {dbzh} vs. {phi} across ZDRmpath intervals")
+plt.ylim((0,0.2))
+plt.grid(True, linestyle="--", alpha=0.5)
+plt.legend()
+plt.tight_layout()
+plt.show()
 
 #%%% Plot boxplot of delta DBZH/ZDR vs target Zm (wet radome attenuation)
 phi = "PHIDP_OC_MASKED"
