@@ -8438,7 +8438,8 @@ def icon_to_radar_volume_old(icon_field, radar_volume):
 def icon_to_radar_volume(icon_field, radar_volume):
     """
     Function to interpolate variable fields from ICON output into the
-    shape of radar_volume using nearest neighbors.
+    shape of radar_volume using nearest neighbors. Handles both rotated
+    (2D coords) and regular (1D coords) grids.
 
     Parameters
     ----------
@@ -8472,6 +8473,10 @@ def icon_to_radar_volume(icon_field, radar_volume):
     mod_x = lon_icon.values
     mod_y = lat_icon.values
 
+    # Make mod_x and mod_y 2D if they are 1D (Standard Lat/Lon grid) ---
+    if mod_x.ndim == 1 and mod_y.ndim == 1:
+        mod_x, mod_y = np.meshgrid(mod_x, mod_y)
+
     # ICON is already in WGS84, we need to georeference the radar volume to the same system
     proj_wgs = osr.SpatialReference()
     proj_wgs.ImportFromEPSG(4326)
@@ -8479,7 +8484,6 @@ def icon_to_radar_volume(icon_field, radar_volume):
     radar_volume = wrl.georef.georeference(radar_volume, crs=proj_wgs)
 
     rad_x, rad_y, alt = radar_volume.x.values, radar_volume.y.values, radar_volume.z
-
 
     # x y version
     # only those model data that are in radar domain + bordering volume
@@ -8537,9 +8541,10 @@ def icon_to_radar_volume(icon_field, radar_volume):
     vars_to_compute_hl = []
     for vv in icon_field.data_vars:
         if vv not in ["z_ifc", "z_mc"]:
-            if "height" in icon_field[vv].dims and ("ncells" in icon_field[vv].dims or "x" in icon_field[vv].dims):
+            has_spatial_dims = ("ncells" in icon_field[vv].dims or "x" in icon_field[vv].dims or "lon" in icon_field[vv].dims)
+            if "height" in icon_field[vv].dims and has_spatial_dims:
                 vars_to_compute.append(vv)
-            if "height_2" in icon_field[vv].dims and ("ncells" in icon_field[vv].dims or "x" in icon_field[vv].dims):
+            if "height_2" in icon_field[vv].dims and has_spatial_dims:
                 vars_to_compute_hl.append(vv)
 
     if "ncells" in icon_field.dims:
@@ -8548,6 +8553,9 @@ def icon_to_radar_volume(icon_field, radar_volume):
     elif "x" in icon_field.dims:
         dims3D = ['height', 'y', 'x']
         dims3D_h2 = ['height_2', 'y', 'x']
+    elif "lon" in icon_field.dims:
+        dims3D = ['height', 'lat', 'lon']
+        dims3D_h2 = ['height_2', 'lat', 'lon']
 
     # Define the nearest neighbors indices
 
