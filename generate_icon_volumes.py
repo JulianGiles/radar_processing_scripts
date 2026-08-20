@@ -54,8 +54,10 @@ path_save_noc = str(Path(path_save).with_name(f"{Path(path_save).name}_noc")) # 
 
 # attach the files wildcards
 radar_wc = "cdfin_allsim_id-"+radar_id+"_*"
-icon_wc = "out_EU-0275_inst_DOM01_ML_*Z.nc"
-icon_z_wc = "out_EU-0275_constant_*Z.nc"
+icon_wc = "out_EU-0275_inst_id-"+radar_id+"_ML_*Z.nc"
+icon_z_wc = "out_EU-0275_constant_id-"+radar_id+"_*Z.nc"
+# icon_wc = "out_EU-0275_inst_DOM01_ML_*Z.nc" # For full domain activate these
+# icon_z_wc = "out_EU-0275_constant_*Z.nc"
 
 path_radar = path_radar+"/"+radar_wc
 path_icon = path_icon+"/"+icon_wc
