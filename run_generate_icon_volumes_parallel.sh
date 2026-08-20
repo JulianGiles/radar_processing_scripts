@@ -90,14 +90,14 @@ for date in "${dates[@]}"; do
 
     # Link files from radout into radout_filtered only if they correspond to the date after spin-up time (otherwise there is no ICON data to match them)
     mkdir -p $path_radout_filtered
-    ln -sf $path_radout/*$radar_code*${date:0:8}* $path_radout_filtered/.
+    ln -sfr $path_radout/*$radar_code*${date:0:8}* $path_radout_filtered/.
 
     count=$(<$counterfile)
     ((count++))
     echo $count > $counterfile
     ((startcount++))
     # Pass the file path to the python script
-    { srun -c 4 --account=detectrea -n 1 --exact --threads-per-core=1 --time 1200 python -u $codedir/generate_icon_volumes.py "$radar_code" "$path_radout_filtered" "$path_icon" "$path_icon_z" "$path_save"; count=$(<$counterfile); ((count--)) ; echo $count > $counterfile; } &
+    { srun -c 4 --account=detectrea2 -n 1 --exact --threads-per-core=1 --time 1200 python -u $codedir/generate_icon_volumes.py "$radar_code" "$path_radout_filtered" "$path_icon" "$path_icon_z" "$path_save"; count=$(<$counterfile); ((count--)) ; echo $count > $counterfile; } &
 
     if [ "$startcount" -le 12 ]; then
         sleep 5
