@@ -47,6 +47,7 @@ import re
 import scipy
 import statsmodels.api as sm
 from scipy.ndimage import binary_opening
+import matplotlib.lines as mlines
 
 import panel as pn
 from bokeh.resources import INLINE
@@ -58,6 +59,8 @@ import utils
 import radarmet
 
 import dotenv
+from scipy.stats import gaussian_kde
+import string
 
 secrets = dotenv.dotenv_values("/user/jgiles/secrets.env")
 
@@ -157,7 +160,7 @@ def plot_dual_scan_strategy(
     cmap2="OrRd_r",
     pad_deg=0.02,
     show=True,
-    figsize=(12, 5),
+    figsize=(6.7, 3.0),
     plot_title = True,
     legend_pos = "out"
 ):
@@ -257,8 +260,9 @@ def plot_dual_scan_strategy(
         fill = ax_local.fill_between(r_km, alt_km - beam_km, alt_km + beam_km, label=label, alpha=0.45, zorder=2)
         return fill, center, edge1
 
-    # --- prepare figure/axes ---
-    fig, ax = plt.subplots(figsize=figsize)
+    # --- prepare figure/axes using standardized boundaries ---
+    fig = plt.figure(figsize=figsize)
+    ax = fig.add_axes([0.08, 0.15, 0.90, 0.80])
 
     # plot terrain polygon
     if terrain and (terrain_heights_m is not None):
@@ -329,19 +333,21 @@ def plot_dual_scan_strategy(
             uniq_handles.append(h)
             uniq_labels.append(l)
             seen.add(l)
+
     if uniq_handles:
         if legend_pos == "in":
-            leg1 = ax.legend(uniq_handles, uniq_labels, prop={"family": "monospace"}, loc="upper right")
+            # Removed the monospace prop so it respects your clean sans-serif style
+            leg1 = ax.legend(uniq_handles, uniq_labels, loc="upper right")
         else:
-            leg1 = ax.legend(uniq_handles, uniq_labels, prop={"family": "monospace"}, loc="upper left", bbox_to_anchor=(1.02, 1.0))
+            leg1 = ax.legend(uniq_handles, uniq_labels, loc="upper left", bbox_to_anchor=(1.02, 1.0))
         ax.add_artist(leg1)
 
     if center_last is not None and edge_last is not None:
         legend2 = {"Center": center_last[0], "3 dB": edge_last[0]}
         if legend_pos == "in":
-            ax.legend(legend2.values(), legend2.keys(), prop={"family": "monospace"}, loc="lower right")
+            ax.legend(legend2.values(), legend2.keys(), loc="lower right")
         else:
-            ax.legend(legend2.values(), legend2.keys(), prop={"family": "monospace"}, loc="lower left", bbox_to_anchor=(1.02, 0.0))
+            ax.legend(legend2.values(), legend2.keys(), loc="lower left", bbox_to_anchor=(1.02, 0.0))
 
     margin_x = max(2.0, 0.05 * dist_total_km)
     ax.set_xlim(-margin_x, dist_total_km + margin_x)
@@ -355,28 +361,40 @@ def plot_dual_scan_strategy(
 
     ax.set_xlabel("Distance along transect (km)")
     ax.set_ylabel("Height (km a.s.l.)")
+
+    # Fix the y-axis label position.
+    # Because this figure is wider, -0.06 pushes it the same physical distance as -0.12 does on a narrow plot.
+    ax.yaxis.set_label_coords(-0.06, 0.5)
+
     if plot_title: ax.set_title("Dual-Radar Scan Strategies (shared transect & terrain)")
     ax.grid(True, linestyle="--", alpha=0.4)
-    plt.tight_layout()
+
     if show:
         plt.show()
     return ax
 
 
-#%%% Plot scan strategies
+#%%% Plot scan strategies using standardized RC context
 
-plot_dual_scan_strategy(
-    ds1, ds2,
-    elevs1=[1.5, 2.2, 3.0], # [0.2, 0.4, 0.7, 1.0, 1.5, 2.2, 3.0, 4.5, 6.0, 8.0, 12.0, 18.0, 27.0, 38.0],
-    elevs2=[0.4, 0.5, 0.7], # [0.5, 1.3, 4.0, 10.0, 15.0],
-    ds1_name="HTY",
-    ds2_name="GZT",
-    terrain=True,
-    figsize=(9, 4),
-    plot_title=False,
-    legend_pos="in"
-)
+with mpl.rc_context({
+        'font.size': 7,
+        'axes.labelsize': 8,
+        'xtick.labelsize': 8,
+        'ytick.labelsize': 8,
+        'legend.fontsize': 7,
+        }):
 
+    plot_dual_scan_strategy(
+        ds1, ds2,
+        elevs1=[1.5, 2.2, 3.0], # [0.2, 0.4, 0.7, 1.0, 1.5, 2.2, 3.0, 4.5, 6.0, 8.0, 12.0, 18.0, 27.0, 38.0],
+        elevs2=[0.4, 0.5, 0.7], # [0.5, 1.3, 4.0, 10.0, 15.0],
+        ds1_name="HTY",
+        ds2_name="GZT",
+        terrain=True,
+        figsize=(6.7, 3.0), # QJRMS double column width
+        plot_title=False,
+        legend_pos="in"
+    )
 
 #%%% Plot scan strategies individually to double check
 
@@ -667,79 +685,91 @@ tiles = cimgt.OSM()                        # OpenStreetMap
 # Use PlateCarree (lon/lat) as the display projection
 map_proj = ccrs.Mercator()
 
-fig, ax = plt.subplots(
-    figsize=(5, 4),
-    subplot_kw={"projection": map_proj}
-)
+with mpl.rc_context({
+        'font.size': 7,
+        'axes.labelsize': 8,
+        'xtick.labelsize': 8,
+        'ytick.labelsize': 8,
+        'legend.fontsize': 7,
+        }):
 
-# Add the background tiles FIRST (before other features)
-ax.add_image(tiles, 7, zorder=0)  # <-- second arg is zoom level (higher = more detail, slower)
+    fig, ax = plt.subplots(
+        figsize=(3.5, 2.8),
+        subplot_kw={"projection": map_proj}
+    )
 
-# --- Add map features ---
-ax.add_feature(cartopy.feature.COASTLINE, linewidth=0.8, zorder=2)
-ax.add_feature(cartopy.feature.BORDERS, linewidth=0.8, linestyle="--", zorder=2)
-# ax.add_feature(cartopy.feature.LAND, facecolor="lightgray", alpha=0.3)
-# ax.add_feature(cartopy.feature.OCEAN, facecolor="lightblue", alpha=0.3)
-ax.gridlines(draw_labels=[ "bottom", "left"], linewidth=0.5, linestyle=":", color="gray")
+    # Add the background tiles FIRST (before other features)
+    ax.add_image(tiles, 6, zorder=0)  # <-- second arg is zoom level (higher = more detail, slower)
 
-# --- Plot radar data ---
-# wradlib's .wrl.vis.plot() can accept a cartopy axes via the `ax` kwarg
-# We need to pass the transform so it knows the data CRS
-ds1_sel = ds1.sel(time=tsel, method="nearest")[vv]
-ds2_sel = ds2.sel(time=tsel, method="nearest")[vv]
+    # --- Add map features ---
+    ax.add_feature(cartopy.feature.COASTLINE, linewidth=0.8, zorder=2)
+    ax.add_feature(cartopy.feature.BORDERS, linewidth=0.8, linestyle="--", zorder=2)
+    # ax.add_feature(cartopy.feature.LAND, facecolor="lightgray", alpha=0.3)
+    # ax.add_feature(cartopy.feature.OCEAN, facecolor="lightblue", alpha=0.3)
+    gl = ax.gridlines(draw_labels=[ "bottom", "left"], linewidth=0.5, linestyle=":", color="gray")
+    gl.xlabel_style = {'size': 7}
+    gl.ylabel_style = {'size': 7}
 
-# Set colorbar settings
-ticks = radarmet.visdict14[vv.split("_")[0]]["ticks"]
-cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
-cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
-# norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
-# cmap = "miub2"
-norm = utils.get_discrete_norm(ticks, cmap.N, extend="both")
+    # --- Plot radar data ---
+    # wradlib's .wrl.vis.plot() can accept a cartopy axes via the `ax` kwarg
+    # We need to pass the transform so it knows the data CRS
+    ds1_sel = ds1.sel(time=tsel, method="nearest")[vv]
+    ds2_sel = ds2.sel(time=tsel, method="nearest")[vv]
 
-# Get lon/lat arrays (they should be coordinates after georeferencing)
-# If your datasets have 'lon' and 'lat' coords use them directly;
-# otherwise use wradlib's georef to get them
-ds1_sel.wrl.vis.plot(
-    ax=ax,
-    crs=proj,           # the CRS the x/y data is in (from get_common_projection)
-    alpha=1, #0.3,
-    vmin=vmin, vmax=vmax,
-    add_colorbar=False,
-    zorder=1,
-    cmap=cmap, norm=norm, extend="both"
-)
-pm = ds2_sel.wrl.vis.plot(
-    ax=ax,
-    crs=proj,
-    alpha=1, #0.3,
-    vmin=vmin, vmax=vmax,
-    add_colorbar=False,
-    zorder=1,
-    cmap=cmap, norm=norm, extend="both"
-)
+    # Set colorbar settings
+    ticks = radarmet.visdict14[vv.split("_")[0]]["ticks"]
+    cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
+    cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
+    # norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
+    # cmap = "miub2"
+    norm = utils.get_discrete_norm(ticks, cmap.N, extend="both")
 
-ax.autoscale(enable=False, axis='both', tight=True)
+    # Get lon/lat arrays (they should be coordinates after georeferencing)
+    # If your datasets have 'lon' and 'lat' coords use them directly;
+    # otherwise use wradlib's georef to get them
+    ds1_sel.wrl.vis.plot(
+        ax=ax,
+        crs=proj,           # the CRS the x/y data is in (from get_common_projection)
+        alpha=1, #0.3,
+        vmin=vmin, vmax=vmax,
+        add_colorbar=False,
+        zorder=1,
+        cmap=cmap, norm=norm, extend="both"
+    )
+    pm = ds2_sel.wrl.vis.plot(
+        ax=ax,
+        crs=proj,
+        alpha=1, #0.3,
+        vmin=vmin, vmax=vmax,
+        add_colorbar=False,
+        zorder=1,
+        cmap=cmap, norm=norm, extend="both"
+    )
 
-# --- Radar site markers ---
+    ax.autoscale(enable=False, axis='both', tight=True)
 
-lon1, lat1 = (float(ds1.longitude), float(ds1.latitude))
-lon2, lat2 = (float(ds2.longitude), float(ds2.latitude))
+    # --- Radar site markers ---
 
-ax.scatter([lon1, lon2], [lat1, lat2],
-           color="black", s=50, zorder=5, transform=ccrs.PlateCarree())
-ax.text(lon1, lat1 - 0.3, "HTY", transform=ccrs.PlateCarree(), fontsize=9, ha="center")
-ax.text(lon2, lat2 - 0.3, "GZT", transform=ccrs.PlateCarree(), fontsize=9, ha="center")
+    lon1, lat1 = (float(ds1.longitude), float(ds1.latitude))
+    lon2, lat2 = (float(ds2.longitude), float(ds2.latitude))
 
-add_range_circle(ax, lon1, lat1, ds1.range.max().values,
-                 facecolor="none", edgecolor="black", linewidth=1, zorder=4)
-add_range_circle(ax, lon2, lat2, ds2.range.max().values,
-                 facecolor="none", edgecolor="black", linewidth=1, zorder=4)
+    ax.scatter([lon1, lon2], [lat1, lat2],
+               color="black", s=20, zorder=5, transform=ccrs.PlateCarree())
+    ax.text(lon1, lat1 - 0.3, "HTY", transform=ccrs.PlateCarree(), fontsize=7, ha="center")
+    ax.text(lon2, lat2 - 0.3, "GZT", transform=ccrs.PlateCarree(), fontsize=7, ha="center")
 
-# --- Colorbar and title ---
-plt.colorbar(pm, ax=ax, label=ds1_sel.units, shrink=0.7)
-ax.set_title(f"{vv} {tsel}")
-plt.tight_layout()
-plt.show()
+    add_range_circle(ax, lon1, lat1, ds1.range.max().values,
+                     facecolor="none", edgecolor="black", linewidth=0.8, zorder=4)
+    add_range_circle(ax, lon2, lat2, ds2.range.max().values,
+                     facecolor="none", edgecolor="black", linewidth=0.8, zorder=4)
+
+    # --- Colorbar and title ---
+    cbar = plt.colorbar(pm, ax=ax, label=ds1_sel.units, shrink=0.65, pad=0.03)
+    cbar.ax.tick_params(labelsize=7)
+    # ax.set_title(f"{vv} {tsel}")
+    ax.set_title("")
+    plt.tight_layout()
+    plt.show()
 
 #%% Add beam blockage
 
@@ -1093,34 +1123,50 @@ ax.text(dsy_.x[0,0], dsy_.y[0,0]-30, "GZT")
 
 plt.title(vv+" "+tsel)
 
-#%% Plot initial mask (with zoom and scatter of points)
+#%% Plot initial mask (with zoom and scatter of points) This is the final plot used for the paper
 # Set colorbar settings
-ticks = radarmet.visdict14[vv.split("_")[0]]["ticks"]
-cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
-cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
-# norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
-# cmap = "miub2"
-norm = utils.get_discrete_norm(ticks, cmap.N, extend="both")
+with mpl.rc_context({
+        'font.size': 7,
+        'axes.labelsize': 8,
+        'xtick.labelsize': 8,
+        'ytick.labelsize': 8,
+        'legend.fontsize': 7,
+        }):
 
+    fig = plt.figure(figsize=(3.5, 2.8))
+    ax = fig.add_axes([0.15, 0.15, 0.8, 0.8])
 
-dsx_plot = dsx_[vv].where(mask1_ref).sel(time=tsel, method="nearest").where(dsx_["bca"]>bca_min).wrl.vis.plot(alpha=0.8, cmap=cmap, norm=norm, extend="both")
-dsx_plot.colorbar.set_label(dsx_[vv].units)
-ax = plt.gca()
-dsy_[vv].where(mask2_ref).sel(time=tsel, method="nearest").where(dsy_["bca"]>bca_min).wrl.vis.plot(ax=ax, alpha=0.8, xlim=(-25, -15), ylim=(12, 22), add_colorbar=False, cmap=cmap, norm=norm, extend="both")
+    ticks = radarmet.visdict14[vv.split("_")[0]]["ticks"]
+    cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
+    cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
+    # norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
+    # cmap = "miub2"
+    norm = utils.get_discrete_norm(ticks, cmap.N, extend="both")
 
-plt.gca().set_ylabel("North-south distance from center [km]")
-plt.gca().set_xlabel("West-east distance from center [km]")
+    dsx_plot = dsx_[vv].where(mask1_ref).sel(time=tsel, method="nearest").where(dsx_["bca"]>bca_min).wrl.vis.plot(
+        ax=ax, alpha=0.8, cmap=cmap, norm=norm, extend="both",
+        cbar_kwargs={'shrink': 0.8, 'pad': 0.04}
+        )
+    dsx_plot.colorbar.set_label(dsx_[vv].units)
 
-x1 = dsx_.x.where(mask1_ref_).sel(time=tsel, method="nearest").where(dsx_["bca"]>bca_min).values.flatten()
-y1 = dsx_.y.where(mask1_ref_).sel(time=tsel, method="nearest").where(dsx_["bca"]>bca_min).values.flatten()
+    dsy_[vv].where(mask2_ref).sel(time=tsel, method="nearest").where(dsy_["bca"]>bca_min).wrl.vis.plot(
+        ax=ax, alpha=0.8, xlim=(-25, -15), ylim=(12, 22), add_colorbar=False, cmap=cmap,
+        norm=norm, extend="both")
 
-x2 = dsy_.x.where(mask2_ref_).sel(time=tsel, method="nearest").where(dsy_["bca"]>bca_min).values.flatten()
-y2 = dsy_.y.where(mask2_ref_).sel(time=tsel, method="nearest").where(dsy_["bca"]>bca_min).values.flatten()
+    plt.gca().set_ylabel("North-south distance from center [km]")
+    plt.gca().set_xlabel("West-east distance from center [km]")
+    ax.yaxis.set_label_coords(-0.15, 0.5)
 
-ax.scatter(x1, y1, s=1, marker="o")
-ax.scatter(x2, y2, s=1, c="r", marker="x")
+    x1 = dsx_.x.where(mask1_ref_).sel(time=tsel, method="nearest").where(dsx_["bca"]>bca_min).values.flatten()
+    y1 = dsx_.y.where(mask1_ref_).sel(time=tsel, method="nearest").where(dsx_["bca"]>bca_min).values.flatten()
 
-plt.title("")
+    x2 = dsy_.x.where(mask2_ref_).sel(time=tsel, method="nearest").where(dsy_["bca"]>bca_min).values.flatten()
+    y2 = dsy_.y.where(mask2_ref_).sel(time=tsel, method="nearest").where(dsy_["bca"]>bca_min).values.flatten()
+
+    ax.scatter(x1, y1, s=1, c="black", marker="o")
+    ax.scatter(x2, y2, s=1, c="darkgray", marker="o")
+
+    plt.title("")
 
 
 #%% Rain path attenuation check
@@ -2676,60 +2722,72 @@ counts = [len(vals) for vals in box_data]
 valid_bins = [ np.isfinite(arr).sum() >= min_bin_n  for arr in box_data ]
 
 # Plot
-plt.figure(figsize=(6, 3.5))
-bp = plt.boxplot(box_data, positions=bin_centers, widths=np.diff(bins).mean()/2,
-                 showmeans=True, showcaps=sc, showfliers=sf, whis=wp,
-                     medianprops={"color":"black"}, meanprops={"marker":"."})
-plt.xlim(bins[0], bins[-1])
-plt.ylim(ymin, ymax)
-plt.xlabel(xax)
-plt.ylabel(yax)
-plt.grid(True, linestyle="--", alpha=0.5)
-plt.xticks(bins, bins)
-# plt.xticks(bin_centers, [f"{round(b, 2)}-{round(b+varx_range[2], 2)}" for b in bins[:-1]])
-# plt.title("Boxplots of delta "+dbzh+" vs "+phi+" bins")
+with mpl.rc_context({
+        'font.size': 7,
+        'axes.labelsize': 8,
+        'xtick.labelsize': 8,
+        'ytick.labelsize': 8,
+        'legend.fontsize': 7,
+        }):
 
-# # add linear fit
-# plt.plot([bins[0], bins[-1]], [lfit(bins[0]), lfit(bins[-1])])
-# plt.text(0.95, 0.9, "Linear fit: "+lfit_str, transform=plt.gca().transAxes, c="blue",
-#          horizontalalignment="right")
+    fig = plt.figure(figsize=(3.5, 2))
+    ax = fig.add_axes([0.15, 0.2, 0.80, 0.75])
 
-# add a second linear fit using the medians
-medians = np.array([line.get_ydata()[0] for line in bp['medians']])
-lfit_m = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 1)
-lfit_m_rcoefs = np.round(lfit_m.convert().coef, 3)
-lfit_m_rounded = np.polynomial.Polynomial(lfit_m_rcoefs)
-lfit_m_str = str(lfit_m_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
-# plt.plot([bins[0], bins[-1]], [lfit_m(bins[0]), lfit_m(bins[-1])], c="red")
-# plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
-#          horizontalalignment="right")
+    bp = ax.boxplot(box_data, positions=bin_centers, widths=np.diff(bins).mean()/2,
+                     showmeans=True, showcaps=sc, showfliers=sf, whis=wp,
+                         medianprops={"color":"black"}, meanprops={"marker":".", "markersize":5})
+    plt.xlim(bins[0], bins[-1])
+    plt.ylim(ymin, ymax)
+    plt.xlabel(xax)
+    plt.ylabel(yax)
+    ax.yaxis.set_label_coords(-0.12, 0.5) # Fix the label position so it does not move regardless of scale numbers
+    plt.grid(True, linestyle="--", alpha=0.5)
+    plt.xticks(bins[::2], bins[::2])
+    # plt.xticks(bin_centers, [f"{round(b, 2)}-{round(b+varx_range[2], 2)}" for b in bins[:-1]])
+    # plt.title("Boxplots of delta "+dbzh+" vs "+phi+" bins")
+    ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
 
-# add a third linear fit using the medians and IQRs of each bin
-variances = np.array([vals.var(ddof=1) for vals in box_data])
-iqr = np.array([np.nanquantile(vals,0.75) for vals in box_data]) - np.array([np.nanquantile(vals,0.25) for vals in box_data])
-weights = 1 / iqr**2 # 1 / variances
-weights[~np.isfinite(weights)] = 0
-w = np.sqrt(weights)
-lfit_mw = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 1, w=w[np.array(valid_bins)])
-lfit_mw_rcoefs = np.round(lfit_mw.convert().coef, 3)
-lfit_mw_rounded = np.polynomial.Polynomial(lfit_mw_rcoefs)
-lfit_mw_str = str(lfit_mw_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
-plt.plot([bins[0], bins[-1]], [lfit_mw(bins[0]), lfit_mw(bins[-1])], c="red")
-plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_mw_str+"", transform=plt.gca().transAxes,
-         c="red", horizontalalignment="right")
+    # # add linear fit
+    # plt.plot([bins[0], bins[-1]], [lfit(bins[0]), lfit(bins[-1])])
+    # plt.text(0.95, 0.9, "Linear fit: "+lfit_str, transform=plt.gca().transAxes, c="blue",
+    #          horizontalalignment="right")
 
-plt.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
+    # add a second linear fit using the medians
+    medians = np.array([line.get_ydata()[0] for line in bp['medians']])
+    lfit_m = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 1)
+    lfit_m_rcoefs = np.round(lfit_m.convert().coef, 3)
+    lfit_m_rounded = np.polynomial.Polynomial(lfit_m_rcoefs)
+    lfit_m_str = str(lfit_m_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
+    # plt.plot([bins[0], bins[-1]], [lfit_m(bins[0]), lfit_m(bins[-1])], c="red")
+    # plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
+    #          horizontalalignment="right")
 
-# Add counts above x-tick labels (inside the plot area)
-for x, n in zip(bin_centers[::2], counts[::2]):
-    plt.text(x, plt.ylim()[0] + 0.05 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
-             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
-for x, n in zip(bin_centers[1::2], counts[1::2]):
-    plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 1% above bottom
-             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
+    # add a third linear fit using the medians and IQRs of each bin
+    variances = np.array([vals.var(ddof=1) for vals in box_data])
+    iqr = np.array([np.nanquantile(vals,0.75) for vals in box_data]) - np.array([np.nanquantile(vals,0.25) for vals in box_data])
+    weights = 1 / iqr**2 # 1 / variances
+    weights[~np.isfinite(weights)] = 0
+    w = np.sqrt(weights)
+    lfit_mw = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 1, w=w[np.array(valid_bins)])
+    lfit_mw_rcoefs = np.round(lfit_mw.convert().coef, 3)
+    lfit_mw_rounded = np.polynomial.Polynomial(lfit_mw_rcoefs)
+    lfit_mw_str = str(lfit_mw_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
+    plt.plot([bins[0], bins[-1]], [lfit_mw(bins[0]), lfit_mw(bins[-1])], c="red")
+    plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_mw_str+"", transform=plt.gca().transAxes,
+             c="red", horizontalalignment="right")
 
-plt.tight_layout()
-plt.show()
+    plt.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
+
+    # Add counts above x-tick labels (inside the plot area)
+    for x, n in zip(bin_centers[::2], counts[::2]):
+        plt.text(x, plt.ylim()[0] + 0.07 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
+                 f"{n}", ha='center', va='bottom', fontsize=7, color='dimgray')
+    for x, n in zip(bin_centers[1::2], counts[1::2]):
+        plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 1% above bottom
+                 f"{n}", ha='center', va='bottom', fontsize=7, color='dimgray')
+
+    # plt.tight_layout()
+    plt.show()
 
 # Print p value and other stats
 scipy.stats.linregress(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)])
@@ -3041,67 +3099,77 @@ for bin_width in bin_widths:
 # -------------------------------------------------------------------
 # PLOT RESULTS
 # -------------------------------------------------------------------
-plt.figure(figsize=(6,3.5))
-for bin_width in bin_widths:
-    phi_max_values = [pr[1] for pr in phi_ranges]
+with mpl.rc_context({
+        'font.size': 7,
+        'axes.labelsize': 8,
+        'xtick.labelsize': 8,
+        'ytick.labelsize': 8,
+        'legend.fontsize': 7,
+        }):
 
-    # eb1 = plt.errorbar(
-    #     phi_max_values,
-    #     slopes_mean[bin_width],
-    #     yerr=[np.array(slopes_mean[bin_width])-np.array(slopes_lowCI[bin_width]),
-    #           np.array(slopes_highCI[bin_width])-np.array(slopes_mean[bin_width])],
-    #     fmt='o-', capsize=4, lw=3, capthick=3, label=f"{bin_width}° bins global bootstrap",
-    #     alpha=0.5
-    # )
-    # eb2 = plt.errorbar(
-    #     phi_max_values,
-    #     slopes_mean[bin_width],
-    #     yerr=[np.array(slopes_mean[bin_width])-np.array(slopes2_lowCI[bin_width]),
-    #           np.array(slopes2_highCI[bin_width])-np.array(slopes_mean[bin_width])],
-    #     fmt='none', capsize=4, lw=3, capthick=3, label=f"{bin_width}° bins within-bin bootstrap",
-    #     ecolor=eb1[0].get_color()
-    # )
-    # eb2[-1][0].set_linestyle('--') # change linestyle of second error bars
+    fig = plt.figure(figsize=(3.5, 2.3))
+    ax = fig.add_axes([0.22, 0.2, 0.76, 0.75])
 
-    # alternative: plot only within-bin bootstrap in grayscale
-    colors = ["lightgray", "gray", "black"]
-    lws = [6, 4, 2]
-    bini = bin_widths.index(bin_width)
-    eb3 = plt.errorbar(
-        phi_max_values,
-        slopes_mean[bin_width],
-        yerr=[np.array(slopes_mean[bin_width])-np.array(slopes2_lowCI[bin_width]),
-              np.array(slopes2_highCI[bin_width])-np.array(slopes_mean[bin_width])],
-        fmt='o-', capsize=lws[bini]+1, capthick=lws[bini], ms=lws[bini]+3,
-        elinewidth=lws[bini], lw=lws[bini],
-        label=f"{bin_width}° bins",
-        color=colors[bini],
-        zorder=10+bini
-    )
+    for bin_width in bin_widths:
+        phi_max_values = [pr[1] for pr in phi_ranges]
 
+        # eb1 = plt.errorbar(
+        #     phi_max_values,
+        #     slopes_mean[bin_width],
+        #     yerr=[np.array(slopes_mean[bin_width])-np.array(slopes_lowCI[bin_width]),
+        #           np.array(slopes_highCI[bin_width])-np.array(slopes_mean[bin_width])],
+        #     fmt='o-', capsize=4, lw=3, capthick=3, label=f"{bin_width}° bins global bootstrap",
+        #     alpha=0.5
+        # )
+        # eb2 = plt.errorbar(
+        #     phi_max_values,
+        #     slopes_mean[bin_width],
+        #     yerr=[np.array(slopes_mean[bin_width])-np.array(slopes2_lowCI[bin_width]),
+        #           np.array(slopes2_highCI[bin_width])-np.array(slopes_mean[bin_width])],
+        #     fmt='none', capsize=4, lw=3, capthick=3, label=f"{bin_width}° bins within-bin bootstrap",
+        #     ecolor=eb1[0].get_color()
+        # )
+        # eb2[-1][0].set_linestyle('--') # change linestyle of second error bars
+
+        # alternative: plot only within-bin bootstrap in grayscale
+        colors = ["lightgray", "gray", "black"]
+        lws = [3, 2, 1]
+        bini = bin_widths.index(bin_width)
+        eb3 = plt.errorbar(
+            phi_max_values,
+            slopes_mean[bin_width],
+            yerr=[np.array(slopes_mean[bin_width])-np.array(slopes2_lowCI[bin_width]),
+                  np.array(slopes2_highCI[bin_width])-np.array(slopes_mean[bin_width])],
+            fmt='o-', capsize=lws[bini]+1, capthick=lws[bini], ms=lws[bini]+3,
+            elinewidth=lws[bini], lw=lws[bini],
+            label=f"{bin_width}° bins",
+            color=colors[bini],
+            zorder=10+bini
+        )
+
+        # print exact slope values
+        print(f"#### {bin_width}° bins slope results ####")
+        for x, n in zip(phi_max_values, slopes_mean[bin_width]):
+            print("Range 0-"+str(x)+": "+str(round(n, 4)))
+        print("Mean of all slopes: "+str(round(np.nanmean(slopes_mean[bin_width]), 4)))
+
+    # Apply axis labels, grid, and legend once after all lines are plotted
     plt.xlabel(xax)
     plt.ylabel(yax)
+    ax.yaxis.set_label_coords(-0.2, 0.5) # Fix the label position
     # plt.xlabel('Max φ of fitted range (°)')
     # plt.ylabel('Slope of Δ'+dbzh+'–φ (dB/°)')
     # plt.title('Bootstrap CI of Bin-Median Linear Fit Slope ('+str(B)+' Iterations)')
-    # plt.legend(fontsize=6)
     plt.legend()
     plt.grid(True, ls='--', alpha=0.6)
 
-    plt.tight_layout()
+    # Add phi_N counts above x-tick labels (inside the plot area)
+    phi_N_ = [str(phi_N[bin_width][0])] + ["+"+str(pn0-phi_N[bin_width][0]) for pn0 in phi_N[bin_width][1:]]
+    for x, n in zip(phi_max_values, phi_N_):
+        plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 1% above bottom
+                 f"{n}", ha='center', va='bottom', fontsize=7, color='dimgray', zorder=20)
+
     # plt.show()
-
-    # print exact slope values
-    print(f"#### {bin_width}° bins slope results ####")
-    for x, n in zip(phi_max_values, slopes_mean[bin_width]):
-        print("Range 0-"+str(x)+": "+str(round(n, 4)))
-    print("Mean of all slopes: "+str(round(np.nanmean(slopes_mean[bin_width]), 4)))
-
-# Add phi_N counts above x-tick labels (inside the plot area)
-phi_N_ = [str(phi_N[bin_width][0])] + ["+"+str(pn0-phi_N[bin_width][0]) for pn0 in phi_N[bin_width][1:]]
-for x, n in zip(phi_max_values, phi_N_):
-    plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
-             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray', zorder=20)
 
 #%%% Plot boxplot of delta DBZH/ZDR vs target PHI (rain attenuation) by ZDR_mpath intervals
 phi = "PHIDP_OC_MASKED"
@@ -3375,7 +3443,7 @@ sf = False # show boxplots outliers?
 wp = 0 # position of the whiskers as proportion of (Q3-Q1), default is 1.5
 
 ymin = -15 # min and max limits for the y axis
-ymax = 10
+ymax = 15
 
 # extract/build necessary variables
 delta_dbzh = np.concat([ (d1-d2).flatten() for d1,d2 in selected_ML_high[dbzh] ])
@@ -3434,8 +3502,20 @@ ref_height_ml_bot_qvp = [ pd.DataFrame(d2).ffill(axis=1).values for d1,d2 in sel
 
 for ts in range(len(tg_height_ml_bot_qvp)):
     # fill the NaN height_ml_bot_qvp values from tg with ref and viceversa
-    tg_height_ml_bot_qvp[ts][np.isnan(tg_height_ml_bot_qvp[ts])] = ref_height_ml_bot_qvp[ts][np.isnan(tg_height_ml_bot_qvp[ts])]
-    ref_height_ml_bot_qvp[ts][np.isnan(ref_height_ml_bot_qvp[ts])] = tg_height_ml_bot_qvp[ts][np.isnan(ref_height_ml_bot_qvp[ts])]
+    # tg_height_ml_bot_qvp[ts][np.isnan(tg_height_ml_bot_qvp[ts])] = ref_height_ml_bot_qvp[ts][np.isnan(tg_height_ml_bot_qvp[ts])]
+    # ref_height_ml_bot_qvp[ts][np.isnan(ref_height_ml_bot_qvp[ts])] = tg_height_ml_bot_qvp[ts][np.isnan(ref_height_ml_bot_qvp[ts])]
+
+    tg_height_ml_bot_qvp[ts] = np.where(
+        np.isnan(tg_height_ml_bot_qvp[ts]),   # Condition: where it is NaN
+        ref_height_ml_bot_qvp[ts],            # Value if True: take from ref
+        tg_height_ml_bot_qvp[ts]              # Value if False: keep original
+    )
+
+    ref_height_ml_bot_qvp[ts] = np.where(
+        np.isnan(ref_height_ml_bot_qvp[ts]),   # Condition: where it is NaN
+        tg_height_ml_bot_qvp[ts],            # Value if True: take from ref
+        ref_height_ml_bot_qvp[ts]              # Value if False: keep original
+    )
 
     # remove outliers (median+-std)
     tg_m = np.nanmedian(tg_height_ml_bot_qvp[ts][:,0])
@@ -3512,62 +3592,76 @@ counts = [len(vals) for vals in box_data]
 valid_bins = [ np.isfinite(arr).sum() >= min_bin_n  for arr in box_data ]
 
 # Plot
-plt.figure(figsize=(6, 3.5))
-bp = plt.boxplot(box_data, positions=bin_centers, widths=np.diff(bins).mean()/2,
-                 showmeans=True, showcaps=sc, showfliers=sf, whis=wp,
-                 medianprops={"color":"black"}, meanprops={"marker":"."})
-plt.xlim(bins[0], bins[-1])
-plt.ylim(ymin, ymax)
-plt.xlabel(xax)
-plt.ylabel(yax)
-plt.grid(True, linestyle="--", alpha=0.5)
-plt.xticks(bins, bins)
-# plt.xticks(bin_centers, [f"{round(b, 2)}-{round(b+varx_range[2], 2)}" for b in bins[:-1]])
-# plt.title("Boxplots of delta "+dbzh+" vs Zm bins")
+with mpl.rc_context({
+        'font.size': 7,
+        'axes.labelsize': 8,
+        'xtick.labelsize': 8,
+        'ytick.labelsize': 8,
+        'legend.fontsize': 7,
+        }):
 
-# # add cuadratic fit
-# x_dense = np.linspace(bins[0], bins[-1], 100) # 100 points for a smooth curve
-# plt.plot(x_dense, lfit(x_dense))
-# plt.text(0.95, 0.9, "Cuadratic fit: "+lfit_str, transform=plt.gca().transAxes, c="blue",
-#          horizontalalignment="right")
+    fig = plt.figure(figsize=(3.5, 2))
+    ax = fig.add_axes([0.15, 0.2, 0.80, 0.75])
 
-# add a second cuadratic fit using the medians
-medians = np.array([line.get_ydata()[0] for line in bp['medians']])
-lfit_m = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 2)
-lfit_m_rcoefs = np.round(lfit_m.convert().coef, 5)
-lfit_m_rounded = np.polynomial.Polynomial(lfit_m_rcoefs)
-lfit_m_str = str(lfit_m_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
-x_dense = np.linspace(bins[0], bins[-1], 100) # 100 points for a smooth curve
-# plt.plot(x_dense, lfit_m(x_dense), c="red")
-# plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
-#          horizontalalignment="right")
+    bp = ax.boxplot(box_data, positions=bin_centers, widths=np.diff(bins).mean()/2,
+                     showmeans=True, showcaps=sc, showfliers=sf, whis=wp,
+                     medianprops={"color":"black"}, meanprops={"marker":".", "markersize":5})
+    plt.xlim(bins[0], bins[-1])
+    plt.ylim(ymin, ymax)
+    plt.xlabel(xax)
+    plt.ylabel(yax)
+    ax.yaxis.set_label_coords(-0.12, 0.5) # Fix the label position
+    plt.grid(True, linestyle="--", alpha=0.5)
+    plt.xticks(bins, bins)
+    # plt.xticks(bin_centers, [f"{round(b, 2)}-{round(b+varx_range[2], 2)}" for b in bins[:-1]])
+    # plt.title("Boxplots of delta "+dbzh+" vs Zm bins")
+    # ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
 
-# add a third cuadratic fit using the medians and IQRs of each bin
-variances = np.array([vals.var(ddof=1) for vals in box_data])
-iqr = np.array([np.nanquantile(vals,0.75) for vals in box_data]) - np.array([np.nanquantile(vals,0.25) for vals in box_data])
-weights = 1 / iqr**2 # 1 / variances
-weights[~np.isfinite(weights)] = 0
-w = np.sqrt(weights)
-lfit_mw = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 2, w=w[np.array(valid_bins)])
-lfit_mw_rcoefs = np.round(lfit_mw.convert().coef, 5)
-lfit_mw_rounded = np.polynomial.Polynomial(lfit_mw_rcoefs)
-lfit_mw_str = str(lfit_mw_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
-plt.plot(x_dense, lfit_m(x_dense), c="red")
-plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_mw_str+"", transform=plt.gca().transAxes,
-         c="red", horizontalalignment="right")
+    # # add cuadratic fit
+    # x_dense = np.linspace(bins[0], bins[-1], 100) # 100 points for a smooth curve
+    # plt.plot(x_dense, lfit(x_dense))
+    # plt.text(0.95, 0.9, "Cuadratic fit: "+lfit_str, transform=plt.gca().transAxes, c="blue",
+    #          horizontalalignment="right")
 
-plt.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
+    # add a second cuadratic fit using the medians
+    medians = np.array([line.get_ydata()[0] for line in bp['medians']])
+    lfit_m = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 2)
+    lfit_m_rcoefs = np.round(lfit_m.convert().coef, 5)
+    lfit_m_rounded = np.polynomial.Polynomial(lfit_m_rcoefs)
+    lfit_m_str = str(lfit_m_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
+    x_dense = np.linspace(bins[0], bins[-1], 100) # 100 points for a smooth curve
+    # plt.plot(x_dense, lfit_m(x_dense), c="red")
+    # plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
+    #          horizontalalignment="right")
 
-# Add counts above x-tick labels (inside the plot area)
-for x, n in zip(bin_centers[::2], counts[::2]):
-    plt.text(x, plt.ylim()[0] + 0.05 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
-             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
-for x, n in zip(bin_centers[1::2], counts[1::2]):
-    plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 1% above bottom
-             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
+    # add a third cuadratic fit using the medians and IQRs of each bin
+    variances = np.array([vals.var(ddof=1) for vals in box_data])
+    iqr = np.array([np.nanquantile(vals,0.75) for vals in box_data]) - np.array([np.nanquantile(vals,0.25) for vals in box_data])
+    weights = 1 / iqr**2 # 1 / variances
+    weights[~np.isfinite(weights)] = 0
+    w = np.sqrt(weights)
+    lfit_mw = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 2, w=w[np.array(valid_bins)])
+    lfit_mw_rcoefs = np.round(lfit_mw.convert().coef, 5)
+    lfit_mw_rounded = np.polynomial.Polynomial(lfit_mw_rcoefs)
+    lfit_mw_str = str(lfit_mw_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
 
-plt.tight_layout()
-plt.show()
+    # Plotted lfit_mw instead of lfit_m so it matches your calculated fit
+    plt.plot(x_dense, lfit_mw(x_dense), c="red")
+    plt.text(0.99, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_mw_str+"", transform=plt.gca().transAxes,
+             c="red", horizontalalignment="right")
+
+    plt.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
+
+    # Add counts above x-tick labels (inside the plot area)
+    for x, n in zip(bin_centers[::2], counts[::2]):
+        plt.text(x, plt.ylim()[0] + 0.07 * (plt.ylim()[1] - plt.ylim()[0]),  # 7% above bottom
+                 f"{n}", ha='center', va='bottom', fontsize=7, color='dimgray')
+    for x, n in zip(bin_centers[1::2], counts[1::2]):
+        plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 1% above bottom
+                 f"{n}", ha='center', va='bottom', fontsize=7, color='dimgray')
+
+    # plt.tight_layout()
+    plt.show()
 
 # Print p value and other stats
 # use alternative to scipy.optimize.curve_fit (there is no quadratic equivalent)
@@ -4746,7 +4840,19 @@ ref_height_ml_top_qvp = [ pd.DataFrame(d2).ffill(axis=1).values for d1,d2 in sel
 
 for ts in range(len(tg_height_ml_top_qvp)):
     # fill the NaN height_ml_top_qvp values from ref with tg
-    ref_height_ml_top_qvp[ts][np.isnan(ref_height_ml_top_qvp[ts])] = tg_height_ml_top_qvp[ts][np.isnan(ref_height_ml_top_qvp[ts])]
+    #ref_height_ml_top_qvp[ts][np.isnan(ref_height_ml_top_qvp[ts])] = tg_height_ml_top_qvp[ts][np.isnan(ref_height_ml_top_qvp[ts])]
+
+    ref_height_ml_top_qvp[ts] = np.where(
+        np.isnan(ref_height_ml_top_qvp[ts]),   # Condition: where it is NaN
+        tg_height_ml_top_qvp[ts],            # Value if True: take from ref
+        ref_height_ml_top_qvp[ts]              # Value if False: keep original
+    )
+
+    tg_height_ml_top_qvp[ts] = np.where(
+        np.isnan(tg_height_ml_top_qvp[ts]),   # Condition: where it is NaN
+        ref_height_ml_top_qvp[ts],            # Value if True: take from ref
+        tg_height_ml_top_qvp[ts]              # Value if False: keep original
+    )
 
     # remove outliers (median+-std)
     tg_m = np.nanmedian(tg_height_ml_top_qvp[ts][:,0])
@@ -4812,60 +4918,76 @@ counts = [len(vals) for vals in box_data]
 valid_bins = [ np.isfinite(arr).sum() >= min_bin_n  for arr in box_data ]
 
 # Plot
-plt.figure(figsize=(6, 3.5))
-bp = plt.boxplot(box_data, positions=bin_centers, widths=np.diff(bins).mean()/2,
-                 showmeans=True, showcaps=sc, showfliers=sf, whis=wp,
-                 medianprops={"color":"black"}, meanprops={"marker":"."})
-plt.xlim(bins[0], bins[-1])
-plt.ylim(ymin, ymax)
-plt.xlabel(xax)
-plt.ylabel(yax)
-plt.grid(True, linestyle="--", alpha=0.5)
-plt.xticks(bins, bins)
-# plt.xticks(bin_centers, [f"{round(b, 2)}-{round(b+varx_range[2], 2)}" for b in bins[:-1]])
-# plt.title("Boxplots of delta "+dbzh_tg+" vs "+phi+"_MLbump"+" bins")
+with mpl.rc_context({
+        'font.size': 7,
+        'axes.labelsize': 8,
+        'xtick.labelsize': 8,
+        'ytick.labelsize': 8,
+        'legend.fontsize': 7,
+        }):
 
-# # add linear fit
-# plt.plot([bins[0], bins[-1]], [lfit(bins[0]), lfit(bins[-1])])
-# plt.text(0.95, 0.9, "Linear fit: "+lfit_str, transform=plt.gca().transAxes, c="blue",
-#          horizontalalignment="right")
+    fig = plt.figure(figsize=(3.5, 2))
+    ax = fig.add_axes([0.15, 0.2, 0.80, 0.75])
 
-# add a second linear fit using the medians
-medians = np.array([line.get_ydata()[0] for line in bp['medians']])
-lfit_m = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 1)
-lfit_m_rcoefs = np.round(lfit_m.convert().coef, 2)
-lfit_m_rounded = np.polynomial.Polynomial(lfit_m_rcoefs)
-lfit_m_str = str(lfit_m_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
-# plt.plot([bins[0], bins[-1]], [lfit_m(bins[0]), lfit_m(bins[-1])], c="red")
-# plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
-#          horizontalalignment="right")
+    bp = ax.boxplot(box_data, positions=bin_centers, widths=np.diff(bins).mean()/2,
+                     showmeans=True, showcaps=sc, showfliers=sf, whis=wp,
+                     medianprops={"color":"black"}, meanprops={"marker":".", "markersize":5})
+    plt.xlim(bins[0], bins[-1])
+    plt.ylim(ymin, ymax)
+    plt.xlabel(xax)
+    plt.ylabel(yax)
+    ax.yaxis.set_label_coords(-0.12, 0.5) # Fix the label position so it does not move regardless of scale numbers
+    plt.grid(True, linestyle="--", alpha=0.5)
 
-# add a third linear fit using the medians and IQRs of each bin
-variances = np.array([vals.var(ddof=1) for vals in box_data])
-iqr = np.array([np.nanquantile(vals,0.75) for vals in box_data]) - np.array([np.nanquantile(vals,0.25) for vals in box_data])
-weights = 1 / iqr**2 # 1 / variances
-weights[~np.isfinite(weights)] = 0
-w = np.sqrt(weights)
-lfit_mw = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 1, w=w[np.array(valid_bins)])
-lfit_mw_rcoefs = np.round(lfit_mw.convert().coef, 3)
-lfit_mw_rounded = np.polynomial.Polynomial(lfit_mw_rcoefs)
-lfit_mw_str = str(lfit_mw_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
-plt.plot([bins[0], bins[-1]], [lfit_mw(bins[0]), lfit_mw(bins[-1])], c="red")
-plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_mw_str+"", transform=plt.gca().transAxes,
-         c="red", horizontalalignment="right")
+    # Slice the xticks to show every other label to prevent overlap
+    plt.xticks(bins[::2], bins[::2])
+    ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
 
-plt.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
+    # plt.xticks(bin_centers, [f"{round(b, 2)}-{round(b+varx_range[2], 2)}" for b in bins[:-1]])
+    # plt.title("Boxplots of delta "+dbzh_tg+" vs "+phi+"_MLbump"+" bins")
 
-# Add counts above x-tick labels (inside the plot area)
-for x, n in zip(bin_centers[::2], counts[::2]):
-    plt.text(x, plt.ylim()[0] + 0.05 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
-             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
-for x, n in zip(bin_centers[1::2], counts[1::2]):
-    plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 1% above bottom
-             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
+    # # add linear fit
+    # plt.plot([bins[0], bins[-1]], [lfit(bins[0]), lfit(bins[-1])])
+    # plt.text(0.95, 0.9, "Linear fit: "+lfit_str, transform=plt.gca().transAxes, c="blue",
+    #          horizontalalignment="right")
 
-plt.tight_layout()
-plt.show()
+    # add a second linear fit using the medians
+    medians = np.array([line.get_ydata()[0] for line in bp['medians']])
+    lfit_m = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 1)
+    lfit_m_rcoefs = np.round(lfit_m.convert().coef, 2)
+    lfit_m_rounded = np.polynomial.Polynomial(lfit_m_rcoefs)
+    lfit_m_str = str(lfit_m_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
+    # plt.plot([bins[0], bins[-1]], [lfit_m(bins[0]), lfit_m(bins[-1])], c="red")
+    # plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
+    #          horizontalalignment="right")
+
+    # add a third linear fit using the medians and IQRs of each bin
+    variances = np.array([vals.var(ddof=1) for vals in box_data])
+    iqr = np.array([np.nanquantile(vals,0.75) for vals in box_data]) - np.array([np.nanquantile(vals,0.25) for vals in box_data])
+    weights = 1 / iqr**2 # 1 / variances
+    weights[~np.isfinite(weights)] = 0
+    w = np.sqrt(weights)
+    lfit_mw = np.polynomial.Polynomial.fit(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)], 1, w=w[np.array(valid_bins)])
+    lfit_mw_rcoefs = np.round(lfit_mw.convert().coef, 3)
+    lfit_mw_rounded = np.polynomial.Polynomial(lfit_mw_rcoefs)
+    lfit_mw_str = str(lfit_mw_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
+
+    plt.plot([bins[0], bins[-1]], [lfit_mw(bins[0]), lfit_mw(bins[-1])], c="red")
+    plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_mw_str+"", transform=plt.gca().transAxes,
+             c="red", horizontalalignment="right")
+
+    plt.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
+
+    # Add counts above x-tick labels (inside the plot area) - adjusted fonts and heights
+    for x, n in zip(bin_centers[::2], counts[::2]):
+        plt.text(x, plt.ylim()[0] + 0.07 * (plt.ylim()[1] - plt.ylim()[0]),  # 7% above bottom
+                 f"{n}", ha='center', va='bottom', fontsize=7, color='dimgray')
+    for x, n in zip(bin_centers[1::2], counts[1::2]):
+        plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 1% above bottom
+                 f"{n}", ha='center', va='bottom', fontsize=7, color='dimgray')
+
+    # plt.tight_layout()
+    plt.show()
 
 # # Print p value and other stats
 # scipy.stats.linregress(bin_centers[np.array(valid_bins)], medians[np.array(valid_bins)])
@@ -5411,57 +5533,68 @@ if dbzh_tg_0 is not None:
     delta_dbzh_mlc = np.concat((delta_dbzh_mlc, delta_dbzh_0))
 
 # --- Initialize plot ---
-fig, ax = plt.subplots(figsize=(4.5, 3.5))
+with mpl.rc_context({
+        'font.size': 7,
+        'axes.labelsize': 8,
+        'xtick.labelsize': 8,
+        'ytick.labelsize': 8,
+        'legend.fontsize': 7,
+        }):
 
-delta_ref = delta_dbzh_uncorr # delta_dbzh or delta_dbzh_uncorr
+    # --- Initialize plot ---
+    fig = plt.figure(figsize=(3.5, 2.8))
+    ax = fig.add_axes([0.12, 0.15, 0.85, 0.8])
 
-# --- Config ---
-# bins = np.arange(-15.5, 16.5, 1)  # bin edges
-bins = np.arange(-2.05, 2.15, 0.1)  # bin edges
-bin_centers = bins[:-1] + np.diff(bins).mean()/2
-bin_width = np.diff(bins).mean()
+    delta_ref = delta_dbzh_uncorr # delta_dbzh or delta_dbzh_uncorr
 
-# --- Compute histograms (as frequency %) ---
-n1, _ = np.histogram(delta_ref, bins=bins)
-n2, _ = np.histogram(delta_dbzh_mlc, bins=bins)
+    # --- Config ---
+    # bins = np.arange(-15.5, 16.5, 1)  # bin edges
+    bins = np.arange(-2.05, 2.15, 0.1)  # bin edges
+    bin_centers = bins[:-1] + np.diff(bins).mean()/2
+    bin_width = np.diff(bins).mean()
 
-freq1 = n1 / n1.sum() * 100
-freq2 = n2 / n2.sum() * 100
+    # --- Compute histograms (as frequency %) ---
+    n1, _ = np.histogram(delta_ref, bins=bins)
+    n2, _ = np.histogram(delta_dbzh_mlc, bins=bins)
 
-# --- Stats for legend ---
-mean1 = np.nanmean(delta_ref)
-std1  = np.nanstd(delta_ref)
-median1 = np.nanmedian(delta_ref)
-mean2 = np.nanmean(delta_dbzh_mlc)
-std2  = np.nanstd(delta_dbzh_mlc)
-median2 = np.nanmedian(delta_dbzh_mlc)
+    freq1 = n1 / n1.sum() * 100
+    freq2 = n2 / n2.sum() * 100
 
-# --- Plot histograms ---
-ax.bar(bin_centers, freq1, width=bin_width,
-       color="gray", alpha=1.0, label=f"Mean={mean1:.2f} {unit}\nSt_Dev={std1:.2f} {unit}\nMedian={median1:.2f} {unit}")
-ax.bar(bin_centers, freq2, width=bin_width,
-       color="#00000000", edgecolor="black", linewidth=0.8,
-       label=f"Mean={mean2:.2f} {unit}\nSt_Dev={std2:.2f} {unit}\nMedian={median2:.2f} {unit}")
+    # --- Stats for legend ---
+    mean1 = np.nanmean(delta_ref)
+    std1  = np.nanstd(delta_ref)
+    median1 = np.nanmedian(delta_ref)
+    mean2 = np.nanmean(delta_dbzh_mlc)
+    std2  = np.nanstd(delta_dbzh_mlc)
+    median2 = np.nanmedian(delta_dbzh_mlc)
 
-# --- Normal distribution curve fitted to delta_dbzh_mlc ---
-x_dense = np.linspace(bins[0], bins[-1], 300)
-pdf = scipy.stats.norm.pdf(x_dense, mean2, std2)
-# Scale pdf to match histogram (frequency % with bin width 1)
-pdf_scaled = pdf * bin_width * 100
-ax.plot(x_dense, pdf_scaled, color="red", linewidth=1.5)
+    # --- Plot histograms ---
+    ax.bar(bin_centers, freq1, width=bin_width,
+           color="gray", alpha=1.0, label=f"Mean={mean1:.2f} {unit}\nSt_Dev={std1:.2f} {unit}\nMedian={median1:.2f} {unit}")
+    ax.bar(bin_centers, freq2, width=bin_width,
+           color="#00000000", edgecolor="black", linewidth=0.8,
+           label=f"Mean={mean2:.2f} {unit}\nSt_Dev={std2:.2f} {unit}\nMedian={median2:.2f} {unit}")
 
-# --- Cosmetics ---
-ax.set_xlabel(xax)
-ax.set_ylabel("Frequency (%)")
-ax.set_xlim(bins[0], bins[-1])
-ax.set_ylim(0, None)
-# ax.set_xticks(np.arange(bins[0]+1, bins[-1], 2))
-ax.grid(True, linestyle="--", alpha=0.4)
-ax.legend(loc="upper right", fontsize=8, frameon=True,
-          handlelength=1.5, handleheight=1.5)
+    # --- Normal distribution curve fitted to delta_dbzh_mlc ---
+    x_dense = np.linspace(bins[0], bins[-1], 300)
+    pdf = scipy.stats.norm.pdf(x_dense, mean2, std2)
+    # Scale pdf to match histogram (frequency % with bin width 1)
+    pdf_scaled = pdf * bin_width * 100
+    # ax.plot(x_dense, pdf_scaled, color="red", linewidth=1.5)
 
-plt.tight_layout()
-plt.show()
+    # --- Cosmetics ---
+    ax.set_xlabel(xax)
+    ax.set_ylabel("Frequency (%)")
+    ax.yaxis.set_label_coords(-0.08, 0.5) # Fix the label position
+    ax.set_xlim(bins[0], bins[-1])
+    ax.set_ylim(0, None)
+    # ax.set_xticks(np.arange(bins[0]+1, bins[-1], 2))
+    ax.grid(True, linestyle="--", alpha=0.4)
+    ax.legend(loc="upper right", fontsize=7, frameon=True,
+              handlelength=1.5, handleheight=1.5)
+
+    # plt.tight_layout()
+    plt.show()
 
 #%%% Plot QVPs with and without correction for one event (like figure 11 of Yu et al.)
 
@@ -6041,7 +6174,7 @@ sf = False # show boxplots outliers?
 wp = 0 # position of the whiskers as proportion of (Q3-Q1), default is 1.5
 
 ymin = -0.15 # min and max limits for the y axis
-ymax = 0.45
+ymax = 0.5
 xminmax = np.arange(0,55,5) # min and max limits for the x axis and grid lines
 
 yax = r"$\Delta Z_{DR}$ Offset [dB]" # label for the y axis
@@ -6239,57 +6372,71 @@ print("Step 5: Plotting...")
 plot_data = [diff_data[tag] for tag in wr_tags]
 labels = [t.replace("WR", "") for t in wr_tags]
 
-fig, ax = plt.subplots(figsize=(6, 3.5))
+with mpl.rc_context({
+        'font.size': 7,
+        'axes.labelsize': 8,
+        'xtick.labelsize': 8,
+        'ytick.labelsize': 8,
+        'legend.fontsize': 7,
+        }):
 
-# Boxplot
-bin_centers = [(wr_limits[tag][1] + wr_limits[tag][0])/2 for tag in wr_tags]
-bp = ax.boxplot(plot_data, positions=bin_centers,
-                   widths=2.5, #labels=labels, patch_artist=True,
-                   showmeans=True, showcaps=sc, showfliers=sf, whis=wp,
-                   medianprops={"color":"black"}, meanprops={"marker":"."})
+    fig = plt.figure(figsize=(3.5, 2))
+    ax = fig.add_axes([0.15, 0.2, 0.80, 0.75])
 
-plt.xlim(xminmax[0], xminmax[-1])
-plt.ylim(ymin, ymax)
-plt.xlabel(xax)
-plt.ylabel(yax)
-plt.grid(True, linestyle="--", alpha=0.5)
-plt.xticks(xminmax, xminmax)
+    # Boxplot
+    bin_centers = [(wr_limits[tag][1] + wr_limits[tag][0])/2 for tag in wr_tags]
+    bp = ax.boxplot(plot_data, positions=bin_centers,
+                       widths=2.5, #labels=labels, patch_artist=True,
+                       showmeans=True, showcaps=sc, showfliers=sf, whis=wp,
+                       medianprops={"color":"black"}, meanprops={"marker":".", "markersize":5})
 
-# # Style
-# colors = ['#a6cee3', '#1f78b4', '#b2df8a', '#33a02c', '#fb9a99', '#e31a1c']
-# for patch, color in zip(bp['boxes'], colors):
-#     patch.set_facecolor(color)
-#     patch.set_alpha(0.7)
+    plt.xlim(xminmax[0], xminmax[-1])
+    plt.ylim(ymin, ymax)
+    plt.xlabel(xax)
+    plt.ylabel(yax)
+    ax.yaxis.set_label_coords(-0.12, 0.5) # Fix the label position
+    plt.grid(True, linestyle="--", alpha=0.5)
 
-# # Stats for legend
-# counts_str = [f"N={len(d)}" for d in plot_data]
-# for i, count_text in enumerate(counts_str):
-#     ax.text(i+1, ax.get_ylim()[0], count_text,
-#             horizontalalignment='center', verticalalignment='bottom',
-#             fontsize=8, fontweight='bold')
+    # Keeping your original xticks logic, but if they overlap,
+    # remember you can apply the [::2] slicing trick here too!
+    plt.xticks(xminmax, xminmax)
 
-ax.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
+    # # Style
+    # colors = ['#a6cee3', '#1f78b4', '#b2df8a', '#33a02c', '#fb9a99', '#e31a1c']
+    # for patch, color in zip(bp['boxes'], colors):
+    #     patch.set_facecolor(color)
+    #     patch.set_alpha(0.7)
 
-# add a cuadratic fit using the medians
-medians = np.array([line.get_ydata()[0] for line in bp['medians']])
-bin_centers_valid = np.concatenate(([0], np.array(bin_centers)[np.isfinite(medians)]))
-medians_valid = np.concatenate(([0], medians[np.isfinite(medians)]))
-lfit_m = np.polynomial.Polynomial.fit(bin_centers_valid, medians_valid, 2)
-lfit_m_rcoefs = np.round(lfit_m.convert().coef, 5)
-lfit_m_rounded = np.polynomial.Polynomial(lfit_m_rcoefs)
-lfit_m_str = str(lfit_m_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
-x_dense = np.linspace(xminmax[0], xminmax[-1], 100) # 100 points for a smooth curve
-plt.plot(x_dense, lfit_m(x_dense), c="red")
-plt.text(0.95, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"="+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
-         horizontalalignment="right")
+    # # Stats for legend
+    # counts_str = [f"N={len(d)}" for d in plot_data]
+    # for i, count_text in enumerate(counts_str):
+    #     ax.text(i+1, ax.get_ylim()[0], count_text,
+    #             horizontalalignment='center', verticalalignment='bottom',
+    #             fontsize=8, fontweight='bold')
 
-# Add counts above x-tick labels (inside the plot area)
-for x, n in zip(bin_centers, [f"{len(d)}" for d in plot_data]):
-    plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 5% above bottom
-             f"{n}", ha='center', va='bottom', fontsize=9, color='dimgray')
+    ax.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
 
-plt.tight_layout()
-plt.show()
+    # add a cuadratic fit using the medians
+    medians = np.array([line.get_ydata()[0] for line in bp['medians']])
+    bin_centers_valid = np.concatenate(([0], np.array(bin_centers)[np.isfinite(medians)]))
+    medians_valid = np.concatenate(([0], medians[np.isfinite(medians)]))
+    lfit_m = np.polynomial.Polynomial.fit(bin_centers_valid, medians_valid, 2)
+    lfit_m_rcoefs = np.round(lfit_m.convert().coef, 5)
+    lfit_m_rounded = np.polynomial.Polynomial(lfit_m_rcoefs)
+    lfit_m_str = str(lfit_m_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
+    x_dense = np.linspace(xminmax[0], xminmax[-1], 100) # 100 points for a smooth curve
+
+    plt.plot(x_dense, lfit_m(x_dense), c="red")
+    plt.text(0.01, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"=\n"+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
+             horizontalalignment="left")
+
+    # Add counts above x-tick labels (inside the plot area)
+    for x, n in zip(bin_centers, [f"{len(d)}" for d in plot_data]):
+        plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 1% above bottom
+                 f"{n}", ha='center', va='bottom', fontsize=7, color='dimgray')
+
+    # plt.tight_layout()
+    plt.show()
 
 # Print p value and other stats
 # use alternative to scipy.optimize.curve_fit (there is no quadratic equivalent)
@@ -6311,6 +6458,975 @@ print(f"Prob (F-statistic): {results.f_pvalue}")
 
 # You can also print a comprehensive summary table
 print(results.summary())
+
+#%% Plot QVPs to check the corrections
+
+#%%% Load QVP
+ff = "/automount/realpep/upload/jgiles/dmi/qvps/*/*/2020-03-13/HTY/*/10.0/*allmoms*" # final QVP files
+ds_qvp = xr.open_mfdataset(ff)
+
+#%%% Plot QVP
+max_height = 12000 # max height for the qvp plots
+
+tsel = ""# slice("2017-08-31T19","2017-08-31T22")
+if tsel == "":
+    datasel = ds_qvp.loc[{"z": slice(0, max_height)}]
+else:
+    datasel = ds_qvp.loc[{"time": tsel, "z": slice(0, max_height)}]
+
+mom = "DBZH" # "ZDR_EC_OC" "DBZH"
+min_entropy_thresh = 0.99
+
+datasel = datasel.assign_coords(z=datasel.z / 1000)
+
+with mpl.rc_context({
+            'font.size': 7,
+            'axes.labelsize': 8,
+            'xtick.labelsize': 8,
+            'ytick.labelsize': 8,
+            'legend.fontsize': 7,
+            }):
+
+    fig = plt.figure(figsize=(3.5, 2))
+    # [left, bottom, width, height]
+    # ax = fig.add_axes([0.12, 0.2, 0.65, 0.7])
+    # cax = fig.add_axes([0.82, 0.2, 0.03, 0.7])
+    # ax = fig.add_axes([0.1, 0.18, 0.75, 0.78])
+    # cax = fig.add_axes([0.89, 0.18, 0.02, 0.78])
+
+    # Journal 1 column size
+    ax = fig.add_axes([0.13, 0.22, 0.68, 0.70])
+    cax = fig.add_axes([0.87, 0.22, 0.02, 0.70])
+
+    # To avoid forced tight layout in the plot pane go to
+    # Tools/Preferences/IPython Console/Plotting and disable the tight layout
+
+    try:
+        ticks = radarmet.visdict14[mom.split("_")[0]]["ticks"] #[:-2] #Add to reduce colorscale
+        cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
+        cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
+        # norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
+        # cmap = "miub2"
+        norm = utils.get_discrete_norm(ticks, cmap.N, extend="both")
+        qvp_plot = datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm, extend="both", ax=ax, add_colorbar=False)
+    except:
+        qvp_plot = datasel[mom].wrl.plot(x="time", extend="both", ax=ax, add_colorbar=False)
+
+    cb = fig.colorbar(qvp_plot, cax=cax, extend="both")
+
+    datasel["min_entropy"].compute().dropna("z", how="all").interpolate_na(dim="z").plot.contourf(
+        ax=ax,
+        x="time", levels=[min_entropy_thresh, 1], hatches=["", "XXX", ""], colors=[(1,1,1,0)],
+        add_colorbar=False, extend="both")
+
+    # qvp_plot.colorbar.set_label(datasel[mom].units)
+    cb.ax.yaxis.set_label_coords(0.5, -0.07) # (x, y) coordinates
+    cb.ax.yaxis.label.set(
+        rotation="horizontal",
+        ha="center",
+        va="top",
+        text=datasel[mom].units,
+        # position = (-10000.0, -0.025)
+    )
+
+    # plot ML
+    (datasel["height_ml_new_gia_clean"]/1000).plot(ax=ax, c="black", lw=1)
+    (datasel["height_ml_bottom_new_gia_clean"]/1000).plot(ax=ax, c="black", lw=1)
+
+    # # Plot reflectivity as lines to check wet radome effect
+    # zm_c = "MediumBlue"
+    # ax2 = ax.twinx()
+    # datasel["Zm"].plot(ax=ax2, c=zm_c, lw=1)
+    # # ax2.spines['left'].set_position(('outward', 60))
+    # ax2.tick_params(axis='y', labelcolor=zm_c, direction="in")  # Add padding to the ticks
+    # # ax2.yaxis.labelpad = -400  # Add padding to the y-axis label
+    # ax2.set_ylabel("dBZ",
+    #                color=zm_c,
+    #                rotation="horizontal",
+    #                ha="center",   # Horizontal alignment
+    #                va="top",  # Vertical alignment at the bottom
+    #                labelpad=10,
+    #                y=0)          # 0 is bottom, 1 is top, 0.5 is center
+    # ax2.yaxis.set_label_coords(1, -0.017)
+    # # ax2.set_ylim(-60, 30)
+    # # ax2.yaxis.set_ticks([0,10, 20], labels=["0", "10", "20"])
+    # ax2.set_title("")
+    # # plt.xlim((datetime.datetime(2015,3,11,6), datetime.datetime(2015,3,11,12)))
+
+    # # Plot zdrcal values
+    # ax3 = plt.gca().twinx()
+    # zdrcal.loc[{"time":slice(str(datasel.time[0].values), str(datasel.time[-1].values))}].fNewZdrOffsetEstimate_dB.plot(ax=ax3, c="magenta")
+    # ax3.yaxis.label.set_color("magenta")
+    # ax3.spines['right'].set_position(('outward', 90))
+    # ax3.tick_params(axis='y', labelcolor="magenta")  # Add padding to the ticks
+    # # ax3.yaxis.labelpad = 10  # Add padding to the y-axis label
+    # ax3.set_title("")
+
+    # Adjust axes
+    ax.xaxis.set_major_formatter(mpl.dates.DateFormatter('%H')) # put only the hour in the x-axis
+    #ax.xaxis.set_major_locator(mpl.dates.HourLocator(interval=6))
+
+    ax.set_ylabel("Height [km a.s.l.]")
+    ax.yaxis.set_label_coords(-0.12, 0.5) # Lock the y-axis label position
+
+    # Forcing the x-axis label to be clean and correctly placed if xarray overwrites it
+    ax.set_xlabel("Time (h)")
+
+    #plt.title(mom+elevtitle+". "+str(datasel.time.values[0]).split(".")[0])
+    # plt.title("")
+    ax.set_title("")
+    plt.show()
+    plt.close()
+
+#%%% Generate custom variable (e.g. difference due to attenuation)
+ds_qvp["DBZH_ACd"] = ds_qvp["DBZH_AC"] - ds_qvp["DBZH"]
+ds_qvp["ZDR_EC_OC_WRC_ACd"] = ds_qvp["ZDR_EC_OC_WRC_AC"] - ds_qvp["ZDR_EC_OC_WRC"]
+ds_qvp["ZDR_EC_OC_WRCd"] = (ds_qvp["ZDR_EC_OC_WRC"] - ds_qvp["ZDR_EC_OC"]).mean("z")
+
+#%%% Plot QVP (custom vars)
+max_height = 12000 # max height for the qvp plots
+
+tsel = ""# slice("2017-08-31T19","2017-08-31T22")
+if tsel == "":
+    datasel = ds_qvp.loc[{"z": slice(0, max_height)}]
+else:
+    datasel = ds_qvp.loc[{"time": tsel, "z": slice(0, max_height)}]
+
+mom = "ZDR_EC_OC_WRC_ACd" # "ZDR_EC_OC" "DBZH"
+min_entropy_thresh = 0.99
+
+datasel = datasel.assign_coords(z=datasel.z / 1000)
+
+with mpl.rc_context({
+            'font.size': 7,
+            'axes.labelsize': 8,
+            'xtick.labelsize': 8,
+            'ytick.labelsize': 8,
+            'legend.fontsize': 7,
+            }):
+
+    fig = plt.figure(figsize=(3.5, 2))
+    # [left, bottom, width, height]
+    # ax = fig.add_axes([0.12, 0.2, 0.65, 0.7])
+    # cax = fig.add_axes([0.82, 0.2, 0.03, 0.7])
+    # ax = fig.add_axes([0.1, 0.18, 0.75, 0.78])
+    # cax = fig.add_axes([0.89, 0.18, 0.02, 0.78])
+
+    # Journal 1 column size
+    ax = fig.add_axes([0.13, 0.22, 0.68, 0.70])
+    cax = fig.add_axes([0.87, 0.22, 0.02, 0.70])
+
+    # To avoid forced tight layout in the plot pane go to
+    # Tools/Preferences/IPython Console/Plotting and disable the tight layout
+
+    try:
+        # ticks = radarmet.visdict14[mom.split("_")[0]]["ticks"][:-2] #[:-2] Add to reduce colorscale
+        ticks=np.arange(0,0.22,0.02)
+        cmap0 = mpl.colormaps.get_cmap("OrRd")
+        cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
+        cmap.set_over("#400000")
+        # norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
+        # cmap = "miub2"
+        norm = utils.get_discrete_norm(ticks, cmap.N, extend="both")
+        qvp_plot = datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm, extend="both", ax=ax, add_colorbar=False)
+    except:
+        qvp_plot = datasel[mom].wrl.plot(x="time", extend="both", ax=ax, add_colorbar=False)
+
+    cb = fig.colorbar(qvp_plot, cax=cax, extend="max")
+
+    datasel["min_entropy"].compute().dropna("z", how="all").interpolate_na(dim="z").plot.contourf(
+        ax=ax,
+        x="time", levels=[min_entropy_thresh, 1], hatches=["", "XXX", ""], colors=[(1,1,1,0)],
+        add_colorbar=False, extend="both")
+
+    # qvp_plot.colorbar.set_label(datasel[mom].units)
+    cb.ax.yaxis.set_label_coords(0.5, -0.07) # (x, y) coordinates
+    cb.ax.yaxis.label.set(
+        rotation="horizontal",
+        ha="center",
+        va="top",
+        text=datasel[mom].units,
+        # position = (-10000.0, -0.025)
+    )
+
+    # plot ML
+    (datasel["height_ml_new_gia_clean"]/1000).plot(ax=ax, c="black", lw=1)
+    (datasel["height_ml_bottom_new_gia_clean"]/1000).plot(ax=ax, c="black", lw=1)
+
+    # # Plot reflectivity as lines to check wet radome effect
+    # zm_c = "MediumBlue"
+    # ax2 = ax.twinx()
+    # datasel["Zm"].plot(ax=ax2, c=zm_c, lw=1)
+    # # ax2.spines['left'].set_position(('outward', 60))
+    # ax2.tick_params(axis='y', labelcolor=zm_c, direction="in")  # Add padding to the ticks
+    # # ax2.yaxis.labelpad = -400  # Add padding to the y-axis label
+    # ax2.set_ylabel("dBZ",
+    #                color=zm_c,
+    #                rotation="horizontal",
+    #                ha="center",   # Horizontal alignment
+    #                va="top",  # Vertical alignment at the bottom
+    #                labelpad=10,
+    #                y=0)          # 0 is bottom, 1 is top, 0.5 is center
+    # ax2.yaxis.set_label_coords(1, -0.017)
+    # # ax2.set_ylim(-60, 30)
+    # # ax2.yaxis.set_ticks([0,10, 20], labels=["0", "10", "20"])
+    # ax2.set_title("")
+    # # plt.xlim((datetime.datetime(2015,3,11,6), datetime.datetime(2015,3,11,12)))
+
+    # Plot WR correction as lines
+    zm_c = "MediumBlue"
+    ax2 = ax.twinx()
+    datasel["ZDR_EC_OC_WRCd"].plot(ax=ax2, c=zm_c, lw=1)
+    # ax2.spines['left'].set_position(('outward', 60))
+    ax2.tick_params(axis='y', labelcolor=zm_c, direction="in")  # Add padding to the ticks
+    # ax2.yaxis.labelpad = -400  # Add padding to the y-axis label
+    ax2.set_ylabel("dB",
+                   color=zm_c,
+                   rotation="horizontal",
+                   ha="center",   # Horizontal alignment
+                   va="top",  # Vertical alignment at the bottom
+                   labelpad=10,
+                   y=0)          # 0 is bottom, 1 is top, 0.5 is center
+    ax2.yaxis.set_label_coords(1, -0.017)
+    ax2.set_ylim(-0.6, 0.02)
+    ax2.yaxis.set_ticks([0,-0.1, -0.2], labels=["0", "-1", "-2"])
+    ax2.set_title("")
+    ax2.text(datetime.datetime(2020,3,13,23, 59), -0.3, "E-1", c=zm_c)
+    # plt.xlim((datetime.datetime(2015,3,11,6), datetime.datetime(2015,3,11,12)))
+
+    # # Plot zdrcal values
+    # ax3 = plt.gca().twinx()
+    # zdrcal.loc[{"time":slice(str(datasel.time[0].values), str(datasel.time[-1].values))}].fNewZdrOffsetEstimate_dB.plot(ax=ax3, c="magenta")
+    # ax3.yaxis.label.set_color("magenta")
+    # ax3.spines['right'].set_position(('outward', 90))
+    # ax3.tick_params(axis='y', labelcolor="magenta")  # Add padding to the ticks
+    # # ax3.yaxis.labelpad = 10  # Add padding to the y-axis label
+    # ax3.set_title("")
+
+    # Adjust axes
+    ax.xaxis.set_major_formatter(mpl.dates.DateFormatter('%H')) # put only the hour in the x-axis
+    #ax.xaxis.set_major_locator(mpl.dates.HourLocator(interval=6))
+
+    ax.set_ylabel("Height [km a.s.l.]")
+    ax.yaxis.set_label_coords(-0.12, 0.5) # Lock the y-axis label position
+
+    # Forcing the x-axis label to be clean and correctly placed if xarray overwrites it
+    ax.set_xlabel("Time (h)")
+
+    #plt.title(mom+elevtitle+". "+str(datasel.time.values[0]).split(".")[0])
+    # plt.title("")
+    ax.set_title("")
+    plt.show()
+    plt.close()
+
+#%% Plot Jacob's SBM simulation results
+#%%% Load the data
+# results from prescribed PSDs
+SBM_p = pd.read_csv("/automount/realpep/upload/jgiles/JacobCarlin_SBM_results_attenuation/mc_1dsbm_results.csv")
+# results from observed DSDs
+SBM_o = pd.read_csv("/automount/realpep/upload/jgiles/JacobCarlin_SBM_results_attenuation/dsd_results.csv")
+
+#%%% Plot scatterplots showing the ZDR dependencies of alpha and beta with different mixing formulas and for rain
+
+def plot_sbm_scatter(df, x_rain, y_rain, x_ml, y_ml, xlabel="ZDR [dB]", ylabel="α [dB/°]",
+                     empirical_vals=None, hline_val=None,
+                     rim_markers=['v', 'o', '^'], ms=6,
+                     yticks=[0, 0.1, 0.2, 0.3, 0.4, 0.8, 1.2, 1.6],
+                     linthresh=0.4, linscale=1.0,
+                     plot_legend=True
+                     ):
+    """
+    Plots rain and melting layer variables from the SBM dataframe.
+
+    Parameters:
+    df : pandas.DataFrame - The data source (e.g., SBM_p)
+    x_rain, y_rain : str - Column names for the background gray rain scatter
+    x_ml, y_ml : str - Column names for the foreground colored ML scatter
+    xlabel, ylabel : str - Axis labels
+    empirical_vals : list of lists - custom values to plot x,y and significance (1 is significant)
+    hline_val : float - Optional y-value to draw a dashed "Empirical" line
+    rim_markers : list - List of markers to use for the different rim values
+    ms : int - marker size
+    yticks : list - Ticks for the y-axis. y-axis limits are taken from the min and max of yticks.
+    linthresh : float - Threshold value to switch from linear to log scale (set to None to disable)
+    linscale : float - linscale > 1 stretches the linear portion to take up more physical space
+    plot_legend : bool - If True, plot the legend
+    """
+
+    # Dictionary mapping mixing_formula ID to the legend label
+    mix_labels = {
+        2: "ML: W | (I | A)",
+        5: "ML: I | (W | A)",
+        12: "ML: (I | W) | A",
+        17: "ML: Weighted MG",
+        14: "ML: PS"
+    }
+
+    # Okabe-Ito colorblind-friendly palette
+    color_map = {
+        2: "#009E73",  # Bluish Green
+        5: "#D55E00",   # Vermillion
+        12: "#CC79A7",   # Reddish Purple
+        17: "#56B4E9",  # Sky Blue
+        14: "#E69F00"   # Orange
+    }
+
+    # Alternative, based on Paul Tol's color palettes
+    color_map = {
+        2: "#35C2F7",  # Cyan
+        5: "#E37131",   # Orange
+        12: "#009988",   # Teal
+        17: "#C23010",  # Red
+        14: "#0066A1"   # Blue
+    }
+
+    # Extract unique rim values and map them to the provided markers
+    unique_rims = sorted(df['rim'].dropna().unique())
+    rim_mapping = {r_val: rim_markers[i % len(rim_markers)] for i, r_val in enumerate(unique_rims)}
+
+    # Apply the standard QJRMS formatting context
+    with mpl.rc_context({
+            'font.size': 7,
+            'axes.labelsize': 8,
+            'xtick.labelsize': 8,
+            'ytick.labelsize': 8,
+            'legend.fontsize': 6,
+            }):
+
+        # Single-column width. Slightly taller (2.8) to accommodate the legend inside.
+        fig = plt.figure(figsize=(3.5, 2.8))
+
+        # [left, bottom, width, height]
+        ax = fig.add_axes([0.15, 0.15, 0.80, 0.80])
+
+        # 1. Plot Melting Layer values grouped by mixing_formula and rim (Background)
+        for mix_id, mix_label in mix_labels.items():
+            for r_val, marker in rim_mapping.items():
+                subset = df[(df['mixing_formula'] == mix_id) & (df['rim'] == r_val)]
+                if not subset.empty:
+                    ax.scatter(subset[x_ml], subset[y_ml],
+                               c=color_map[mix_id], s=ms, alpha=1, marker=marker, zorder=1,
+                               edgecolors='none')
+
+        # 2. Plot all Rain values (Foreground) iterating through rim markers
+        for r_val, marker in rim_mapping.items():
+            subset = df[df['rim'] == r_val]
+            if not subset.empty:
+                ax.scatter(subset[x_rain], subset[y_rain],
+                           c="#BABABA", s=ms, alpha=1, marker=marker, zorder=2,
+                           edgecolors='none')
+
+        # 3. Add Optional Empirical Results
+        if hline_val is not None:
+            ax.axhline(hline_val, color='black', linestyle='--', linewidth=1, alpha=0.9, zorder=3)
+        if empirical_vals is not None:
+            for x_val, y_val, sig in zip(empirical_vals[0], empirical_vals[1], empirical_vals[2]):
+                # Fill the triangle if significant (1), otherwise leave it hollow
+                fc = 'black' if sig == 1 else 'none'
+                ax.scatter(x_val, y_val, marker='P', facecolor=fc, edgecolor='black',
+                           s=ms*5, zorder=4, linewidths=0.8)
+
+        # 4. Axes limits and formatting
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.yaxis.set_label_coords(-0.12, 0.5) # Lock y-axis label position
+        ax.set_xlim(-0.1, 3.5)
+        ax.set_ylim(yticks[0], yticks[-1])
+
+        # Non-linear scale to expand the 0 to 0.4 range
+        # symlog makes it linear up to linthresh (0.4), and logarithmic above it.
+        # linscale > 1 stretches the linear portion to take up more physical space.
+        if linthresh is not None:
+            ax.set_yscale('symlog', linthresh=linthresh, linscale=linscale)
+            # Add a visual cue for the scale break ---
+            # Places an extended horizontal marker ('_') exactly on the y-axis spine at linthresh
+            ax.plot(0, linthresh, marker='_', markersize=12, color='black',
+                    markeredgewidth=1.5, transform=ax.get_yaxis_transform(),
+                    clip_on=False, zorder=10)
+
+        # Explicitly set the ticks so they look nice across the new non-linear axis
+        ax.set_yticks(yticks)
+        ax.yaxis.set_major_formatter(mpl.ticker.ScalarFormatter()) # Prevent scientific notation
+        ax.yaxis.set_minor_locator(mpl.ticker.NullLocator()) # Forcefully remove the extra minor log ticks
+
+        # Adding a light grid makes scatter plots easier to read
+        ax.grid(True, linestyle="--", alpha=0.3)
+
+        # 5. Custom Legend Construction
+        legend_handles = []
+
+        # Add Rain handle
+        legend_handles.append(mlines.Line2D([], [], color='#BABABA', marker='s', linestyle='None', markersize=3, label='Rain'))
+
+        # Add Mixing Formula color handles
+        for mix_id, mix_label in mix_labels.items():
+            legend_handles.append(mlines.Line2D([], [], color=color_map[mix_id], marker='s', linestyle='None', markersize=3, label=mix_label))
+
+        # Add Rim shape handles
+        for r_val, marker in rim_mapping.items():
+            legend_handles.append(mlines.Line2D([], [], color='black', marker=marker, linestyle='None', markersize=3, label=f'$F_{{rim}}$: {r_val}'))
+
+        # Add Observations line handle
+        if hline_val is not None:
+            legend_handles.append(mlines.Line2D([], [], color='black', marker="P", linestyle='', markersize=3, label='Empirical: Rain'))
+            legend_handles.append(mlines.Line2D([], [], color='black', linestyle='--', markersize=3, label='Empirical: ML'))
+
+        # Draw the custom legend
+        if plot_legend:
+            ax.legend(handles=legend_handles, loc="upper right", frameon=True, edgecolor="gray", markerscale=1.5)
+
+        # plt.show()
+        return fig, ax
+
+alphas_emp = [[0.55, 0.9, 1.4, 1.9, 2.77], # ZDR values
+              [0.09, 0.116, 0.126, 0.137, 0.213], # alpha values
+              [0, 1, 0, 0, 1] # 1= stat. sigf.
+              ]
+
+betas_emp = [[0.55, 0.9, 1.4, 1.9, 2.77], # ZDR values
+              [0.013, 0.018, 0.024, 0.033, 0.034], # alpha values
+              [1, 1, 1, 1, 1] # 1= stat. sigf.
+              ]
+
+alphaml_emp = 0.255
+betaml_emp = 0.027
+
+# Plot alphas
+fig, ax = plot_sbm_scatter(
+        df=SBM_p,
+        x_rain="rain_zdr",
+        y_rain="rain_alpha",
+        x_ml="ml_zdr_max",
+        y_ml="ml_alpha",
+        xlabel=r"$\mathrm{Z_{DR}}\ [dB]$",
+        ylabel="α [dBZ/°]", # α [dBZ/°]   β [dB/°]
+        empirical_vals=alphas_emp,
+        hline_val=alphaml_emp, # Draws the dashed line shown in your image
+    )
+
+# Plot betas
+fig, ax = plot_sbm_scatter(
+        df=SBM_p,
+        x_rain="rain_zdr",
+        y_rain="rain_beta",
+        x_ml="ml_zdr_max",
+        y_ml="ml_beta",
+        xlabel=r"$\mathrm{Z_{DR}}\ [dB]$",
+        ylabel="β [dB/°]", # α [dBZ/°]   β [dB/°]
+        empirical_vals=betas_emp,
+        hline_val=betaml_emp, # Draws the dashed line shown in your image
+        yticks=[0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.12],
+        linthresh=0.06, linscale=0.8,
+        plot_legend=False
+    )
+
+#%%% Plot KDE plots showing alpha and beta for rain and ML for different AR, sigma and frim
+
+def plot_sbm_kde_grid(df, val_rain='rain_alpha', val_ml='ml_alpha',
+                      xlabel="α [dBZ/°]",
+                      empirical_rain=None, empirical_ml=None,
+                      xlim=(0, 0.5), mixing_formula=None):
+    """
+    Plots KDE distributions for rain and melting layer variables on a 3x2 grid.
+
+    Parameters:
+    df : pandas.DataFrame - The data source (e.g., SBM_p)
+    val_rain : str - Column name for the Rain variable
+    val_ml : str - Column name for the ML variable
+    xlabel : str - X-axis label
+    empirical_rain : float - Optional empirical value for Rain (draws vertical line)
+    empirical_ml : float - Optional empirical value for ML (draws vertical line)
+    xlim : tuple - Limits for the x-axis to compute and plot the KDE
+    mixing_formula : int, list of int, or None - Filter data by specific mixing formula ID(s)
+    """
+
+    # Filter dataframe by mixing_formula if provided
+    if mixing_formula is not None:
+        if isinstance(mixing_formula, (int, str)):
+            df = df[df['mixing_formula'] == mixing_formula]
+        elif isinstance(mixing_formula, (list, tuple, np.ndarray)):
+            df = df[df['mixing_formula'].isin(mixing_formula)]
+
+    # Extract sorted unique values for grid and grouping
+    ars_vals = sorted(df['ars'].dropna().unique())
+    sigmas_vals = sorted(df['sigmas'].dropna().unique())
+    rim_vals = sorted(df['rim'].dropna().unique())
+
+    # Define colorblind-friendly sequential shades (Strictly Light -> Dark)
+    ml_colors = ["#FC5C4A", "#B04033", "#5E221B", "#42100A"]   # Reddish
+    rain_colors = ["#C0C0C0", "#888888", "#505050", "#000000"] # Grayscale
+
+    # Define ML line style
+    ml_ls = "--"
+
+    # Map rim values to their respective colors
+    c_ml = {r: ml_colors[i % len(ml_colors)] for i, r in enumerate(rim_vals)}
+    c_rain = {r: rain_colors[i % len(rain_colors)] for i, r in enumerate(rim_vals)}
+
+    with mpl.rc_context({
+            'font.size': 7,
+            'axes.labelsize': 8,
+            'axes.titlesize': 8,
+            'xtick.labelsize': 8,
+            'ytick.labelsize': 8,
+            'legend.fontsize': 7,
+            'legend.title_fontsize': 8,
+            }):
+
+        # Double-column width (6.7 inches) for a 3x2 grid
+        fig, axes = plt.subplots(nrows=len(ars_vals), ncols=len(sigmas_vals),
+                                 figsize=(6.7, 5.0), sharex=True, sharey=True)
+
+        # Ensure axes is a 2D array even if dimensions are 1
+        if len(ars_vals) == 1 and len(sigmas_vals) == 1:
+            axes = np.array([[axes]])
+        elif len(ars_vals) == 1:
+            axes = axes[np.newaxis, :]
+        elif len(sigmas_vals) == 1:
+            axes = axes[:, np.newaxis]
+
+        x_grid = np.linspace(xlim[0], xlim[1], 300)
+
+        # Alphabet for subplot lettering
+        letters = string.ascii_lowercase
+        plot_idx = 0
+
+        # Track global maximum y value to compute proper headroom later
+        max_y_val = 0
+
+        # Loop through the grid
+        for i, ar in enumerate(ars_vals):
+            for j, sig in enumerate(sigmas_vals):
+                ax = axes[i, j]
+
+                # Plot KDE for each rim value
+                for r_val in rim_vals:
+                    subset = df[(df['ars'] == ar) & (df['sigmas'] == sig) & (df['rim'] == r_val)]
+
+                    # 1. Rain KDE (Solid lines)
+                    rain_data = subset[val_rain].dropna()
+                    if len(rain_data) > 1:
+                        kde_rain = gaussian_kde(rain_data)
+                        y_rain = kde_rain(x_grid)
+                        max_y_val = max(max_y_val, y_rain.max())
+                        ax.plot(x_grid, y_rain, color=c_rain[r_val], linestyle='-', linewidth=1.5, zorder=2)
+                        ax.fill_between(x_grid, 0, y_rain, color=c_rain[r_val], alpha=0.1, zorder=1)
+
+                    # 2. ML KDE (Dotted/Dashed lines)
+                    ml_data = subset[val_ml].dropna()
+                    if len(ml_data) > 1:
+                        kde_ml = gaussian_kde(ml_data)
+                        y_ml = kde_ml(x_grid)
+                        max_y_val = max(max_y_val, y_ml.max())
+                        ax.plot(x_grid, y_ml, color=c_ml[r_val], linestyle=ml_ls, linewidth=1.5, zorder=2)
+                        ax.fill_between(x_grid, 0, y_ml, color=c_ml[r_val], alpha=0.15, zorder=1)
+
+                # 3. Empirical Vertical Lines (Matching styles)
+                if empirical_rain is not None:
+                    ax.axvline(empirical_rain, color='black', linestyle='-', linewidth=1.5, zorder=3)
+                if empirical_ml is not None:
+                    ax.axvline(empirical_ml, color='#5E221B', linestyle=ml_ls, linewidth=1.5, zorder=3)
+
+                # Subplot formatting with panel letters aligned in the title
+                ax.set_title(f"({letters[plot_idx]}) AR = {ar}, σ = {sig}°", loc='left')
+                plot_idx += 1
+
+                ax.set_xlim(xlim)
+                # ax.set_ylim(bottom=0)
+
+                # Only add x-labels to the bottom row, y-labels to the left column
+                if i == len(ars_vals) - 1:
+                    ax.set_xlabel(xlabel)
+                if j == 0:
+                    ax.set_ylabel("Density")
+
+        # Automatically apply the upper y-limit with 15% headroom across all shared axes
+        for ax_row in axes:
+            for ax in ax_row:
+                ax.set_ylim(0, max_y_val * 1.15)
+
+        # --- Custom Sectioned Legend Construction ---
+        legend_handles_ml = []
+        legend_handles_rain = []
+
+        for r_val in rim_vals:
+            legend_handles_ml.append(mlines.Line2D([], [], color=c_ml[r_val], linestyle=ml_ls, linewidth=1.5, label=f'$F_{{rim}}$ = {r_val}'))
+            legend_handles_rain.append(mlines.Line2D([], [], color=c_rain[r_val], linestyle='-', linewidth=1.5, label=f'$F_{{rim}}$ = {r_val}'))
+
+        # Adjust the subplots layout to allocate right-hand space for legends
+        plt.subplots_adjust(left=0.08, right=0.83, bottom=0.1, top=0.92, wspace=0.1, hspace=0.3)
+
+        # Place the legends tightly stacked on the right margin
+        leg_ml = fig.legend(handles=legend_handles_ml, loc='upper left', bbox_to_anchor=(0.845, 0.90),
+                            title="Melting Layer", frameon=True, edgecolor="gray")
+
+        leg_rain = fig.legend(handles=legend_handles_rain, loc='upper left', bbox_to_anchor=(0.845, 0.72),
+                              title="Rain", frameon=True, edgecolor="gray")
+
+        if empirical_rain is not None or empirical_ml is not None:
+            legend_handles_obs = []
+            if empirical_ml is not None:
+                legend_handles_obs.append(mlines.Line2D([], [], color='#5E221B', linestyle=ml_ls, linewidth=1.5,
+                                                        # marker='|', markersize=10, markeredgewidth=1.5,
+                                                        label='ML'))
+            if empirical_rain is not None:
+                legend_handles_obs.append(mlines.Line2D([], [], color='black', linestyle='-', linewidth=1.5,
+                                                        # marker='|', markersize=10, markeredgewidth=1.5,
+                                                        label='Rain'))
+
+            fig.legend(handles=legend_handles_obs, loc='upper left', bbox_to_anchor=(0.845, 0.54),
+                       title="Empirical", frameon=True, edgecolor="gray")
+
+        return fig, axes
+
+# Execute:
+alpha_emp = 0.14
+beta_emp = 0.025
+alphaml_emp = 0.255
+betaml_emp = 0.027
+
+# remember mixing formulas codes
+# 2: MG - W | (I | A)
+# 5: MG - I | (W | A)
+# 12: MG - (I | W) | A
+# 17: Weighted MG
+# 14: PS
+
+
+# For alpha
+fig, ax = plot_sbm_kde_grid(SBM_p, val_rain='rain_alpha', val_ml='ml_alpha',
+                            xlabel="α [dBZ/°]", # α [dBZ/°]   β [dB/°]
+                            empirical_rain=alpha_emp, empirical_ml=alphaml_emp,
+                            xlim=(0, 0.5), mixing_formula=14)
+
+# For beta
+fig, ax = plot_sbm_kde_grid(SBM_p, val_rain='rain_beta', val_ml='ml_beta',
+                            xlabel="β [dB/°]", # α [dBZ/°]   β [dB/°]
+                            empirical_rain=beta_emp, empirical_ml=betaml_emp,
+                            xlim=(0, 0.05), mixing_formula=14)
+
+#%%% Plot KDE plot showing alpha or beta for specific AR and sigma and all frim
+
+def plot_sbm_kde_single(df, val_rain='rain_alpha', val_ml='ml_alpha',
+                        xlabel="α [dBZ/°]", ar=None, sig=None,
+                        empirical_rain=None, empirical_ml=None,
+                        xlim=(0, 0.5), mixing_formula=None,
+                        plot_legend=True):
+    """
+    Plots KDE distributions for rain and melting layer variables for a specific AR and sigma (single pane).
+
+    Parameters:
+    df : pandas.DataFrame - The data source (e.g., SBM_p)
+    val_rain : str - Column name for the Rain variable
+    val_ml : str - Column name for the ML variable
+    xlabel : str - X-axis label
+    ar : float - Specific aspect ratio (ars) value to filter
+    sig : float - Specific canting angle (sigmas) value to filter
+    empirical_rain : float - Optional empirical value for Rain (draws vertical line)
+    empirical_ml : float - Optional empirical value for ML (draws vertical line)
+    xlim : tuple - Limits for the x-axis to compute and plot the KDE
+    mixing_formula : int, list of int, or None - Filter data by specific mixing formula ID(s)
+    """
+
+    # Filter dataframe by mixing_formula if provided
+    if mixing_formula is not None:
+        if isinstance(mixing_formula, (int, str)):
+            df = df[df['mixing_formula'] == mixing_formula]
+        elif isinstance(mixing_formula, (list, tuple, np.ndarray)):
+            df = df[df['mixing_formula'].isin(mixing_formula)]
+
+    # Filter by specific AR and sigma if provided
+    if ar is not None:
+        df = df[df['ars'] == ar]
+    if sig is not None:
+        df = df[df['sigmas'] == sig]
+
+    # Define styles
+    ml_ls = "--"
+    ml_color = "#B04033"
+    rain_color = "black"
+
+    with mpl.rc_context({
+            'font.size': 7,
+            'axes.labelsize': 8,
+            'axes.titlesize': 8,
+            'xtick.labelsize': 8,
+            'ytick.labelsize': 8,
+            'legend.fontsize': 7,
+            }):
+
+        # Single-column width (3.5 inches) for a single pane plot
+        fig = plt.figure(figsize=(3.5, 2.8))
+        ax = fig.add_axes([0.15, 0.15, 0.80, 0.78])
+
+        x_grid = np.linspace(xlim[0], xlim[1], 300)
+        max_y_val = 0
+
+        # 1. Rain KDE (Solid lines) aggregated across all rim values
+        rain_data = df[val_rain].dropna()
+        if len(rain_data) > 1:
+            kde_rain = gaussian_kde(rain_data)
+            y_rain = kde_rain(x_grid)
+            max_y_val = max(max_y_val, y_rain.max())
+            ax.plot(x_grid, y_rain, color=rain_color, linestyle='-', linewidth=1.5, zorder=2)
+            ax.fill_between(x_grid, 0, y_rain, color=rain_color, alpha=0.1, zorder=1)
+
+        # 2. ML KDE (Dotted/Dashed lines) aggregated across all rim values
+        ml_data = df[val_ml].dropna()
+        if len(ml_data) > 1:
+            kde_ml = gaussian_kde(ml_data)
+            y_ml = kde_ml(x_grid)
+            max_y_val = max(max_y_val, y_ml.max())
+            ax.plot(x_grid, y_ml, color=ml_color, linestyle=ml_ls, linewidth=1.5, zorder=2)
+            ax.fill_between(x_grid, 0, y_ml, color=ml_color, alpha=0.15, zorder=1)
+
+        # 3. Empirical Vertical Lines (Matching styles)
+        if empirical_rain is not None:
+            ax.axvline(empirical_rain, color=rain_color, linestyle='-', linewidth=1.5, zorder=3)
+        if empirical_ml is not None:
+            ax.axvline(empirical_ml, color=ml_color, linestyle=ml_ls, linewidth=1.5, zorder=3)
+
+        # Apply upper y-limit with 15% headroom
+        ax.set_ylim(0, max_y_val * 1.15 if max_y_val > 0 else 1.0)
+        ax.set_xlim(xlim)
+
+        # Formatting
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("Density")
+        ax.yaxis.set_label_coords(-0.12, 0.5)
+        # ax.set_title(f"AR = {ar}, σ = {sig}°")
+
+        # Custom Legend Construction
+        if plot_legend:
+            legend_handles = [
+                mlines.Line2D([], [], color=ml_color, linestyle=ml_ls, linewidth=1.5, label='Melting Layer'),
+                mlines.Line2D([], [], color=rain_color, linestyle='-', linewidth=1.5, label='Rain')
+            ]
+
+            if empirical_rain is not None or empirical_ml is not None:
+                # if empirical_ml is not None:
+                #     legend_handles.append(mlines.Line2D([], [], color=ml_color, linestyle=ml_ls, linewidth=1.5,
+                #                                         # marker='|', markersize=10, markeredgewidth=1.5,
+                #                                         label='Empirical ML'))
+                # if empirical_rain is not None:
+                #     legend_handles.append(mlines.Line2D([], [], color=rain_color, linestyle='-', linewidth=1.5,
+                #                                         # marker='|', markersize=10, markeredgewidth=1.5,
+                #                                         label='Empirical Rain'))
+
+                legend_handles2=[]
+                legend_handles2.append(mlines.Line2D([], [], color=rain_color, linestyle='-', linewidth=0,
+                                                    marker="$\sim$", markersize=10, markeredgewidth=1.5,
+                                                    label='Simulated'))
+                legend_handles2.append(mlines.Line2D([], [], color=rain_color, linestyle='-', linewidth=0,
+                                                    marker="|", markersize=10, markeredgewidth=1.5,
+                                                    label='Empirical'))
+                ax2 = ax.twinx()
+                ax2.axis('off')
+                ax2.legend(handles=legend_handles2, loc='upper right', frameon=True, edgecolor="gray")
+
+                ax.legend(handles=legend_handles, loc='best', bbox_to_anchor=(0.5, 0.25, 0.5, 0.55),
+                          frameon=True, edgecolor="gray")
+
+            else:
+                ax.legend(handles=legend_handles, loc='upper right',
+                          frameon=True, edgecolor="gray")
+        ax.grid(True, linestyle="--", alpha=0.3)
+
+        return fig, ax
+
+# Execute:
+alpha_emp = 0.14
+beta_emp = 0.025
+alphaml_emp = 0.255
+betaml_emp = 0.027
+
+# remember mixing formulas codes
+# 2: MG - W | (I | A)
+# 5: MG - I | (W | A)
+# 12: MG - (I | W) | A
+# 17: Weighted MG
+# 14: PS
+
+
+# For alpha
+fig, ax = plot_sbm_kde_single(SBM_p, val_rain='rain_alpha', val_ml='ml_alpha',
+                            xlabel="α [dBZ/°]", # α [dBZ/°]   β [dB/°]
+                            empirical_rain=alpha_emp, empirical_ml=alphaml_emp,
+                            ar=0.8, sig=25,
+                            xlim=(0, 0.5), mixing_formula=14)
+
+# For beta
+fig, ax = plot_sbm_kde_single(SBM_p, val_rain='rain_beta', val_ml='ml_beta',
+                            xlabel="β [dB/°]", # α [dBZ/°]   β [dB/°]
+                            empirical_rain=beta_emp, empirical_ml=betaml_emp,
+                            ar=0.8, sig=25,
+                            xlim=(0, 0.05), mixing_formula=14,
+                            plot_legend=False)
+
+#%%% Plot alpha/beta dependency to ZH/ZDR for observed DSDs
+
+def plot_sbm_o_medians(df, x_var='ZDR', y_var='beta',
+                       xlabel=r"$\mathrm{Z_{DR}}\ [dB]$", ylabel="β [dB/°]",
+                       empirical_vals=None,
+                       xlim=(0, 4.0), ylim=(0, 0.08),
+                       x_bins=np.linspace(0, 4.0, 30),
+                       plot_legend=True
+                       ):
+    """
+    Plots the medians of simulated DSD variables over small intervals of X.
+
+    Parameters:
+    df : pandas.DataFrame - The data source (e.g., SBM_o)
+    x_var : str - Base name of the x-axis variable ('Z' or 'ZDR')
+    y_var : str - Base name of the y-axis variable ('alpha' or 'beta')
+    xlabel, ylabel : str - Axis labels
+    empirical_vals : list of lists - Custom empirical values [[x_vals], [y_vals], [sig_vals]]
+    xlim, ylim : tuple - Limits for the axes
+    x_bins : array - Bin edges to compute the medians across the x-axis
+    """
+
+    # Define parameters from the dataframe structure
+    temps = [0, 10, 20]
+    sigmas = [0, 10, 20]
+
+    # Sequential grayscale for Temperatures (Dark -> Light)
+    c_temp = {
+        0: "#000000",  # Black
+        10: "#666666", # Medium Gray
+        20: "#BBBBBB"  # Light Gray
+    }
+
+    # Line styles for Sigmas (canting angle orientations)
+    ls_sig = {
+        0: "-",    # Solid
+        10: "--",  # Dashed
+        20: ":"    # Dotted
+    }
+
+    with mpl.rc_context({
+            'font.size': 7,
+            'axes.labelsize': 8,
+            'xtick.labelsize': 8,
+            'ytick.labelsize': 8,
+            'legend.fontsize': 7,
+            }):
+
+        # Single-column width (3.5 inches)
+        # Slightly taller to easily fit the legend inside the plot
+        fig = plt.figure(figsize=(3.5, 3.2))
+        ax = fig.add_axes([0.15, 0.15, 0.80, 0.80])
+
+        bin_centers = 0.5 * (x_bins[:-1] + x_bins[1:])
+
+        # Loop through all combinations of Temperature and Sigma
+        for t in temps:
+            for s in sigmas:
+                # Construct column names based on the dataframe structure
+                x_col = f"{x_var}_T{t}_sig{s}"
+                y_col = f"{y_var}_T{t}_sig{s}"
+
+                # Verify columns exist to avoid breaking
+                if x_col in df.columns and y_col in df.columns:
+                    # Extract valid data points (drop NaNs)
+                    valid_mask = df[x_col].notna() & df[y_col].notna()
+                    x_data = df.loc[valid_mask, x_col].values
+                    y_data = df.loc[valid_mask, y_col].values
+
+                    if len(x_data) > 0:
+                        # Group y-data into x-bins
+                        bin_indices = np.digitize(x_data, x_bins)
+                        medians = []
+
+                        # Calculate the median for each bin
+                        for i in range(1, len(x_bins)):
+                            y_in_bin = y_data[bin_indices == i]
+                            # Only plot if we have a reasonable amount of points in the bin
+                            if len(y_in_bin) > 5:
+                                medians.append(np.median(y_in_bin))
+                            else:
+                                medians.append(np.nan)
+
+                        # Plot the median line
+                        ax.plot(bin_centers, medians, color=c_temp[t],
+                                linestyle=ls_sig[s], linewidth=1.5, zorder=2)
+
+        # Plot Optional Empirical Values (Black Crosses)
+        if empirical_vals is not None:
+            for x_val, y_val, sig in zip(empirical_vals[0], empirical_vals[1], empirical_vals[2]):
+                # Fill the cross if significant (1), otherwise leave it hollow
+                fc = 'black' if sig == 1 else 'none'
+                ax.scatter(x_val, y_val, marker='P', facecolor=fc, edgecolor='black',
+                           s=30, zorder=4, linewidths=0.8)
+
+        # Formatting
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.yaxis.set_label_coords(-0.13, 0.5)
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
+
+        # Standard Grid
+        ax.grid(True, linestyle="-", alpha=0.7)
+
+        # --- Custom Sectioned Legend Construction ---
+        legend_handles = []
+
+        # 1. Temperature Section (Proxy artists with circles)
+        legend_handles.append(mlines.Line2D([], [], color='none', label='Temperature'))
+        for t in temps:
+            legend_handles.append(mlines.Line2D([], [], color=c_temp[t], marker='s',
+                                                linestyle='None', markersize=6, label=f'  {t} °C'))
+
+        # Spacer
+        legend_handles.append(mlines.Line2D([], [], color='none', label=''))
+
+        # 2. Orientation (Sigma) Section (Proxy artists with black lines)
+        legend_handles.append(mlines.Line2D([], [], color='none', label='Orientation'))
+        for s in sigmas:
+            legend_handles.append(mlines.Line2D([], [], color='black', linestyle=ls_sig[s],
+                                                linewidth=1.5, label=f'  {s}°'))
+
+        # 3. Empirical Legend
+        if empirical_vals is not None:
+            legend_handles.append(mlines.Line2D([], [], color='none', label=''))
+            legend_handles.append(mlines.Line2D([], [], color='black', marker='P',
+                                                linestyle='None', markersize=6, label='Empirical'))
+
+        if plot_legend:
+            # Draw the legend. We use a slightly smaller font for the values to offset the "titles"
+            leg = ax.legend(handles=legend_handles, loc="upper left", frameon=True,
+                            edgecolor="gray", borderpad=0.5, labelspacing=0.4)
+
+            # Emphasize the pseudo-titles in the legend by making them bold
+            for text in leg.get_texts():
+                if text.get_text() in ['Temperature', 'Orientation']:
+                    text.set_weight('bold')
+
+        return fig, ax
+
+# Execution:
+alphas_emp = [[0.55, 0.9, 1.4, 1.9, 2.77], # ZDR values
+              [0.09, 0.116, 0.126, 0.137, 0.213], # alpha values
+              [0, 1, 0, 0, 1] # 1= stat. sigf.
+              ]
+
+betas_emp = [[0.55, 0.9, 1.4, 1.9, 2.77], # ZDR values
+              [0.013, 0.018, 0.024, 0.033, 0.034], # alpha values
+              [1, 1, 1, 1, 1] # 1= stat. sigf.
+              ]
+
+fig, ax = plot_sbm_o_medians(SBM_o, x_var='ZDR', y_var='alpha',
+                       xlabel=r"$\mathrm{Z_{DR}}\ [dB]$", ylabel="α [dBZ/°]",
+                       empirical_vals=alphas_emp,
+                       xlim=(0, 4.0), ylim=(0, 0.8),
+                       )
+
+fig, ax = plot_sbm_o_medians(SBM_o, x_var='ZDR', y_var='beta',
+                       xlabel=r"$\mathrm{Z_{DR}}\ [dB]$", ylabel="β [dB/°]",
+                       empirical_vals=betas_emp,
+                       xlim=(0, 4.0), ylim=(0, 0.08),
+                       plot_legend=False,
+                       )
 
 
 #%% TEST: ML detection over PPI or better ML from QVPs
