@@ -98,7 +98,7 @@ if __name__ == "__main__": # set guard
     ff = "/automount/realpep/upload/jgiles/dwd/*/*/2017-08-18/pro/vol5minng01/07/*allmoms*"
     # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2019-07-17/ANK/*F/8.0/*allmoms*"
     # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-08-09/AFY/*/10.0/*allmoms*"
-    ff = "/automount/realpep/upload/jgiles/dmi/*/*/2016-12-13/HTY/*/12.0/*allmoms*"
+    ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-03-13/HTY/*/10.0/*allmoms*"
     # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2017-05-20/GZT/*/10.0/*allmoms*.nc"
     # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2020-04-30/SVS/*/10.0/*allmoms*.nc"
     # ff = "/automount/realpep/upload/jgiles/dmi/*/*/2018-10-21/SVS/*/7.0/*allmoms*.nc"
@@ -891,99 +891,121 @@ if __name__ == "__main__": # set guard
     ]
 
 
-    mom = "ZDR_EC_OC"
+    mom = "DBZH" # "ZDR_EC_OC" "DBZH"
     min_entropy_thresh = 0.99
 
     datasel = datasel.assign_coords(z=datasel.z / 1000)
 
-    fig = plt.figure(figsize=(6, 3))
-    # [left, bottom, width, height]
-    # ax = fig.add_axes([0.12, 0.2, 0.65, 0.7])
-    # cax = fig.add_axes([0.82, 0.2, 0.03, 0.7])
-    ax = fig.add_axes([0.1, 0.18, 0.75, 0.78])
-    cax = fig.add_axes([0.89, 0.18, 0.02, 0.78])
+    with mpl.rc_context({
+                'font.size': 7,
+                'axes.labelsize': 8,
+                'xtick.labelsize': 8,
+                'ytick.labelsize': 8,
+                'legend.fontsize': 7,
+                }):
 
-    # To avoid forced tight layout in the plot pane go to
-    # Tools/Preferences/IPython Console/Plotting and disable the tight layout
+        fig = plt.figure(figsize=(3.5, 2))
+        # [left, bottom, width, height]
+        # ax = fig.add_axes([0.12, 0.2, 0.65, 0.7])
+        # cax = fig.add_axes([0.82, 0.2, 0.03, 0.7])
+        # ax = fig.add_axes([0.1, 0.18, 0.75, 0.78])
+        # cax = fig.add_axes([0.89, 0.18, 0.02, 0.78])
 
-    try:
-        ticks = radarmet.visdict14[mom.split("_")[0]]["ticks"]
-        cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
-        cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
-        # norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
-        # cmap = "miub2"
-        norm = utils.get_discrete_norm(ticks, cmap.N, extend="both")
-        qvp_plot = datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm, extend="both", ax=ax, add_colorbar=False)
-    except:
-        qvp_plot = datasel[mom].wrl.plot(x="time", extend="both", ax=ax, add_colorbar=False)
+        # Journal 1 column size
+        ax = fig.add_axes([0.13, 0.22, 0.68, 0.70])
+        cax = fig.add_axes([0.87, 0.22, 0.02, 0.70])
 
-    cb = fig.colorbar(qvp_plot, cax=cax, extend="both")
+        # To avoid forced tight layout in the plot pane go to
+        # Tools/Preferences/IPython Console/Plotting and disable the tight layout
 
-    datasel["min_entropy"].compute().dropna("z", how="all").interpolate_na(dim="z").plot.contourf(
-        ax=ax,
-        x="time", levels=[min_entropy_thresh, 1], hatches=["", "XXX", ""], colors=[(1,1,1,0)],
-        add_colorbar=False, extend="both")
-
-    # qvp_plot.colorbar.set_label(datasel[mom].units)
-    qvp_plot.colorbar.ax.yaxis.set_label_coords(0.5, -0.07) # (x, y) coordinates
-    qvp_plot.colorbar.ax.yaxis.label.set(
-        rotation="horizontal",
-        ha="center",
-        va="top",
-        text=datasel[mom].units,
-        # position = (-10000.0, -0.025)
-    )
-    ax.xaxis.set_major_formatter(mpl.dates.DateFormatter('%H:%M')) # put only the hour in the x-axis
-    (datasel["height_ml_new_gia_clean"]/1000).plot(ax=ax, c="black")
-    (datasel["height_ml_bottom_new_gia_clean"]/1000).plot(ax=ax, c="black")
-    ax.set_ylabel("Height [km a.s.l.]")
-
-    # # Plot reflectivity as lines to check wet radome effect
-    # zm_c = "MediumBlue"
-    # ax2 = ax.twinx()
-    # datasel["Zm"].plot(ax=ax2, c=zm_c)
-    # # ax2.spines['left'].set_position(('outward', 60))
-    # ax2.tick_params(axis='y', labelcolor=zm_c, direction="in")  # Add padding to the ticks
-    # # ax2.yaxis.labelpad = -400  # Add padding to the y-axis label
-    # ax2.set_ylabel("dBZ",
-    #                color=zm_c,
-    #                rotation="horizontal",
-    #                ha="center",   # Horizontal alignment
-    #                va="top",  # Vertical alignment at the bottom
-    #                labelpad=10,
-    #                y=0)          # 0 is bottom, 1 is top, 0.5 is center
-    # ax2.yaxis.set_label_coords(1, -0.017)
-    # # ax2.set_ylim(-60, 30)
-    # # ax2.yaxis.set_ticks([0,10, 20], labels=["0", "10", "20"])
-    # ax2.set_title("")
-    # # plt.xlim((datetime.datetime(2015,3,11,6), datetime.datetime(2015,3,11,12)))
-
-    # # Plot zdrcal values
-    # ax3 = plt.gca().twinx()
-    # zdrcal.loc[{"time":slice(str(datasel.time[0].values), str(datasel.time[-1].values))}].fNewZdrOffsetEstimate_dB.plot(ax=ax3, c="magenta")
-    # ax3.yaxis.label.set_color("magenta")
-    # ax3.spines['right'].set_position(('outward', 90))
-    # ax3.tick_params(axis='y', labelcolor="magenta")  # Add padding to the ticks
-    # # ax3.yaxis.labelpad = 10  # Add padding to the y-axis label
-    # ax3.set_title("")
-
-    if isvolume: elevtitle = " RD-QVP"
-    else:
-        try: elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
+        try:
+            ticks = radarmet.visdict14[mom.split("_")[0]]["ticks"] #[:-2] Add to reduce colorscale
+            cmap0 = mpl.colormaps.get_cmap("SpectralExtended")
+            cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
+            # norm = mpl.colors.BoundaryNorm(ticks, cmap.N, clip=False, extend="both")
+            # cmap = "miub2"
+            norm = utils.get_discrete_norm(ticks, cmap.N, extend="both")
+            qvp_plot = datasel[mom].wrl.plot(x="time", cmap=cmap, norm=norm, extend="both", ax=ax, add_colorbar=False)
         except:
-            try:
-                elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values, 2))+"°"
+            qvp_plot = datasel[mom].wrl.plot(x="time", extend="both", ax=ax, add_colorbar=False)
+
+        cb = fig.colorbar(qvp_plot, cax=cax, extend="both")
+
+        datasel["min_entropy"].compute().dropna("z", how="all").interpolate_na(dim="z").plot.contourf(
+            ax=ax,
+            x="time", levels=[min_entropy_thresh, 1], hatches=["", "XXX", ""], colors=[(1,1,1,0)],
+            add_colorbar=False, extend="both")
+
+        # qvp_plot.colorbar.set_label(datasel[mom].units)
+        cb.ax.yaxis.set_label_coords(0.5, -0.07) # (x, y) coordinates
+        cb.ax.yaxis.label.set(
+            rotation="horizontal",
+            ha="center",
+            va="top",
+            text=datasel[mom].units,
+            # position = (-10000.0, -0.025)
+        )
+
+        # plot ML
+        (datasel["height_ml_new_gia_clean"]/1000).plot(ax=ax, c="black", lw=1)
+        (datasel["height_ml_bottom_new_gia_clean"]/1000).plot(ax=ax, c="black", lw=1)
+
+        # # Plot reflectivity as lines to check wet radome effect
+        # zm_c = "MediumBlue"
+        # ax2 = ax.twinx()
+        # datasel["Zm"].plot(ax=ax2, c=zm_c, lw=1)
+        # # ax2.spines['left'].set_position(('outward', 60))
+        # ax2.tick_params(axis='y', labelcolor=zm_c, direction="in")  # Add padding to the ticks
+        # # ax2.yaxis.labelpad = -400  # Add padding to the y-axis label
+        # ax2.set_ylabel("dBZ",
+        #                color=zm_c,
+        #                rotation="horizontal",
+        #                ha="center",   # Horizontal alignment
+        #                va="top",  # Vertical alignment at the bottom
+        #                labelpad=10,
+        #                y=0)          # 0 is bottom, 1 is top, 0.5 is center
+        # ax2.yaxis.set_label_coords(1, -0.017)
+        # # ax2.set_ylim(-60, 30)
+        # # ax2.yaxis.set_ticks([0,10, 20], labels=["0", "10", "20"])
+        # ax2.set_title("")
+        # # plt.xlim((datetime.datetime(2015,3,11,6), datetime.datetime(2015,3,11,12)))
+
+        # # Plot zdrcal values
+        # ax3 = plt.gca().twinx()
+        # zdrcal.loc[{"time":slice(str(datasel.time[0].values), str(datasel.time[-1].values))}].fNewZdrOffsetEstimate_dB.plot(ax=ax3, c="magenta")
+        # ax3.yaxis.label.set_color("magenta")
+        # ax3.spines['right'].set_position(('outward', 90))
+        # ax3.tick_params(axis='y', labelcolor="magenta")  # Add padding to the ticks
+        # # ax3.yaxis.labelpad = 10  # Add padding to the y-axis label
+        # ax3.set_title("")
+
+        # Adjust axes
+        ax.xaxis.set_major_formatter(mpl.dates.DateFormatter('%H')) # put only the hour in the x-axis
+        #ax.xaxis.set_major_locator(mpl.dates.HourLocator(interval=6))
+
+        ax.set_ylabel("Height [km a.s.l.]")
+        ax.yaxis.set_label_coords(-0.12, 0.5) # Lock the y-axis label position
+
+        # Forcing the x-axis label to be clean and correctly placed if xarray overwrites it
+        ax.set_xlabel("Time (h)")
+
+        if isvolume: elevtitle = " RD-QVP"
+        else:
+            try: elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values[0], 2))+"°"
             except:
                 try:
-                    elevtitle = " "+str(np.round(datasel["sweep_fixed_angle"].values, 2))+"°"
+                    elevtitle = " "+str(np.round(ds["sweep_fixed_angle"].values, 2))+"°"
                 except:
-                    elevtitle = " "+str(np.round(datasel["elevation"].values, 2))+"°"
+                    try:
+                        elevtitle = " "+str(np.round(datasel["sweep_fixed_angle"].values, 2))+"°"
+                    except:
+                        elevtitle = " "+str(np.round(datasel["elevation"].values, 2))+"°"
 
-    #plt.title(mom+elevtitle+". "+str(datasel.time.values[0]).split(".")[0])
-    # plt.title("")
-    ax.set_title("")
-    plt.show()
-    plt.close()
+        #plt.title(mom+elevtitle+". "+str(datasel.time.values[0]).split(".")[0])
+        # plt.title("")
+        ax.set_title("")
+        plt.show()
+        plt.close()
 
     #%% Plot CFTDs
     #%%% Filters (conditions for stratiform)
