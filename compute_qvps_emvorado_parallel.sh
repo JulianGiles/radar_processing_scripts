@@ -8,7 +8,7 @@
 # Configurations for running in JUWELS:
 ##############################################################
 
-#SBATCH --account=detectrea
+#SBATCH --account=detectrea2
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
 #SBATCH --ntasks-per-node=6
@@ -21,7 +21,7 @@
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK}
 
 # Set the directory with the code (this will be the working dir)
-codedir=/p/scratch/detectrea/giles1/radar_processing_scripts/
+codedir=/p/scratch/detectrea2/giles1/radar_processing_scripts/
 cd $codedir
 
 # Define the radar site
@@ -65,7 +65,7 @@ dates=( # HTY
 )
 
 # Set the directory to look for the files
-base_path="/p/scratch/detectrea/giles1/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/radar_data_emvorado/"
+base_path="/p/scratch/detectrea2/giles1/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/radar_data_emvorado/"
 
 # set a name for the counter file (counting how many job steps running at the same time
 counterfile=$base_path/count_hty.txt
@@ -83,7 +83,7 @@ for date in "${dates[@]}"; do
     echo $count > $counterfile
     ((startcount++))
     # Pass the file path to the python script
-    { srun -c 8 --account=detectrea -n 1 --exact --threads-per-core=1 --time 200 python -u $codedir/compute_qvps_new_emvorado.py "$base_path/${date:0:4}/${date:0:7}/$date/$loc/vol/"; count=$(<$counterfile); ((count--)) ; echo $count > $counterfile; } &
+    { srun -c 8 --account=detectrea2 -n 1 --exact --threads-per-core=1 --time 200 python -u $codedir/compute_qvps_new_emvorado.py "$base_path/${date:0:4}/${date:0:7}/$date/$loc/vol/"; count=$(<$counterfile); ((count--)) ; echo $count > $counterfile; } &
 
     if [ "$startcount" -le 6 ]; then
         sleep 5
