@@ -2,8 +2,15 @@
 
 # Define the base directory and the output directory
 BASE_DIR="/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/"
-FIND_PATTERN="*iconemvorado_??????????/*/cdfin_allsim_*"
 OUTPUT_DIR="/automount/realpep/upload/jgiles/ICON_EMVORADO_radardata/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/"
+
+# Select which subfolder to include (cloud or no cloud variants): "icon_vol" or "icon_vol_noc"
+SUBFOLDER="icon_vol"
+
+# FIND_PATTERN now uses brace expansion to include radout + selected subfolder
+FIND_PATTERN="*iconemvorado_??????????/{radout,$SUBFOLDER}/cdfin_allsim_*"
+
+# set radar IDs
 LOC_CODES=("010392:pro" "010832:tur" "010356:umd" "017187:afy" "017138:ank" "017259:gzt" "017373:hty" "017163:svs")
 LOC_CODES=("010392:pro" "017373:hty")
 RUN_NAME="iconemvorado" # icon or iconemvorado
@@ -19,8 +26,8 @@ for loc_code in "${LOC_CODES[@]}"; do
   locs_code[$key]=$value
 done
 
-# Find all matching files
-find "$BASE_DIR" -type f -path "$FIND_PATTERN" | while read -r file; do
+# Find all matching files (eval expands the brace pattern in FIND_PATTERN)
+eval find "$BASE_DIR" -type f \( -path "${FIND_PATTERN//,/ -o -path }" \) | while read -r file; do
   # Extract forecast start time, location ID, and timestamp from the file path
   #forecast_time=$(echo "$file" | grep -oP "${RUN_NAME}_\K\d{10}")
   #timestep=$(basename "$file" | grep -oP "_\K\d{12}(?=_\d{12})")
