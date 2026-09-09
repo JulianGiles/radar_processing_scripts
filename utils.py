@@ -301,7 +301,7 @@ def get_phase_proc_params(path):
 # Parameters for attenuation correction
 attenuation_corr_linear_coefs = {
     "dwd": {"alpha": 0.08, "beta": 0.02, "alphaml": 0.08, "betaml": 0.02},
-    "dmi": {"alpha": 0.14, "beta": 0.025, "alphaml": 0.25, "betaml": 0.025},
+    "dmi": {"alpha": 0.14, "beta": 0.025, "alphaml": 0.25, "betaml": 0.027},
     }
 
 
