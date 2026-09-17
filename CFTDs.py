@@ -3138,11 +3138,11 @@ with mpl.rc_context({'font.size': 10}):
 clean_riming_noise = True
 locs_to_load = locs #[find_loc(locs, ff[0])] # by default, load only the histograms of the currently loaded QVPs.
 
-#!!! SOMETHING NEEDS TO BE DONE HERE OR SOMEWHERE SO THAT THE RIMING OF TURKISH AND GERMAN RADARS
-# CAN BE COMPARED TOGETHER (WRC IS ONLY APPLIED IN TURKEY)
-riming_varnames =['riming_DR_'+"_".join([X_ZDR, X_DBZH]),
-               'riming_'+"_".join([X_ZDR, X_DBZH]),
-               ]
+riming_varnames = ['riming_DR_ZDR_EC_OC_WRC_AC_DBZH_AC',
+                   'riming_DR_ZDR_EC_OC_AC_DBZH_AC',
+                   'riming_ZDR_EC_OC_WRC_AC_DBZH_AC',
+                   'riming_ZDR_EC_OC_AC_DBZH_AC',
+                   ]
 
 try: # check if exists, if not, create it
     riming_classif
@@ -3192,6 +3192,9 @@ print("Plotting riming histograms ...")
 start_time = time.time()
 
 for loc in locs_to_plot:
+    if loc not in riming_classif[stratname].keys():
+        continue
+
     print(" ... "+loc)
 
     for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
@@ -3212,8 +3215,7 @@ for loc in locs_to_plot:
             to_plot_sel = to_plot.sel(\
                                 time=to_plot['time'].dt.month.isin(selseas[1]))
 
-            for vv in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_ZDR_EC_OC_AC_DBZH_AC',
-                       ]:
+            for vv in riming_varnames:
 
                 try:
 
@@ -3318,12 +3320,15 @@ print(f"took {total_time/60:.2f} minutes.")
 #### Set variable names
 X_DBZH = "DBZH_AC"
 X_RHO = "RHOHV_NC"
-X_ZDR = "ZDR_EC_OC_AC"
+X_ZDR = "ZDR_EC_OC_WRC_AC"
+X_ZDR_ = "ZDR_EC_OC_AC" # Alternative ZDR to use in place of WRC
 X_KDP = "KDP_ML_corrected_EC"
 
 # load stats
 if 'stats' not in globals() and 'stats' not in locals():
     stats = {}
+
+locs_loaded = set() # collect the locations succesfully loaded
 
 for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
     if stratname not in stats.keys():
@@ -3350,12 +3355,17 @@ for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
                     if len(stats[stratname][ll][xx]["variable"]) == 1:
                         # if there is a generic coord called "variable", remove it
                         stats[stratname][ll][xx] = stats[stratname][ll][xx].isel(variable=0)
+                if type(stats[stratname][ll][xx]) == xr.Dataset:
+                    if X_ZDR not in stats[stratname][ll][xx].data_vars and X_ZDR_ in stats[stratname][ll][xx].data_vars:
+                        stats[stratname][ll][xx][X_ZDR] = stats[stratname][ll][xx][X_ZDR_]
                 print(ll+" "+xx+" stats loaded")
             except:
                 pass
         # delete entry if empty
         if not stats[stratname][ll]:
             del stats[stratname][ll]
+        else:
+            locs_loaded.add(ll)
 
 # load retrievals
 if 'retrievals' not in globals() and 'retrievals' not in locals():
@@ -3375,9 +3385,6 @@ for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
             print(ll+" retrievals loaded")
         except:
             pass
-        # delete entry if empty
-        if not retrievals[stratname][ll]:
-            del retrievals[stratname][ll]
 
 for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
     if stratname not in retrievals_qvpbased.keys():
@@ -3391,15 +3398,12 @@ for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
             print(ll+" retrievals_qvpbased loaded")
         except:
             pass
-        # delete entry if empty
-        if not retrievals_qvpbased[stratname][ll]:
-            del retrievals_qvpbased[stratname][ll]
 
 #%%% 2d histograms
 
 valid_perc_thresh = 0.8 # minimum fraction of valid values to filter out gradients
 
-locs_to_plot = locs # [find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
+locs_to_plot = locs_loaded # [find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
 savepath = "/automount/agradar/jgiles/images/stats_histograms"+suffix_name+"/"
 
 selseaslist = [
@@ -4356,9 +4360,9 @@ for selseas in selseaslist:
                     fig = ridgeplot.ridgeplot(samples=samples.values(),
                                             colorscale="viridis",
                                             colormode="row-index",
-                                            coloralpha=0.65,
+                                            opacity=0.65,
                                             labels=samples.keys(),
-                                            linewidth=2,
+                                            line_width=2,
                                             spacing=5 / 9,
                                             # kde_points=bins[ss],
                                             bandwidth=bandwidths[ss][vv],
@@ -4422,9 +4426,9 @@ for selseas in selseaslist:
                     fig = ridgeplot.ridgeplot(samples=samples.values(),
                                             colorscale="viridis",
                                             colormode="row-index",
-                                            coloralpha=0.65,
+                                            opacity=0.65,
                                             labels=samples.keys(),
-                                            linewidth=2,
+                                            line_width=2,
                                             spacing=5 / 9,
                                             # kde_points=bins[ss],
                                             bandwidth=bandwidths[ss],
@@ -4505,7 +4509,7 @@ line_styles = ["--",  # Dashed
                "--",  # Dashed
                (0, (3, 5, 1, 5))]  # Custom: long dash, short gap, dot, short gap
 
-for il, loc in enumerate(locs):
+for il, loc in enumerate(locs_loaded):
     count = stats[stratname][loc]['beta_belowDGL'][X_DBZH]\
                 .where(stats[stratname][loc]['beta_belowDGL']["valid_perc"]>=valid_perc_thresh)\
                     .groupby("time.month").count()
@@ -4521,7 +4525,7 @@ plt.title(r'$\beta$_DGL seasonality')
 
 #%%%% Plot riming frequency all radars in same plot
 
-locs_to_plot = locs #[find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
+locs_to_plot = locs_loaded #[find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
 savepath = "/automount/agradar/jgiles/images/riming_frequency"+suffix_name+"/"
 
 selseaslist = [
@@ -4537,7 +4541,7 @@ riming_class_to_plot = [
                         # 'riming_UDR',
                         # 'riming_ZDR_DBZH',
                         # 'riming_ZDR_OC_DBZH',
-                        'riming_ZDR_EC_OC_AC_DBZH_AC',
+                        'riming_ZDR_EC_OC_WRC_AC_DBZH_AC', # I added a fallback to no WRC version in the code below
            ]
 
 colors = ["#4c72b0",  # Deep Blue
@@ -4600,7 +4604,11 @@ for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
                         temp_mask = (to_plot_sel.TEMP >= temp_bins[i]) & (to_plot_sel.TEMP < temp_bins[i+1])
 
                         # Get the data corresponding to the current temperature bin
-                        data_in_bin = to_plot_sel[vv].where(temp_mask.compute(), drop=True)
+                        if vv not in to_plot_sel.data_vars and "_WRC" in vv:
+                            vv_ = ("").join(vv.split("_WRC"))
+                            data_in_bin = to_plot_sel[vv_].where(temp_mask.compute(), drop=True)
+                        else:
+                            data_in_bin = to_plot_sel[vv].where(temp_mask.compute(), drop=True)
 
                         # Calculate the percentage of 1s (ignoring NaNs)
                         total_values = np.isfinite(data_in_bin).sum()  # Total number of finite values (non-nan)
@@ -4652,6 +4660,8 @@ beta_vars_ticks = {X_DBZH: np.linspace(-15, 10, int((10--15)/1)+1 ),
                 } # the "_polyfit_coefficients" in the var names will be added below
 
 ridge_vars = set(list(vars_ticks.keys())+list(beta_vars_ticks.keys()))
+
+riming_class = "riming_ZDR_EC_OC_WRC_AC_DBZH_AC" # I added a fallback to no WRC version in the code below
 
 bins = {
         "ML_thickness": np.arange(0,1200,50),
@@ -4761,8 +4771,6 @@ for selseas in selseaslist:
     print(" ... ... "+selseas[0])
     for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
 
-        riming_class = "riming_ZDR_EC_OC_AC_DBZH_AC"
-
         print("plotting "+stratname+" stats...")
 
         # Create savefolder
@@ -4772,12 +4780,18 @@ for selseas in selseaslist:
 
         order_fil = [ll for ll in order if ll in stats[stratname].keys()]
 
+        # Fallback in case WRC riming classif not available
+        for loc in order_fil:
+            if riming_class not in riming_classif[stratname][loc].data_vars and "_WRC" in riming_class:
+                riming_class_ = ("").join(riming_class.split("_WRC"))
+                riming_classif[stratname][loc][riming_class] = riming_classif[stratname][loc][riming_class_]
+
         for ss in bins.keys():
             print("...plotting "+ss)
             try:
                 for vv in ridge_vars:
-
                     # Get the samples for each radar and filter out the radars that have zero samples.
+
                     riming_filter = { loc: riming_classif[stratname][loc].chunk({"time":"auto"}).where(\
                                                                        riming_classif[stratname][loc].z >= riming_classif[stratname][loc].height_ml_new_gia,
                                                                     ).where(\
@@ -4827,9 +4841,9 @@ for selseas in selseaslist:
                                             # colormode="row-index",
                                             colormode="trace-index-row-wise",
                                             # colormode="trace-index",
-                                            coloralpha=0.65,
+                                            opacity=0.65,
                                             labels=samples.keys(),
-                                            linewidth=2,
+                                            line_width=2,
                                             spacing=5 / 9,
                                             # kde_points=bins[ss],
                                             bandwidth=bandwidths[ss][vv],
@@ -4913,9 +4927,9 @@ for selseas in selseaslist:
                                             # colormode="row-index",
                                             colormode="trace-index-row-wise",
                                             # colormode="trace-index",
-                                            coloralpha=0.65,
+                                            opacity=0.65,
                                             labels=samples.keys(),
-                                            linewidth=2,
+                                            line_width=2,
                                             spacing=5 / 9,
                                             # kde_points=bins[ss],
                                             bandwidth=bandwidths[ss],
@@ -4983,7 +4997,7 @@ Dm_rain = "Dm_rain_zdr_bringi2009" # Dm_rain_zdr_chen, Dm_rain_zdr_hu2022, Dm_ra
 Nt_ice = "Nt_ice_iwc_zdr_zh_kdp_carlin2021" # Nt_ice_iwc_zh_t_hu2022, Nt_ice_iwc_zh_t_carlin2021, Nt_ice_iwc_zh_t_combined_hu2022, Nt_ice_iwc_zh_t_combined_carlin2021, Nt_ice_iwc_zdr_zh_kdp_hu2022, Nt_ice_iwc_zdr_zh_kdp_carlin2021
 Nt_rain = "Nt_rain_zh_zdr_rhyzkov2020" # Nt_rain_zh_zdr_rhyzkov2020
 
-locs_to_plot = locs # [find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
+locs_to_plot = locs_loaded # [find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
 savepath = "/automount/agradar/jgiles/images/stats_corr_matrix"+suffix_name+"/"
 
 selseaslist = [
