@@ -50,7 +50,7 @@ os.environ["WRADLIB_EARTHDATA_BEARER_TOKEN"] = secrets['EARTHDATA_TOKEN']
 
 wrldata_paths =[
     "/home/jgiles/wradlib-data-main",
-    "/p/scratch/detectrea2/giles1/wradlib-data-main"
+    "/p/project1/detectrea2/giles1/wradlib-data-main"
     ]
 for wrldata_path in wrldata_paths:
     if os.path.exists(wrldata_path):
