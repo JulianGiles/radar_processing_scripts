@@ -50,21 +50,25 @@ RAW_DATES="
 # Variable to store all calculated dates
 ALL_DATES=""
 
-# 1. Clean the input and calculate the previous day for each
+# 1. Clean the input and calculate the previous and next day for each
 while read -r line; do
     # Remove asterisks and spaces
     clean_date=$(echo "$line" | tr -d '* ' )
-
+    
     # Skip empty lines
     if [ -z "$clean_date" ]; then continue; fi
-
+    
     # Add the current date to our list
     ALL_DATES="$ALL_DATES$clean_date\n"
-
-    # Calculate and add the previous date (GNU date format)
+    
+    # Calculate and add the previous date
     prev_date=$(date -d "$clean_date - 1 day" +%Y-%m-%d)
     ALL_DATES="$ALL_DATES$prev_date\n"
 
+    # Calculate and add the next date
+    next_date=$(date -d "$clean_date + 1 day" +%Y-%m-%d)
+    ALL_DATES="$ALL_DATES$next_date\n"
+    
 done <<< "$RAW_DATES"
 
 # 2. Sort the dates uniquely so we don't rsync the same day twice
@@ -76,14 +80,14 @@ for target_date in $UNIQUE_DATES; do
     YYYY=$(date -d "$target_date" +%Y)
     YYYY_MM=$(date -d "$target_date" +%Y_%m)
     YYYYMMDD=$(date -d "$target_date" +%Y%m%d)
-
+    
     echo "=========================================="
     echo "Syncing data for: $target_date"
-
+    
     # Construct source path and run rsync
     # We deliberately leave the wildcards unquoted so bash expands them
     rsync -avrum -R /p/data1/detectdata/CentralDB/./era5/${YYYY}/${YYYY_MM}/*${YYYYMMDD}* "$DEST"
-
+    
 done
 
 echo "=========================================="
