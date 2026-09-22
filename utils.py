@@ -35,6 +35,8 @@ from osgeo import gdal
 from scipy.ndimage import binary_opening
 import dask
 
+os.environ["ICECHUNK_NO_LOGS"] = "1" # Silence Icechunk Rust warnings
+
 import dotenv
 secrets_paths =[
     "/user/jgiles/secrets.env",
@@ -935,6 +937,45 @@ def load_dwd_preprocessed(filepath):
     else:
         return xr.concat(dwddata, dim="time", join="outer", coords="different", compat='equals')
 
+def load_icechunk_zarr_ppi(filepath):
+    """
+    Load final zarr-based PPIs stored in Icechunk repositories.
+    Can concatenate several files in the time dimension.
+
+    Parameter
+    ---------
+    filepath : str, list
+            Location of the file or path with wildcards to find files using glob or list of paths
+    """
+    from icechunk import Repository, local_filesystem_storage
+
+    # collect files
+    if type(filepath) is list:
+        files = sorted(filepath)
+    else:
+        files = sorted(glob.glob(filepath))
+
+    # open files
+    datasets = []
+    for ff in files:
+        storage = local_filesystem_storage(ff)
+        try:
+            repo = Repository.open(storage)
+        except Exception as e:
+            print(f"Failed to open repository at {ff}: {e}")
+            continue
+
+        session = repo.readonly_session("main")
+        ds = xr.open_zarr(session.store, consolidated=False)
+        datasets.append(ds)
+
+    if len(datasets) == 0:
+        raise ValueError("No valid Icechunk Zarr datasets found.")
+    elif len(datasets) == 1:
+        return datasets[0]
+    else:
+        return xr.concat(datasets, dim="time", join="outer", coords="different", compat='equals')
+
 def load_dwd_raw(filepath):
     """
     Load DWD raw data.
@@ -1146,34 +1187,83 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
     # if not, collect files
         files = sorted(glob.glob(filepath))
 
-    if len(files)==1:
-        qvps = xr.open_mfdataset(files, compat='no_conflicts')
-    else:
-        # there are slight differences (noise) in z coord sometimes so we have to align all datasets
-        # since the time coord has variable length, we cannot use join="override" so we define a function to copy
-        # the z coord from the first dataset into the rest with preprocessing
-        # There could also be some time values missing, ignore those
-        # Some files do not have TEMP data, fill with nan
-        first_file = xr.open_mfdataset(files[0], compat='no_conflicts')
-        first_file_z = first_file.z.copy()
-        def fix_coords(ds, align_z=True, fix_TEMP=True):
-            if align_z:
-                ds.coords["z"] = first_file_z
-            ds = ds.where(ds["time"].notnull(), drop=True)
-            if "TEMP" not in ds.coords and fix_TEMP:
-                ds.coords["TEMP"] = xr.full_like( ds["DBZH"], np.nan ).compute()
+    if len(files) == 0:
+        raise ValueError("No files found to load.")
 
-            return ds
+    is_zarr = [f.endswith('.zarr') or f.endswith('.zarr/') for f in files]
+    if any(is_zarr) and not all(is_zarr):
+        raise ValueError("Cannot mix Zarr files and NetCDF files in the same load call.")
+    use_zarr = all(is_zarr)
 
-        try:
-            qvps = xr.open_mfdataset(files, preprocess=partial(fix_coords, align_z=align_z, fix_TEMP=fix_TEMP), compat='no_conflicts', join='outer', engine='h5netcdf')
-        except:
-            if align_z:
-                print("Aligning z coord may have failed, attempting to load without alignment...")
+    if use_zarr:
+        from icechunk import Repository, local_filesystem_storage
+        datasets = []
+        for ff in files:
+            storage = local_filesystem_storage(ff)
             try:
-                qvps = xr.open_mfdataset(files, combine="nested", concat_dim="time", compat='no_conflicts', join='outer', engine='h5netcdf')
+                repo = Repository.open(storage)
+            except Exception as e:
+                print(f"Failed to open repository at {ff}: {e}")
+                continue
+
+            session = repo.readonly_session("main")
+            ds = xr.open_zarr(session.store, consolidated=False)
+            datasets.append(ds)
+
+        if len(datasets) == 0:
+            raise ValueError("No valid Icechunk Zarr datasets found.")
+        elif len(datasets) == 1:
+            qvps = datasets[0]
+        else:
+            first_file_z = datasets[0].z.copy()
+            def fix_coords(ds, align_z=True, fix_TEMP=True):
+                if align_z:
+                    ds.coords["z"] = first_file_z
+                ds = ds.where(ds["time"].notnull(), drop=True)
+                if "TEMP" not in ds.coords and fix_TEMP:
+                    ds.coords["TEMP"] = xr.full_like( ds["DBZH"], np.nan ).compute()
+                return ds
+
+            datasets = [fix_coords(ds, align_z=align_z, fix_TEMP=fix_TEMP) for ds in datasets]
+            try:
+                qvps = xr.concat(datasets, dim="time", join="outer", coords="different", compat='equals')
+            except Exception:
+                if align_z:
+                    print("Aligning z coord may have failed, attempting to load without alignment...")
+                try:
+                    datasets = [fix_coords(ds, align_z=False, fix_TEMP=fix_TEMP) for ds in datasets]
+                    qvps = xr.concat(datasets, dim="time", join="outer", coords="different", compat='equals')
+                except Exception:
+                    qvps = xr.concat(datasets, dim="time", join="outer", compat='no_conflicts')
+    else:
+        if len(files)==1:
+            qvps = xr.open_mfdataset(files, compat='no_conflicts')
+        else:
+            # there are slight differences (noise) in z coord sometimes so we have to align all datasets
+            # since the time coord has variable length, we cannot use join="override" so we define a function to copy
+            # the z coord from the first dataset into the rest with preprocessing
+            # There could also be some time values missing, ignore those
+            # Some files do not have TEMP data, fill with nan
+            first_file = xr.open_mfdataset(files[0], compat='no_conflicts')
+            first_file_z = first_file.z.copy()
+            def fix_coords(ds, align_z=True, fix_TEMP=True):
+                if align_z:
+                    ds.coords["z"] = first_file_z
+                ds = ds.where(ds["time"].notnull(), drop=True)
+                if "TEMP" not in ds.coords and fix_TEMP:
+                    ds.coords["TEMP"] = xr.full_like( ds["DBZH"], np.nan ).compute()
+
+                return ds
+
+            try:
+                qvps = xr.open_mfdataset(files, preprocess=partial(fix_coords, align_z=align_z, fix_TEMP=fix_TEMP), compat='no_conflicts', join='outer', engine='h5netcdf')
             except:
-                qvps = xr.open_mfdataset(files, compat='no_conflicts', engine='h5netcdf')
+                if align_z:
+                    print("Aligning z coord may have failed, attempting to load without alignment...")
+                try:
+                    qvps = xr.open_mfdataset(files, combine="nested", concat_dim="time", compat='no_conflicts', join='outer', engine='h5netcdf')
+                except:
+                    qvps = xr.open_mfdataset(files, compat='no_conflicts', engine='h5netcdf')
 
     if fillna:
         assign = dict()
@@ -8239,207 +8329,14 @@ def load_icon(files, file_z=None):
 
     return icon_field
 
-def icon_to_radar_volume_old(icon_field, radar_volume):
-    """
-    Function to interpolate variable fields from ICON output into the
-    shape of radar_volume using nearest neighbors.
-
-    Parameters
-    ----------
-    radar_volume : xarray.Dataset
-        Dataset with volume data
-    icon_field : xarray.Dataset
-        ICON fields.
-
-    Returns
-    -------
-    icon_vol : xarray.Dataset
-        ICON fields interpolated into the shape of radar_volume.
-    """
-
-    sitecoords = [float(radar_volume.longitude),
-                  float(radar_volume.latitude),
-                  float(radar_volume.altitude)]
-
-    # proj_wgs84 = wrl.georef.epsg_to_osr(4326)
-
-    # I have to shift the ranges:
-    # wrl.georef.spherical_to_centroids: The ranges are assumed to define the exterior
-    # boundaries of the range bins (thus they must be positive). The angles are assumed
-    # to describe the pointing direction fo the main beam lobe.
-    # cent_coords = wrl.georef.spherical_to_centroids(radar_volume["range"] + radar_volume["range"].diff("range").mean().values/2,
-    #                                                 radar_volume["azimuth"],
-    #                                                 radar_volume["elevation"],
-    #                                                 sitecoords,
-    #                                                 crs=proj_wgs84)
-
-    # lon = xr.ones_like(radar_volume["x"])*cent_coords[:,:,:,0]
-    # lat = xr.ones_like(radar_volume["x"])*cent_coords[:,:,:,1]
-    # alt = xr.ones_like(radar_volume["x"])*cent_coords[:,:,:,2]
-
-    # radar_volume = radar_volume.assign_coords({"lon": lon,
-    #                                            "lat": lat,
-    #                                            "alt": alt})
-
-    xyz, proj_aeqd = wrl.georef.spherical_to_centroids(radar_volume["range"] + radar_volume["range"].diff("range").mean().values/2,
-                                                   radar_volume["azimuth"],
-                                                   radar_volume["elevation"],
-                                                   sitecoords,
-                                                   )
-
-    if "x" not in radar_volume.coords:
-        radar_volume = wrl.georef.georeference(radar_volume)
-
-    lon_icon = np.rad2deg(icon_field["clon"])
-    lat_icon = np.rad2deg(icon_field["clat"])
-    alt_icon_hl = icon_field["z_ifc"]
-    if "z_mc" in icon_field:
-        alt_icon = icon_field["z_mc"]
-    else: # if z_mc is not in the output then calculated based on z_ifc
-        alt_icon = (icon_field["z_ifc"] + icon_field["z_ifc"].shift(height_2=-1))[:-1]/2 # transform from half levels to levels
-        alt_icon = alt_icon.rename({"height_2": "height"})
-
-    # reproject icon into radar grid
-    proj_wgs = osr.SpatialReference()
-    proj_wgs.ImportFromEPSG(4326)
-
-    # proj_stereo = wrl.georef.create_osr("dwd-radolan")
-    # mod_x, mod_y = wrl.georef.reproject(lon_icon.values,
-    #                                     lat_icon.values,
-    #                                     trg_crs=proj_stereo,
-    #                                     src_crs =proj_wgs)
-    # rad_x, rad_y = wrl.georef.reproject(lon.values,
-    #                                     lat.values,
-    #                                     trg_crs=proj_stereo,
-    #                                     src_crs=proj_wgs)
-
-    mod_x, mod_y = wrl.georef.reproject(lon_icon.values,
-                                        lat_icon.values,
-                                        trg_crs=proj_aeqd,
-                                        src_crs =proj_wgs)
-    rad_x, rad_y, alt = radar_volume.x.values, radar_volume.y.values, radar_volume.z
-
-
-    # x y version
-    # only those model data that are in radar domain + bordering volume
-    outer_x = max(0.3 * (rad_x.max() - rad_x.min()), 1)
-    outer_y = max(0.3 * (rad_y.max() - rad_y.min()), 1)
-    lower_z = 50
-    upper_z = 2000
-
-    mask = ((mod_x >= rad_x.min() - outer_x) & (
-            mod_x <= rad_x.max() + outer_x) & (
-                   mod_y >= rad_y.min() - outer_y) & (
-                   mod_y <= rad_y.max() + outer_y) & (
-                   alt_icon >= alt.min() - lower_z) & (
-                   alt_icon <= alt.max() + upper_z)).compute()
-    mask_hl = ((mod_x >= rad_x.min() - outer_x) & (
-            mod_x <= rad_x.max() + outer_x) & (
-                   mod_y >= rad_y.min() - outer_y) & (
-                   mod_y <= rad_y.max() + outer_y) & (
-                   alt_icon_hl >= alt.min() - lower_z) & (
-                   alt_icon_hl <= alt.max() + upper_z)).compute()
-
-    mod_x_hl = mod_x[mask_hl[0]].copy() # make copy because we will modify them below
-    mod_y_hl = mod_y[mask_hl[0]].copy()
-    alt_icon_hl = alt_icon_hl.where(mask_hl, other=False, drop=True)
-
-    mod_x = mod_x[mask[0]]
-    mod_y = mod_y[mask[0]]
-    alt_icon = alt_icon.where(mask, other=False, drop=True)
-
-    src = np.vstack((np.repeat(mod_x[np.newaxis, :], alt_icon.shape[0], axis=0).ravel(),
-                     np.repeat(mod_y[np.newaxis, :], alt_icon.shape[0], axis=0).ravel(),
-                     alt_icon.values.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
-    src_hl = np.vstack((np.repeat(mod_x_hl[np.newaxis, :], alt_icon_hl.shape[0], axis=0).ravel(),
-                     np.repeat(mod_y_hl[np.newaxis, :], alt_icon_hl.shape[0], axis=0).ravel(),
-                     alt_icon_hl.values.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
-    trg = np.vstack((rad_x.flatten().ravel(),
-                     rad_y.flatten().ravel(),
-                     alt.values.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
-
-    # interpolate with pyinterp (only way I was able to compute this quickly)
-    # use nearest neighborhs (inverse_distance_weighting with k=1)
-    # I also tried different configurations of dask delayed, futures and map that
-    # either crashed because of filled memory or were too slow.
-    # Using dask.bag with map worked when creating the bags with appropriate size,
-    # but it is not faster than just looping over timesteps
-    # I also tried xarray.map_blocks but it only works for the first timestep, when
-    # trying to compute other timesteps there is an error.
-    # I did not try with multiprocessing, it could work.
-    vars_to_compute = []
-    vars_to_compute_hl = []
-    for vv in icon_field.data_vars:
-        if vv not in ["z_ifc", "z_mc"]:
-            if "height" in icon_field[vv].dims and "ncells" in icon_field[vv].dims:
-                vars_to_compute.append(vv)
-            if "height_2" in icon_field[vv].dims and "ncells" in icon_field[vv].dims:
-                vars_to_compute_hl.append(vv)
-
-    # Define a reggriding function for one variable and one timestep. The time
-    # dimension must be present (only first timestep is computed)
-    def pyinterp_NN(data):
-        mesh = pyinterp.RTree(ecef=True)
-        mesh.packing(src, data.isel(time=0).where(mask, drop=True).stack(stacked=['height', 'ncells']))
-        data_interp, neighbors = mesh.inverse_distance_weighting(trg, within=False, k=1) # k=1 is like nearest neighbors
-        data_interp_reshape = data_interp.reshape(radar_volume["x"].shape)
-        data_interp_reshape_xr = xr.DataArray(data_interp_reshape,
-                                              coords=radar_volume["x"].coords,
-                                              dims=radar_volume["x"].dims,
-                                              name="data_interp_shape").expand_dims(dim={"time": data["time"]}, axis=0)
-        return data_interp_reshape_xr
-
-    def pyinterp_NN_hl(data):
-        mesh = pyinterp.RTree(ecef=True)
-        mesh.packing(src_hl, data.isel(time=0).where(mask_hl, drop=True).stack(stacked=['height_2', 'ncells']))
-        data_interp, neighbors = mesh.inverse_distance_weighting(trg, within=False, k=1) # k=1 is like nearest neighbors
-        data_interp_reshape = data_interp.reshape(radar_volume["x"].shape)
-        data_interp_reshape_xr = xr.DataArray(data_interp_reshape,
-                                              coords=radar_volume["x"].coords,
-                                              dims=radar_volume["x"].dims,
-                                              name="data_interp_shape").expand_dims(dim={"time": data["time"]}, axis=0)
-        return data_interp_reshape_xr
-
-    # Define a function to process each variable and timestep
-    def process_variable_time(var, func):
-        """Apply a function to each timestep of a variable."""
-        results = []
-        for t in range(var.sizes['time']):
-            result = func(var.isel(time=t).expand_dims("time"))
-            results.append(result)
-
-        # Combine the results along the time dimension
-        return xr.concat(results, dim='time', join="outer", coords="different", compat='equals')
-
-    # Wrapper to process all variables in the dataset
-    def process_dataset(ds, func):
-        """Apply a function to all variables and timesteps in a dataset."""
-        processed_vars = {}
-
-        for var_name, var_data in ds.data_vars.items():
-            print(var_name)
-            processed_vars[var_name] = process_variable_time(var_data, func).assign_attrs(ds[var_name].attrs)
-
-        # Combine all variables back into a dataset
-        return xr.Dataset(processed_vars)
-
-    # Apply the function to icon_field
-    start_time = time.time()
-    print("Regridding ICON fields to radar volume...")
-    icon_vol = process_dataset(icon_field[vars_to_compute], pyinterp_NN)
-    icon_vol_hl = process_dataset(icon_field[vars_to_compute_hl], pyinterp_NN_hl)
-    total_time = time.time() - start_time
-    print(f"... took {total_time/60:.2f} minutes to run.")
-    # Regridding took 14.92 minutes to run for temp, u, v
-    # Regridding took 4.58 minutes to run for temp
-
-    return xr.merge([icon_vol, icon_vol_hl], compat='no_conflicts')
-
-def icon_to_radar_volume(icon_field, radar_volume):
+def icon_to_radar_volume_serialized(icon_field, radar_volume):
     """
     Function to interpolate variable fields from ICON output into the
     shape of radar_volume using nearest neighbors. Handles both rotated
     (2D coords) and regular (1D coords) grids.
+
+    This is the original version (serialized and thus slower) of the newer
+    icon_to_radar_volume
 
     Parameters
     ----------
@@ -8473,8 +8370,11 @@ def icon_to_radar_volume(icon_field, radar_volume):
     mod_x = lon_icon.values
     mod_y = lat_icon.values
 
-    # Make mod_x and mod_y 2D if they are 1D (Standard Lat/Lon grid) ---
-    if mod_x.ndim == 1 and mod_y.ndim == 1:
+    # Make mod_x and mod_y 2D if they are 1D and Standard Lat/Lon grid ---
+    # On the ICON native grid, clon/clat are already per-cell (ncells,) pairs.
+    is_unstructured = "ncells" in icon_field.dims
+
+    if not is_unstructured and mod_x.ndim == 1 and mod_y.ndim == 1:
         mod_x, mod_y = np.meshgrid(mod_x, mod_y)
 
     # ICON is already in WGS84, we need to georeference the radar volume to the same system
@@ -8505,17 +8405,16 @@ def icon_to_radar_volume(icon_field, radar_volume):
                    alt_icon_hl >= alt.min() - lower_z) & (
                    alt_icon_hl <= alt.max() + upper_z)).compute()
 
-    alt_icon_z = alt_icon.shape[0]
-    alt_icon_hl_z = alt_icon_hl.shape[0]
+    mask_np    = mask.values
+    mask_hl_np = mask_hl.values
 
-    mod_x_masked = np.repeat(mod_x[np.newaxis, :], alt_icon_z, axis=0)[mask]
-    mod_y_masked = np.repeat(mod_y[np.newaxis, :], alt_icon_z, axis=0)[mask]
-    alt_icon_masked = alt_icon.values[mask]
+    mod_x_masked = np.broadcast_to(mod_x, mask_np.shape)[mask_np]
+    mod_y_masked = np.broadcast_to(mod_y, mask_np.shape)[mask_np]
+    alt_icon_masked = alt_icon.values[mask_np]
 
-    mod_x_hl_masked = np.repeat(mod_x[np.newaxis, :], alt_icon_hl_z, axis=0)[mask_hl].copy() # make copy because we will modify them below
-    mod_y_hl_masked = np.repeat(mod_y[np.newaxis, :], alt_icon_hl_z, axis=0)[mask_hl].copy() # make copy because we will modify them below
-    alt_icon_hl = alt_icon_hl.values[mask_hl]
-
+    mod_x_hl_masked = np.broadcast_to(mod_x, mask_hl_np.shape)[mask_hl_np]
+    mod_y_hl_masked = np.broadcast_to(mod_y, mask_hl_np.shape)[mask_hl_np]
+    alt_icon_hl = alt_icon_hl.values[mask_hl_np]
 
     src = np.vstack((mod_x_masked,
                      mod_y_masked,
@@ -8632,11 +8531,9 @@ def icon_to_radar_volume(icon_field, radar_volume):
         icon_vol = process_dataset(icon_field_stacked.where(icon_field_stacked.mask.fillna(False), drop=True), pyinterp_NN)
     if len(vars_to_compute_hl) > 0:
         icon_field_stacked_hl = icon_field[vars_to_compute_hl].assign_coords(mask_hl=mask_hl).where(mask_hl, drop=True).stack(stacked=dims3D_h2)
-        icon_vol_hl = process_dataset(icon_field_stacked_hl.where(icon_field_stacked_hl.mask_hl.fillna(False), drop=True), pyinterp_NN)
+        icon_vol_hl = process_dataset(icon_field_stacked_hl.where(icon_field_stacked_hl.mask_hl.fillna(False), drop=True), pyinterp_NN_hl)
     total_time = time.time() - start_time
     print(f"... took {total_time/60:.2f} minutes to run.")
-    # Regridding took 14.92 minutes to run for temp, u, v
-    # Regridding took 4.58 minutes to run for temp
 
     if len(vars_to_compute) > 0 and len(vars_to_compute_hl) > 0:
         return xr.merge([icon_vol, icon_vol_hl], compat='no_conflicts')
@@ -8645,6 +8542,277 @@ def icon_to_radar_volume(icon_field, radar_volume):
     elif len(vars_to_compute_hl) > 0 :
         return icon_vol_hl
 
+def icon_to_radar_volume(icon_field, radar_volume,
+                         indexer_cache=None, return_cache=False):
+    """
+    Function to interpolate variable fields from ICON output into the
+    shape of radar_volume using nearest neighbors. Handles both rotated
+    (2D coords) and regular (1D coords) grids.
+
+    Parameters
+    ----------
+    radar_volume : xarray.Dataset
+        Dataset with volume data
+    icon_field : xarray.Dataset
+        ICON fields.
+    indexer_cache : dict of xarray.Dataset
+        Dictionary containing the masks and indexers to skip the computations
+        and directly regrid the data.
+    return_cache : bool
+        If True, returns also the indexer cache.
+
+    Returns
+    -------
+    icon_vol : xarray.Dataset
+        ICON fields interpolated into the shape of radar_volume.
+    """
+    # First get the variables that need to be regridded
+    vars_to_compute = []
+    vars_to_compute_hl = []
+    for vv in icon_field.data_vars:
+        if vv not in ["z_ifc", "z_mc"]:
+            has_spatial_dims = ("ncells" in icon_field[vv].dims or "x" in icon_field[vv].dims or "lon" in icon_field[vv].dims)
+            if "height" in icon_field[vv].dims and has_spatial_dims:
+                vars_to_compute.append(vv)
+            if "height_2" in icon_field[vv].dims and has_spatial_dims:
+                vars_to_compute_hl.append(vv)
+
+    if "ncells" in icon_field.dims:
+        dims3D = ['height', 'ncells']
+        dims3D_h2 = ['height_2', 'ncells']
+    elif "x" in icon_field.dims:
+        dims3D = ['height', 'y', 'x']
+        dims3D_h2 = ['height_2', 'y', 'x']
+    elif "lon" in icon_field.dims:
+        dims3D = ['height', 'lat', 'lon']
+        dims3D_h2 = ['height_2', 'lat', 'lon']
+
+    # ------------------------------------------------------------
+    # A. Use cached indexer if provided
+    # ------------------------------------------------------------
+    if indexer_cache is not None:
+        mask = indexer_cache.get("mask")
+        mask_hl = indexer_cache.get("mask_hl")
+        icon_index = indexer_cache.get("icon_index")
+        icon_index_hl = indexer_cache.get("icon_index_hl")
+        radar_dims = indexer_cache.get("radar_dims")
+    # ------------------------------------------------------------
+    # B. Otherwise, compute everything from scratch
+    # ------------------------------------------------------------
+    else:
+        try:
+            lon_icon = np.rad2deg(icon_field["clon"])
+            lat_icon = np.rad2deg(icon_field["clat"])
+        except KeyError:
+            lon_icon = icon_field["lon"]
+            lat_icon = icon_field["lat"]
+        except:
+            raise KeyError("!!! ERROR: Not able to extract lon and lat from icon_field !!!")
+
+        alt_icon_hl = icon_field["z_ifc"]
+        if "z_mc" in icon_field:
+            alt_icon = icon_field["z_mc"]
+        else: # if z_mc is not in the output then calculated based on z_ifc
+            alt_icon = (icon_field["z_ifc"] + icon_field["z_ifc"].shift(height_2=-1))[:-1]/2 # transform from half levels to levels
+            alt_icon = alt_icon.rename({"height_2":"height"})
+
+        mod_x = lon_icon.values
+        mod_y = lat_icon.values
+
+        # Make mod_x and mod_y 2D if they are 1D and Standard Lat/Lon grid ---
+        # On the ICON native grid, clon/clat are already per-cell (ncells,) pairs.
+        is_unstructured = "ncells" in icon_field.dims
+
+        if not is_unstructured and mod_x.ndim == 1 and mod_y.ndim == 1:
+            mod_x, mod_y = np.meshgrid(mod_x, mod_y)
+
+        # ICON is already in WGS84, we need to georeference the radar volume to the same system
+        proj_wgs = osr.SpatialReference()
+        proj_wgs.ImportFromEPSG(4326)
+
+        radar_volume = wrl.georef.georeference(radar_volume, crs=proj_wgs)
+
+        rad_x, rad_y, alt = radar_volume.x.values, radar_volume.y.values, radar_volume.z
+
+        # x y version
+        # only those model data that are in radar domain + bordering volume
+        outer_x = 0.5
+        outer_y = 0.5
+        lower_z = 50
+        upper_z = 2000
+
+        mask = ((mod_x >= rad_x.min() - outer_x) & (
+                mod_x <= rad_x.max() + outer_x) & (
+                       mod_y >= rad_y.min() - outer_y) & (
+                       mod_y <= rad_y.max() + outer_y) & (
+                       alt_icon >= alt.min() - lower_z) & (
+                       alt_icon <= alt.max() + upper_z)).compute()
+        mask_hl = ((mod_x >= rad_x.min() - outer_x) & (
+                mod_x <= rad_x.max() + outer_x) & (
+                       mod_y >= rad_y.min() - outer_y) & (
+                       mod_y <= rad_y.max() + outer_y) & (
+                       alt_icon_hl >= alt.min() - lower_z) & (
+                       alt_icon_hl <= alt.max() + upper_z)).compute()
+
+        mask_np    = mask.values
+        mask_hl_np = mask_hl.values
+
+        mod_x_masked = np.broadcast_to(mod_x, mask_np.shape)[mask_np]
+        mod_y_masked = np.broadcast_to(mod_y, mask_np.shape)[mask_np]
+        alt_icon_masked = alt_icon.values[mask_np]
+
+        mod_x_hl_masked = np.broadcast_to(mod_x, mask_hl_np.shape)[mask_hl_np]
+        mod_y_hl_masked = np.broadcast_to(mod_y, mask_hl_np.shape)[mask_hl_np]
+        alt_icon_hl = alt_icon_hl.values[mask_hl_np]
+
+        src = np.vstack((mod_x_masked,
+                         mod_y_masked,
+                         alt_icon_masked  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
+        src_hl = np.vstack((mod_x_hl_masked,
+                         mod_y_hl_masked,
+                         alt_icon_hl.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
+
+        trg = np.vstack((rad_x.flatten().ravel(),
+                         rad_y.flatten().ravel(),
+                         alt.values.ravel()  )).T # divide alt by 1000 if x and y are in km (depends on projection chosen)
+
+        # interpolate with pyinterp (only way I was able to compute this quickly)
+        # use nearest neighborhs (inverse_distance_weighting with k=1)
+        # I also tried different configurations of dask delayed, futures and map that
+        # either crashed because of filled memory or were too slow.
+        # Using dask.bag with map worked when creating the bags with appropriate size,
+        # but it is not faster than just looping over timesteps
+        # I also tried xarray.map_blocks but it only works for the first timestep, when
+        # trying to compute other timesteps there is an error.
+        # I did not try with multiprocessing, it could work.
+
+        # Define the nearest neighbors indices
+
+        # Create the configuration object for k=1 and within=False
+        query_config = pyinterp.config.rtree.Query().with_k(1)
+
+        if len(vars_to_compute) > 0:
+            # Create an array of row indices to pack as the "values"
+            indices_array = np.arange(len(src), dtype=np.float64)
+
+            mesh = pyinterp.RTree3D(spheroid=pyinterp.core.geometry.geographic.Spheroid())
+            mesh.packing(src, indices_array)
+
+            # .query() replaces .value() and returns (distances, values).
+            # Because we packed indices_array, 'values' contains the nearest neighbor indices!
+            # Note: 'within=False' is now handled by the default behavior
+            distances, nearest_indices = mesh.query(trg, config=query_config)
+
+            # Flatten and cast back to integers for numpy array slicing
+            indices = nearest_indices.flatten().astype(int)
+
+        if len(vars_to_compute_hl) > 0:
+            # Repeat the same direct-index packing for the half-levels
+            indices_array_hl = np.arange(len(src_hl), dtype=np.float64)
+
+            mesh_hl = pyinterp.RTree3D(spheroid=pyinterp.core.geometry.geographic.Spheroid())
+            mesh_hl.packing(src_hl, indices_array_hl)
+
+            distances_hl, nearest_indices_hl = mesh_hl.query(trg, config=query_config)
+
+            indices_hl = nearest_indices_hl.flatten().astype(int)
+
+        radar_dims = list(radar_volume["x"].dims)
+        radar_shape = radar_volume["x"].shape
+        if len(vars_to_compute) > 0:
+            # Create an Xarray DataArray for the nearest neighbor indices
+            icon_index = xr.DataArray(
+                indices.reshape(radar_shape),
+                dims=radar_dims,
+                coords={dim: radar_volume[dim] for dim in radar_dims if dim in radar_volume.coords}
+            )
+        else:
+            icon_index = None
+
+        if len(vars_to_compute_hl) > 0:
+            icon_index_hl = xr.DataArray(
+                indices_hl.reshape(radar_shape),
+                dims=radar_dims,
+                coords={dim: radar_volume[dim] for dim in radar_dims if dim in radar_volume.coords}
+            )
+        else:
+            icon_index_hl = None
+
+    # Core indexing function for apply_ufunc
+    def map_indices(values, idx):
+        # 'values' shape: (..., stacked)
+        # 'idx' shape: (..., elevation, azimuth, range)
+        # Ellipsis (...) handles 'time' or any other non-core dimensions automatically
+        return values[..., idx]
+
+    # Apply the function to icon_field
+    start_time = time.time()
+    print("Regridding ICON fields to radar volume...")
+    if len(vars_to_compute) == 0 and len(vars_to_compute_hl) == 0:
+        raise ValueError("ERROR: icon_field has no appropriate variables to regrid")
+
+    if len(vars_to_compute) > 0:
+        icon_field_stacked = icon_field[vars_to_compute].assign_coords(mask=mask).where(mask, drop=True).stack(stacked=dims3D)
+        valid_stacked = icon_field_stacked.where(icon_field_stacked.mask.fillna(False), drop=True)
+
+        # Distribute the indexing across all variables simultaneously
+        icon_vol = xr.apply_ufunc(
+            map_indices,
+            valid_stacked,
+            icon_index,
+            input_core_dims=[["stacked"], radar_dims],
+            output_core_dims=[radar_dims],
+            dask="parallelized",         # Enables chunked Dask processing
+            vectorize=False,
+            keep_attrs=True,             # Preserves variable attributes
+            output_dtypes=[valid_stacked[vars_to_compute[0]].dtype]
+        )
+
+    if len(vars_to_compute_hl) > 0:
+        icon_field_stacked_hl = icon_field[vars_to_compute_hl].assign_coords(mask_hl=mask_hl).where(mask_hl, drop=True).stack(stacked=dims3D_h2)
+        valid_stacked_hl = icon_field_stacked_hl.where(icon_field_stacked_hl.mask_hl.fillna(False), drop=True)
+
+        icon_vol_hl = xr.apply_ufunc(
+            map_indices,
+            valid_stacked_hl,
+            icon_index_hl,
+            input_core_dims=[["stacked"], radar_dims],
+            output_core_dims=[radar_dims],
+            dask="parallelized",
+            vectorize=False,
+            keep_attrs=True,
+            output_dtypes=[valid_stacked_hl[vars_to_compute_hl[0]].dtype]
+        )
+
+    total_time = time.time() - start_time
+    print(f"... took {total_time/60:.2f} minutes to run.")
+
+    # Restore coords
+    if len(vars_to_compute) > 0:
+        icon_vol = icon_vol.assign_coords(radar_volume.coords)
+    if len(vars_to_compute_hl) > 0:
+        icon_vol_hl = icon_vol_hl.assign_coords(radar_volume.coords)
+
+    # Determine final dataset
+    if len(vars_to_compute) > 0 and len(vars_to_compute_hl) > 0:
+        final_ds = xr.merge([icon_vol, icon_vol_hl], compat='no_conflicts')
+    elif len(vars_to_compute) > 0:
+        final_ds = icon_vol
+    elif len(vars_to_compute_hl) > 0:
+        final_ds = icon_vol_hl
+
+    # Return cache alongside data if requested
+    if return_cache:
+        new_cache = {
+            "mask": mask,
+            "mask_hl": mask_hl,
+            "icon_index": icon_index,
+            "icon_index_hl": icon_index_hl,
+            "radar_dims": radar_dims
+        }
+        return final_ds, new_cache
+
+    return final_ds
 
 # ICON / EMVORADO specific stuff, code adapted from Jana Mendrok (DWD)
 

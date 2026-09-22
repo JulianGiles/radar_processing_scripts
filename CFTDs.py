@@ -9,6 +9,7 @@ Script for calculating CFTDS
 """
 
 import os
+os.environ["ICECHUNK_NO_LOGS"] = "1" # Silence Icechunk Rust warnings
 import sys
 
 # List all possible paths where this script might live
@@ -47,6 +48,34 @@ import shutil
 
 from joblib import Parallel, delayed
 from itertools import combinations_with_replacement
+
+# Icechunk helper functions
+from icechunk import Repository, local_filesystem_storage
+from icechunk.xarray import to_icechunk
+
+def save_icechunk(ds, path, append=False):
+    """Helper to save or append xarray dataset to Icechunk repository."""
+    storage = local_filesystem_storage(path)
+    if append:
+        repo = Repository.open(storage)
+        session = repo.writable_session("main")
+        to_icechunk(ds, session, append_dim="time")
+        session.commit("Append data")
+    else:
+        try:
+            repo = Repository.open(storage)
+        except Exception:
+            repo = Repository.create(storage)
+        session = repo.writable_session("main")
+        to_icechunk(ds, session)
+        session.commit("Save data")
+
+def open_icechunk(path):
+    """Helper to load xarray dataset from Icechunk repository."""
+    storage = local_filesystem_storage(path)
+    repo = Repository.open(storage)
+    session = repo.readonly_session("main")
+    return xr.open_zarr(session.store, consolidated=False)
 
 import utils
 import radarmet
@@ -167,40 +196,48 @@ if not reload_zarr:
     if "TEMP" not in qvps.coords:
         qvps = qvps.set_coords("TEMP")
 
-    # Save QVPs into single file and reload
-    print("Saving QVPs in single zarr file and reloading...")
+    files_to_load = sorted(glob.glob(ff)) if isinstance(ff, str) else sorted(ff)
+    is_zarr_input = all(f.endswith('.zarr') or f.endswith('.zarr/') for f in files_to_load)
 
-    # BULLETPROOF OVERWRITE: Remove the old directory if it exists
-    if os.path.exists(path_qvpsinglefile):
-        print(f"...Removing old archive at {path_qvpsinglefile}...")
-        shutil.rmtree(path_qvpsinglefile)
+    if not is_zarr_input:
+        # Save QVPs into single file and reload
+        print("Saving QVPs in single zarr file and reloading...")
 
-    os.makedirs(os.path.dirname(path_qvpsinglefile), exist_ok=True)
+        # BULLETPROOF OVERWRITE: Remove the old directory if it exists
+        if os.path.exists(path_qvpsinglefile):
+            print(f"...Removing old archive at {path_qvpsinglefile}...")
+            shutil.rmtree(path_qvpsinglefile)
 
-    if "HTY" in path_qvps:
-        # For hty we split the process into years because it is too large
-        unique_years = np.unique(qvps['time'].dt.year.values)
-        # Loop through each year and save/append to Zarr
-        for i, year in enumerate(unique_years):
-            print(f"... year {year} ...")
+        os.makedirs(os.path.dirname(path_qvpsinglefile), exist_ok=True)
 
-            # Isolate the data for just this year
-            qvps_year = qvps.sel(time=qvps['time'].dt.year == year)
+        if "HTY" in path_qvps:
+            # For hty we split the process into years because it is too large
+            unique_years = np.unique(qvps['time'].dt.year.values)
+            # Loop through each year and save/append to Zarr
+            for i, year in enumerate(unique_years):
+                print(f"... year {year} ...")
 
-            # Apply your uniform chunk sizes to fix the Zarr shape requirements
-            qvps_year = qvps_year.chunk({'time': 200, 'z': 200})
+                # Isolate the data for just this year
+                qvps_year = qvps.sel(time=qvps['time'].dt.year == year)
 
-            # Save or Append
-            if i == 0:
-                # First year: initialize the Zarr store
-                qvps_year.to_zarr(path_qvpsinglefile, mode="w", consolidated=True, zarr_format=2)
-            else:
-                # Subsequent years: append along the time dimension
-                qvps_year.to_zarr(path_qvpsinglefile, mode="a", append_dim="time", consolidated=True, align_chunks=True)
+                # Apply your uniform chunk sizes to fix the Zarr shape requirements
+                qvps_year = qvps_year.chunk({'time': 200, 'z': 200})
+
+                # Save or Append
+                if i == 0:
+                    # First year: initialize the Zarr store
+                    save_icechunk(qvps_year, path_qvpsinglefile, append=False)
+                else:
+                    # Subsequent years: append along the time dimension
+                    save_icechunk(qvps_year, path_qvpsinglefile, append=True)
+        else:
+            save_icechunk(qvps.chunk({'time': 200, 'z': 200}), path_qvpsinglefile, append=False)
+            
+        qvps = open_icechunk(path_qvpsinglefile)
     else:
-        qvps.chunk({'time': 200, 'z': 200}).to_zarr(path_qvpsinglefile, mode="w", consolidated=True, zarr_format=2)
-
-qvps = xr.open_zarr(path_qvpsinglefile)
+        print("Input files are already Zarr, skipping unified archive creation...")
+else:
+    qvps = open_icechunk(path_qvpsinglefile)
 
 # # Load daily data
 # # ## Special selection of convective dates based on DBZH_over_30.txt files
@@ -352,9 +389,9 @@ for stratname, stratqvp in [("unfiltered", qvps.copy()),
         for ll in retrievals_qvpbased[stratname].keys():
             # with dask.config.set(scheduler='single-threaded'):
             #     retrievals_qvpbased[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname+"/"+ll+".nc", engine='h5netcdf')
-            retrievals_qvpbased[stratname][ll].chunk({'time': 200, 'z': 200}).to_zarr(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname+"/"+ll+".zarr", mode='w', consolidated=True, zarr_format=2)
+            save_icechunk(retrievals_qvpbased[stratname][ll].chunk({'time': 200, 'z': 200}), realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname+"/"+ll+".zarr", append=False)
 
-    retrievals_qvpbased[stratname][loc] = xr.open_zarr(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname+"/"+loc+".zarr")
+    retrievals_qvpbased[stratname][loc] = open_icechunk(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname+"/"+loc+".zarr")
 
 # Check also if the retrievals are already in the QVP and pull them into a new dict
 try: # check if exists, if not, create it
@@ -400,9 +437,9 @@ for stratname, stratqvp in [("unfiltered", qvps.copy()),
         for ll in retrievals[stratname].keys():
             # with dask.config.set(scheduler='single-threaded'):
             #     retrievals[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname+"/"+ll+".nc", engine='h5netcdf')
-            retrievals[stratname][ll].chunk({'time': 200, 'z': 200}).to_zarr(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname+"/"+ll+".zarr", mode='w', consolidated=True, zarr_format=2)
+            save_icechunk(retrievals[stratname][ll].chunk({'time': 200, 'z': 200}), realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname+"/"+ll+".zarr", append=False)
 
-    retrievals[stratname][loc] = xr.open_zarr(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname+"/"+loc+".zarr")
+    retrievals[stratname][loc] = open_icechunk(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname+"/"+loc+".zarr")
 
 partial_time = time.time() - p_time
 print(f"... took {partial_time/60:.2f} minutes.")
@@ -568,10 +605,10 @@ if not reload_zarr:
                     shutil.rmtree(path_qvpsfil)
                 os.makedirs(os.path.dirname(path_qvpsfil), exist_ok=True)
 
-                stratqvp_chunk.to_zarr(path_qvpsfil, mode="w", consolidated=True, zarr_format=2)
+                save_icechunk(stratqvp_chunk, path_qvpsfil, append=False)
             else:
                 # Append subsequent batches
-                stratqvp_chunk.to_zarr(path_qvpsfil, mode="a", append_dim="time", consolidated=True, align_chunks=True)
+                save_icechunk(stratqvp_chunk, path_qvpsfil, append=True)
 
         # Free memory
         del qvps_chunk, qvps_fil, stratqvp_chunk
@@ -580,9 +617,9 @@ if not reload_zarr:
         is_first_write = False
 
 # Reload
-qvps_strat_fil = xr.open_zarr(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform/"+loc+".zarr")
-qvps_strat_relaxed_fil = xr.open_zarr(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform_relaxed/"+loc+".zarr")
-qvps_strat_ML_fil = xr.open_zarr(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform_ML/"+loc+".zarr")
+qvps_strat_fil = open_icechunk(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform/"+loc+".zarr")
+qvps_strat_relaxed_fil = open_icechunk(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform_relaxed/"+loc+".zarr")
+qvps_strat_ML_fil = open_icechunk(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform_ML/"+loc+".zarr")
 
 partial_time = time.time() - p_time
 print(f"... took {partial_time/60:.2f} minutes.")
@@ -619,10 +656,10 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
             shutil.rmtree(path_qvpretrievals)
         os.makedirs(os.path.dirname(path_qvpretrievals), exist_ok=True)
 
-        retrievals_qvpbased[stratname][loc].to_zarr(path_qvpretrievals, mode="w", consolidated=True, zarr_format=2)
+        save_icechunk(retrievals_qvpbased[stratname][loc], path_qvpretrievals, append=False)
 
     # reload
-    retrievals_qvpbased[stratname][loc] = xr.open_zarr(path_qvpretrievals)
+    retrievals_qvpbased[stratname][loc] = open_icechunk(path_qvpretrievals)
 
 print("... PPI-based retrievals ...")
 for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
@@ -651,10 +688,10 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
             shutil.rmtree(path_retrievals)
         os.makedirs(os.path.dirname(path_retrievals), exist_ok=True)
 
-        retrievals[stratname][loc].to_zarr(path_retrievals, mode="w", consolidated=True, zarr_format=2)
+        save_icechunk(retrievals[stratname][loc], path_retrievals, append=False)
 
     # reload
-    retrievals[stratname][loc] = xr.open_zarr(path_retrievals)
+    retrievals[stratname][loc] = open_icechunk(path_retrievals)
 
 print("...riming ...")
 for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
@@ -1669,9 +1706,9 @@ ll = "pro"
 
 if reload_qvps:
     print("Reloading filtered qvps")
-    qvps_strat_fil = xr.open_zarr(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform/"+ll+".zarr")
-    qvps_strat_relaxed_fil = xr.open_zarr(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform_relaxed/"+ll+".zarr")
-    qvps_strat_ML_fil = xr.open_zarr(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform_ML/"+ll+".zarr")
+    qvps_strat_fil = open_icechunk(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform/"+ll+".zarr")
+    qvps_strat_relaxed_fil = open_icechunk(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform_relaxed/"+ll+".zarr")
+    qvps_strat_ML_fil = open_icechunk(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform_ML/"+ll+".zarr")
 
 if reload_retrievals:
     print("Reloading retrievals")
@@ -1691,12 +1728,12 @@ if reload_retrievals:
         retrievals_qvpbased[stratname] = {}
         path_qvpretrievals = realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname+"/"+ll+".zarr"
 
-        retrievals_qvpbased[stratname][ll] = xr.open_zarr(path_qvpretrievals)
+        retrievals_qvpbased[stratname][ll] = open_icechunk(path_qvpretrievals)
 
         retrievals[stratname] = {}
         path_retrievals = realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname+"/"+ll+".zarr"
 
-        retrievals[stratname][ll] = xr.open_zarr(path_retrievals)
+        retrievals[stratname][ll] = open_icechunk(path_retrievals)
 
 #%% CFTDs Plot
 
