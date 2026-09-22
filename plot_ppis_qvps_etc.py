@@ -114,6 +114,7 @@ if __name__ == "__main__": # set guard
     # ds = utils.load_dwd_preprocessed(ff)
     # ds = utils.load_dwd_raw(ff)
     ds = utils.load_dmi_preprocessed(ff)
+    # ds = utils.load_icechunk_zarr_ppi(ff)
     # ds = utils.load_volume(sorted(glob.glob(ff)), func=utils.load_dmi_preprocessed)
 
     # check if we are dealing with several elevations
