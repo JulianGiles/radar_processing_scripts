@@ -13,6 +13,7 @@ path is loaded and processed at the same time.
 """
 
 import os
+os.environ["ICECHUNK_NO_LOGS"] = "1" # Silence Icechunk Rust warnings
 try:
     os.chdir('/home/jgiles/')
 except FileNotFoundError:
@@ -25,9 +26,12 @@ import wradlib as wrl
 import sys
 import glob
 import xarray as xr
+from icechunk import Repository, local_filesystem_storage
+from icechunk.xarray import to_icechunk
 
 import warnings
 warnings.filterwarnings('ignore', category=RuntimeWarning)
+warnings.filterwarnings('ignore', message='.*does not have a Zarr V3 specification.*')
 
 try:
     from Scripts.python.radar_processing_scripts import utils
@@ -71,12 +75,12 @@ if len(files_emv) != len(files_icon):
 if os.path.exists("/automount/ags/jgiles/ERA5/hourly/"):
     # then we are in local system
     era5_dir = "/automount/ags/jgiles/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
-elif os.path.exists("/p/scratch/detectrea/giles1/ERA5/hourly/"):
+elif os.path.exists("/p/scratch/detectrea2/giles1/ERA5/hourly/"):
     # then we are in JSC
-    era5_dir = "/p/scratch/detectrea/giles1/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
-elif os.path.exists("/p/largedata2/detectdata/projects/A04/ERA5/hourly/"):
+    era5_dir = "/p/scratch/detectrea2/giles1/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
+elif os.path.exists("/p/data1/detectdata/CentralDB/projects/a04/working_directory//ERA5/hourly/"):
     # then we are in JSC
-    era5_dir = "/p/largedata2/detectdata/projects/A04/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
+    era5_dir = "/p/data1/detectdata/CentralDB/projects/a04/working_directory/ERA5/hourly/loc/pressure_level_vars/" # dummy loc placeholder, it gets replaced below
 
 # names of variables
 phidp_names = ["PHIDP"] # names to look for the PHIDP variable, in order of preference
@@ -108,6 +112,31 @@ def make_savedir(ff, replace=("/run/", "/run/qvps/")):
     if not os.path.exists(savepathdir):
         os.makedirs(savepathdir)
     return savepath
+
+def save_with_icechunk(ds, path, commit_message="Save data"):
+    """Helper function to save xarray dataset to Icechunk/Zarr repository."""
+    # Replace common NetCDF/HDF extensions with .zarr
+    for ext in [".hd5", ".h5", ".nc"]:
+        if path.endswith(ext):
+            path = path[:-len(ext)] + ".zarr"
+            break
+    else:
+        path = path + ".zarr" # append if no known extension
+
+    # Ensure directory exists (even though make_savedir creates the parent)
+    savepathdir = os.path.dirname(path)
+    if not os.path.exists(savepathdir):
+        os.makedirs(savepathdir)
+
+    storage = local_filesystem_storage(path)
+    try:
+        repo = Repository.open(storage)
+    except Exception:
+        repo = Repository.create(storage)
+
+    session = repo.writable_session("main")
+    to_icechunk(ds, session)
+    session.commit(commit_message)
 
 # PHIDP processing / KDP calc parameters
 window0max = 25 # max value for window0 (only applied if window0 is given in meters)
@@ -473,7 +502,7 @@ def clean_xr_attrs(dataset):
 
 # save file
 ds_qvp_ra = clean_xr_attrs(ds_qvp_ra)
-ds_qvp_ra.to_netcdf(savepath)
+save_with_icechunk(ds_qvp_ra, savepath, commit_message="Save QVP")
 
 #%% Save PPI
 if save_processed_ppi:
@@ -482,26 +511,9 @@ if save_processed_ppi:
         print("Files already exist, skipping: "+savepath)
         exit()
 
-    for vv in ds.data_vars:
-        # set the encoding, try to copy original encodings
-        if ds[vv].dtype == "float" or ds[vv].dtype == "float32" or ds[vv].dtype == "float64":
-            if len(ds[vv].encoding) == 0:
-                try:
-                    enc = ds[vv.split("_")[0]].encoding.copy()
-                    if len(enc) != 0:
-                        ds[vv].encoding = enc.copy()
-                    else:
-                        ds[vv].encoding = {'zlib': True, 'complevel': 6}
-                        if ds[vv].dims == ds["DBZH"].dims:
-                            ds[vv].encoding.update({k: ds["DBZH"].encoding[k] for k in ("chunksizes", "preferred_chunks", "original_shape")})
-                except:
-                    ds[vv].encoding = {'zlib': True, 'complevel': 6}
-                    if ds[vv].dims == ds["DBZH"].dims:
-                        ds[vv].encoding.update({k: ds["DBZH"].encoding[k] for k in ("chunksizes", "preferred_chunks", "original_shape")})
-
     # Apply the exact same cleanup to the PPI dataset before saving
     ds = clean_xr_attrs(ds)
-    ds.to_netcdf(savepath_ppi)
+    save_with_icechunk(ds, savepath_ppi, commit_message="Save final PPI")
 
     with open( os.path.dirname(savepath_ppi)+'/DONE.txt', 'w') as f:
         f.write('')
