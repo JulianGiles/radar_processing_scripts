@@ -135,6 +135,19 @@ def save_with_icechunk(ds, path, commit_message="Save data"):
         repo = Repository.create(storage)
 
     session = repo.writable_session("main")
+
+    # Apply Zstd Compression
+    from zarr.codecs import BloscCodec
+    compressor = BloscCodec(cname='zstd', clevel=5, shuffle='bitshuffle')
+    for var in ds.data_vars:
+        ds[var].encoding.pop('compressor', None) # Remove deprecated key
+        
+        # Remove HDF5/NetCDF specific keys to prevent clashes with Zarr
+        for key in ['zlib', 'szip', 'bzip2', 'blosc', 'complevel', 'shuffle', 'fletcher32', 'contiguous']:
+            ds[var].encoding.pop(key, None)
+            
+        ds[var].encoding['compressors'] = [compressor]
+
     to_icechunk(ds, session)
     session.commit(commit_message)
 
@@ -513,7 +526,38 @@ if save_processed_ppi:
 
     # Apply the exact same cleanup to the PPI dataset before saving
     ds = clean_xr_attrs(ds)
-    save_with_icechunk(ds, savepath_ppi, commit_message="Save final PPI")
+
+    # Drop unwanted variables
+    vars_to_drop = ["KDP_ML_corrected", "PBB", "KDP_CONV", "PHI_CONV", "KDP_CONV_EC",
+                    "ZDR_AC", "ZDR_EC_AC_rain", "ZDR_AC_rain"]
+    vars_to_drop.extend([v for v in ds.data_vars if v.endswith("_lin")])
+    vars_to_drop = [v for v in vars_to_drop if v in ds]
+    ds_to_save = ds.drop_vars(vars_to_drop)
+
+    # Downcast float64 to float32 for all variables (including coordinates)
+    for v in ds_to_save.variables:
+        if ds_to_save[v].dtype == "float64":
+            ds_to_save[v] = ds_to_save[v].astype("float32")
+
+    # Rechunk to create massive contiguous blocks for optimal Zstd compression
+    # Setting to -1 means "one single chunk for this dimension"
+    rechunk_dict = {dim: -1 for dim in ds_to_save.dims}
+    ds_to_save = ds_to_save.chunk(rechunk_dict)
+
+    # Apply scale/offset packing by copying encodings from the original dataset
+    for v in ds_to_save.data_vars:
+        # Find base variable name (e.g. DBZH_AC_rain -> DBZH)
+        base_v = v.split("_")[0]
+        if base_v in ds and 'scale_factor' in ds[base_v].encoding:
+            import numpy as np
+            # Convert scale/offset to float32 so memory size is minimized on load
+            ds_to_save[v].encoding['scale_factor'] = np.float32(ds[base_v].encoding['scale_factor'])
+            ds_to_save[v].encoding['add_offset'] = np.float32(ds[base_v].encoding['add_offset'])
+            ds_to_save[v].encoding['dtype'] = ds[base_v].encoding.get('dtype', 'uint16')
+            if '_FillValue' in ds[base_v].encoding:
+                ds_to_save[v].encoding['_FillValue'] = ds[base_v].encoding['_FillValue']
+
+    save_with_icechunk(ds_to_save, savepath_ppi, commit_message="Save final PPI")
 
     with open( os.path.dirname(savepath_ppi)+'/DONE.txt', 'w') as f:
         f.write('')
