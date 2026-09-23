@@ -70,7 +70,8 @@ paths_icon = sorted(glob.glob(path_icon))
 paths_icon_z = sorted(glob.glob(path_icon_z))
 
 #%% Process each timestep
-for ni, radarpath in enumerate(paths_radar):
+cache_ok = False # flag to check if the cache has been computed
+for radarpath in paths_radar:
 
     print("processing "+radarpath)
     partial_start_time = time.time()
@@ -111,10 +112,12 @@ for ni, radarpath in enumerate(paths_radar):
     icon_field['time'] = icon_field['time'].dt.round('1s') # round time coord to the second
 
     # regridding to radar volume geometry
-    if ni == 0: # run the first file and return the indexer cache
+    if not cache_ok: # run the first time and return the indexer cache
         icon_volume, cache = utils.icon_to_radar_volume(icon_field[["temp", "pres", "rh", "qv", "qc", "qi", "qr", "qs", "qg", "qh",
                                                              "qnc", "qni", "qnr", "qns", "qng", "qnh", "z_ifc"]],
                                                  radar_volume, return_cache=True)
+        cache_ok = True
+
     else: # since the grids are constant, just re-apply the indexing so it is faster
         icon_volume = utils.icon_to_radar_volume(icon_field[["temp", "pres", "rh", "qv", "qc", "qi", "qr", "qs", "qg", "qh",
                                                              "qnc", "qni", "qnr", "qns", "qng", "qnh", "z_ifc"]],
