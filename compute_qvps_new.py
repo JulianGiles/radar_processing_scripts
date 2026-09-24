@@ -219,6 +219,11 @@ if __name__ == "__main__": # set guard
         if not os.path.exists(savepathdir):
             os.makedirs(savepathdir)
 
+        # If the archive already exists, delete it first to prevent FileExistsError on re-runs
+        if os.path.exists(path):
+            import shutil
+            shutil.rmtree(path, ignore_errors=True)
+
         storage = local_filesystem_storage(path)
         try:
             repo = Repository.open(storage)
