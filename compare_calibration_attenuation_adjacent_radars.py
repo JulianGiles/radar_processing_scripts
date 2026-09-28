@@ -3187,7 +3187,7 @@ yax = r"Slope of $Δ\mathrm{Z_{H} - \Phi_{DP}}$ best fit [dBZ/°]" # label for t
 xax = r"Maximum $\mathrm{\Phi_{DP}}$ of fitted range [°]" # label for the x axis
 
 weighted = True # weight the bins for the linear fittings? IQR or variance weighting (select in the code below)
-resampling_method = "jackknife" # Options: "pps", "jackknife", None (for simple event resample)
+resampling_method = "bayesian" # Options: "pps", "jackknife", "bayesian", None (for simple event resample)
 
 # repeat filters
 Zm_max = 15
@@ -3319,7 +3319,35 @@ slopes_highCI = {}
 phi_N = {} # Number of valid phi values in each range
 
 # ---- FUNCTION: compute slope using bin-medians ----
-def fit_binmedian_slope(phi_vals, dbzh_vals, phi_min, phi_max, bin_width, min_bin_n=0):
+def weighted_quantile(values, quantiles, sample_weight=None):
+    """ Very close to np.nanpercentile, but supports weights """
+    if sample_weight is None:
+        return np.nanquantile(values, quantiles)
+    
+    values = np.asarray(values)
+    quantiles = np.asarray(quantiles)
+    sample_weight = np.asarray(sample_weight)
+    
+    # filter NaNs
+    valid_mask = np.isfinite(values)
+    values = values[valid_mask]
+    sample_weight = sample_weight[valid_mask]
+    
+    if len(values) == 0:
+        return np.full_like(quantiles, np.nan, dtype=np.float64)
+    
+    sorter = np.argsort(values)
+    values = values[sorter]
+    sample_weight = sample_weight[sorter]
+    
+    weighted_quantiles = np.cumsum(sample_weight) - 0.5 * sample_weight
+    if weighted_quantiles[-1] == 0:
+        return np.full_like(quantiles, np.nan, dtype=np.float64)
+    
+    weighted_quantiles /= np.sum(sample_weight)
+    return np.interp(quantiles, weighted_quantiles, values)
+
+def fit_binmedian_slope(phi_vals, dbzh_vals, phi_min, phi_max, bin_width, min_bin_n=0, weights=None):
     """
     min_bin_n: bins with equal or less valid values than min_bin_n will be ignored.
     """
@@ -3328,6 +3356,8 @@ def fit_binmedian_slope(phi_vals, dbzh_vals, phi_min, phi_max, bin_width, min_bi
     mask = (phi_vals >= phi_min) & (phi_vals < phi_max)
     phi_sel = phi_vals[mask]
     dbzh_sel = dbzh_vals[mask]
+    if weights is not None:
+        w_sel = weights[mask]
 
     # not enough samples -> return NaN
     if len(phi_sel) < 20:
@@ -3345,10 +3375,18 @@ def fit_binmedian_slope(phi_vals, dbzh_vals, phi_min, phi_max, bin_width, min_bi
     q25 = np.zeros(nbins)
     q75 = np.zeros(nbins)
     for i in range(nbins):
-        vals = dbzh_sel[bin_idx == i]
-        medians[i] = np.nanmedian(vals) if np.isfinite(vals).sum()>min_bin_n else np.nan
-        q25[i] = np.nanquantile(vals, 0.25) if np.isfinite(vals).sum()>min_bin_n else np.nan
-        q75[i] = np.nanquantile(vals, 0.75) if np.isfinite(vals).sum()>min_bin_n else np.nan
+        mask_i = (bin_idx == i)
+        vals = dbzh_sel[mask_i]
+        w_vals = w_sel[mask_i] if weights is not None else None
+        
+        if np.isfinite(vals).sum() > min_bin_n:
+            medians[i] = weighted_quantile(vals, 0.5, w_vals)
+            q25[i] = weighted_quantile(vals, 0.25, w_vals)
+            q75[i] = weighted_quantile(vals, 0.75, w_vals)
+        else:
+            medians[i] = np.nan
+            q25[i] = np.nan
+            q75[i] = np.nan
     iqr = q75-q25
 
     # remove empty bins
@@ -3356,12 +3394,10 @@ def fit_binmedian_slope(phi_vals, dbzh_vals, phi_min, phi_max, bin_width, min_bi
     if np.sum(valid) < 2:
         return np.nan
 
-    box_data = [dbzh_sel[bin_idx == i] for i in range(len(bins) - 1)]
-    counts = [len(vals) for vals in box_data]
-    variances = np.array([vals.var(ddof=1) for vals in box_data])
-    weights = 1 / iqr**2 # 1 / variances # change to counts/variances for variance weighting
-    weights[~np.isfinite(weights)] = 0
-    w = np.sqrt(weights)
+    # calculate IQR weighting
+    weights_fit = 1 / iqr**2
+    weights_fit[~np.isfinite(weights_fit)] = 0
+    w = np.sqrt(weights_fit)
 
     # linear fit
     if weighted:
@@ -3405,6 +3441,20 @@ for bin_width in bin_widths:
                     phi_min, phi_max,
                     bin_width,
                     min_bin_n=min_bin_n
+                )
+        elif resampling_method == "bayesian":
+            boot_slopes = np.zeros(B)
+            for b in range(B):
+                # Draw Dirichlet weights
+                dir_weights = np.random.dirichlet(np.ones(N_events))
+                gate_weights = dir_weights[np.searchsorted(unique_events, event_ids)]
+                
+                boot_slopes[b] = fit_binmedian_slope(
+                    tg_phi, delta_dbzh,
+                    phi_min, phi_max,
+                    bin_width,
+                    min_bin_n=min_bin_n,
+                    weights=gate_weights
                 )
         else:
             boot_slopes = np.zeros(B)
@@ -3524,7 +3574,7 @@ yax = r"Slope of $Δ\mathrm{Z_{H} - \Phi_{DP}}$ best fit [dBZ/°]" # label for t
 xax = r"Maximum $\mathrm{\Phi_{DP}}$ of fitted range [°]" # label for the x axis
 
 weighted = True # weight the bins for the linear fittings? IQR or variance weighting (select in the code below)
-resampling_method = "jackknife" # Options: "pps", "jackknife", None (for simple scan resample)
+resampling_method = "bayesian" # Options: "pps", "jackknife", "bayesian", None (for simple scan resample)
 
 # repeat filters
 Zm_max = 15
@@ -3653,57 +3703,6 @@ slopes_lowCI = {} # confidence interval based on event bootstrapping
 slopes_highCI = {}
 phi_N = {} # Number of valid phi values in each range
 
-# ---- FUNCTION: compute slope using bin-medians ----
-def fit_binmedian_slope(phi_vals, dbzh_vals, phi_min, phi_max, bin_width, min_bin_n=0):
-    """
-    min_bin_n: bins with equal or less valid values than min_bin_n will be ignored.
-    """
-
-    # mask values inside selected phi range
-    mask = (phi_vals >= phi_min) & (phi_vals < phi_max)
-    phi_sel = phi_vals[mask]
-    dbzh_sel = dbzh_vals[mask]
-
-    # not enough samples -> return NaN
-    if len(phi_sel) < 20:
-        return np.nan
-
-    # bins
-    bins = np.arange(phi_min, phi_max + bin_width, bin_width)
-    bin_centers = bins[:-1] + bin_width/2
-
-    bin_idx = np.digitize(phi_sel, bins) - 1
-    nbins = len(bins) - 1
-
-    # compute medians
-    medians = np.zeros(nbins)
-    q25 = np.zeros(nbins)
-    q75 = np.zeros(nbins)
-    for i in range(nbins):
-        vals = dbzh_sel[bin_idx == i]
-        medians[i] = np.nanmedian(vals) if np.isfinite(vals).sum()>min_bin_n else np.nan
-        q25[i] = np.nanquantile(vals, 0.25) if np.isfinite(vals).sum()>min_bin_n else np.nan
-        q75[i] = np.nanquantile(vals, 0.75) if np.isfinite(vals).sum()>min_bin_n else np.nan
-    iqr = q75-q25
-
-    # remove empty bins
-    valid = np.isfinite(medians)
-    if np.sum(valid) < 2:
-        return np.nan
-
-    box_data = [dbzh_sel[bin_idx == i] for i in range(len(bins) - 1)]
-    counts = [len(vals) for vals in box_data]
-    variances = np.array([vals.var(ddof=1) for vals in box_data])
-    weights = 1 / iqr**2 # 1 / variances # change to counts/variances for variance weighting
-    weights[~np.isfinite(weights)] = 0
-    w = np.sqrt(weights)
-
-    # linear fit
-    if weighted:
-        p = np.polynomial.Polynomial.fit(bin_centers[valid], medians[valid], 1, w=w[valid])
-    else:
-        p = np.polynomial.Polynomial.fit(bin_centers[valid], medians[valid], 1)
-    return p.convert().coef[1]  # slope is coef[1]
 
 # -------------------------------------------------------------------
 # MAIN LOOP OVER BIN SIZES AND PHI RANGES
@@ -3722,7 +3721,7 @@ for bin_width in bin_widths:
         # ---- 1. Compute slope for the real dataset ----
         real_slope = fit_binmedian_slope(tg_phi, delta_dbzh, phi_min, phi_max, bin_width, min_bin_n=min_bin_n)
 
-        # ---- 2. Bootstrap slopes (event resampling) ----
+        # ---- 2. Bootstrap slopes (scan resampling) ----
         if resampling_method == "jackknife":
             boot_slopes = np.zeros(N_scans)
             for b in range(N_scans):
@@ -3741,10 +3740,24 @@ for bin_width in bin_widths:
                     bin_width,
                     min_bin_n=min_bin_n
                 )
+        elif resampling_method == "bayesian":
+            boot_slopes = np.zeros(B)
+            for b in range(B):
+                # Draw Dirichlet weights
+                dir_weights = np.random.dirichlet(np.ones(N_scans))
+                gate_weights = dir_weights[np.searchsorted(unique_scans, scan_ids)]
+                
+                boot_slopes[b] = fit_binmedian_slope(
+                    tg_phi, delta_dbzh,
+                    phi_min, phi_max,
+                    bin_width,
+                    min_bin_n=min_bin_n,
+                    weights=gate_weights
+                )
         else:
             boot_slopes = np.zeros(B)
             for b in range(B):
-                # sample event IDs WITH replacement
+                # sample scan IDs WITH replacement
                 p = scan_probs if resampling_method == "pps" else None
                 drawn_scans = np.random.choice(unique_scans, size=N_scans, replace=True, p=p)
                 
