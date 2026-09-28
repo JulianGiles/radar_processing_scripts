@@ -1688,6 +1688,15 @@ ML_low_dates = [
     #"2020-03-20",  # only 95 valid value pairs after filtering and very ugly results.
 ]
 
+# List of dates for validation (histogram plot)
+validation_dates = [
+    "2016-04-09", "2016-07-05", "2016-07-06", "2016-07-08",
+    "2016-08-14", "2016-11-01", "2017-06-19", "2019-10-28",
+    "2020-07-13", "2016-02-06", "2016-12-26", "2016-12-27",
+    "2016-12-30", "2017-12-24", "2019-12-31", "2020-01-03",
+    "2020-01-07", "2020-01-16", "2020-01-17", "2020-01-20",
+    "2020-02-29", "2020-03-18", "2020-03-19", "2020-03-20",
+]
 
 #%%% Start the loop for dates for rain attenuation and wet radome analyses
 token = secrets['EARTHDATA_TOKEN']
@@ -3323,27 +3332,27 @@ def weighted_quantile(values, quantiles, sample_weight=None):
     """ Very close to np.nanpercentile, but supports weights """
     if sample_weight is None:
         return np.nanquantile(values, quantiles)
-    
+
     values = np.asarray(values)
     quantiles = np.asarray(quantiles)
     sample_weight = np.asarray(sample_weight)
-    
+
     # filter NaNs
     valid_mask = np.isfinite(values)
     values = values[valid_mask]
     sample_weight = sample_weight[valid_mask]
-    
+
     if len(values) == 0:
         return np.full_like(quantiles, np.nan, dtype=np.float64)
-    
+
     sorter = np.argsort(values)
     values = values[sorter]
     sample_weight = sample_weight[sorter]
-    
+
     weighted_quantiles = np.cumsum(sample_weight) - 0.5 * sample_weight
     if weighted_quantiles[-1] == 0:
         return np.full_like(quantiles, np.nan, dtype=np.float64)
-    
+
     weighted_quantiles /= np.sum(sample_weight)
     return np.interp(quantiles, weighted_quantiles, values)
 
@@ -3378,7 +3387,7 @@ def fit_binmedian_slope(phi_vals, dbzh_vals, phi_min, phi_max, bin_width, min_bi
         mask_i = (bin_idx == i)
         vals = dbzh_sel[mask_i]
         w_vals = w_sel[mask_i] if weights is not None else None
-        
+
         if np.isfinite(vals).sum() > min_bin_n:
             medians[i] = weighted_quantile(vals, 0.5, w_vals)
             q25[i] = weighted_quantile(vals, 0.25, w_vals)
@@ -3429,10 +3438,10 @@ for bin_width in bin_widths:
             for b in range(N_events):
                 # leave out event 'b'
                 drawn_events = np.delete(unique_events, b)
-                
+
                 # build the sample for this draw
                 boot_idx = np.concat([np.where(event_ids == ev)[0] for ev in drawn_events])
-                
+
                 boot_phi = tg_phi[boot_idx]
                 boot_dbzh = delta_dbzh[boot_idx]
 
@@ -3448,7 +3457,7 @@ for bin_width in bin_widths:
                 # Draw Dirichlet weights
                 dir_weights = np.random.dirichlet(np.ones(N_events))
                 gate_weights = dir_weights[np.searchsorted(unique_events, event_ids)]
-                
+
                 boot_slopes[b] = fit_binmedian_slope(
                     tg_phi, delta_dbzh,
                     phi_min, phi_max,
@@ -3462,10 +3471,10 @@ for bin_width in bin_widths:
                 # sample event IDs WITH replacement
                 p = event_probs if resampling_method == "pps" else None
                 drawn_events = np.random.choice(unique_events, size=N_events, replace=True, p=p)
-                
+
                 # build the bootstrap sample for this draw
                 boot_idx = np.concat([np.where(event_ids == ev)[0] for ev in drawn_events])
-                
+
                 boot_phi = tg_phi[boot_idx]
                 boot_dbzh = delta_dbzh[boot_idx]
 
@@ -3486,10 +3495,10 @@ for bin_width in bin_widths:
                 # Jackknife standard error
                 mean_boot = np.nanmean(boot_slopes)
                 jack_se = np.sqrt( ((N_events - 1)/N_events) * np.nansum((boot_slopes - mean_boot)**2) )
-                
+
                 # t-statistic for CI
                 t_crit = scipy.stats.t.ppf(1 - (100-ci_level)/200, N_events-1)
-                
+
                 low = real_slope - t_crit * jack_se
                 high = real_slope + t_crit * jack_se
             else:
@@ -3727,10 +3736,10 @@ for bin_width in bin_widths:
             for b in range(N_scans):
                 # leave out scan 'b'
                 drawn_scans = np.delete(unique_scans, b)
-                
+
                 # build the sample for this draw
                 boot_idx = np.concat([np.where(scan_ids == ev)[0] for ev in drawn_scans])
-                
+
                 boot_phi = tg_phi[boot_idx]
                 boot_dbzh = delta_dbzh[boot_idx]
 
@@ -3746,7 +3755,7 @@ for bin_width in bin_widths:
                 # Draw Dirichlet weights
                 dir_weights = np.random.dirichlet(np.ones(N_scans))
                 gate_weights = dir_weights[np.searchsorted(unique_scans, scan_ids)]
-                
+
                 boot_slopes[b] = fit_binmedian_slope(
                     tg_phi, delta_dbzh,
                     phi_min, phi_max,
@@ -3760,10 +3769,10 @@ for bin_width in bin_widths:
                 # sample scan IDs WITH replacement
                 p = scan_probs if resampling_method == "pps" else None
                 drawn_scans = np.random.choice(unique_scans, size=N_scans, replace=True, p=p)
-                
+
                 # build the bootstrap sample for this draw
                 boot_idx = np.concat([np.where(scan_ids == ev)[0] for ev in drawn_scans])
-                
+
                 boot_phi = tg_phi[boot_idx]
                 boot_dbzh = delta_dbzh[boot_idx]
 
@@ -3784,10 +3793,10 @@ for bin_width in bin_widths:
                 # Jackknife standard error
                 mean_boot = np.nanmean(boot_slopes)
                 jack_se = np.sqrt( ((N_scans - 1)/N_scans) * np.nansum((boot_slopes - mean_boot)**2) )
-                
+
                 # t-statistic for CI
                 t_crit = scipy.stats.t.ppf(1 - (100-ci_level)/200, N_scans-1)
-                
+
                 low = real_slope - t_crit * jack_se
                 high = real_slope + t_crit * jack_se
             else:
@@ -6176,6 +6185,1016 @@ if dbzh_tg_0 is not None:
     tg_height_ml_bot_qvp_0 = [ pd.DataFrame(d1).ffill(axis=1).to_numpy(copy=True) for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ]
 
     ref_height_ml_bot_qvp_0 = [ pd.DataFrame(d2).ffill(axis=1).to_numpy(copy=True) for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ]
+
+    for ts in range(len(tg_height_ml_bot_qvp_0)):
+        # fill the NaN height_ml_bot_qvp values from tg with ref and viceversa
+        tg_height_ml_bot_qvp_0[ts][np.isnan(tg_height_ml_bot_qvp_0[ts])] = ref_height_ml_bot_qvp_0[ts][np.isnan(tg_height_ml_bot_qvp_0[ts])]
+        ref_height_ml_bot_qvp_0[ts][np.isnan(ref_height_ml_bot_qvp_0[ts])] = tg_height_ml_bot_qvp_0[ts][np.isnan(ref_height_ml_bot_qvp_0[ts])]
+
+        # remove outliers (median+-std)
+        tg_m = np.nanmedian(tg_height_ml_bot_qvp_0[ts][:,0])
+        tg_std = np.nanstd(tg_height_ml_bot_qvp_0[ts][:,0])
+        tg_height_ml_bot_qvp_0[ts][tg_height_ml_bot_qvp_0[ts] < tg_m-tg_std] = np.nan
+        tg_height_ml_bot_qvp_0[ts][tg_height_ml_bot_qvp_0[ts] > tg_m+tg_std] = np.nan
+        ref_m = np.nanmedian(ref_height_ml_bot_qvp_0[ts][:,0])
+        ref_std = np.nanstd(ref_height_ml_bot_qvp_0[ts][:,0])
+        ref_height_ml_bot_qvp_0[ts][ref_height_ml_bot_qvp_0[ts] < ref_m-ref_std] = np.nan
+        ref_height_ml_bot_qvp_0[ts][ref_height_ml_bot_qvp_0[ts] > ref_m+ref_std] = np.nan
+
+        # Interpolate and extrapolate to fill NaNs
+        tg_height_ml_bot_qvp_0[ts] = pd.DataFrame(tg_height_ml_bot_qvp_0[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+        ref_height_ml_bot_qvp_0[ts] = pd.DataFrame(ref_height_ml_bot_qvp_0[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+
+    # finally, flatten
+    tg_height_ml_bot_qvp_0 = np.concat([ds1.flatten() for ds1 in tg_height_ml_bot_qvp_0])
+    ref_height_ml_bot_qvp_0 = np.concat([ds2.flatten() for ds2 in ref_height_ml_bot_qvp_0])
+
+    # fill remaining NaNs with an arbitrarely high value so it does no undesired filtering
+    tg_height_ml_bot_qvp_0[np.isnan(tg_height_ml_bot_qvp_0)] = 4000
+    ref_height_ml_bot_qvp_0[np.isnan(ref_height_ml_bot_qvp_0)] = 4000
+
+    # filter by valid values according to conditions
+    valid_0 = np.isfinite(tg_dbzh_0) & np.isfinite(ref_dbzh_0) & (np.isfinite(tg_phi_0))\
+            & (tg_phi_0 > varx_range[0])\
+            & (tg_z_0 < tg_height_ml_bot_qvp_0) & (ref_z_0 < ref_height_ml_bot_qvp_0)\
+            & (tg_RHOHV_0 > 0.97) & (ref_RHOHV_0 > 0.97)\
+            & (tg_TEMP_0 > 3) & (ref_TEMP_0 > 3) \
+            & (tg_bca_0 > 135) & (ref_bca_0 > 135)\
+            # & (ref_phi_0<ref_phi_max)
+            # & (ref_Zm_0<Zm_max) & (tg_Zm_0<Zm_max)\
+
+    delta_dbzh_0 = (tg_dbzh_0 - ref_dbzh_0)[valid_0]
+    delta_dbzh_uncorr_0 = (tg_dbzh_uncorr_0 - ref_dbzh_0)[valid_0] # in case we want to compare to the original values without any correction
+
+    # Join both datasets
+
+    delta_dbzh = np.concat((delta_dbzh, delta_dbzh_0))
+    delta_dbzh_uncorr = np.concat((delta_dbzh_uncorr, delta_dbzh_uncorr_0))
+
+    delta_dbzh_mlc = np.concat((delta_dbzh_mlc, delta_dbzh_0))
+
+# --- Initialize plot ---
+with mpl.rc_context({
+        'font.size': 7,
+        'axes.labelsize': 8,
+        'xtick.labelsize': 8,
+        'ytick.labelsize': 8,
+        'legend.fontsize': 7,
+        }):
+
+    # --- Initialize plot ---
+    fig = plt.figure(figsize=(3.5, 2.8))
+    ax = fig.add_axes([0.12, 0.15, 0.85, 0.8])
+
+    delta_ref = delta_dbzh_uncorr # delta_dbzh or delta_dbzh_uncorr
+
+    # --- Config ---
+    # bins = np.arange(-15.5, 16.5, 1)  # bin edges
+    bins = np.arange(-2.05, 2.15, 0.1)  # bin edges
+    bin_centers = bins[:-1] + np.diff(bins).mean()/2
+    bin_width = np.diff(bins).mean()
+
+    # --- Compute histograms (as frequency %) ---
+    n1, _ = np.histogram(delta_ref, bins=bins)
+    n2, _ = np.histogram(delta_dbzh_mlc, bins=bins)
+
+    freq1 = n1 / n1.sum() * 100
+    freq2 = n2 / n2.sum() * 100
+
+    # --- Stats for legend ---
+    mean1 = np.nanmean(delta_ref)
+    std1  = np.nanstd(delta_ref)
+    median1 = np.nanmedian(delta_ref)
+    mean2 = np.nanmean(delta_dbzh_mlc)
+    std2  = np.nanstd(delta_dbzh_mlc)
+    median2 = np.nanmedian(delta_dbzh_mlc)
+
+    # --- Plot histograms ---
+    ax.bar(bin_centers, freq1, width=bin_width,
+           color="gray", alpha=1.0, label=f"Mean={mean1:.2f} {unit}\nSt_Dev={std1:.2f} {unit}\nMedian={median1:.2f} {unit}")
+    ax.bar(bin_centers, freq2, width=bin_width,
+           color="#00000000", edgecolor="black", linewidth=0.8,
+           label=f"Mean={mean2:.2f} {unit}\nSt_Dev={std2:.2f} {unit}\nMedian={median2:.2f} {unit}")
+
+    # --- Normal distribution curve fitted to delta_dbzh_mlc ---
+    x_dense = np.linspace(bins[0], bins[-1], 300)
+    pdf = scipy.stats.norm.pdf(x_dense, mean2, std2)
+    # Scale pdf to match histogram (frequency % with bin width 1)
+    pdf_scaled = pdf * bin_width * 100
+    # ax.plot(x_dense, pdf_scaled, color="red", linewidth=1.5)
+
+    # --- Cosmetics ---
+    ax.set_xlabel(xax)
+    ax.set_ylabel("Frequency (%)")
+    ax.yaxis.set_label_coords(-0.08, 0.5) # Fix the label position
+    ax.set_xlim(bins[0], bins[-1])
+    ax.set_ylim(0, None)
+    # ax.set_xticks(np.arange(bins[0]+1, bins[-1], 2))
+    ax.grid(True, linestyle="--", alpha=0.4)
+    ax.legend(loc="upper right", fontsize=7, frameon=True,
+              handlelength=1.5, handleheight=1.5)
+
+    # plt.tight_layout()
+    plt.show()
+
+#%%% Start the loop for validation dates
+token = secrets['EARTHDATA_TOKEN']
+
+# New alpha and beta values for atten correction in rain, based on the previous results.
+new_alpha = 0.14
+new_beta = 0.025
+
+tsel = "2016-12-01T14" # for plots
+
+tolerance = 250.
+vv = "DBZH" # Used to locate and discard NaNs
+SNRH_min = 15
+RHOHV_min = 0.95
+# TEMP_max = 1 # for this we need a max temp, we want to select above the ML (not very precise, just a rough first estimate)
+DBZH_min = 10
+CBB_max = 0.05
+
+Zm_range = 1500. # range in m for the computation of Zm (DBZH close to radar)
+
+vv_to_extract = ["DBZH", "DBZH_AC_rain", "DBZH_AC",
+                 "DBZH_AC2_rain",
+                 "ZDR_EC", "ZDR_EC_AC_rain",
+                 "ZDR_EC_OC", "ZDR_EC_OC_AC", "ZDR_EC_OC_AC_rain",
+                 "ZDR_EC_OC_AC2_rain",
+                 "ZDR_EC_OC2", "ZDR_EC_OC2_AC2_rain", # ZDR corrected with extrapolated offsets
+                 "ZDR_EC_OC3", "ZDR_EC_OC3_AC2_rain", # ZDR corrected with extrapolated offsets and manual offsets for some dates
+                 "PHIDP_OC_MASKED", #"PHIDP_OC",
+                 "Zm",
+                 "TEMP", "TEMPm", "z",
+                 "height_ml_bottom_new_gia", "height_ml_new_gia",
+                 "z_beambot",
+                 "height_ml_new_gia_fromqvp", "height_ml_bottom_new_gia_fromqvp",
+                 "PHIDP_OC_MASKED_MLbump", #"PHIDP_OC_SMOOTH_MLbump",
+                 "PHIDP_OC_MASKED_MLbump_safer",
+                 "PHIDP_OC_MASKED_MLbump_strict",
+                 # "DBZH_AC_rain_MLmax",
+                 # "DBZH_AC2_rain_MLmax",
+                 # "RHOHV_MLmin",
+                 "RHOHV",
+                 "binvol", "beam_cross_angle",
+                 "riming",
+                 "range_MLbump", "range_MLbump_safer", # safer means using beam top and bottom to avoid any contact with the QVP-ML
+                 "range_MLbump_strict", # strict means getting as close to the QVP-ML as possible (beam center and QVP-based ML heights)
+                 ] # all variables to extract from the datasets, DBZH must be the first
+
+elev_ml_top_fromqvp = ["10.0", "12.0", "8.0", "7.0", "15.0"] # elevations to try to load the height of the ML from QVP files, in order of preference
+
+# Some dates do not have reliable ML heights from QVPs, replace them by NaNs
+remove_ml_dates = {
+    "2016-06-07": (np.nan, np.nan),
+    "2016-08-15": (np.nan, np.nan),
+    "2016-09-03": (np.nan, np.nan),
+    "2016-09-05": (np.nan, np.nan),
+    "2016-09-13": (np.nan, np.nan),
+    "2016-09-14": (np.nan, np.nan),
+    "2016-09-15": (np.nan, 1), # in this case HTY is bad but GZT is good
+    "2016-09-21": (np.nan, 1),
+    "2017-01-03": (np.nan, np.nan),
+    "2020-02-07": (np.nan, np.nan),
+    "2020-03-20": (np.nan, np.nan),
+    }
+
+selected_ML_valid = {vi:[] for vi in vv_to_extract}
+
+selected_ML_valid_dates = {} # to collect dates info and number of valid points
+
+start_time = time.time()
+
+if calc:
+    if "ZDR_EC_OC2" in vv_to_extract or "ZDR_EC_OC3" in vv_to_extract:
+        # These dates should not have valid ZDR calibrations in GZT due to the low ML.
+        # Then, we load all daily calibrations available in the period to approximate the
+        # calibration with smoothing and interpolation.
+
+        print("Loading ZDR daily offsets for NaN filling")
+
+        ds1_zdr_offsets_lr_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML_noWR-*-HTY-h5netcdf.nc")
+        ds1_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc")
+        ds1_zdr_offsets_lr_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C_noWR-*-HTY-h5netcdf.nc")
+        ds1_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc")
+        ds1_zdr_offsets_qvp_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML_noWR-*-HTY-h5netcdf.nc")
+        ds1_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc")
+        ds1_zdr_offsets_qvp_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C_noWR-*-HTY-h5netcdf.nc")
+        ds1_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc")
+
+        ds2_zdr_offsets_lr_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML_noWR-*-GZT-h5netcdf.nc")
+        ds2_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc")
+        ds2_zdr_offsets_lr_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C_noWR-*-GZT-h5netcdf.nc")
+        ds2_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc")
+        ds2_zdr_offsets_qvp_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML_noWR-*-GZT-h5netcdf.nc")
+        ds2_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc")
+        ds2_zdr_offsets_qvp_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C_noWR-*-GZT-h5netcdf.nc")
+        ds2_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc")
+
+        # # plot running medians to check smoothing
+        # ds2_zdr_offsets_lr_ml.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_lr_ml.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+        # ds2_zdr_offsets_lr_1c.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_lr_1c.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+        # ds2_zdr_offsets_qvp_ml.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_qvp_ml.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+        # ds2_zdr_offsets_qvp_1c.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_qvp_1c.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+
+        # Combine to create a single offset timeseries
+        ds1_zdr_offsets_lr = ds1_zdr_offsets_lr_ml_nowr.resample(time="D").mean()\
+            .fillna(ds1_zdr_offsets_lr_ml.resample(time="D").mean())\
+                .fillna(ds1_zdr_offsets_lr_1c_nowr.resample(time="D").mean())\
+                    .fillna(ds1_zdr_offsets_lr_1c.resample(time="D").mean())
+        ds1_zdr_offsets_qvp = ds1_zdr_offsets_qvp_ml_nowr.resample(time="D").mean()\
+            .fillna(ds1_zdr_offsets_qvp_ml.resample(time="D").mean())\
+                .fillna(ds1_zdr_offsets_qvp_1c_nowr.resample(time="D").mean())\
+                    .fillna(ds1_zdr_offsets_qvp_1c.resample(time="D").mean())
+        ds1_zdr_offsets_qvp = ds1_zdr_offsets_qvp.where(ds1_zdr_offsets_qvp["ZDR_offset"] < 2) # there is an extreme value in one date, lets remove it
+        ds1_zdr_offsets_comb = xr.where(ds1_zdr_offsets_lr["ZDR_offset_datacount"] >= ds1_zdr_offsets_qvp["ZDR_offset_datacount"],
+                                    ds1_zdr_offsets_lr["ZDR_offset"],
+                                    ds1_zdr_offsets_qvp["ZDR_offset"]).fillna(ds1_zdr_offsets_lr["ZDR_offset"]).fillna(ds1_zdr_offsets_qvp["ZDR_offset"])
+
+        ds2_zdr_offsets_lr = ds2_zdr_offsets_lr_ml_nowr.resample(time="D").mean()\
+            .fillna(ds2_zdr_offsets_lr_ml.resample(time="D").mean())\
+                .fillna(ds2_zdr_offsets_lr_1c_nowr.resample(time="D").mean())\
+                    .fillna(ds2_zdr_offsets_lr_1c.resample(time="D").mean())
+        ds2_zdr_offsets_qvp = ds2_zdr_offsets_qvp_ml_nowr.resample(time="D").mean()\
+            .fillna(ds2_zdr_offsets_qvp_ml.resample(time="D").mean())\
+                .fillna(ds2_zdr_offsets_qvp_1c_nowr.resample(time="D").mean())\
+                    .fillna(ds2_zdr_offsets_qvp_1c.resample(time="D").mean())
+        ds2_zdr_offsets_qvp = ds2_zdr_offsets_qvp.where(ds2_zdr_offsets_qvp["ZDR_offset"] < 2) # there is an extreme value in one date, lets remove it
+        ds2_zdr_offsets_comb = xr.where(ds2_zdr_offsets_lr["ZDR_offset_datacount"] >= ds2_zdr_offsets_qvp["ZDR_offset_datacount"],
+                                    ds2_zdr_offsets_lr["ZDR_offset"],
+                                    ds2_zdr_offsets_qvp["ZDR_offset"]).fillna(ds2_zdr_offsets_lr["ZDR_offset"]).fillna(ds2_zdr_offsets_qvp["ZDR_offset"])
+
+        # finally, smooth it out
+        ds1_zdr_offsets_comb_smooth = ds1_zdr_offsets_comb.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
+        ds2_zdr_offsets_comb_smooth = ds2_zdr_offsets_comb.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
+
+        # Manually adjust some offsets in GZT based on ZDR medians calculated with ZH>30, RHOHV>0.99, SNRH>20, TEMP<0
+        # and taking a reference value for snow of 0.2 dB
+        # ds.ZDR_EC.where(ds.DBZH>0).where(ds.DBZH<30).where(ds.RHOHV>0.99).where(ds.SNRH>20).where(ds.TEMP<0).compute().median()
+        # ds.ZDR_EC.where(ds.DBZH>0).where(ds.DBZH<30).where(ds.RHOHV>0.99).where(ds.SNRH>20).where(ds.TEMP<0).compute().plot.hist(bins=30)
+        # ds.ZDR_EC.where(ds.DBZH>0).where(ds.DBZH<30).where(ds.RHOHV>0.99).where(ds.SNRH>20).where(ds.TEMP<0).compute().median(("azimuth", "range")).plot(); ax2 = plt.twinx(); ds.ZDR_EC.where(ds.DBZH>0).where(ds.DBZH<30).where(ds.RHOHV>0.99).where(ds.SNRH>20).where(ds.TEMP<0).compute().count(("azimuth", "range")).plot(ax=ax2, c="orange")
+
+        dates_to_update = { # offsets to 0.2 dB reference value
+        '2016-02-06': -0.4,
+        '2016-12-14': -0.32,
+        '2016-12-16': -0.26,
+        '2016-12-20': -0.35,
+        '2016-12-21': -0.36, # New value upon revision, old value: -0.26,
+        '2016-12-22': -0.32,
+        '2016-12-25': -0.2,
+        '2016-12-26': -0.26,
+        '2016-12-27': -0.26,
+        '2016-12-29': -0.5, # New value upon revision, old value: -0.32,
+        '2016-12-30': -0.38,
+        '2016-12-31': -0.26,
+        '2017-01-01': -0.38,
+        '2017-01-02': -0.32,
+        '2017-01-03': -0.32,
+        '2017-12-24': -0.2,
+        '2019-12-28': 0.2, # New value upon revision, old value: 0.05
+        '2019-12-31': -0.14,
+        '2020-01-02': -0.01,
+        '2020-01-03': -0.11,
+        '2020-01-07': -0.11,
+        '2020-01-16': -0.08,
+        '2020-01-17': 0.08-0.1,
+        '2020-01-19': -0.02,
+        '2020-01-20': -0.17,
+        '2020-01-31': -0.05,
+        '2020-02-07': 0.05,
+        '2020-02-08': -0.08,
+        '2020-02-29': -0.08,
+        '2020-03-18': 0.1,
+        '2020-03-19': -0.14,
+        '2020-03-20': -0.08,
+        }
+
+        ds2_zdr_offsets_comb_alt = ds2_zdr_offsets_comb.copy(deep=True)
+        ds2_zdr_offsets_comb_alt.loc[list(dates_to_update.keys())] = list(dates_to_update.values())
+        ds2_zdr_offsets_comb_alt_smooth = ds2_zdr_offsets_comb_alt.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
+
+    if "riming" in vv_to_extract:
+        ## Process the riming classification
+        print("... Loading pre-calculated riming ...")
+        riming_classif = {}
+        X_DBZH = "DBZH_AC"
+        X_ZDR = "ZDR_EC_OC_WRC_AC"
+        suffix_name = "_calibration_attenuation_HTYGZT"
+
+        for stratname in ["unfiltered"]:
+            if stratname not in riming_classif.keys():
+                riming_classif[stratname] = {}
+            elif type(riming_classif[stratname]) is not dict:
+                riming_classif[stratname] = {}
+            print("Loading "+stratname+" riming classification ...")
+            for ll in ["hty"]: # ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']:
+                if ll not in riming_classif[stratname].keys():
+                    riming_classif[stratname][ll] = xr.Dataset()
+                elif type(riming_classif[stratname][ll]) is not xr.Dataset:
+                    riming_classif[stratname][ll] = xr.Dataset()
+
+                for xx in ['riming_DR', 'riming_UDR', 'riming_ZDR_DBZH', 'riming_'+X_ZDR+'_'+X_DBZH,
+                           ]:
+                    try:
+                        riming_classif[stratname][ll] = riming_classif[stratname][ll].assign( xr.open_dataset(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc") )
+                        print(ll+" "+xx+" riming_classif loaded")
+                    except:
+                        if stratname == "unfiltered":
+                            pass
+
+                # delete entry if empty
+                if not riming_classif[stratname][ll]:
+                    del riming_classif[stratname][ll]
+
+
+        selected_ML_valid_riming = {}
+
+        for date in ML_low_dates:
+            # 1. Clean the data
+            riming_date = riming_classif['unfiltered']['hty']['riming_ZDR_EC_OC_WRC_AC_DBZH_AC'].sel(time=date).copy().dropna("z", how="all").fillna(0)
+            cleaned_mask = binary_opening(riming_date.values, structure=np.ones((3, 3))).astype(float)
+
+            # Put the cleaned numpy array back into a DataArray so we can use xarray's spatial logic
+            da_clean = riming_date.copy(data=cleaned_mask)
+
+            # 2. Define the Melting Layer boundaries
+            ml_top = da_clean.height_ml_new_gia_clean
+            roi_top = ml_top + 300
+
+            # 3. Create a boolean mask for the 300m region of interest (ROI) above the ML
+            roi_mask = (da_clean.z >= ml_top) & (da_clean.z <= roi_top)
+
+            # 4. Calculate the fraction of rimed pixels (1s) within that specific 300m layer per time step
+            # Sum of 1s in the ROI
+            riming_in_roi = (da_clean == 1).where(roi_mask, 0).sum(dim="z")
+            # Total number of pixels in the ROI
+            total_in_roi = roi_mask.sum(dim="z")
+
+            # Calculate fraction (using .where to avoid division by zero if a profile has no valid z pixels in that range)
+            riming_fraction = riming_in_roi / total_in_roi.where(total_in_roi > 0)
+
+            # 5. Identify the profiles (times) that meet >= 80% condition
+            valid_profiles = riming_fraction >= 0.8
+
+            # 6. assign the final values
+            selected_ML_valid_riming[date] = valid_profiles.copy()
+
+for date in validation_dates:
+    print("Processing "+date)
+    HTY_files0 = [ff for ff in HTY_files if date in ff]
+    GZT_files0 = [ff for ff in GZT_files if date in ff]
+
+    selected_ML_valid_dates[date] = []
+
+    for HTY_file in HTY_files0:
+        for GZT_file in GZT_files0:
+
+            # Create save folder
+            sf = savefolder+"validation_dates/"
+            if not os.path.exists(sf):
+                os.makedirs(sf)
+
+            if reload:
+                dbzh_loaded = False
+                for vi in vv_to_extract:
+                    sfp_tg = sf+"_".join([vi, "tg", os.path.basename(HTY_file), os.path.basename(GZT_file)])
+                    sfp_ref = sf+"_".join([vi, "ref", os.path.basename(HTY_file), os.path.basename(GZT_file)])
+                    try:
+                        # if ML heigh from QVP, check if it good according to list of dates
+                        if vi == "height_ml_bottom_new_gia_fromqvp" and date in remove_ml_dates:
+                            selected_ML_valid[vi].append( (np.load(sfp_tg+".npy")*remove_ml_dates[date][0], np.load(sfp_ref+".npy")*remove_ml_dates[date][1] ) )
+                        else:
+                            selected_ML_valid[vi].append( (np.load(sfp_tg+".npy"), np.load(sfp_ref+".npy") ) )
+                        if vi == "DBZH":
+                            dbzh_loaded = True
+                            selected_ML_valid_dates[date].append( ( "HTY "+HTY_file.split("/")[-2],
+                                                                  "GZT "+GZT_file.split("/")[-2],
+                                                                  np.isfinite(selected_ML_valid[vi][-1][0]).sum()) )
+                    except:
+                        print(vi+": reloading \n "+sfp_tg+".npy \n or \n "+sfp_ref+".npy \n failed")
+                if dbzh_loaded:
+                    continue
+                if not calc:
+                    print("Total fail reloading \n "+sfp_tg+".npy \n or \n "+sfp_ref+".npy")
+                    continue
+                print("Total fail reloading \n "+sfp_tg+".npy \n or \n "+sfp_ref+".npy \n attempting to calculate")
+
+            # Load the data
+            ds1 = xr.open_mfdataset(HTY_file).set_coords("TEMP") # make sure that TEMP is a coord
+            ds2 = xr.open_mfdataset(GZT_file).set_coords("TEMP")
+
+            # Get PPIs into the same reference system
+            proj = utils.get_common_projection(ds1, ds2)
+
+            ds1 = wrl.georef.georeference(ds1, crs=proj)
+            ds2 = wrl.georef.georeference(ds2, crs=proj)
+
+            # Add new offset/atten corrected ZDR in datasets
+            if "ZDR_EC_OC2" in vv_to_extract: # correct ds2 ZDR with extrapolated offsets
+                ds1 = ds1.assign({"ZDR_EC_OC2":
+                                  ds1["ZDR_EC"] - ds1_zdr_offsets_comb.sel(time=ds1.time[0].values.astype(str)[:10]).mean()} )
+
+                ds2 = ds2.assign({"ZDR_EC_OC2":
+                                  ds2["ZDR_EC"] - ds2_zdr_offsets_comb_smooth.sel(time=ds2.time[0].values.astype(str)[:10]).mean()} )
+
+            if "ZDR_EC_OC3" in vv_to_extract: # correct ds2 ZDR with extrapolated offsets, some dates have manual offsets
+                ds2 = ds2.assign({"ZDR_EC_OC3":
+                                  ds2["ZDR_EC"] - ds2_zdr_offsets_comb_alt_smooth.sel(time=ds2.time[0].values.astype(str)[:10]).mean()} )
+
+            vv_AC2_rain = [vv for vv in vv_to_extract if "2_rain" in vv and "_ML" not in vv]
+            vv_noAC2_rain = [vv.split("_AC2_rain")[0] for vv in vv_to_extract if "_AC2_rain" in vv and "_ML" not in vv]
+
+            if len(vv_noAC2_rain)>0:
+                ds1_AC2_rain = utils.attenuation_corr_linear(ds1[["PHIDP_OC_MASKED", "PHIDP_OC"]+[vv for vv in vv_noAC2_rain if vv in ds1.data_vars]].compute(),
+                                                    alpha = new_alpha, beta = new_beta, alphaml = 0, betaml = 0,
+                                                   dbzh=[vv for vv in vv_noAC2_rain if "DBZH" in vv],
+                                                   zdr=[vv for vv in vv_noAC2_rain if "ZDR" in vv],
+                                                   phidp=["PHIDP_OC_MASKED", "PHIDP_OC"],
+                                                   ML_bot = "height_ml_bottom_new_gia_clean", ML_top = "height_ml_new_gia_clean",
+                                                   temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
+                                                   interpolate_deltabump = True )
+                vars_rename = {vv: vv+"2_rain" for vv in [vv+"_AC" for vv in vv_noAC2_rain if vv in ds1.data_vars]}
+                ds1 = ds1.assign(ds1_AC2_rain.rename(vars_rename)[list(vars_rename.values())])
+
+                ds2_AC2_rain = utils.attenuation_corr_linear(ds2[["PHIDP_OC_MASKED", "PHIDP_OC"]+[vv for vv in vv_noAC2_rain if vv in ds2.data_vars]].compute(),
+                                                    alpha = new_alpha, beta = new_beta, alphaml = 0, betaml = 0,
+                                                   dbzh=[vv for vv in vv_noAC2_rain if "DBZH" in vv],
+                                                   zdr=[vv for vv in vv_noAC2_rain if "ZDR" in vv],
+                                                   phidp=["PHIDP_OC_MASKED", "PHIDP_OC"],
+                                                   ML_bot = "height_ml_bottom_new_gia_clean", ML_top = "height_ml_new_gia_clean",
+                                                   temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
+                                                   interpolate_deltabump = True )
+                vars_rename = {vv: vv+"2_rain" for vv in [vv+"_AC" for vv in vv_noAC2_rain if vv in ds2.data_vars]}
+                ds2 = ds2.assign(ds2_AC2_rain.rename(vars_rename)[list(vars_rename.values())])
+
+            # add ML bump/min/max variables
+            vv_bump = [vv for vv in vv_to_extract if "_MLbump" in vv and "_safer" not in vv and "_strict" not in vv]
+            vv_nobump = [vv.split("_MLbump")[0] for vv in vv_to_extract if "MLbump" in vv and "_safer" not in vv and "_strict" not in vv]
+
+            vv_bump_safer = [vv for vv in vv_to_extract if "_MLbump" in vv and "_safer" in vv]
+            vv_nobump_safer = [vv.split("_MLbump")[0] for vv in vv_to_extract if "MLbump" in vv and "_safer" in vv]
+
+            vv_bump_strict = [vv for vv in vv_to_extract if "_MLbump" in vv and "_strict" in vv]
+            vv_nobump_strict = [vv.split("_MLbump")[0] for vv in vv_to_extract if "MLbump" in vv and "_strict" in vv]
+
+            vv_min = [vv for vv in vv_to_extract if "_MLmin" in vv]
+            vv_nomin = [vv.split("_MLmin")[0] for vv in vv_to_extract if "MLmin" in vv]
+
+            vv_max = [vv for vv in vv_to_extract if "_MLmax" in vv]
+            vv_nomax = [vv.split("_MLmax")[0] for vv in vv_to_extract if "MLmax" in vv]
+
+            if len(vv_bump) > 0:
+
+                if "range" in vv_nobump:
+                    vv_nobump = ["range_" if x=="range" else x for x in vv_nobump]
+                    ds1 = ds1.assign({"range_": ds1["range"].broadcast_like(ds1.DBZH)})
+                    ds2 = ds2.assign({"range_": ds2["range"].broadcast_like(ds2.DBZH)})
+
+                # for ds1
+                below_ml = ds1[vv_nobump].where(ds1.z < ds1.height_ml_bottom_new_gia).where(ds1.z > ds1.height_ml_bottom_new_gia - 100)
+                above_ml = ds1[vv_nobump].where(ds1.z > ds1.height_ml_new_gia).where(ds1.z < ds1.height_ml_new_gia + 100)
+                below_ml_TEMP = ds1[vv_nobump].where(ds1.TEMP>3).where(ds1.TEMP<3.5).where(~ds1.height_ml_bottom_new_gia.notnull())
+                above_ml_TEMP = ds1[vv_nobump].where(ds1.TEMP<-1).where(ds1.TEMP>-1-0.5).where(~ds1.height_ml_new_gia.notnull())
+
+                bump_ml = above_ml.bfill("range").head(range=1).isel(range=0) - below_ml.ffill("range").tail(range=1).isel(range=0)
+                bump_ml_TEMP = above_ml_TEMP.bfill("range").head(range=1).isel(range=0) - below_ml_TEMP.ffill("range").tail(range=1).isel(range=0)
+
+                ds1 = ds1.assign( xr.where(ds1.height_ml_bottom_new_gia.notnull(),
+                                           bump_ml.rename(dict(zip(vv_nobump, vv_bump))),
+                                           bump_ml_TEMP.rename(dict(zip(vv_nobump, vv_bump))) ) )
+
+                # for ds2 (by definition this will be NaN for the cases we will select, but we still need the variable for completion)
+                below_ml = ds2[vv_nobump].where(ds2.z < ds2.height_ml_bottom_new_gia).where(ds2.z > ds2.height_ml_bottom_new_gia - 100)
+                above_ml = ds2[vv_nobump].where(ds2.z > ds2.height_ml_new_gia).where(ds2.z < ds2.height_ml_new_gia + 100)
+                below_ml_TEMP = ds2[vv_nobump].where(ds2.TEMP>3).where(ds2.TEMP<3.5).where(~ds2.height_ml_bottom_new_gia.notnull())
+                above_ml_TEMP = ds2[vv_nobump].where(ds2.TEMP<-1).where(ds2.TEMP>-1-0.5).where(~ds2.height_ml_new_gia.notnull())
+
+                bump_ml = above_ml.bfill("range").head(range=1).isel(range=0) - below_ml.ffill("range").tail(range=1).isel(range=0)
+                bump_ml_TEMP = above_ml_TEMP.bfill("range").head(range=1).isel(range=0) - below_ml_TEMP.ffill("range").tail(range=1).isel(range=0)
+
+                ds2 = ds2.assign( xr.where(ds2.height_ml_bottom_new_gia.notnull(),
+                                           bump_ml.rename(dict(zip(vv_nobump, vv_bump))),
+                                           bump_ml_TEMP.rename(dict(zip(vv_nobump, vv_bump))) ) )
+
+            if "z_beambot" in vv_to_extract or len(vv_bump_safer) > 0:
+                # we just copy the original coordinates and subtract half beamwidth, then georeference again
+                ds1_beambot = ds1["DBZH"].copy()
+                ds1_beambot['elevation'] = ds1_beambot['elevation'] - 0.5
+                ds1_beambot = wrl.georef.georeference(ds1_beambot, crs=proj)
+                ds1.coords["z_beambot"] = ds1_beambot["z"].broadcast_like(ds1["DBZH"]).reset_coords(drop=True)
+
+                ds2_beambot = ds2["DBZH"].copy()
+                ds2_beambot['elevation'] = ds2_beambot['elevation'] - 0.5
+                ds2_beambot = wrl.georef.georeference(ds2_beambot, crs=proj)
+                ds2.coords["z_beambot"] = ds2_beambot["z"].broadcast_like(ds2["DBZH"]).reset_coords(drop=True)
+
+            if "z_beamtop" in vv_to_extract or len(vv_bump_safer) > 0:
+                # we just copy the original coordinates and add half beamwidth, then georeference again
+                ds1_beamtop = ds1["DBZH"].copy()
+                ds1_beamtop['elevation'] = ds1_beamtop['elevation'] + 0.5
+                ds1_beamtop = wrl.georef.georeference(ds1_beamtop, crs=proj)
+                ds1.coords["z_beamtop"] = ds1_beamtop["z"].broadcast_like(ds1["DBZH"]).reset_coords(drop=True)
+
+                ds2_beamtop = ds2["DBZH"].copy()
+                ds2_beamtop['elevation'] = ds2_beamtop['elevation'] + 0.5
+                ds2_beamtop = wrl.georef.georeference(ds2_beamtop, crs=proj)
+                ds2.coords["z_beamtop"] = ds2_beamtop["z"].broadcast_like(ds2["DBZH"]).reset_coords(drop=True)
+
+            # add ML height from QVP
+            if "height_ml_new_gia_fromqvp" in vv_to_extract or len(vv_bump_safer) > 0 or len(vv_bump_strict) > 0:
+                for qvp_elev in elev_ml_top_fromqvp:
+                    try:
+                        qvp_glob = glob.glob("/".join(HTY_file.replace("final_ppis","qvps").split("/")[:-3])+"/*/"+qvp_elev+"/*.nc")
+                        if len(qvp_glob)>0:
+                            qvp_for_ml = xr.open_dataset(qvp_glob[0])
+                            ds1.coords["height_ml_new_gia_fromqvp"] = qvp_for_ml.sel(time=date)["height_ml_new_gia"].interp_like(ds1.time, method="nearest")
+                            break
+                    except:
+                        continue
+                if "height_ml_new_gia_fromqvp" not in ds1.coords: # if that did not work, just fill with NaNs
+                    ds1.coords["height_ml_new_gia_fromqvp"] = ds1.coords["height_ml_new_gia"]*np.nan
+
+                for qvp_elev in elev_ml_top_fromqvp:
+                    try:
+                        qvp_glob = glob.glob("/".join(GZT_file.replace("final_ppis","qvps").split("/")[:-3])+"/*/"+qvp_elev+"/*.nc")
+                        if len(qvp_glob)>0:
+                            qvp_for_ml = xr.open_dataset(qvp_glob[0])
+                            ds2.coords["height_ml_new_gia_fromqvp"] = qvp_for_ml.sel(time=date)["height_ml_new_gia"].interp_like(ds2.time, method="nearest")
+                            break
+                    except:
+                        continue
+                if "height_ml_new_gia_fromqvp" not in ds2.coords: # if that did not work, just fill with NaNs
+                    ds2.coords["height_ml_new_gia_fromqvp"] = ds2.coords["height_ml_new_gia"]*np.nan
+
+            if "height_ml_bottom_new_gia_fromqvp" in vv_to_extract or len(vv_bump_safer) > 0 or len(vv_bump_strict) > 0:
+                for qvp_elev in elev_ml_top_fromqvp:
+                    try:
+                        qvp_glob = glob.glob("/".join(HTY_file.replace("final_ppis","qvps").split("/")[:-3])+"/*/"+qvp_elev+"/*.nc")
+                        if len(qvp_glob)>0:
+                            qvp_for_ml = xr.open_dataset(qvp_glob[0])
+                            ds1.coords["height_ml_bottom_new_gia_fromqvp"] = qvp_for_ml.sel(time=date)["height_ml_bottom_new_gia"].interp_like(ds1.time, method="nearest")
+                            break
+                    except:
+                        continue
+                if "height_ml_bottom_new_gia_fromqvp" not in ds1.coords: # if that did not work, just fill with NaNs
+                    ds1.coords["height_ml_bottom_new_gia_fromqvp"] = ds1.coords["height_ml_bottom_new_gia"]*np.nan
+
+                for qvp_elev in elev_ml_top_fromqvp:
+                    try:
+                        qvp_glob = glob.glob("/".join(GZT_file.replace("final_ppis","qvps").split("/")[:-3])+"/*/"+qvp_elev+"/*.nc")
+                        if len(qvp_glob)>0:
+                            qvp_for_ml = xr.open_dataset(qvp_glob[0])
+                            ds2.coords["height_ml_bottom_new_gia_fromqvp"] = qvp_for_ml.sel(time=date)["height_ml_bottom_new_gia"].interp_like(ds2.time, method="nearest")
+                            break
+                    except:
+                        continue
+                if "height_ml_bottom_new_gia_fromqvp" not in ds2.coords: # if that did not work, just fill with NaNs
+                    ds2.coords["height_ml_bottom_new_gia_fromqvp"] = ds2.coords["height_ml_bottom_new_gia"]*np.nan
+
+            if len(vv_bump_safer) > 0:
+
+                if "range" in vv_nobump_safer:
+                    vv_nobump_safer = ["range_" if x=="range" else x for x in vv_nobump_safer]
+                    ds1 = ds1.assign({"range_": ds1["range"].broadcast_like(ds1.DBZH)})
+                    ds2 = ds2.assign({"range_": ds2["range"].broadcast_like(ds2.DBZH)})
+
+                # for ds1
+                below_ml = ds1[vv_nobump_safer].where(ds1.z_beamtop < ds1.height_ml_bottom_new_gia_fromqvp).where(ds1.z_beamtop > ds1.height_ml_bottom_new_gia_fromqvp - 100)
+                above_ml = ds1[vv_nobump_safer].where(ds1.z_beambot > ds1.height_ml_new_gia_fromqvp).where(ds1.z_beambot < ds1.height_ml_new_gia_fromqvp + 100)
+                below_ml_TEMP = ds1[vv_nobump_safer].where(ds1.TEMP>3).where(ds1.TEMP<3.5).where(~ds1.height_ml_bottom_new_gia_fromqvp.notnull())
+                above_ml_TEMP = ds1[vv_nobump_safer].where(ds1.TEMP<-1).where(ds1.TEMP>-1-0.5).where(~ds1.height_ml_new_gia_fromqvp.notnull())
+
+                bump_ml = above_ml.bfill("range").head(range=1).isel(range=0) - below_ml.ffill("range").tail(range=1).isel(range=0)
+                bump_ml_TEMP = above_ml_TEMP.bfill("range").head(range=1).isel(range=0) - below_ml_TEMP.ffill("range").tail(range=1).isel(range=0)
+
+                ds1 = ds1.assign( xr.where(ds1.height_ml_bottom_new_gia_fromqvp.notnull(),
+                                           bump_ml.rename(dict(zip(vv_nobump_safer, vv_bump_safer))),
+                                           bump_ml_TEMP.rename(dict(zip(vv_nobump_safer, vv_bump_safer))) ) )
+
+                # for ds2 (by definition this will be NaN for the cases we will select, but we still need the variable for completion)
+                below_ml = ds2[vv_nobump_safer].where(ds2.z_beamtop < ds2.height_ml_bottom_new_gia_fromqvp).where(ds2.z_beamtop > ds2.height_ml_bottom_new_gia_fromqvp - 100)
+                above_ml = ds2[vv_nobump_safer].where(ds2.z_beambot > ds2.height_ml_new_gia_fromqvp).where(ds2.z_beambot < ds2.height_ml_new_gia_fromqvp + 100)
+                below_ml_TEMP = ds2[vv_nobump_safer].where(ds2.TEMP>3).where(ds2.TEMP<3.5).where(~ds2.height_ml_bottom_new_gia_fromqvp.notnull())
+                above_ml_TEMP = ds2[vv_nobump_safer].where(ds2.TEMP<-1).where(ds2.TEMP>-1-0.5).where(~ds2.height_ml_new_gia_fromqvp.notnull())
+
+                bump_ml = above_ml.bfill("range").head(range=1).isel(range=0) - below_ml.ffill("range").tail(range=1).isel(range=0)
+                bump_ml_TEMP = above_ml_TEMP.bfill("range").head(range=1).isel(range=0) - below_ml_TEMP.ffill("range").tail(range=1).isel(range=0)
+
+                ds2 = ds2.assign( xr.where(ds2.height_ml_bottom_new_gia_fromqvp.notnull(),
+                                           bump_ml.rename(dict(zip(vv_nobump_safer, vv_bump_safer))),
+                                           bump_ml_TEMP.rename(dict(zip(vv_nobump_safer, vv_bump_safer))) ) )
+
+            if len(vv_bump_strict) > 0:
+
+                if "range" in vv_nobump_strict:
+                    vv_nobump_strict = ["range_" if x=="range" else x for x in vv_nobump_strict]
+                    ds1 = ds1.assign({"range_": ds1["range"].broadcast_like(ds1.DBZH)})
+                    ds2 = ds2.assign({"range_": ds2["range"].broadcast_like(ds2.DBZH)})
+
+                # for ds1
+                below_ml = ds1[vv_nobump_strict].where(ds1.z < ds1.height_ml_bottom_new_gia_fromqvp).where(ds1.z > ds1.height_ml_bottom_new_gia_fromqvp - 100)
+                above_ml = ds1[vv_nobump_strict].where(ds1.z > ds1.height_ml_new_gia_fromqvp).where(ds1.z < ds1.height_ml_new_gia_fromqvp + 100)
+                below_ml_TEMP = ds1[vv_nobump_strict].where(ds1.TEMP>3).where(ds1.TEMP<3.5).where(~ds1.height_ml_bottom_new_gia_fromqvp.notnull())
+                above_ml_TEMP = ds1[vv_nobump_strict].where(ds1.TEMP<-1).where(ds1.TEMP>-1-0.5).where(~ds1.height_ml_new_gia_fromqvp.notnull())
+
+                bump_ml = above_ml.bfill("range").head(range=1).isel(range=0) - below_ml.ffill("range").tail(range=1).isel(range=0)
+                bump_ml_TEMP = above_ml_TEMP.bfill("range").head(range=1).isel(range=0) - below_ml_TEMP.ffill("range").tail(range=1).isel(range=0)
+
+                ds1 = ds1.assign( xr.where(ds1.height_ml_bottom_new_gia_fromqvp.notnull(),
+                                           bump_ml.rename(dict(zip(vv_nobump_strict, vv_bump_strict))),
+                                           bump_ml_TEMP.rename(dict(zip(vv_nobump_strict, vv_bump_strict))) ) )
+
+                # for ds2 (by definition this will be NaN for the cases we will select, but we still need the variable for completion)
+                below_ml = ds2[vv_nobump_strict].where(ds2.z < ds2.height_ml_bottom_new_gia_fromqvp).where(ds2.z > ds2.height_ml_bottom_new_gia_fromqvp - 100)
+                above_ml = ds2[vv_nobump_strict].where(ds2.z > ds2.height_ml_new_gia_fromqvp).where(ds2.z < ds2.height_ml_new_gia_fromqvp + 100)
+                below_ml_TEMP = ds2[vv_nobump_strict].where(ds2.TEMP>3).where(ds2.TEMP<3.5).where(~ds2.height_ml_bottom_new_gia_fromqvp.notnull())
+                above_ml_TEMP = ds2[vv_nobump_strict].where(ds2.TEMP<-1).where(ds2.TEMP>-1-0.5).where(~ds2.height_ml_new_gia_fromqvp.notnull())
+
+                bump_ml = above_ml.bfill("range").head(range=1).isel(range=0) - below_ml.ffill("range").tail(range=1).isel(range=0)
+                bump_ml_TEMP = above_ml_TEMP.bfill("range").head(range=1).isel(range=0) - below_ml_TEMP.ffill("range").tail(range=1).isel(range=0)
+
+                ds2 = ds2.assign( xr.where(ds2.height_ml_bottom_new_gia_fromqvp.notnull(),
+                                           bump_ml.rename(dict(zip(vv_nobump_strict, vv_bump_strict))),
+                                           bump_ml_TEMP.rename(dict(zip(vv_nobump_strict, vv_bump_strict))) ) )
+
+            if len(vv_nomin) > 0 or len(vv_nomax) > 0:
+                # for ds1
+                in_ml = ds1[vv_nomin+vv_nomax].where(ds1.z >= ds1.height_ml_bottom_new_gia).where(ds1.z <= ds1.height_ml_new_gia)
+                in_ml_TEMP = ds1[vv_nomin+vv_nomax].where(ds1.TEMP<3).where(ds1.TEMP>-1).where(~ds1.height_ml_bottom_new_gia.notnull())
+
+                if len(vv_nomin) > 0:
+                    min_ml = in_ml[vv_nomin].min("range")
+                    min_ml_TEMP = in_ml_TEMP[vv_nomin].min("range")
+                    ds1 = ds1.assign( xr.where(ds1.height_ml_bottom_new_gia.notnull(),
+                                               min_ml.rename(dict(zip(vv_nomin, vv_min))),
+                                               min_ml_TEMP.rename(dict(zip(vv_nomin, vv_min))) ) )
+
+                if len(vv_nomax) > 0:
+                    max_ml = in_ml[vv_nomax].max("range")
+                    max_ml_TEMP = in_ml_TEMP[vv_nomax].max("range")
+                    ds1 = ds1.assign( xr.where(ds1.height_ml_bottom_new_gia.notnull(),
+                                               max_ml.rename(dict(zip(vv_nomax, vv_max))),
+                                               max_ml_TEMP.rename(dict(zip(vv_nomax, vv_max))) ) )
+
+
+                # for ds2 (by definition this will be NaN for the cases we will select, but we still need the variable for completion)
+                in_ml = ds2[vv_nomin+vv_nomax].where(ds2.z >= ds2.height_ml_bottom_new_gia).where(ds2.z <= ds2.height_ml_new_gia)
+                in_ml_TEMP = ds2[vv_nomin+vv_nomax].where(ds2.TEMP<3).where(ds2.TEMP>-1).where(~ds2.height_ml_bottom_new_gia.notnull())
+
+                if len(vv_nomin) > 0:
+                    min_ml = in_ml[vv_nomin].min("range")
+                    min_ml_TEMP = in_ml_TEMP[vv_nomin].min("range")
+                    ds2 = ds2.assign( xr.where(ds2.height_ml_bottom_new_gia.notnull(),
+                                               min_ml.rename(dict(zip(vv_nomin, vv_min))),
+                                               min_ml_TEMP.rename(dict(zip(vv_nomin, vv_min))) ) )
+
+                if len(vv_nomax) > 0:
+                    max_ml = in_ml[vv_nomax].max("range")
+                    max_ml_TEMP = in_ml_TEMP[vv_nomax].max("range")
+                    ds2 = ds2.assign( xr.where(ds2.height_ml_bottom_new_gia.notnull(),
+                                               max_ml.rename(dict(zip(vv_nomax, vv_max))),
+                                               max_ml_TEMP.rename(dict(zip(vv_nomax, vv_max))) ) )
+
+            # Add beam blockage
+            ds1_pbb, ds1_cbb = beam_blockage_from_radar_ds(ds1.isel(time=0),
+                                                           (ds1.longitude, ds1.latitude, ds1.altitude),
+                                                           wradlib_token = token)
+
+            ds1 = ds1.assign({"PBB": ds1_pbb, "CBB": ds1_cbb})
+
+            ds2_pbb, ds2_cbb = beam_blockage_from_radar_ds(ds2.isel(time=0),
+                                                           (ds2.longitude, ds2.latitude, ds2.altitude),
+                                                           wradlib_token = token)
+
+            ds2 = ds2.assign({"PBB": ds2_pbb, "CBB": ds2_cbb})
+
+            # Apply thresholds before computing masks
+            dsx = utils.apply_min_max_thresh(ds1, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
+                                                    "SNRHC":SNRH_min, "SQIH":0.5},
+                                                 {"CBB": CBB_max})
+            dsy = utils.apply_min_max_thresh(ds2, {"RHOHV":RHOHV_min, "SNRH":SNRH_min,
+                                                    "SNRHC":SNRH_min, "SQIH":0.5},
+                                                 {"CBB": CBB_max})
+
+            # They consider that there is rain above the radar by looking at the
+            # median reflectivity in a circle around each radar. Let's add this variable
+            if "Zm" not in dsx.coords:
+                dsx = dsx.assign_coords({"Zm": dsx["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")) })
+            if "Zm" not in dsy.coords:
+                dsy = dsy.assign_coords({"Zm": dsy["DBZH"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")) })
+
+            # Analogously, add the TEMP close to the radar as a measure of below/above ML
+            dsx = dsx.assign_coords({"TEMPm": dsx["TEMP"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")) })
+            dsy = dsy.assign_coords({"TEMPm": dsy["TEMP"].sel(range=slice(0,Zm_range)).compute().median(("azimuth", "range")) })
+
+            if "binvol" in vv_to_extract:
+                dsx.coords["binvol"] = dsx.range.wrl.qual.pulse_volume(dsx.range.diff("range").median(), 1)
+                dsy.coords["binvol"] = dsy.range.wrl.qual.pulse_volume(dsy.range.diff("range").median(), 1)
+
+            if "beam_cross_angle" in vv_to_extract:
+                dsx.coords["beam_cross_angle"] = utils.compute_crossing_angle_cartesian(dsx, (dsx.x[:,0].mean(), dsx.y[:,0].mean(), dsx.z[:,0].mean()), (dsy.x[:,0].mean(), dsy.y[:,0].mean(), dsy.z[:,0].mean()))
+                dsy.coords["beam_cross_angle"] = utils.compute_crossing_angle_cartesian(dsy, (dsx.x[:,0].mean(), dsx.y[:,0].mean(), dsx.z[:,0].mean()), (dsy.x[:,0].mean(), dsy.y[:,0].mean(), dsy.z[:,0].mean()))
+
+            if "riming" in vv_to_extract:
+                dsx.coords["riming"] = (selected_ML_valid_riming[date].astype(int).interp_like(dsx.time)>0.5).astype(int)
+
+            # Add the additional DBZH and TEMP thresholds
+            # (apply the TEMP threshold manually since it is not a variable but a coord)
+            dsx = utils.apply_min_max_thresh(dsx, {"DBZH":DBZH_min},
+                                                 {})
+            dsy = utils.apply_min_max_thresh(dsy, {"DBZH":DBZH_min},
+                                                 {})
+
+            # One radar has to be the reference and the other must be the target, both below the ML
+            # Let's take GZT as reference
+
+            # We will not apply additional Zm or PHIDP conditions now so we can use
+            # the extracted values for different comaparisons
+            dsx_tg = dsx[[vv for vv in vv_to_extract if vv in dsx]].compute() # if we pre compute the variables that we want
+            dsy_rf = dsy[[vv for vv in vv_to_extract if vv in dsy]].compute() # we save a lot of time (~3 times faster)
+
+            if NN:
+                mask_tg, mask_rf, idx_tg, idx_rf, matched_timesteps = utils.find_radar_overlap_unique_NN_pairs(dsx_tg,
+                                                                                                               dsy_rf,
+                                                                                    tolerance=tolerance,
+                                                                                    tolerance_time=60*4)
+
+                mask_tg_ref, mask_rf_ref, idx_tg_ref, idx_rf_ref = utils.refine_radar_overlap_unique_NN_pairs(
+                                                                                        dsx_tg, dsy_rf,
+                                                                                        idx_tg, idx_rf,
+                                                                                        matched_timesteps,
+                                                                                        vv,
+                                                                                    tolerance_time=60*4,
+                                                                                    z_tolerance=100.)
+            else:
+                mask_tg, mask_rf, idx_tg, idx_rf, matched_timesteps = utils.find_radar_overlap(dsx_tg,
+                                                                                               dsy_rf,
+                                                                                    tolerance=tolerance,
+                                                                                    tolerance_time=60*4)
+
+                mask_tg_ref, mask_rf_ref, idx_tg_ref, idx_rf_ref = utils.refine_radar_overlap(
+                                                                                        dsx_tg, dsy_rf,
+                                                                                        mask_tg, mask_rf,
+                                                                                        matched_timesteps,
+                                                                                        vv,
+                                                                                        tolerance=tolerance,
+                                                                                    tolerance_time=60*4,
+                                                                                    z_tolerance=100.)
+
+            if mask_tg_ref.sum() == 0:
+                print("No matches found")
+                continue # jump to next iteration if no pairs are found
+
+            for vi in vv_to_extract:
+                if vi not in dsx_tg:
+                    print(vi+" not found in target ds, filling with NaNs")
+                    dsx_tg = dsx_tg.assign( { vi: xr.full_like(dsx_tg["DBZH"], fill_value=np.nan) } )
+                if vi not in dsy_rf:
+                    print(vi+" not found in reference ds, filling with NaNs")
+                    dsy_rf = dsy_rf.assign( { vi: xr.full_like(dsy_rf["DBZH"], fill_value=np.nan) } )
+
+                if NN:
+                    dsx_p_tg, dsy_p_rf = utils.return_unique_NN_value_pairs(dsx_tg, dsy_rf,
+                                                                            mask_tg_ref, mask_rf_ref,
+                                                               idx_tg_ref, idx_rf_ref,
+                                                               matched_timesteps, vi)
+                else:
+                    dsx_p_tg, dsy_p_rf = utils.return_value_pairs(dsx_tg, dsy_rf,
+                                                                  idx_tg_ref, idx_rf_ref,
+                                                               matched_timesteps, vi)
+
+                selected_ML_valid[vi].append( (dsx_p_tg.copy(), dsy_p_rf.copy()) )
+
+                sfp_tg = sf+"_".join([vi, "tg", os.path.basename(HTY_file), os.path.basename(GZT_file)])
+                sfp_ref = sf+"_".join([vi, "ref", os.path.basename(HTY_file), os.path.basename(GZT_file)])
+                np.save(sfp_tg,
+                    selected_ML_valid[vi][-1][0], allow_pickle=False)
+                np.save(sfp_ref,
+                    selected_ML_valid[vi][-1][1], allow_pickle=False)
+
+total_time = time.time() - start_time
+print(f"took {total_time/60:.2f} minutes.")
+
+#%%% Plot validation histogram (also possible for combined plot with selected_ML_valid events)
+
+phi = "PHIDP_OC_MASKED"
+dbzh_tg = "ZDR_EC_OC_AC2_rain_WRcorr" # ZDR_EC_OC_AC2_rain, DBZH_AC2_rain
+dbzh_tg_uncorr = "ZDR_EC_OC" # ZDR_EC_OC_AC2_rain, DBZH # in case we want to compare to the original values without any correction
+dbzh_ref = "ZDR_EC_OC3_AC2_rain" # ZDR_EC_OC3_AC2_rain, DBZH_AC2_rain
+TEMPm = "TEMPm"
+TEMP = "TEMP"
+
+# repeat for the selected_ML_valid cases (or set to None to ignore)
+dbzh_tg_0 = "ZDR_EC_OC_AC_WRcorr" # ZDR_EC_OC_AC2_rain, DBZH_AC
+dbzh_tg_uncorr_0 = "ZDR_EC_OC" # ZDR_EC_OC_AC2_rain, DBZH # in case we want to compare to the original values without any correction
+dbzh_ref_0 = "ZDR_EC_OC_AC_WRcorr" # ZDR_EC_OC3_AC2_rain, DBZH_AC
+
+xax = r"$Δ\mathrm{Z_{DR}}\ [dB]$" # label for the x axis
+unit = re.search(r"\[(.*?)\]", xax).group(1)
+
+varx_range = (5, 19, 1) # start, stop, step # (0.7, 0.98, 0.02)
+
+min_bin_n = 30 # min count of valid values inside bin to be included in the fitting
+
+sc = False # show boxplots caps?
+sf = False # show boxplots outliers?
+wp = 0 # position of the whiskers as proportion of (Q3-Q1), default is 1.5
+
+ymin = -3 # min and max limits for the y axis
+ymax = 2.5
+
+# ML correction coefficients
+abml = -0.025
+
+# WR corr based on results
+def zdr_wrc(Zm):
+    Zm_ = np.where(np.nan_to_num(Zm) < 32.5,
+                   np.nan_to_num(Zm),
+                   32.5)
+    return -0.00022*Zm_ + 0.00032*Zm_**2 # change here to adjust coefficients based on results
+
+if "_WRcorr" in dbzh_tg:
+    # Correct wet-radome timesteps
+    var_tg_ = "".join(dbzh_tg.split("_WRcorr"))
+    selected_ML_valid[dbzh_tg] = []
+    for ti in range(len(selected_ML_valid[var_tg_])):
+        # add to the new variable
+        selected_ML_valid[dbzh_tg].append((selected_ML_valid[var_tg_][ti][0].copy() - zdr_wrc(selected_ML_valid["Zm"][ti][0].copy()),
+                                         selected_ML_valid[var_tg_][ti][1].copy() - zdr_wrc(selected_ML_valid["Zm"][ti][1].copy()) ))
+
+if "_WRcorr" in dbzh_ref:
+    # Correct wet-radome timesteps
+    var_ref_ = "".join(dbzh_ref.split("_WRcorr"))
+    selected_ML_valid[dbzh_ref] = []
+    for ti in range(len(selected_ML_valid[var_ref_])):
+        # add to the new variable
+        selected_ML_valid[dbzh_ref].append((selected_ML_valid[var_ref_][ti][0].copy() - zdr_wrc(selected_ML_valid["Zm"][ti][0].copy()),
+                                         selected_ML_valid[var_ref_][ti][1].copy() - zdr_wrc(selected_ML_valid["Zm"][ti][1].copy()) ))
+
+if dbzh_tg_0 is not None:
+    if "_WRcorr" in dbzh_tg_0:
+        # Correct wet-radome timesteps
+        var_tg_ = "".join(dbzh_tg_0.split("_WRcorr"))
+        selected_ML_valid[dbzh_tg_0] = []
+        for ti in range(len(selected_ML_valid[var_tg_])):
+            # add to the new variable
+            selected_ML_valid[dbzh_tg_0].append((selected_ML_valid[var_tg_][ti][0].copy() - zdr_wrc(selected_ML_valid["Zm"][ti][0].copy()),
+                                             selected_ML_valid[var_tg_][ti][1].copy() - zdr_wrc(selected_ML_valid["Zm"][ti][1].copy()) ))
+
+    if "_WRcorr" in dbzh_ref_0:
+        # Correct wet-radome timesteps
+        var_ref_ = "".join(dbzh_ref_0.split("_WRcorr"))
+        selected_ML_valid[dbzh_ref_0] = []
+        for ti in range(len(selected_ML_valid[var_ref_])):
+            # add to the new variable
+            selected_ML_valid[dbzh_ref_0].append((selected_ML_valid[var_ref_][ti][0].copy() - zdr_wrc(selected_ML_valid["Zm"][ti][0].copy()),
+                                             selected_ML_valid[var_ref_][ti][1].copy() - zdr_wrc(selected_ML_valid["Zm"][ti][1].copy()) ))
+
+# ML atten correction based on results
+def mlc(phi_bump):
+    phi_bump_ = np.where(phi_bump >= 0, phi_bump, 0)
+    return abml*phi_bump_ # change here to adjust coefficients based on results
+
+# extract/build necessary variables (selected_ML_valid cases)
+tg_dbzh = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid[dbzh_tg] ])
+
+ref_dbzh = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid[dbzh_ref] ])
+
+tg_dbzh_uncorr = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid[dbzh_tg_uncorr] ])
+
+tg_phi = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid[phi] ])
+
+ref_phi = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid[phi] ])
+
+tg_Zm = np.nan_to_num(np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["Zm"] ]))
+
+ref_Zm = np.nan_to_num(np.concat([ d2.flatten() for d1,d2 in selected_ML_valid["Zm"] ]))
+
+tg_TEMPm = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid[TEMPm] ])
+
+ref_TEMPm = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid[TEMPm] ])
+
+tg_TEMP = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid[TEMP] ])
+
+ref_TEMP = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid[TEMP] ])
+
+tg_phi_bump = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid[phi+"_MLbump"] ])
+
+ref_phi_bump = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid[phi+"_MLbump"] ])
+
+tg_height_ml_top = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["height_ml_new_gia"] ])
+
+tg_RHOHV = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["RHOHV"] ])
+
+ref_RHOHV = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid["RHOHV"] ])
+
+tg_z_beambot = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["z_beambot"] ])
+
+ref_z_beambot = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid["z_beambot"] ])
+
+tg_bca = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["beam_cross_angle"] ])
+
+ref_bca = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid["beam_cross_angle"] ])
+
+# tg_height_ml_top_qvp = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["height_ml_new_gia_fromqvp"] ])
+
+# ref_height_ml_top_qvp = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid["height_ml_new_gia_fromqvp"] ])
+
+# # We should only use height_ml_top_qvp values from tg since ref should be above the ML
+# # fill remaining NaNs with an arbitrarely low value so it does no undesired filtering
+# tg_height_ml_top_qvp[np.isnan(tg_height_ml_top_qvp)] = 0
+# ref_height_ml_top_qvp[np.isnan(ref_height_ml_top_qvp)] = 0
+
+# Alternative: interpolate and extrapolate the ML heights for each day to fill NaNs
+tg_height_ml_top_qvp = [ pd.DataFrame(d1).ffill(axis=1).to_numpy(copy=True) for d1,d2 in selected_ML_valid["height_ml_new_gia_fromqvp"] ]
+
+ref_height_ml_top_qvp = [ pd.DataFrame(d2).ffill(axis=1).to_numpy(copy=True) for d1,d2 in selected_ML_valid["height_ml_new_gia_fromqvp"] ]
+
+for ts in range(len(tg_height_ml_top_qvp)):
+    # fill the NaN height_ml_top_qvp values from ref with tg
+    ref_height_ml_top_qvp[ts][np.isnan(ref_height_ml_top_qvp[ts])] = tg_height_ml_top_qvp[ts][np.isnan(ref_height_ml_top_qvp[ts])]
+
+    # remove outliers (median+-std)
+    tg_m = np.nanmedian(tg_height_ml_top_qvp[ts][:,0])
+    tg_std = np.nanstd(tg_height_ml_top_qvp[ts][:,0])
+    tg_height_ml_top_qvp[ts][tg_height_ml_top_qvp[ts] < tg_m-tg_std] = np.nan
+    tg_height_ml_top_qvp[ts][tg_height_ml_top_qvp[ts] > tg_m+tg_std] = np.nan
+    ref_m = np.nanmedian(ref_height_ml_top_qvp[ts][:,0])
+    ref_std = np.nanstd(ref_height_ml_top_qvp[ts][:,0])
+    ref_height_ml_top_qvp[ts][ref_height_ml_top_qvp[ts] < ref_m-ref_std] = np.nan
+    ref_height_ml_top_qvp[ts][ref_height_ml_top_qvp[ts] > ref_m+ref_std] = np.nan
+
+    # Interpolate and extrapolate to fill NaNs
+    tg_height_ml_top_qvp[ts] = pd.DataFrame(tg_height_ml_top_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+    ref_height_ml_top_qvp[ts] = pd.DataFrame(ref_height_ml_top_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+
+# finally, flatten
+tg_height_ml_top_qvp = np.concat([ds1.flatten() for ds1 in tg_height_ml_top_qvp])
+ref_height_ml_top_qvp = np.concat([ds2.flatten() for ds2 in ref_height_ml_top_qvp])
+
+# fill remaining NaNs with an arbitrarely low value so it does no undesired filtering
+tg_height_ml_top_qvp[np.isnan(tg_height_ml_top_qvp)] = 0
+ref_height_ml_top_qvp[np.isnan(ref_height_ml_top_qvp)] = 0
+
+# filter by valid values according to conditions
+#!!! The best filter would have ref_TEMPm < -1, but looks like no event so far
+# meets this condition. So let's use PHI and Zm as an alternative for now
+# valid = (tg_TEMPm > 3) & (np.nan_to_num(ref_phi_bump) < 1)  & (ref_phi < 5) & (ref_Zm < 5) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
+valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)\
+        & (tg_height_ml_top_qvp < 1600)\
+        & (tg_phi_bump > varx_range[0])\
+        & (tg_z_beambot > tg_height_ml_top_qvp) & (ref_z_beambot > tg_height_ml_top_qvp)\
+        & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\
+        & (tg_TEMPm > 3) & (ref_TEMPm < 0)\
+        & (tg_bca > 135) & (ref_bca > 135)\
+
+
+delta_dbzh = (tg_dbzh - ref_dbzh)[valid]
+delta_dbzh_uncorr = (tg_dbzh_uncorr - ref_dbzh)[valid] # in case we want to compare to the original values without any correction
+tg_phi_bump = tg_phi_bump[valid]
+
+delta_dbzh_mlc = delta_dbzh - mlc(tg_phi_bump)
+
+# extract/build necessary variables (selected_ML_valid cases)
+if dbzh_tg_0 is not None:
+    tg_dbzh_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid[dbzh_tg_0] ])
+
+    tg_dbzh_uncorr_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid[dbzh_tg_uncorr_0] ])
+
+    ref_dbzh_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid[dbzh_ref_0] ])
+
+    tg_phi_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid[phi] ])
+
+    ref_phi_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid[phi] ])
+
+    tg_Zm_0 = np.nan_to_num(np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["Zm"] ]))
+
+    ref_Zm_0 = np.nan_to_num(np.concat([ d2.flatten() for d1,d2 in selected_ML_valid["Zm"] ]))
+
+    tg_height_ml_bot_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["height_ml_bottom_new_gia"] ])
+
+    ref_height_ml_bot_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid["height_ml_bottom_new_gia"] ])
+
+    tg_z_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["z"] ])
+
+    ref_z_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid["z"] ])
+
+    tg_TEMP_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["TEMP"] ])
+
+    ref_TEMP_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid["TEMP"] ])
+
+    tg_RHOHV_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["RHOHV"] ])
+
+    ref_RHOHV_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid["RHOHV"] ])
+
+    tg_bca_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["beam_cross_angle"] ])
+
+    ref_bca_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid["beam_cross_angle"] ])
+
+    # interpolate and extrapolate the ML heights for each day to fill NaNs
+    tg_height_ml_bot_qvp_0 = [ pd.DataFrame(d1).ffill(axis=1).to_numpy(copy=True) for d1,d2 in selected_ML_valid["height_ml_bottom_new_gia_fromqvp"] ]
+
+    ref_height_ml_bot_qvp_0 = [ pd.DataFrame(d2).ffill(axis=1).to_numpy(copy=True) for d1,d2 in selected_ML_valid["height_ml_bottom_new_gia_fromqvp"] ]
 
     for ts in range(len(tg_height_ml_bot_qvp_0)):
         # fill the NaN height_ml_bot_qvp values from tg with ref and viceversa
