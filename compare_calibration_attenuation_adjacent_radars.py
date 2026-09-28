@@ -1484,8 +1484,8 @@ calc = False # try to calculate if previous calculations failed?
 NN = False # calculate only for nearest neighbors? If False, include all neighbors that fulfill the conditions
 
 # First let's get all files
-HTY_files = glob.glob(realpep_path+"/upload/jgiles/dmi/final_ppis/*/*/*/HTY/*/*/*allm*")
-GZT_files = glob.glob(realpep_path+"/upload/jgiles/dmi/final_ppis/*/*/*/GZT/*/*/*allm*")
+HTY_files = glob.glob(realpep_path+"/upload/jgiles/dmi/final_ppis_old/*/*/*/HTY/*/*/*allm*")
+GZT_files = glob.glob(realpep_path+"/upload/jgiles/dmi/final_ppis_old/*/*/*/GZT/*/*/*allm*")
 
 # Keep elevations that we want
 def get_elev(path):
@@ -3160,8 +3160,13 @@ with mpl.rc_context({
     # plt.xlabel('Max φ of fitted range (°)')
     # plt.ylabel('Slope of Δ'+dbzh+'–φ (dB/°)')
     # plt.title('Bootstrap CI of Bin-Median Linear Fit Slope ('+str(B)+' Iterations)')
-    plt.legend()
+    plt.legend(loc="upper right")
     plt.grid(True, ls='--', alpha=0.6)
+
+    if "DBZH" in dbzh:
+        plt.ylim((-0.25, 0.01))
+    if "ZDR" in dbzh:
+        plt.ylim((-0.035, -0.01))
 
     # Add phi_N counts above x-tick labels (inside the plot area)
     phi_N_ = [str(phi_N[bin_width][0])] + ["+"+str(pn0-phi_N[bin_width][0]) for pn0 in phi_N[bin_width][1:]]
@@ -3170,6 +3175,680 @@ with mpl.rc_context({
                  f"{n}", ha='center', va='bottom', fontsize=7, color='dimgray', zorder=20)
 
     # plt.show()
+
+
+#%%% Confidence interval analysis based on different ranges (rain attenuation) - Bootstrapping by Event
+# INPUT DATA
+
+phi = "PHIDP_OC_MASKED"
+dbzh = "DBZH" # DBZH, ZDR_EC_OC
+
+yax = r"Slope of $Δ\mathrm{Z_{H} - \Phi_{DP}}$ best fit [dBZ/°]" # label for the y axis
+xax = r"Maximum $\mathrm{\Phi_{DP}}$ of fitted range [°]" # label for the x axis
+
+weighted = True # weight the bins for the linear fittings? IQR or variance weighting (select in the code below)
+resampling_method = "jackknife" # Options: "pps", "jackknife", None (for simple event resample)
+
+# repeat filters
+Zm_max = 15
+ref_phi_max = 2
+
+# extract/build necessary variables
+delta_dbzh = np.concat([ (d1-d2).flatten() for d1,d2 in selected_ML_high[dbzh] ])
+
+tg_phi = np.concat([ d1.flatten() for d1,d2 in selected_ML_high[phi] ])
+
+ref_phi = np.concat([ d2.flatten() for d1,d2 in selected_ML_high[phi] ])
+
+tg_Zm = np.nan_to_num(np.concat([ d1.flatten() for d1,d2 in selected_ML_high["Zm"] ]))
+
+ref_Zm = np.nan_to_num(np.concat([ d2.flatten() for d1,d2 in selected_ML_high["Zm"] ]))
+
+tg_height_ml_bot = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["height_ml_bottom_new_gia"] ])
+
+ref_height_ml_bot = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["height_ml_bottom_new_gia"] ])
+
+tg_z = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["z"] ])
+
+ref_z = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["z"] ])
+
+tg_TEMP = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["TEMP"] ])
+
+ref_TEMP = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["TEMP"] ])
+
+tg_RHOHV = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["RHOHV"] ])
+
+ref_RHOHV = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["RHOHV"] ])
+
+tg_z_beamtop = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["z_beamtop"] ])
+
+ref_z_beamtop = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["z_beamtop"] ])
+
+tg_binvol = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["binvol"] ])
+
+ref_binvol = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["binvol"] ])
+
+tg_bca = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["beam_cross_angle"] ])
+
+ref_bca = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["beam_cross_angle"] ])
+
+# Alternative: interpolate and extrapolate the ML heights for each day to fill NaNs
+tg_height_ml_bot_qvp = [ pd.DataFrame(d1).ffill(axis=1).values for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ]
+
+ref_height_ml_bot_qvp = [ pd.DataFrame(d2).ffill(axis=1).values for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ]
+
+for ts in range(len(tg_height_ml_bot_qvp)):
+    tg_height_ml_bot_qvp[ts] = np.where(
+        np.isnan(tg_height_ml_bot_qvp[ts]),   # Condition: where it is NaN
+        ref_height_ml_bot_qvp[ts],            # Value if True: take from ref
+        tg_height_ml_bot_qvp[ts]              # Value if False: keep original
+    )
+
+    ref_height_ml_bot_qvp[ts] = np.where(
+        np.isnan(ref_height_ml_bot_qvp[ts]),   # Condition: where it is NaN
+        tg_height_ml_bot_qvp[ts],            # Value if True: take from ref
+        ref_height_ml_bot_qvp[ts]              # Value if False: keep original
+    )
+
+    # remove outliers (median+-std)
+    tg_m = np.nanmedian(tg_height_ml_bot_qvp[ts][:,0])
+    tg_std = np.nanstd(tg_height_ml_bot_qvp[ts][:,0])
+    tg_height_ml_bot_qvp[ts][tg_height_ml_bot_qvp[ts] < tg_m-tg_std] = np.nan
+    tg_height_ml_bot_qvp[ts][tg_height_ml_bot_qvp[ts] > tg_m+tg_std] = np.nan
+    ref_m = np.nanmedian(ref_height_ml_bot_qvp[ts][:,0])
+    ref_std = np.nanstd(ref_height_ml_bot_qvp[ts][:,0])
+    ref_height_ml_bot_qvp[ts][ref_height_ml_bot_qvp[ts] < ref_m-ref_std] = np.nan
+    ref_height_ml_bot_qvp[ts][ref_height_ml_bot_qvp[ts] > ref_m+ref_std] = np.nan
+
+    # Interpolate and extrapolate to fill NaNs
+    tg_height_ml_bot_qvp[ts] = pd.DataFrame(tg_height_ml_bot_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+    ref_height_ml_bot_qvp[ts] = pd.DataFrame(ref_height_ml_bot_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+
+# finally, flatten
+tg_height_ml_bot_qvp = np.concat([ds1.flatten() for ds1 in tg_height_ml_bot_qvp])
+ref_height_ml_bot_qvp = np.concat([ds2.flatten() for ds2 in ref_height_ml_bot_qvp])
+
+# fill remaining NaNs with an arbitrarely high value so it does no undesired filtering
+tg_height_ml_bot_qvp[np.isnan(tg_height_ml_bot_qvp)] = 4000
+ref_height_ml_bot_qvp[np.isnan(ref_height_ml_bot_qvp)] = 4000
+
+# filter by valid values according to conditions
+valid = np.isfinite(delta_dbzh) & (ref_phi<ref_phi_max) & (np.isfinite(tg_phi))\
+        & (ref_Zm<Zm_max) & (tg_Zm<Zm_max)\
+        & (tg_z < tg_height_ml_bot_qvp) & (ref_z < ref_height_ml_bot_qvp)\
+        & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\
+        & (tg_TEMP > 3) & (ref_TEMP > 3)\
+        & (tg_bca > 135) & (ref_bca > 135)\
+
+# Create an array of event IDs for each element in the pre-filtered arrays
+event_ids_list = []
+ev_id = 0
+scan_idx = 0
+for date, scans in selected_ML_high_dates.items():
+    for _ in scans:
+        d1, d2 = selected_ML_high[dbzh][scan_idx]
+        event_ids_list.append(np.full(d1.size, ev_id))
+        scan_idx += 1
+    ev_id += 1
+event_ids = np.concat(event_ids_list)
+
+# apply the same valid filter that was applied to tg_phi and delta_dbzh
+event_ids = event_ids[valid]
+unique_events = np.unique(event_ids)
+N_events = len(unique_events)
+
+if resampling_method == "pps":
+    event_counts = np.array([np.sum(event_ids == ev) for ev in unique_events])
+    event_probs = event_counts / np.sum(event_counts)
+else:
+    event_probs = None
+
+delta_dbzh = delta_dbzh[valid]
+tg_phi = tg_phi[valid]
+
+# CONFIG
+phi_ranges = [(0,18), (0,25), (0,30), (0,40), (0,50), (0,60)]   # φ ranges to test
+bin_widths = [1,2,3]                                          # size of bins
+B = 500                                                # bootstrap samples
+ci_level = 95                                          # e.g. 95% CI
+min_bin_n = 30                                          # e.g. 20 if we want to filter out low count bins
+
+slopes_mean = {}
+slopes_lowCI = {} # confidence interval based on event bootstrapping
+slopes_highCI = {}
+phi_N = {} # Number of valid phi values in each range
+
+# ---- FUNCTION: compute slope using bin-medians ----
+def fit_binmedian_slope(phi_vals, dbzh_vals, phi_min, phi_max, bin_width, min_bin_n=0):
+    """
+    min_bin_n: bins with equal or less valid values than min_bin_n will be ignored.
+    """
+
+    # mask values inside selected phi range
+    mask = (phi_vals >= phi_min) & (phi_vals < phi_max)
+    phi_sel = phi_vals[mask]
+    dbzh_sel = dbzh_vals[mask]
+
+    # not enough samples -> return NaN
+    if len(phi_sel) < 20:
+        return np.nan
+
+    # bins
+    bins = np.arange(phi_min, phi_max + bin_width, bin_width)
+    bin_centers = bins[:-1] + bin_width/2
+
+    bin_idx = np.digitize(phi_sel, bins) - 1
+    nbins = len(bins) - 1
+
+    # compute medians
+    medians = np.zeros(nbins)
+    q25 = np.zeros(nbins)
+    q75 = np.zeros(nbins)
+    for i in range(nbins):
+        vals = dbzh_sel[bin_idx == i]
+        medians[i] = np.nanmedian(vals) if np.isfinite(vals).sum()>min_bin_n else np.nan
+        q25[i] = np.nanquantile(vals, 0.25) if np.isfinite(vals).sum()>min_bin_n else np.nan
+        q75[i] = np.nanquantile(vals, 0.75) if np.isfinite(vals).sum()>min_bin_n else np.nan
+    iqr = q75-q25
+
+    # remove empty bins
+    valid = np.isfinite(medians)
+    if np.sum(valid) < 2:
+        return np.nan
+
+    box_data = [dbzh_sel[bin_idx == i] for i in range(len(bins) - 1)]
+    counts = [len(vals) for vals in box_data]
+    variances = np.array([vals.var(ddof=1) for vals in box_data])
+    weights = 1 / iqr**2 # 1 / variances # change to counts/variances for variance weighting
+    weights[~np.isfinite(weights)] = 0
+    w = np.sqrt(weights)
+
+    # linear fit
+    if weighted:
+        p = np.polynomial.Polynomial.fit(bin_centers[valid], medians[valid], 1, w=w[valid])
+    else:
+        p = np.polynomial.Polynomial.fit(bin_centers[valid], medians[valid], 1)
+    return p.convert().coef[1]  # slope is coef[1]
+
+# -------------------------------------------------------------------
+# MAIN LOOP OVER BIN SIZES AND PHI RANGES
+# -------------------------------------------------------------------
+for bin_width in bin_widths:
+    print(f"Processing {bin_width}° bins ...")
+    slopes_mean[bin_width] = []
+    slopes_lowCI[bin_width] = []
+    slopes_highCI[bin_width] = []
+    phi_N[bin_width] = []
+
+    for (phi_min, phi_max) in phi_ranges:
+
+        print(f"Processing φ-range {phi_min}–{phi_max}° ...")
+
+        # ---- 1. Compute slope for the real dataset ----
+        real_slope = fit_binmedian_slope(tg_phi, delta_dbzh, phi_min, phi_max, bin_width, min_bin_n=min_bin_n)
+
+        # ---- 2. Bootstrap slopes (event resampling) ----
+        if resampling_method == "jackknife":
+            boot_slopes = np.zeros(N_events)
+            for b in range(N_events):
+                # leave out event 'b'
+                drawn_events = np.delete(unique_events, b)
+                
+                # build the sample for this draw
+                boot_idx = np.concat([np.where(event_ids == ev)[0] for ev in drawn_events])
+                
+                boot_phi = tg_phi[boot_idx]
+                boot_dbzh = delta_dbzh[boot_idx]
+
+                boot_slopes[b] = fit_binmedian_slope(
+                    boot_phi, boot_dbzh,
+                    phi_min, phi_max,
+                    bin_width,
+                    min_bin_n=min_bin_n
+                )
+        else:
+            boot_slopes = np.zeros(B)
+            for b in range(B):
+                # sample event IDs WITH replacement
+                p = event_probs if resampling_method == "pps" else None
+                drawn_events = np.random.choice(unique_events, size=N_events, replace=True, p=p)
+                
+                # build the bootstrap sample for this draw
+                boot_idx = np.concat([np.where(event_ids == ev)[0] for ev in drawn_events])
+                
+                boot_phi = tg_phi[boot_idx]
+                boot_dbzh = delta_dbzh[boot_idx]
+
+                boot_slopes[b] = fit_binmedian_slope(
+                    boot_phi, boot_dbzh,
+                    phi_min, phi_max,
+                    bin_width,
+                    min_bin_n=min_bin_n
+                )
+
+        # remove NaNs from failed fits
+        boot_slopes = boot_slopes[np.isfinite(boot_slopes)]
+
+        # ---- 3. Compute confidence intervals ----
+        if len(boot_slopes) > 0:
+            if resampling_method == "jackknife":
+                import scipy.stats
+                # Jackknife standard error
+                mean_boot = np.nanmean(boot_slopes)
+                jack_se = np.sqrt( ((N_events - 1)/N_events) * np.nansum((boot_slopes - mean_boot)**2) )
+                
+                # t-statistic for CI
+                t_crit = scipy.stats.t.ppf(1 - (100-ci_level)/200, N_events-1)
+                
+                low = real_slope - t_crit * jack_se
+                high = real_slope + t_crit * jack_se
+            else:
+                low = np.percentile(boot_slopes, (100-ci_level)/2)
+                high = np.percentile(boot_slopes, 100-(100-ci_level)/2)
+        else:
+            low = np.nan
+            high = np.nan
+
+        slopes_mean[bin_width].append(real_slope)
+        slopes_lowCI[bin_width].append(low)
+        slopes_highCI[bin_width].append(high)
+
+        # Count valid phi in this range
+        mask = (tg_phi >= phi_min) & (tg_phi < phi_max)
+        phi_N[bin_width].append(np.sum(mask))
+
+# -------------------------------------------------------------------
+# PLOT RESULTS
+# -------------------------------------------------------------------
+with mpl.rc_context({
+        'font.size': 7,
+        'axes.labelsize': 8,
+        'xtick.labelsize': 8,
+        'ytick.labelsize': 8,
+        'legend.fontsize': 7,
+        }):
+
+    fig = plt.figure(figsize=(3.5, 2.3))
+    ax = fig.add_axes([0.22, 0.2, 0.76, 0.75])
+
+    for bin_width in bin_widths:
+        phi_max_values = [pr[1] for pr in phi_ranges]
+
+        colors = ["lightgray", "gray", "black"]
+        lws = [3, 2, 1]
+        bini = bin_widths.index(bin_width)
+        eb3 = plt.errorbar(
+            phi_max_values,
+            slopes_mean[bin_width],
+            yerr=[np.maximum(0, np.array(slopes_mean[bin_width])-np.array(slopes_lowCI[bin_width])),
+                  np.maximum(0, np.array(slopes_highCI[bin_width])-np.array(slopes_mean[bin_width]))],
+            fmt='o-', capsize=lws[bini]+1, capthick=lws[bini], ms=lws[bini]+3,
+            elinewidth=lws[bini], lw=lws[bini],
+            label=f"{bin_width}° bins",
+            color=colors[bini],
+            zorder=10+bini
+        )
+
+        # print exact slope values
+        print(f"#### {bin_width}° bins slope results ####")
+        for x, n in zip(phi_max_values, slopes_mean[bin_width]):
+            print("Range 0-"+str(x)+": "+str(round(n, 4) if not np.isnan(n) else np.nan))
+        print("Mean of all slopes: "+str(round(np.nanmean(slopes_mean[bin_width]), 4)))
+
+    plt.xlabel(xax)
+    plt.ylabel(yax)
+    ax.yaxis.set_label_coords(-0.2, 0.5)
+    plt.legend(loc="upper right")
+    plt.grid(True, ls='--', alpha=0.6)
+
+    if "DBZH" in dbzh:
+        plt.ylim((-0.25, 0.01))
+    if "ZDR" in dbzh:
+        plt.ylim((-0.035, -0.01))
+
+    # Add phi_N counts above x-tick labels (inside the plot area)
+    phi_N_ = [str(phi_N[bin_width][0])] + ["+"+str(pn0-phi_N[bin_width][0]) for pn0 in phi_N[bin_width][1:]]
+    for x, n in zip(phi_max_values, phi_N_):
+        plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 1% above bottom
+                 f"{n}", ha='center', va='bottom', fontsize=7, color='dimgray', zorder=20)
+
+    # plt.show()
+
+#%%% Confidence interval analysis based on different ranges (rain attenuation) - Bootstrapping by Scan
+# INPUT DATA
+
+phi = "PHIDP_OC_MASKED"
+dbzh = "DBZH" # DBZH, ZDR_EC_OC
+
+yax = r"Slope of $Δ\mathrm{Z_{H} - \Phi_{DP}}$ best fit [dBZ/°]" # label for the y axis
+xax = r"Maximum $\mathrm{\Phi_{DP}}$ of fitted range [°]" # label for the x axis
+
+weighted = True # weight the bins for the linear fittings? IQR or variance weighting (select in the code below)
+resampling_method = "jackknife" # Options: "pps", "jackknife", None (for simple scan resample)
+
+# repeat filters
+Zm_max = 15
+ref_phi_max = 2
+
+# extract/build necessary variables
+delta_dbzh = np.concat([ (d1-d2).flatten() for d1,d2 in selected_ML_high[dbzh] ])
+
+tg_phi = np.concat([ d1.flatten() for d1,d2 in selected_ML_high[phi] ])
+
+ref_phi = np.concat([ d2.flatten() for d1,d2 in selected_ML_high[phi] ])
+
+tg_Zm = np.nan_to_num(np.concat([ d1.flatten() for d1,d2 in selected_ML_high["Zm"] ]))
+
+ref_Zm = np.nan_to_num(np.concat([ d2.flatten() for d1,d2 in selected_ML_high["Zm"] ]))
+
+tg_height_ml_bot = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["height_ml_bottom_new_gia"] ])
+
+ref_height_ml_bot = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["height_ml_bottom_new_gia"] ])
+
+tg_z = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["z"] ])
+
+ref_z = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["z"] ])
+
+tg_TEMP = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["TEMP"] ])
+
+ref_TEMP = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["TEMP"] ])
+
+tg_RHOHV = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["RHOHV"] ])
+
+ref_RHOHV = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["RHOHV"] ])
+
+tg_z_beamtop = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["z_beamtop"] ])
+
+ref_z_beamtop = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["z_beamtop"] ])
+
+tg_binvol = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["binvol"] ])
+
+ref_binvol = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["binvol"] ])
+
+tg_bca = np.concat([ d1.flatten() for d1,d2 in selected_ML_high["beam_cross_angle"] ])
+
+ref_bca = np.concat([ d2.flatten() for d1,d2 in selected_ML_high["beam_cross_angle"] ])
+
+# Alternative: interpolate and extrapolate the ML heights for each day to fill NaNs
+tg_height_ml_bot_qvp = [ pd.DataFrame(d1).ffill(axis=1).values for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ]
+
+ref_height_ml_bot_qvp = [ pd.DataFrame(d2).ffill(axis=1).values for d1,d2 in selected_ML_high["height_ml_bottom_new_gia_fromqvp"] ]
+
+for ts in range(len(tg_height_ml_bot_qvp)):
+    tg_height_ml_bot_qvp[ts] = np.where(
+        np.isnan(tg_height_ml_bot_qvp[ts]),   # Condition: where it is NaN
+        ref_height_ml_bot_qvp[ts],            # Value if True: take from ref
+        tg_height_ml_bot_qvp[ts]              # Value if False: keep original
+    )
+
+    ref_height_ml_bot_qvp[ts] = np.where(
+        np.isnan(ref_height_ml_bot_qvp[ts]),   # Condition: where it is NaN
+        tg_height_ml_bot_qvp[ts],            # Value if True: take from ref
+        ref_height_ml_bot_qvp[ts]              # Value if False: keep original
+    )
+
+    # remove outliers (median+-std)
+    tg_m = np.nanmedian(tg_height_ml_bot_qvp[ts][:,0])
+    tg_std = np.nanstd(tg_height_ml_bot_qvp[ts][:,0])
+    tg_height_ml_bot_qvp[ts][tg_height_ml_bot_qvp[ts] < tg_m-tg_std] = np.nan
+    tg_height_ml_bot_qvp[ts][tg_height_ml_bot_qvp[ts] > tg_m+tg_std] = np.nan
+    ref_m = np.nanmedian(ref_height_ml_bot_qvp[ts][:,0])
+    ref_std = np.nanstd(ref_height_ml_bot_qvp[ts][:,0])
+    ref_height_ml_bot_qvp[ts][ref_height_ml_bot_qvp[ts] < ref_m-ref_std] = np.nan
+    ref_height_ml_bot_qvp[ts][ref_height_ml_bot_qvp[ts] > ref_m+ref_std] = np.nan
+
+    # Interpolate and extrapolate to fill NaNs
+    tg_height_ml_bot_qvp[ts] = pd.DataFrame(tg_height_ml_bot_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+    ref_height_ml_bot_qvp[ts] = pd.DataFrame(ref_height_ml_bot_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+
+# finally, flatten
+tg_height_ml_bot_qvp = np.concat([ds1.flatten() for ds1 in tg_height_ml_bot_qvp])
+ref_height_ml_bot_qvp = np.concat([ds2.flatten() for ds2 in ref_height_ml_bot_qvp])
+
+# fill remaining NaNs with an arbitrarely high value so it does no undesired filtering
+tg_height_ml_bot_qvp[np.isnan(tg_height_ml_bot_qvp)] = 4000
+ref_height_ml_bot_qvp[np.isnan(ref_height_ml_bot_qvp)] = 4000
+
+# filter by valid values according to conditions
+valid = np.isfinite(delta_dbzh) & (ref_phi<ref_phi_max) & (np.isfinite(tg_phi))\
+        & (ref_Zm<Zm_max) & (tg_Zm<Zm_max)\
+        & (tg_z < tg_height_ml_bot_qvp) & (ref_z < ref_height_ml_bot_qvp)\
+        & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\
+        & (tg_TEMP > 3) & (ref_TEMP > 3)\
+        & (tg_bca > 135) & (ref_bca > 135)\
+
+# Create an array of scan IDs for each element in the pre-filtered arrays
+scan_ids_list = []
+scan_idx = 0
+for date, scans in selected_ML_high_dates.items():
+    for _ in scans:
+        d1, d2 = selected_ML_high[dbzh][scan_idx]
+        scan_ids_list.append(np.full(d1.size, scan_idx))
+        scan_idx += 1
+scan_ids = np.concat(scan_ids_list)
+
+# apply the same valid filter that was applied to tg_phi and delta_dbzh
+scan_ids = scan_ids[valid]
+unique_scans = np.unique(scan_ids)
+N_scans = len(unique_scans)
+
+if resampling_method == "pps":
+    scan_counts = np.array([np.sum(scan_ids == ev) for ev in unique_scans])
+    scan_probs = scan_counts / np.sum(scan_counts)
+else:
+    scan_probs = None
+
+delta_dbzh = delta_dbzh[valid]
+tg_phi = tg_phi[valid]
+
+# CONFIG
+phi_ranges = [(0,18), (0,25), (0,30), (0,40), (0,50), (0,60)]   # φ ranges to test
+bin_widths = [1,2,3]                                          # size of bins
+B = 500                                                # bootstrap samples
+ci_level = 95                                          # e.g. 95% CI
+min_bin_n = 30                                          # e.g. 20 if we want to filter out low count bins
+
+slopes_mean = {}
+slopes_lowCI = {} # confidence interval based on event bootstrapping
+slopes_highCI = {}
+phi_N = {} # Number of valid phi values in each range
+
+# ---- FUNCTION: compute slope using bin-medians ----
+def fit_binmedian_slope(phi_vals, dbzh_vals, phi_min, phi_max, bin_width, min_bin_n=0):
+    """
+    min_bin_n: bins with equal or less valid values than min_bin_n will be ignored.
+    """
+
+    # mask values inside selected phi range
+    mask = (phi_vals >= phi_min) & (phi_vals < phi_max)
+    phi_sel = phi_vals[mask]
+    dbzh_sel = dbzh_vals[mask]
+
+    # not enough samples -> return NaN
+    if len(phi_sel) < 20:
+        return np.nan
+
+    # bins
+    bins = np.arange(phi_min, phi_max + bin_width, bin_width)
+    bin_centers = bins[:-1] + bin_width/2
+
+    bin_idx = np.digitize(phi_sel, bins) - 1
+    nbins = len(bins) - 1
+
+    # compute medians
+    medians = np.zeros(nbins)
+    q25 = np.zeros(nbins)
+    q75 = np.zeros(nbins)
+    for i in range(nbins):
+        vals = dbzh_sel[bin_idx == i]
+        medians[i] = np.nanmedian(vals) if np.isfinite(vals).sum()>min_bin_n else np.nan
+        q25[i] = np.nanquantile(vals, 0.25) if np.isfinite(vals).sum()>min_bin_n else np.nan
+        q75[i] = np.nanquantile(vals, 0.75) if np.isfinite(vals).sum()>min_bin_n else np.nan
+    iqr = q75-q25
+
+    # remove empty bins
+    valid = np.isfinite(medians)
+    if np.sum(valid) < 2:
+        return np.nan
+
+    box_data = [dbzh_sel[bin_idx == i] for i in range(len(bins) - 1)]
+    counts = [len(vals) for vals in box_data]
+    variances = np.array([vals.var(ddof=1) for vals in box_data])
+    weights = 1 / iqr**2 # 1 / variances # change to counts/variances for variance weighting
+    weights[~np.isfinite(weights)] = 0
+    w = np.sqrt(weights)
+
+    # linear fit
+    if weighted:
+        p = np.polynomial.Polynomial.fit(bin_centers[valid], medians[valid], 1, w=w[valid])
+    else:
+        p = np.polynomial.Polynomial.fit(bin_centers[valid], medians[valid], 1)
+    return p.convert().coef[1]  # slope is coef[1]
+
+# -------------------------------------------------------------------
+# MAIN LOOP OVER BIN SIZES AND PHI RANGES
+# -------------------------------------------------------------------
+for bin_width in bin_widths:
+    print(f"Processing {bin_width}° bins ...")
+    slopes_mean[bin_width] = []
+    slopes_lowCI[bin_width] = []
+    slopes_highCI[bin_width] = []
+    phi_N[bin_width] = []
+
+    for (phi_min, phi_max) in phi_ranges:
+
+        print(f"Processing φ-range {phi_min}–{phi_max}° ...")
+
+        # ---- 1. Compute slope for the real dataset ----
+        real_slope = fit_binmedian_slope(tg_phi, delta_dbzh, phi_min, phi_max, bin_width, min_bin_n=min_bin_n)
+
+        # ---- 2. Bootstrap slopes (event resampling) ----
+        if resampling_method == "jackknife":
+            boot_slopes = np.zeros(N_scans)
+            for b in range(N_scans):
+                # leave out scan 'b'
+                drawn_scans = np.delete(unique_scans, b)
+                
+                # build the sample for this draw
+                boot_idx = np.concat([np.where(scan_ids == ev)[0] for ev in drawn_scans])
+                
+                boot_phi = tg_phi[boot_idx]
+                boot_dbzh = delta_dbzh[boot_idx]
+
+                boot_slopes[b] = fit_binmedian_slope(
+                    boot_phi, boot_dbzh,
+                    phi_min, phi_max,
+                    bin_width,
+                    min_bin_n=min_bin_n
+                )
+        else:
+            boot_slopes = np.zeros(B)
+            for b in range(B):
+                # sample event IDs WITH replacement
+                p = scan_probs if resampling_method == "pps" else None
+                drawn_scans = np.random.choice(unique_scans, size=N_scans, replace=True, p=p)
+                
+                # build the bootstrap sample for this draw
+                boot_idx = np.concat([np.where(scan_ids == ev)[0] for ev in drawn_scans])
+                
+                boot_phi = tg_phi[boot_idx]
+                boot_dbzh = delta_dbzh[boot_idx]
+
+                boot_slopes[b] = fit_binmedian_slope(
+                    boot_phi, boot_dbzh,
+                    phi_min, phi_max,
+                    bin_width,
+                    min_bin_n=min_bin_n
+                )
+
+        # remove NaNs from failed fits
+        boot_slopes = boot_slopes[np.isfinite(boot_slopes)]
+
+        # ---- 3. Compute confidence intervals ----
+        if len(boot_slopes) > 0:
+            if resampling_method == "jackknife":
+                import scipy.stats
+                # Jackknife standard error
+                mean_boot = np.nanmean(boot_slopes)
+                jack_se = np.sqrt( ((N_scans - 1)/N_scans) * np.nansum((boot_slopes - mean_boot)**2) )
+                
+                # t-statistic for CI
+                t_crit = scipy.stats.t.ppf(1 - (100-ci_level)/200, N_scans-1)
+                
+                low = real_slope - t_crit * jack_se
+                high = real_slope + t_crit * jack_se
+            else:
+                low = np.percentile(boot_slopes, (100-ci_level)/2)
+                high = np.percentile(boot_slopes, 100-(100-ci_level)/2)
+        else:
+            low = np.nan
+            high = np.nan
+
+        slopes_mean[bin_width].append(real_slope)
+        slopes_lowCI[bin_width].append(low)
+        slopes_highCI[bin_width].append(high)
+
+        # Count valid phi in this range
+        mask = (tg_phi >= phi_min) & (tg_phi < phi_max)
+        phi_N[bin_width].append(np.sum(mask))
+
+# -------------------------------------------------------------------
+# PLOT RESULTS
+# -------------------------------------------------------------------
+with mpl.rc_context({
+        'font.size': 7,
+        'axes.labelsize': 8,
+        'xtick.labelsize': 8,
+        'ytick.labelsize': 8,
+        'legend.fontsize': 7,
+        }):
+
+    fig = plt.figure(figsize=(3.5, 2.3))
+    ax = fig.add_axes([0.22, 0.2, 0.76, 0.75])
+
+    for bin_width in bin_widths:
+        phi_max_values = [pr[1] for pr in phi_ranges]
+
+        colors = ["lightgray", "gray", "black"]
+        lws = [3, 2, 1]
+        bini = bin_widths.index(bin_width)
+        eb3 = plt.errorbar(
+            phi_max_values,
+            slopes_mean[bin_width],
+            yerr=[np.maximum(0, np.array(slopes_mean[bin_width])-np.array(slopes_lowCI[bin_width])),
+                  np.maximum(0, np.array(slopes_highCI[bin_width])-np.array(slopes_mean[bin_width]))],
+            fmt='o-', capsize=lws[bini]+1, capthick=lws[bini], ms=lws[bini]+3,
+            elinewidth=lws[bini], lw=lws[bini],
+            label=f"{bin_width}° bins",
+            color=colors[bini],
+            zorder=10+bini
+        )
+
+        # print exact slope values
+        print(f"#### {bin_width}° bins slope results ####")
+        for x, n in zip(phi_max_values, slopes_mean[bin_width]):
+            print("Range 0-"+str(x)+": "+str(round(n, 4) if not np.isnan(n) else np.nan))
+        print("Mean of all slopes: "+str(round(np.nanmean(slopes_mean[bin_width]), 4)))
+
+    plt.xlabel(xax)
+    plt.ylabel(yax)
+    ax.yaxis.set_label_coords(-0.2, 0.5)
+    plt.legend(loc="upper right")
+    plt.grid(True, ls='--', alpha=0.6)
+
+    if "DBZH" in dbzh:
+        plt.ylim((-0.25, 0.01))
+    if "ZDR" in dbzh:
+        plt.ylim((-0.035, -0.01))
+
+    # Add phi_N counts above x-tick labels (inside the plot area)
+    phi_N_ = [str(phi_N[bin_width][0])] + ["+"+str(pn0-phi_N[bin_width][0]) for pn0 in phi_N[bin_width][1:]]
+    for x, n in zip(phi_max_values, phi_N_):
+        plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),  # 1% above bottom
+                 f"{n}", ha='center', va='bottom', fontsize=7, color='dimgray', zorder=20)
+
+    # plt.show()
+
 
 #%%% Plot boxplot of delta DBZH/ZDR vs target PHI (rain attenuation) by ZDR_mpath intervals
 phi = "PHIDP_OC_MASKED"
