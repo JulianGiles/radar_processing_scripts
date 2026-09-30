@@ -6,6 +6,10 @@
 SOURCE_BASE="/automount/realpep/upload/jgiles/dmi/qvps"
 TARGET_BASE="/automount/realpep/upload/jgiles/dmi/qvps_selected_for_calibration_attenuation"
 
+# Set to true to link entire date folders (much faster)
+# Set to false to link individual files
+LINK_DIRECTORIES=true
+
 # List of dates to process (in YYYY-MM-DD format)
 DATES=(
     "2016-04-09"
@@ -95,23 +99,37 @@ for date in "${DATES[@]}"; do
     src_dir="${SOURCE_BASE}/${year}/${year_month}/${date}"
 
     if [ -d "$src_dir" ]; then
-        # Find and link all files under this date's directory
-        find "$src_dir" -type f | while read -r file; do
-            # Compute relative path and target path
-            relative_path="${file#$SOURCE_BASE/}"
+        if [ "$LINK_DIRECTORIES" = true ]; then
+            # Link the whole directory
+            relative_path="${src_dir#$SOURCE_BASE/}"
             target_path="${TARGET_BASE}/${relative_path}"
 
-            # Create target directory if it doesn't exist
+            # Create target parent directory if it doesn't exist
             mkdir -p "$(dirname "$target_path")"
 
-            # Link the file if it doesn't already exist
-            if [ ! -e "$target_path" ]; then
-                ln -s "$file" "$target_path"
-                echo "Linked: $file -> $target_path"
+            # Link the directory if target doesn't exist or isn't a symlink
+            if [ ! -e "$target_path" ] && [ ! -L "$target_path" ]; then
+                ln -s "$src_dir" "$target_path"
+                echo "Linked folder: $src_dir -> $target_path"
             else
                 echo "Already exists: $target_path"
             fi
-        done
+        else
+            # Link individual files
+            find "$src_dir" -type f | while read -r file; do
+                relative_path="${file#$SOURCE_BASE/}"
+                target_path="${TARGET_BASE}/${relative_path}"
+
+                mkdir -p "$(dirname "$target_path")"
+
+                if [ ! -e "$target_path" ] && [ ! -L "$target_path" ]; then
+                    ln -s "$file" "$target_path"
+                    echo "Linked file: $file -> $target_path"
+                else
+                    echo "Already exists: $target_path"
+                fi
+            done
+        fi
     else
         echo "Source directory does not exist: $src_dir"
     fi
