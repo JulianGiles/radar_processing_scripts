@@ -8385,14 +8385,14 @@ save_with_icechunk(qvps_strat_ML_fil.chunk({'time': 200, 'z': -1}), temp_savepat
 #%%% Plot scatter
 # Clean data or select previosly cleaned data
 # ds = qvps.where(qvps.Zm>0).where(qvps.height_ml_new_gia.notnull()).dropna("z", how="all").dropna("time", how="all")
-ds = qvps_strat_ML_fil.where(qvps_strat_ML_fil.Zm>0)
+ds = qvps_strat_ML_fil.where(qvps_strat_ML_fil.Zm>0).chunk(dict(z=-1)).interpolate_na("z", method="linear")
 
 # 1. Select the vertical coordinate (use 'range' if height is stored there, otherwise 'z')
 # vert_coord = ds["range"] if "range" in ds.coords else ds["z"]
 vert_coord = ds["z"]
 
 # 2. Find the index along 'z' nearest to height_ml_new_gia for each time step
-nearest_z_idx = np.abs(vert_coord - ds["height_ml_new_gia"] ).argmin(dim="z")
+nearest_z_idx = np.abs(vert_coord - ds["height_ml_new_gia"] -100).argmin(dim="z")
 
 # 3. Extract ZDR_EC_OC_AC values at these nearest indices (vectorized indexing)
 zdr_at_ml = ds["ZDR_EC_OC_AC"].isel(z=nearest_z_idx.compute())
@@ -8411,6 +8411,93 @@ plt.title("Scatter plot of ZDR_EC_OC_AC (at height_ml_new_gia) vs Zm")
 plt.grid(True, linestyle="--", alpha=0.5)
 plt.tight_layout()
 plt.show()
+
+#%%% Plot bins
+wr_limits = {
+    "noWR": (0, 10),
+    "WR1015": (10, 15),
+    "WR1520": (15, 20),
+    "WR2025": (20, 25),
+    "WR2530": (25, 30),
+    "WR3035": (30, 35),
+    "WR3550": (35, 50)
+}
+wr_tags = list(wr_limits.keys())
+
+# Extract values
+zdr_vals = np.array(zdr_at_ml).flatten()
+zm_vals = np.array(zm_values).flatten()
+
+# Filter out NaNs
+valid_mask = np.isfinite(zdr_vals) & np.isfinite(zm_vals)
+zdr_vals = zdr_vals[valid_mask]
+zm_vals = zm_vals[valid_mask]
+
+plot_data = []
+for tag in wr_tags:
+    low, high = wr_limits[tag]
+    idx = (zm_vals >= low) & (zm_vals < high)
+    plot_data.append(zdr_vals[idx])
+
+# Boxplot settings
+sc = False
+sf = False
+wp = 0
+ymin = -0.3
+ymax = 1.75
+xminmax = np.arange(0,55,5)
+yax = r"$Z_{DR\_EC\_OC\_AC}$ at $height\_ml\_new\_gia$"
+xax = r"$\mathrm{Z_{H}^m}\ [dBZ]$"
+
+with mpl.rc_context({
+        'font.size': 7,
+        'axes.labelsize': 8,
+        'xtick.labelsize': 8,
+        'ytick.labelsize': 8,
+        'legend.fontsize': 7,
+        }):
+
+    fig = plt.figure(figsize=(3.5, 2))
+    ax = fig.add_axes([0.15, 0.2, 0.80, 0.75])
+
+    bin_centers = [(wr_limits[tag][1] + wr_limits[tag][0])/2 for tag in wr_tags]
+    bp = ax.boxplot(plot_data, positions=bin_centers,
+                       widths=2.5,
+                       showmeans=True, showcaps=sc, showfliers=sf, whis=wp,
+                       medianprops={"color":"black"}, meanprops={"marker":".", "markersize":5})
+
+    plt.xlim(xminmax[0], xminmax[-1])
+    plt.ylim(ymin, ymax)
+    plt.xlabel(xax)
+    plt.ylabel(yax)
+    ax.yaxis.set_label_coords(-0.12, 0.5)
+    plt.grid(True, linestyle="--", alpha=0.5)
+    plt.xticks(xminmax, xminmax)
+
+    ax.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
+
+    # Quadratic fit
+    medians = np.array([line.get_ydata()[0] for line in bp['medians']])
+    # Note: keeping the [0] anchor as in the reference block
+    bin_centers_valid = np.concatenate(([0], np.array(bin_centers)[np.isfinite(medians)]))
+    medians_valid = np.concatenate(([0], medians[np.isfinite(medians)]))
+
+    if len(bin_centers_valid) > 2:
+        lfit_m = np.polynomial.Polynomial.fit(bin_centers_valid, medians_valid, 2)
+        lfit_m_rcoefs = np.round(lfit_m.convert().coef, 5)
+        lfit_m_rounded = np.polynomial.Polynomial(lfit_m_rcoefs)
+        lfit_m_str = str(lfit_m_rounded.convert()).replace("x", re.sub(r'\[.*?\]', '', xax))
+        x_dense = np.linspace(xminmax[0], xminmax[-1], 100)
+
+        plt.plot(x_dense, lfit_m(x_dense), c="red")
+        plt.text(0.01, 0.85, r"Best fit: "+re.sub(r'\[.*?\]', '', yax)+"=\n"+lfit_m_str+"", transform=plt.gca().transAxes, c="red",
+                 horizontalalignment="left")
+
+    for x, n in zip(bin_centers, [f"{len(d)}" for d in plot_data]):
+        plt.text(x, plt.ylim()[0] + 0.01 * (plt.ylim()[1] - plt.ylim()[0]),
+                 f"{n}", ha='center', va='bottom', fontsize=7, color='dimgray')
+
+    plt.show()
 
 #%% Plot QVPs to check the corrections
 
