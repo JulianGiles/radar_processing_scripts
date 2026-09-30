@@ -5751,7 +5751,7 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
 
 #### Wet radome correction
 
-def zdr_wr_offset_zm_cuadratic(Zm, a=-0.00022, b=0.00032, max_zm=32.5):
+def zdr_wr_offset_zm_cuadratic(Zm, a=-0.00052, b=0.00033, max_zm=32.5):
     r"""
     Corrects higher ZDR values due to wet radome based on a reference cuadratic fit.
 
