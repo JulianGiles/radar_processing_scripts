@@ -8405,7 +8405,7 @@ vert_coord = ds["z"]
 
 # Alternative
 # 2. Define a layer safely above the melting layer (e.g., 600m to 1200m above ML top) to ensure pure dry snow
-dry_snow_mask = (vert_coord > ds["height_ml_new_gia"] + 600) & (vert_coord < ds["height_ml_new_gia"] + 1200)
+dry_snow_mask = (vert_coord > ds["height_ml_new_gia"] + 200) & (vert_coord < ds["height_ml_new_gia"] + 400)
 
 # 3. Extract ZDR_EC_OC_AC as the mean over this dry snow layer
 zdr_at_ml = ds["ZDR_EC_OC_AC"].where(dry_snow_mask).mean(dim="z").compute()
