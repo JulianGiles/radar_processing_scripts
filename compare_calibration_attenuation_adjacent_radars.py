@@ -8397,11 +8397,18 @@ ds = qvps_strat_ML_fil.where(qvps_strat_ML_fil.Zm>0).where(qvps_strat_ML_fil.DBZ
 # vert_coord = ds["range"] if "range" in ds.coords else ds["z"]
 vert_coord = ds["z"]
 
-# 2. Find the index along 'z' nearest to height_ml_new_gia for each time step
-nearest_z_idx = np.abs(vert_coord - ds["height_ml_new_gia"] -100).argmin(dim="z")
+# # 2. Find the index along 'z' nearest to height_ml_new_gia for each time step
+# nearest_z_idx = np.abs(vert_coord - ds["height_ml_new_gia"] -100).argmin(dim="z")
 
-# 3. Extract ZDR_EC_OC_AC values at these nearest indices (vectorized indexing)
-zdr_at_ml = ds["ZDR_EC_OC_AC"].isel(z=nearest_z_idx.compute())
+# # 3. Extract ZDR_EC_OC_AC values at these nearest indices (vectorized indexing)
+# zdr_at_ml = ds["ZDR_EC_OC_AC"].isel(z=nearest_z_idx.compute())
+
+# Alternative
+# 2. Define a layer safely above the melting layer (e.g., 600m to 1200m above ML top) to ensure pure dry snow
+dry_snow_mask = (vert_coord > ds["height_ml_new_gia"] + 600) & (vert_coord < ds["height_ml_new_gia"] + 1200)
+
+# 3. Extract ZDR_EC_OC_AC as the mean over this dry snow layer
+zdr_at_ml = ds["ZDR_EC_OC_AC"].where(dry_snow_mask).mean(dim="z").compute()
 
 # 4. Extract Zm coordinate
 zm_values = ds["Zm"]
