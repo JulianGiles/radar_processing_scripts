@@ -1483,6 +1483,8 @@ reload = True # try to reload previous calculations?
 calc = False # try to calculate if previous calculations failed?
 NN = False # calculate only for nearest neighbors? If False, include all neighbors that fulfill the conditions
 
+reload_zdroff = True # reload concatenated ZDR offset datasets if available
+
 # First let's get all files
 HTY_files = glob.glob(realpep_path+"/upload/jgiles/dmi/final_ppis_old/*/*/*/HTY/*/*/*allm*")
 GZT_files = glob.glob(realpep_path+"/upload/jgiles/dmi/final_ppis_old/*/*/*/GZT/*/*/*allm*")
@@ -1690,12 +1692,12 @@ ML_low_dates = [
 
 # List of dates for validation (histogram plot)
 validation_dates = [
-    "2016-04-09", "2016-07-05", "2016-07-06", "2016-07-08",
-    "2016-08-14", "2016-11-01", "2017-06-19", "2019-10-28",
-    "2020-07-13", "2016-02-06", "2016-12-26", "2016-12-27",
+    "2016-04-09",
+    "2016-11-01", "2019-10-28",
+    "2016-02-06", "2016-12-26", "2016-12-27",
     "2016-12-30", "2017-12-24", "2019-12-31", "2020-01-03",
-    "2020-01-07", "2020-01-16", "2020-01-17", "2020-01-20",
-    "2020-02-29", "2020-03-18", "2020-03-19", "2020-03-20",
+    "2020-01-07", "2020-01-16",
+    "2020-02-29",
 ]
 
 #%%% Start the loop for dates for rain attenuation and wet radome analyses
@@ -1760,23 +1762,23 @@ if calc:
 
         print("Loading ZDR daily offsets")
 
-        ds1_zdr_offsets_lr_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML_noWR-*-HTY-h5netcdf.nc")
-        ds1_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc")
-        ds1_zdr_offsets_lr_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C_noWR-*-HTY-h5netcdf.nc")
-        ds1_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc")
-        ds1_zdr_offsets_qvp_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML_noWR-*-HTY-h5netcdf.nc")
-        ds1_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc")
-        ds1_zdr_offsets_qvp_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C_noWR-*-HTY-h5netcdf.nc")
-        ds1_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc")
+        ds1_zdr_offsets_lr_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML_noWR-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds1_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds1_zdr_offsets_lr_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C_noWR-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds1_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds1_zdr_offsets_qvp_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML_noWR-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds1_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds1_zdr_offsets_qvp_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C_noWR-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds1_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
 
-        ds2_zdr_offsets_lr_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML_noWR-*-GZT-h5netcdf.nc")
-        ds2_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc")
-        ds2_zdr_offsets_lr_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C_noWR-*-GZT-h5netcdf.nc")
-        ds2_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc")
-        ds2_zdr_offsets_qvp_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML_noWR-*-GZT-h5netcdf.nc")
-        ds2_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc")
-        ds2_zdr_offsets_qvp_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C_noWR-*-GZT-h5netcdf.nc")
-        ds2_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc")
+        ds2_zdr_offsets_lr_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML_noWR-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds2_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds2_zdr_offsets_lr_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C_noWR-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds2_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds2_zdr_offsets_qvp_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML_noWR-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds2_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds2_zdr_offsets_qvp_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C_noWR-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds2_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
 
         # # plot running medians to check smoothing
         # ds2_zdr_offsets_lr_ml.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_lr_ml.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
@@ -3556,14 +3558,14 @@ with mpl.rc_context({
 
     plt.xlabel(xax)
     plt.ylabel(yax)
-    ax.yaxis.set_label_coords(-0.2, 0.5)
+    ax.yaxis.set_label_coords(-0.17, 0.5)
     plt.legend(loc="upper right")
     plt.grid(True, ls='--', alpha=0.6)
 
     if "DBZH" in dbzh:
-        plt.ylim((-0.25, 0.01))
+        plt.ylim((-0.33, 0.09))
     if "ZDR" in dbzh:
-        plt.ylim((-0.035, -0.01))
+        plt.ylim((-0.045, -0.005))
 
     # Add phi_N counts above x-tick labels (inside the plot area)
     phi_N_ = [str(phi_N[bin_width][0])] + ["+"+str(pn0-phi_N[bin_width][0]) for pn0 in phi_N[bin_width][1:]]
@@ -4420,7 +4422,7 @@ def zdr_wrc(Zm):
     Zm_ = np.where(np.nan_to_num(Zm) < 32.5,
                    np.nan_to_num(Zm),
                    32.5)
-    return -0.00022*Zm_ + 0.00032*Zm_**2 # change here to adjust coefficients based on results
+    return -0.00052*Zm_ + 0.00033*Zm_**2 # change here to adjust coefficients based on results
 
 if "new" in zdr_to_plot:
     # Remove the timestep-based ZDR offsets and replace with daily offsets ignore the
@@ -4725,23 +4727,23 @@ if calc:
 
         print("Loading ZDR daily offsets for NaN filling")
 
-        ds1_zdr_offsets_lr_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML_noWR-*-HTY-h5netcdf.nc")
-        ds1_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc")
-        ds1_zdr_offsets_lr_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C_noWR-*-HTY-h5netcdf.nc")
-        ds1_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc")
-        ds1_zdr_offsets_qvp_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML_noWR-*-HTY-h5netcdf.nc")
-        ds1_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc")
-        ds1_zdr_offsets_qvp_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C_noWR-*-HTY-h5netcdf.nc")
-        ds1_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc")
+        ds1_zdr_offsets_lr_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML_noWR-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds1_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds1_zdr_offsets_lr_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C_noWR-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds1_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds1_zdr_offsets_qvp_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML_noWR-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds1_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds1_zdr_offsets_qvp_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C_noWR-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds1_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
 
-        ds2_zdr_offsets_lr_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML_noWR-*-GZT-h5netcdf.nc")
-        ds2_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc")
-        ds2_zdr_offsets_lr_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C_noWR-*-GZT-h5netcdf.nc")
-        ds2_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc")
-        ds2_zdr_offsets_qvp_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML_noWR-*-GZT-h5netcdf.nc")
-        ds2_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc")
-        ds2_zdr_offsets_qvp_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C_noWR-*-GZT-h5netcdf.nc")
-        ds2_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc")
+        ds2_zdr_offsets_lr_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML_noWR-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds2_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds2_zdr_offsets_lr_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C_noWR-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds2_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds2_zdr_offsets_qvp_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML_noWR-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds2_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds2_zdr_offsets_qvp_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C_noWR-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
+        ds2_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
 
         # # plot running medians to check smoothing
         # ds2_zdr_offsets_lr_ml.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_lr_ml.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
@@ -5466,7 +5468,7 @@ def zdr_wrc(Zm):
     Zm_ = np.where(np.nan_to_num(Zm) < 32.5,
                    np.nan_to_num(Zm),
                    32.5)
-    return -0.00022*Zm_ + 0.00032*Zm_**2 # change here to adjust coefficients based on results
+    return -0.00052*Zm_ + 0.00033*Zm_**2 # change here to adjust coefficients based on results
 
 if "_WRcorr" in dbzh_tg:
     # Correct wet-radome timesteps
@@ -5741,7 +5743,7 @@ def zdr_wrc(Zm):
     Zm_ = np.where(np.nan_to_num(Zm) < 32.5,
                    np.nan_to_num(Zm),
                    32.5)
-    return -0.00022*Zm_ + 0.00032*Zm_**2 # change here to adjust coefficients based on results
+    return -0.00052*Zm_ + 0.00033*Zm_**2 # change here to adjust coefficients based on results
 
 if "_WRcorr" in dbzh_tg:
     # Correct wet-radome timesteps
@@ -6001,7 +6003,7 @@ def zdr_wrc(Zm):
     Zm_ = np.where(np.nan_to_num(Zm) < 32.5,
                    np.nan_to_num(Zm),
                    32.5)
-    return -0.00022*Zm_ + 0.00032*Zm_**2 # change here to adjust coefficients based on results
+    return -0.00052*Zm_ + 0.00033*Zm_**2 # change here to adjust coefficients based on results
 
 if "_WRcorr" in dbzh_tg:
     # Correct wet-radome timesteps
@@ -6271,10 +6273,10 @@ with mpl.rc_context({
 
     # --- Plot histograms ---
     ax.bar(bin_centers, freq1, width=bin_width,
-           color="gray", alpha=1.0, label=f"Mean={mean1:.2f} {unit}\nSt_Dev={std1:.2f} {unit}\nMedian={median1:.2f} {unit}")
+           color="gray", alpha=1.0, label=f"Mean={mean1:.2f} {unit}\nSD={std1:.2f} {unit}\nMedian={median1:.2f} {unit}")
     ax.bar(bin_centers, freq2, width=bin_width,
            color="#00000000", edgecolor="black", linewidth=0.8,
-           label=f"Mean={mean2:.2f} {unit}\nSt_Dev={std2:.2f} {unit}\nMedian={median2:.2f} {unit}")
+           label=f"Mean={mean2:.2f} {unit}\nSD={std2:.2f} {unit}\nMedian={median2:.2f} {unit}")
 
     # --- Normal distribution curve fitted to delta_dbzh_mlc ---
     x_dense = np.linspace(bins[0], bins[-1], 300)
@@ -6304,6 +6306,10 @@ token = secrets['EARTHDATA_TOKEN']
 new_alpha = 0.14
 new_beta = 0.025
 
+# New alpha and beta values for atten correction in the ML, based on the previous results.
+new_alphaml = 0.25
+new_betaml = 0.027
+
 tsel = "2016-12-01T14" # for plots
 
 tolerance = 250.
@@ -6316,30 +6322,32 @@ CBB_max = 0.05
 
 Zm_range = 1500. # range in m for the computation of Zm (DBZH close to radar)
 
-vv_to_extract = ["DBZH", "DBZH_AC_rain", "DBZH_AC",
-                 "DBZH_AC2_rain",
-                 "ZDR_EC", "ZDR_EC_AC_rain",
-                 "ZDR_EC_OC", "ZDR_EC_OC_AC", "ZDR_EC_OC_AC_rain",
-                 "ZDR_EC_OC_AC2_rain",
-                 "ZDR_EC_OC2", "ZDR_EC_OC2_AC2_rain", # ZDR corrected with extrapolated offsets
-                 "ZDR_EC_OC3", "ZDR_EC_OC3_AC2_rain", # ZDR corrected with extrapolated offsets and manual offsets for some dates
+vv_to_extract = ["DBZH", "DBZH_AC",
+                 # "DBZH_AC_rain", "DBZH_AC2_rain",
+                 #"ZDR_EC", "ZDR_EC_AC_rain",
+                 "ZDR_EC_OC", "ZDR_EC_OC_AC",
+                 #"ZDR_EC_OC_AC_rain", "ZDR_EC_OC_AC2_rain",
+                 #"ZDR_EC_OC2", "ZDR_EC_OC2_AC2_rain", # ZDR corrected with extrapolated offsets
+                 "ZDR_EC_OC3", #"ZDR_EC_OC3_AC2_rain", # ZDR corrected with extrapolated offsets and manual offsets for some dates
+                 "DBZH_AC3", "ZDR_EC_OC_AC3", # corrected both in rain and in the ML with new coefficients
                  "PHIDP_OC_MASKED", #"PHIDP_OC",
                  "Zm",
                  "TEMP", "TEMPm", "z",
                  "height_ml_bottom_new_gia", "height_ml_new_gia",
-                 "z_beambot",
+                 # "z_beambot",
                  "height_ml_new_gia_fromqvp", "height_ml_bottom_new_gia_fromqvp",
-                 "PHIDP_OC_MASKED_MLbump", #"PHIDP_OC_SMOOTH_MLbump",
-                 "PHIDP_OC_MASKED_MLbump_safer",
-                 "PHIDP_OC_MASKED_MLbump_strict",
+                 # "PHIDP_OC_MASKED_MLbump", #"PHIDP_OC_SMOOTH_MLbump",
+                 # "PHIDP_OC_MASKED_MLbump_safer",
+                 # "PHIDP_OC_MASKED_MLbump_strict",
                  # "DBZH_AC_rain_MLmax",
                  # "DBZH_AC2_rain_MLmax",
                  # "RHOHV_MLmin",
                  "RHOHV",
-                 "binvol", "beam_cross_angle",
-                 "riming",
-                 "range_MLbump", "range_MLbump_safer", # safer means using beam top and bottom to avoid any contact with the QVP-ML
-                 "range_MLbump_strict", # strict means getting as close to the QVP-ML as possible (beam center and QVP-based ML heights)
+                 # "binvol",
+                 "beam_cross_angle",
+                 # "riming",
+                 # "range_MLbump", "range_MLbump_safer", # safer means using beam top and bottom to avoid any contact with the QVP-ML
+                 # "range_MLbump_strict", # strict means getting as close to the QVP-ML as possible (beam center and QVP-based ML heights)
                  ] # all variables to extract from the datasets, DBZH must be the first
 
 elev_ml_top_fromqvp = ["10.0", "12.0", "8.0", "7.0", "15.0"] # elevations to try to load the height of the ML from QVP files, in order of preference
@@ -6367,111 +6375,138 @@ start_time = time.time()
 
 if calc:
     if "ZDR_EC_OC2" in vv_to_extract or "ZDR_EC_OC3" in vv_to_extract:
-        # These dates should not have valid ZDR calibrations in GZT due to the low ML.
-        # Then, we load all daily calibrations available in the period to approximate the
-        # calibration with smoothing and interpolation.
+        if reload_zdroff:
+            try:
+                ds1_zdr_offsets_comb = xr.open_dataset(savefolder+"ds1_zdr_offsets_comb.nc")["ZDR_offset_datacount"]
+                ds2_zdr_offsets_comb = xr.open_dataset(savefolder+"ds2_zdr_offsets_comb.nc")["ZDR_offset_datacount"]
 
-        print("Loading ZDR daily offsets for NaN filling")
+                ds1_zdr_offsets_comb_smooth = xr.open_dataset(savefolder+"ds1_zdr_offsets_comb_smooth.nc")["ZDR_offset_datacount"]
+                ds2_zdr_offsets_comb_smooth = xr.open_dataset(savefolder+"ds2_zdr_offsets_comb_smooth.nc")["ZDR_offset_datacount"]
 
-        ds1_zdr_offsets_lr_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML_noWR-*-HTY-h5netcdf.nc")
-        ds1_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc")
-        ds1_zdr_offsets_lr_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C_noWR-*-HTY-h5netcdf.nc")
-        ds1_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc")
-        ds1_zdr_offsets_qvp_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML_noWR-*-HTY-h5netcdf.nc")
-        ds1_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc")
-        ds1_zdr_offsets_qvp_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C_noWR-*-HTY-h5netcdf.nc")
-        ds1_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc")
+                ds2_zdr_offsets_comb_alt = xr.open_dataset(savefolder+"ds2_zdr_offsets_comb_alt.nc")["ZDR_offset_datacount"]
+                ds2_zdr_offsets_comb_alt_smooth = xr.open_dataset(savefolder+"ds2_zdr_offsets_comb_alt_smooth.nc")["ZDR_offset_datacount"]
 
-        ds2_zdr_offsets_lr_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML_noWR-*-GZT-h5netcdf.nc")
-        ds2_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc")
-        ds2_zdr_offsets_lr_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C_noWR-*-GZT-h5netcdf.nc")
-        ds2_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc")
-        ds2_zdr_offsets_qvp_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML_noWR-*-GZT-h5netcdf.nc")
-        ds2_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc")
-        ds2_zdr_offsets_qvp_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C_noWR-*-GZT-h5netcdf.nc")
-        ds2_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc")
+                print("Loaded pre computed ZDR daily offsets for NaN filling")
+            except:
+                reload_zdroff = False # if failed, then resort to reloading from scratch files
 
-        # # plot running medians to check smoothing
-        # ds2_zdr_offsets_lr_ml.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_lr_ml.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
-        # ds2_zdr_offsets_lr_1c.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_lr_1c.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
-        # ds2_zdr_offsets_qvp_ml.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_qvp_ml.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
-        # ds2_zdr_offsets_qvp_1c.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_qvp_1c.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+        if not reload_zdroff:
+            # These dates should not have valid ZDR calibrations in GZT due to the low ML.
+            # Then, we load all daily calibrations available in the period to approximate the
+            # calibration with smoothing and interpolation.
 
-        # Combine to create a single offset timeseries
-        ds1_zdr_offsets_lr = ds1_zdr_offsets_lr_ml_nowr.resample(time="D").mean()\
-            .fillna(ds1_zdr_offsets_lr_ml.resample(time="D").mean())\
-                .fillna(ds1_zdr_offsets_lr_1c_nowr.resample(time="D").mean())\
-                    .fillna(ds1_zdr_offsets_lr_1c.resample(time="D").mean())
-        ds1_zdr_offsets_qvp = ds1_zdr_offsets_qvp_ml_nowr.resample(time="D").mean()\
-            .fillna(ds1_zdr_offsets_qvp_ml.resample(time="D").mean())\
-                .fillna(ds1_zdr_offsets_qvp_1c_nowr.resample(time="D").mean())\
-                    .fillna(ds1_zdr_offsets_qvp_1c.resample(time="D").mean())
-        ds1_zdr_offsets_qvp = ds1_zdr_offsets_qvp.where(ds1_zdr_offsets_qvp["ZDR_offset"] < 2) # there is an extreme value in one date, lets remove it
-        ds1_zdr_offsets_comb = xr.where(ds1_zdr_offsets_lr["ZDR_offset_datacount"] >= ds1_zdr_offsets_qvp["ZDR_offset_datacount"],
-                                    ds1_zdr_offsets_lr["ZDR_offset"],
-                                    ds1_zdr_offsets_qvp["ZDR_offset"]).fillna(ds1_zdr_offsets_lr["ZDR_offset"]).fillna(ds1_zdr_offsets_qvp["ZDR_offset"])
+            print("Loading ZDR daily offsets for NaN filling")
 
-        ds2_zdr_offsets_lr = ds2_zdr_offsets_lr_ml_nowr.resample(time="D").mean()\
-            .fillna(ds2_zdr_offsets_lr_ml.resample(time="D").mean())\
-                .fillna(ds2_zdr_offsets_lr_1c_nowr.resample(time="D").mean())\
-                    .fillna(ds2_zdr_offsets_lr_1c.resample(time="D").mean())
-        ds2_zdr_offsets_qvp = ds2_zdr_offsets_qvp_ml_nowr.resample(time="D").mean()\
-            .fillna(ds2_zdr_offsets_qvp_ml.resample(time="D").mean())\
-                .fillna(ds2_zdr_offsets_qvp_1c_nowr.resample(time="D").mean())\
-                    .fillna(ds2_zdr_offsets_qvp_1c.resample(time="D").mean())
-        ds2_zdr_offsets_qvp = ds2_zdr_offsets_qvp.where(ds2_zdr_offsets_qvp["ZDR_offset"] < 2) # there is an extreme value in one date, lets remove it
-        ds2_zdr_offsets_comb = xr.where(ds2_zdr_offsets_lr["ZDR_offset_datacount"] >= ds2_zdr_offsets_qvp["ZDR_offset_datacount"],
-                                    ds2_zdr_offsets_lr["ZDR_offset"],
-                                    ds2_zdr_offsets_qvp["ZDR_offset"]).fillna(ds2_zdr_offsets_lr["ZDR_offset"]).fillna(ds2_zdr_offsets_qvp["ZDR_offset"])
+            ds1_zdr_offsets_lr_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML_noWR-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
+            ds1_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
+            ds1_zdr_offsets_lr_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C_noWR-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
+            ds1_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
+            ds1_zdr_offsets_qvp_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML_noWR-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
+            ds1_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_belowML-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
+            ds1_zdr_offsets_qvp_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C_noWR-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
+            ds1_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/HTY/*/*/*-zdr_offset_below1C-*-HTY-h5netcdf.nc", join="outer", compat='no_conflicts')
 
-        # finally, smooth it out
-        ds1_zdr_offsets_comb_smooth = ds1_zdr_offsets_comb.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
-        ds2_zdr_offsets_comb_smooth = ds2_zdr_offsets_comb.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
+            ds2_zdr_offsets_lr_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML_noWR-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
+            ds2_zdr_offsets_lr_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
+            ds2_zdr_offsets_lr_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C_noWR-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
+            ds2_zdr_offsets_lr_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/LR_consistency/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
+            ds2_zdr_offsets_qvp_ml_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML_noWR-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
+            ds2_zdr_offsets_qvp_ml = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_belowML-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
+            ds2_zdr_offsets_qvp_1c_nowr = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C_noWR-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
+            ds2_zdr_offsets_qvp_1c = xr.open_mfdataset(realpep_path+"/upload/jgiles/dmi/calibration/zdr/QVP/*/*/*/GZT/*/*/*-zdr_offset_below1C-*-GZT-h5netcdf.nc", join="outer", compat='no_conflicts')
 
-        # Manually adjust some offsets in GZT based on ZDR medians calculated with ZH>30, RHOHV>0.99, SNRH>20, TEMP<0
-        # and taking a reference value for snow of 0.2 dB
-        # ds.ZDR_EC.where(ds.DBZH>0).where(ds.DBZH<30).where(ds.RHOHV>0.99).where(ds.SNRH>20).where(ds.TEMP<0).compute().median()
-        # ds.ZDR_EC.where(ds.DBZH>0).where(ds.DBZH<30).where(ds.RHOHV>0.99).where(ds.SNRH>20).where(ds.TEMP<0).compute().plot.hist(bins=30)
-        # ds.ZDR_EC.where(ds.DBZH>0).where(ds.DBZH<30).where(ds.RHOHV>0.99).where(ds.SNRH>20).where(ds.TEMP<0).compute().median(("azimuth", "range")).plot(); ax2 = plt.twinx(); ds.ZDR_EC.where(ds.DBZH>0).where(ds.DBZH<30).where(ds.RHOHV>0.99).where(ds.SNRH>20).where(ds.TEMP<0).compute().count(("azimuth", "range")).plot(ax=ax2, c="orange")
+            # # plot running medians to check smoothing
+            # ds2_zdr_offsets_lr_ml.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_lr_ml.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+            # ds2_zdr_offsets_lr_1c.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_lr_1c.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+            # ds2_zdr_offsets_qvp_ml.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_qvp_ml.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
+            # ds2_zdr_offsets_qvp_1c.ZDR_offset.compute().interpolate_na("time").plot(); ds2_zdr_offsets_qvp_1c.ZDR_offset.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median().plot()
 
-        dates_to_update = { # offsets to 0.2 dB reference value
-        '2016-02-06': -0.4,
-        '2016-12-14': -0.32,
-        '2016-12-16': -0.26,
-        '2016-12-20': -0.35,
-        '2016-12-21': -0.36, # New value upon revision, old value: -0.26,
-        '2016-12-22': -0.32,
-        '2016-12-25': -0.2,
-        '2016-12-26': -0.26,
-        '2016-12-27': -0.26,
-        '2016-12-29': -0.5, # New value upon revision, old value: -0.32,
-        '2016-12-30': -0.38,
-        '2016-12-31': -0.26,
-        '2017-01-01': -0.38,
-        '2017-01-02': -0.32,
-        '2017-01-03': -0.32,
-        '2017-12-24': -0.2,
-        '2019-12-28': 0.2, # New value upon revision, old value: 0.05
-        '2019-12-31': -0.14,
-        '2020-01-02': -0.01,
-        '2020-01-03': -0.11,
-        '2020-01-07': -0.11,
-        '2020-01-16': -0.08,
-        '2020-01-17': 0.08-0.1,
-        '2020-01-19': -0.02,
-        '2020-01-20': -0.17,
-        '2020-01-31': -0.05,
-        '2020-02-07': 0.05,
-        '2020-02-08': -0.08,
-        '2020-02-29': -0.08,
-        '2020-03-18': 0.1,
-        '2020-03-19': -0.14,
-        '2020-03-20': -0.08,
-        }
+            # Combine to create a single offset timeseries
+            ds1_zdr_offsets_lr = ds1_zdr_offsets_lr_ml_nowr.resample(time="D").mean()\
+                .fillna(ds1_zdr_offsets_lr_ml.resample(time="D").mean())\
+                    .fillna(ds1_zdr_offsets_lr_1c_nowr.resample(time="D").mean())\
+                        .fillna(ds1_zdr_offsets_lr_1c.resample(time="D").mean())
+            ds1_zdr_offsets_qvp = ds1_zdr_offsets_qvp_ml_nowr.resample(time="D").mean()\
+                .fillna(ds1_zdr_offsets_qvp_ml.resample(time="D").mean())\
+                    .fillna(ds1_zdr_offsets_qvp_1c_nowr.resample(time="D").mean())\
+                        .fillna(ds1_zdr_offsets_qvp_1c.resample(time="D").mean())
+            ds1_zdr_offsets_qvp = ds1_zdr_offsets_qvp.where(ds1_zdr_offsets_qvp["ZDR_offset"] < 2) # there is an extreme value in one date, lets remove it
+            ds1_zdr_offsets_comb = xr.where(ds1_zdr_offsets_lr["ZDR_offset_datacount"] >= ds1_zdr_offsets_qvp["ZDR_offset_datacount"],
+                                        ds1_zdr_offsets_lr["ZDR_offset"],
+                                        ds1_zdr_offsets_qvp["ZDR_offset"]).fillna(ds1_zdr_offsets_lr["ZDR_offset"]).fillna(ds1_zdr_offsets_qvp["ZDR_offset"])
 
-        ds2_zdr_offsets_comb_alt = ds2_zdr_offsets_comb.copy(deep=True)
-        ds2_zdr_offsets_comb_alt.loc[list(dates_to_update.keys())] = list(dates_to_update.values())
-        ds2_zdr_offsets_comb_alt_smooth = ds2_zdr_offsets_comb_alt.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
+            ds2_zdr_offsets_lr = ds2_zdr_offsets_lr_ml_nowr.resample(time="D").mean()\
+                .fillna(ds2_zdr_offsets_lr_ml.resample(time="D").mean())\
+                    .fillna(ds2_zdr_offsets_lr_1c_nowr.resample(time="D").mean())\
+                        .fillna(ds2_zdr_offsets_lr_1c.resample(time="D").mean())
+            ds2_zdr_offsets_qvp = ds2_zdr_offsets_qvp_ml_nowr.resample(time="D").mean()\
+                .fillna(ds2_zdr_offsets_qvp_ml.resample(time="D").mean())\
+                    .fillna(ds2_zdr_offsets_qvp_1c_nowr.resample(time="D").mean())\
+                        .fillna(ds2_zdr_offsets_qvp_1c.resample(time="D").mean())
+            ds2_zdr_offsets_qvp = ds2_zdr_offsets_qvp.where(ds2_zdr_offsets_qvp["ZDR_offset"] < 2) # there is an extreme value in one date, lets remove it
+            ds2_zdr_offsets_comb = xr.where(ds2_zdr_offsets_lr["ZDR_offset_datacount"] >= ds2_zdr_offsets_qvp["ZDR_offset_datacount"],
+                                        ds2_zdr_offsets_lr["ZDR_offset"],
+                                        ds2_zdr_offsets_qvp["ZDR_offset"]).fillna(ds2_zdr_offsets_lr["ZDR_offset"]).fillna(ds2_zdr_offsets_qvp["ZDR_offset"])
+
+            # finally, smooth it out
+            ds1_zdr_offsets_comb_smooth = ds1_zdr_offsets_comb.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
+            ds2_zdr_offsets_comb_smooth = ds2_zdr_offsets_comb.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
+
+            # save arrays
+            ds1_zdr_offsets_comb.to_netcdf(savefolder+"ds1_zdr_offsets_comb.nc")
+            ds2_zdr_offsets_comb.to_netcdf(savefolder+"ds2_zdr_offsets_comb.nc")
+
+            ds1_zdr_offsets_comb_smooth.to_netcdf(savefolder+"ds1_zdr_offsets_comb_smooth.nc")
+            ds2_zdr_offsets_comb_smooth.to_netcdf(savefolder+"ds2_zdr_offsets_comb_smooth.nc")
+
+            # Manually adjust some offsets in GZT based on ZDR medians calculated with ZH>30, RHOHV>0.99, SNRH>20, TEMP<0
+            # and taking a reference value for snow of 0.2 dB
+            # ds.ZDR_EC.where(ds.DBZH>0).where(ds.DBZH<30).where(ds.RHOHV>0.99).where(ds.SNRH>20).where(ds.TEMP<0).compute().median()
+            # ds.ZDR_EC.where(ds.DBZH>0).where(ds.DBZH<30).where(ds.RHOHV>0.99).where(ds.SNRH>20).where(ds.TEMP<0).compute().plot.hist(bins=30)
+            # ds.ZDR_EC.where(ds.DBZH>0).where(ds.DBZH<30).where(ds.RHOHV>0.99).where(ds.SNRH>20).where(ds.TEMP<0).compute().median(("azimuth", "range")).plot(); ax2 = plt.twinx(); ds.ZDR_EC.where(ds.DBZH>0).where(ds.DBZH<30).where(ds.RHOHV>0.99).where(ds.SNRH>20).where(ds.TEMP<0).compute().count(("azimuth", "range")).plot(ax=ax2, c="orange")
+
+            dates_to_update = { # offsets to 0.2 dB reference value
+            '2016-02-06': -0.4,
+            '2016-12-14': -0.32,
+            '2016-12-16': -0.26,
+            '2016-12-20': -0.35,
+            '2016-12-21': -0.36, # New value upon revision, old value: -0.26,
+            '2016-12-22': -0.32,
+            '2016-12-25': -0.2,
+            '2016-12-26': -0.26,
+            '2016-12-27': -0.26,
+            '2016-12-29': -0.5, # New value upon revision, old value: -0.32,
+            '2016-12-30': -0.38,
+            '2016-12-31': -0.26,
+            '2017-01-01': -0.38,
+            '2017-01-02': -0.32,
+            '2017-01-03': -0.32,
+            '2017-12-24': -0.2,
+            '2019-12-28': 0.2, # New value upon revision, old value: 0.05
+            '2019-12-31': -0.14,
+            '2020-01-02': -0.01,
+            '2020-01-03': -0.11,
+            '2020-01-07': -0.11,
+            '2020-01-16': -0.08,
+            '2020-01-17': 0.08-0.1,
+            '2020-01-19': -0.02,
+            '2020-01-20': -0.17,
+            '2020-01-31': -0.05,
+            '2020-02-07': 0.05,
+            '2020-02-08': -0.08,
+            '2020-02-29': -0.08,
+            '2020-03-18': 0.1,
+            '2020-03-19': -0.14,
+            '2020-03-20': -0.08,
+            }
+
+            ds2_zdr_offsets_comb_alt = ds2_zdr_offsets_comb.copy(deep=True)
+            ds2_zdr_offsets_comb_alt.loc[list(dates_to_update.keys())] = list(dates_to_update.values())
+            ds2_zdr_offsets_comb_alt_smooth = ds2_zdr_offsets_comb_alt.compute().interpolate_na("time").rolling({"time":5}, center=True, min_periods=1).median()
+
+            # save arrays
+            ds2_zdr_offsets_comb_alt.to_netcdf(savefolder+"ds2_zdr_offsets_comb_alt.nc")
+            ds2_zdr_offsets_comb_alt_smooth.to_netcdf(savefolder+"ds2_zdr_offsets_comb_alt_smooth.nc")
 
     if "riming" in vv_to_extract:
         ## Process the riming classification
@@ -6601,6 +6636,7 @@ for date in validation_dates:
                 ds2 = ds2.assign({"ZDR_EC_OC3":
                                   ds2["ZDR_EC"] - ds2_zdr_offsets_comb_alt_smooth.sel(time=ds2.time[0].values.astype(str)[:10]).mean()} )
 
+            # atten corr in rain with custom coefficients
             vv_AC2_rain = [vv for vv in vv_to_extract if "2_rain" in vv and "_ML" not in vv]
             vv_noAC2_rain = [vv.split("_AC2_rain")[0] for vv in vv_to_extract if "_AC2_rain" in vv and "_ML" not in vv]
 
@@ -6626,6 +6662,32 @@ for date in validation_dates:
                                                    interpolate_deltabump = True )
                 vars_rename = {vv: vv+"2_rain" for vv in [vv+"_AC" for vv in vv_noAC2_rain if vv in ds2.data_vars]}
                 ds2 = ds2.assign(ds2_AC2_rain.rename(vars_rename)[list(vars_rename.values())])
+
+            # atten corr in rain and the ML with custom coefficients
+            vv_noAC3 = [vv.split("_AC3")[0] for vv in vv_to_extract if "_AC3" in vv and "_ML" not in vv]
+
+            if len(vv_noAC3)>0:
+                ds1_AC3 = utils.attenuation_corr_linear(ds1[["PHIDP_OC_MASKED", "PHIDP_OC"]+[vv for vv in vv_noAC3 if vv in ds1.data_vars]].compute(),
+                                                    alpha = new_alpha, beta = new_beta, alphaml = new_alphaml, betaml = new_betaml,
+                                                   dbzh=[vv for vv in vv_noAC3 if "DBZH" in vv],
+                                                   zdr=[vv for vv in vv_noAC3 if "ZDR" in vv],
+                                                   phidp=["PHIDP_OC_MASKED", "PHIDP_OC"],
+                                                   ML_bot = "height_ml_bottom_new_gia_clean", ML_top = "height_ml_new_gia_clean",
+                                                   temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
+                                                   interpolate_deltabump = True )
+                vars_rename = {vv: vv+"3" for vv in [vv+"_AC" for vv in vv_noAC3 if vv in ds1.data_vars]}
+                ds1 = ds1.assign(ds1_AC3.rename(vars_rename)[list(vars_rename.values())])
+
+                ds2_AC3 = utils.attenuation_corr_linear(ds2[["PHIDP_OC_MASKED", "PHIDP_OC"]+[vv for vv in vv_noAC3 if vv in ds2.data_vars]].compute(),
+                                                    alpha = new_alpha, beta = new_beta, alphaml = new_alphaml, betaml = new_betaml,
+                                                   dbzh=[vv for vv in vv_noAC3 if "DBZH" in vv],
+                                                   zdr=[vv for vv in vv_noAC3 if "ZDR" in vv],
+                                                   phidp=["PHIDP_OC_MASKED", "PHIDP_OC"],
+                                                   ML_bot = "height_ml_bottom_new_gia_clean", ML_top = "height_ml_new_gia_clean",
+                                                   temp = "TEMP", temp_mlbot = 3, temp_mltop = -1, z_mlbot = 2000, dz_ml = 500,
+                                                   interpolate_deltabump = True )
+                vars_rename = {vv: vv+"3" for vv in [vv+"_AC" for vv in vv_noAC3 if vv in ds2.data_vars]}
+                ds2 = ds2.assign(ds2_AC3.rename(vars_rename)[list(vars_rename.values())])
 
             # add ML bump/min/max variables
             vv_bump = [vv for vv in vv_to_extract if "_MLbump" in vv and "_safer" not in vv and "_strict" not in vv]
@@ -6975,21 +7037,20 @@ for date in validation_dates:
 total_time = time.time() - start_time
 print(f"took {total_time/60:.2f} minutes.")
 
-#%%% Plot validation histogram (also possible for combined plot with selected_ML_valid events)
+#%%% Plot validation histogram
 
 phi = "PHIDP_OC_MASKED"
-dbzh_tg = "ZDR_EC_OC_AC2_rain_WRcorr" # ZDR_EC_OC_AC2_rain, DBZH_AC2_rain
+dbzh_tg = "ZDR_EC_OC_AC3_WRcorr" # DBZH_AC3, ZDR_EC_OC_AC2_rain, DBZH_AC2_rain
 dbzh_tg_uncorr = "ZDR_EC_OC" # ZDR_EC_OC_AC2_rain, DBZH # in case we want to compare to the original values without any correction
-dbzh_ref = "ZDR_EC_OC3_AC2_rain" # ZDR_EC_OC3_AC2_rain, DBZH_AC2_rain
+dbzh_ref = "ZDR_EC_OC_AC3_WRcorr" # DBZH_AC3, ZDR_EC_OC3_AC2_rain, DBZH_AC2_rain
 TEMPm = "TEMPm"
 TEMP = "TEMP"
 
-# repeat for the selected_ML_valid cases (or set to None to ignore)
-dbzh_tg_0 = "ZDR_EC_OC_AC_WRcorr" # ZDR_EC_OC_AC2_rain, DBZH_AC
-dbzh_tg_uncorr_0 = "ZDR_EC_OC" # ZDR_EC_OC_AC2_rain, DBZH # in case we want to compare to the original values without any correction
-dbzh_ref_0 = "ZDR_EC_OC_AC_WRcorr" # ZDR_EC_OC3_AC2_rain, DBZH_AC
+if "DBZH" in dbzh_tg:
+    xax = r"$Δ\mathrm{Z_{H}}\ [dBZ]$" # label for the x axis
+else:
+    xax = r"$Δ\mathrm{Z_{DR}}\ [dB]$" # label for the x axis
 
-xax = r"$Δ\mathrm{Z_{DR}}\ [dB]$" # label for the x axis
 unit = re.search(r"\[(.*?)\]", xax).group(1)
 
 varx_range = (5, 19, 1) # start, stop, step # (0.7, 0.98, 0.02)
@@ -7011,7 +7072,7 @@ def zdr_wrc(Zm):
     Zm_ = np.where(np.nan_to_num(Zm) < 32.5,
                    np.nan_to_num(Zm),
                    32.5)
-    return -0.00022*Zm_ + 0.00032*Zm_**2 # change here to adjust coefficients based on results
+    return -0.00052*Zm_ + 0.00033*Zm_**2 # change here to adjust coefficients based on results
 
 if "_WRcorr" in dbzh_tg:
     # Correct wet-radome timesteps
@@ -7031,24 +7092,6 @@ if "_WRcorr" in dbzh_ref:
         selected_ML_valid[dbzh_ref].append((selected_ML_valid[var_ref_][ti][0].copy() - zdr_wrc(selected_ML_valid["Zm"][ti][0].copy()),
                                          selected_ML_valid[var_ref_][ti][1].copy() - zdr_wrc(selected_ML_valid["Zm"][ti][1].copy()) ))
 
-if dbzh_tg_0 is not None:
-    if "_WRcorr" in dbzh_tg_0:
-        # Correct wet-radome timesteps
-        var_tg_ = "".join(dbzh_tg_0.split("_WRcorr"))
-        selected_ML_valid[dbzh_tg_0] = []
-        for ti in range(len(selected_ML_valid[var_tg_])):
-            # add to the new variable
-            selected_ML_valid[dbzh_tg_0].append((selected_ML_valid[var_tg_][ti][0].copy() - zdr_wrc(selected_ML_valid["Zm"][ti][0].copy()),
-                                             selected_ML_valid[var_tg_][ti][1].copy() - zdr_wrc(selected_ML_valid["Zm"][ti][1].copy()) ))
-
-    if "_WRcorr" in dbzh_ref_0:
-        # Correct wet-radome timesteps
-        var_ref_ = "".join(dbzh_ref_0.split("_WRcorr"))
-        selected_ML_valid[dbzh_ref_0] = []
-        for ti in range(len(selected_ML_valid[var_ref_])):
-            # add to the new variable
-            selected_ML_valid[dbzh_ref_0].append((selected_ML_valid[var_ref_][ti][0].copy() - zdr_wrc(selected_ML_valid["Zm"][ti][0].copy()),
-                                             selected_ML_valid[var_ref_][ti][1].copy() - zdr_wrc(selected_ML_valid["Zm"][ti][1].copy()) ))
 
 # ML atten correction based on results
 def mlc(phi_bump):
@@ -7078,9 +7121,9 @@ tg_TEMP = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid[TEMP] ])
 
 ref_TEMP = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid[TEMP] ])
 
-tg_phi_bump = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid[phi+"_MLbump"] ])
+# tg_phi_bump = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid[phi+"_MLbump"] ])
 
-ref_phi_bump = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid[phi+"_MLbump"] ])
+# ref_phi_bump = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid[phi+"_MLbump"] ])
 
 tg_height_ml_top = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["height_ml_new_gia"] ])
 
@@ -7088,9 +7131,13 @@ tg_RHOHV = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["RHOHV"] ])
 
 ref_RHOHV = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid["RHOHV"] ])
 
-tg_z_beambot = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["z_beambot"] ])
+tg_z = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["z"] ])
 
-ref_z_beambot = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid["z_beambot"] ])
+ref_z = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid["z"] ])
+
+# tg_z_beambot = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["z_beambot"] ])
+
+# ref_z_beambot = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid["z_beambot"] ])
 
 tg_bca = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["beam_cross_angle"] ])
 
@@ -7110,9 +7157,16 @@ tg_height_ml_top_qvp = [ pd.DataFrame(d1).ffill(axis=1).to_numpy(copy=True) for 
 
 ref_height_ml_top_qvp = [ pd.DataFrame(d2).ffill(axis=1).to_numpy(copy=True) for d1,d2 in selected_ML_valid["height_ml_new_gia_fromqvp"] ]
 
+tg_height_ml_bot_qvp = [ pd.DataFrame(d1).ffill(axis=1).to_numpy(copy=True) for d1,d2 in selected_ML_valid["height_ml_bottom_new_gia_fromqvp"] ]
+
+ref_height_ml_bot_qvp = [ pd.DataFrame(d2).ffill(axis=1).to_numpy(copy=True) for d1,d2 in selected_ML_valid["height_ml_bottom_new_gia_fromqvp"] ]
+
 for ts in range(len(tg_height_ml_top_qvp)):
     # fill the NaN height_ml_top_qvp values from ref with tg
     ref_height_ml_top_qvp[ts][np.isnan(ref_height_ml_top_qvp[ts])] = tg_height_ml_top_qvp[ts][np.isnan(ref_height_ml_top_qvp[ts])]
+
+    tg_height_ml_bot_qvp[ts][np.isnan(tg_height_ml_bot_qvp[ts])] = ref_height_ml_bot_qvp[ts][np.isnan(tg_height_ml_bot_qvp[ts])]
+    ref_height_ml_bot_qvp[ts][np.isnan(ref_height_ml_bot_qvp[ts])] = tg_height_ml_bot_qvp[ts][np.isnan(ref_height_ml_bot_qvp[ts])]
 
     # remove outliers (median+-std)
     tg_m = np.nanmedian(tg_height_ml_top_qvp[ts][:,0])
@@ -7124,124 +7178,61 @@ for ts in range(len(tg_height_ml_top_qvp)):
     ref_height_ml_top_qvp[ts][ref_height_ml_top_qvp[ts] < ref_m-ref_std] = np.nan
     ref_height_ml_top_qvp[ts][ref_height_ml_top_qvp[ts] > ref_m+ref_std] = np.nan
 
+    # remove outliers (median+-std)
+    tg_m = np.nanmedian(tg_height_ml_bot_qvp[ts][:,0])
+    tg_std = np.nanstd(tg_height_ml_bot_qvp[ts][:,0])
+    tg_height_ml_bot_qvp[ts][tg_height_ml_bot_qvp[ts] < tg_m-tg_std] = np.nan
+    tg_height_ml_bot_qvp[ts][tg_height_ml_bot_qvp[ts] > tg_m+tg_std] = np.nan
+    ref_m = np.nanmedian(ref_height_ml_bot_qvp[ts][:,0])
+    ref_std = np.nanstd(ref_height_ml_bot_qvp[ts][:,0])
+    ref_height_ml_bot_qvp[ts][ref_height_ml_bot_qvp[ts] < ref_m-ref_std] = np.nan
+    ref_height_ml_bot_qvp[ts][ref_height_ml_bot_qvp[ts] > ref_m+ref_std] = np.nan
+
     # Interpolate and extrapolate to fill NaNs
     tg_height_ml_top_qvp[ts] = pd.DataFrame(tg_height_ml_top_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
     ref_height_ml_top_qvp[ts] = pd.DataFrame(ref_height_ml_top_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+
+    tg_height_ml_bot_qvp[ts] = pd.DataFrame(tg_height_ml_bot_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
+    ref_height_ml_bot_qvp[ts] = pd.DataFrame(ref_height_ml_bot_qvp[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
 
 # finally, flatten
 tg_height_ml_top_qvp = np.concat([ds1.flatten() for ds1 in tg_height_ml_top_qvp])
 ref_height_ml_top_qvp = np.concat([ds2.flatten() for ds2 in ref_height_ml_top_qvp])
 
-# fill remaining NaNs with an arbitrarely low value so it does no undesired filtering
+tg_height_ml_bot_qvp = np.concat([ds1.flatten() for ds1 in tg_height_ml_bot_qvp])
+ref_height_ml_bot_qvp = np.concat([ds2.flatten() for ds2 in ref_height_ml_bot_qvp])
+
+# fill remaining NaNs with an arbitrarely low/high value so it does no undesired filtering
 tg_height_ml_top_qvp[np.isnan(tg_height_ml_top_qvp)] = 0
 ref_height_ml_top_qvp[np.isnan(ref_height_ml_top_qvp)] = 0
+
+tg_height_ml_bot_qvp[np.isnan(tg_height_ml_bot_qvp)] = 4000
+ref_height_ml_bot_qvp[np.isnan(ref_height_ml_bot_qvp)] = 4000
 
 # filter by valid values according to conditions
 #!!! The best filter would have ref_TEMPm < -1, but looks like no event so far
 # meets this condition. So let's use PHI and Zm as an alternative for now
 # valid = (tg_TEMPm > 3) & (np.nan_to_num(ref_phi_bump) < 1)  & (ref_phi < 5) & (ref_Zm < 5) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)
-valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)\
-        & (tg_height_ml_top_qvp < 1600)\
-        & (tg_phi_bump > varx_range[0])\
-        & (tg_z_beambot > tg_height_ml_top_qvp) & (ref_z_beambot > tg_height_ml_top_qvp)\
-        & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\
-        & (tg_TEMPm > 3) & (ref_TEMPm < 0)\
+valid = np.isfinite(tg_dbzh) & np.isfinite(ref_dbzh)\
         & (tg_bca > 135) & (ref_bca > 135)\
+        & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\
+        & (tg_phi > varx_range[0])\
+        & ( (tg_TEMPm > 3) + (tg_TEMPm < 0) ) \
+        & ( (ref_TEMPm > 3) + (ref_TEMPm < 0) ) \
+        & ( (tg_z < tg_height_ml_bot_qvp) + (tg_z > tg_height_ml_top_qvp) ) \
+        & ( (ref_z < tg_height_ml_bot_qvp) + (ref_z > tg_height_ml_top_qvp) ) \
+        # & (tg_height_ml_top_qvp < 1600)\
+        # & (tg_z_beambot > tg_height_ml_top_qvp) & (ref_z_beambot > tg_height_ml_top_qvp)\
+        # & (tg_TEMPm > 3) & (ref_TEMPm < 0)\
 
 
 delta_dbzh = (tg_dbzh - ref_dbzh)[valid]
 delta_dbzh_uncorr = (tg_dbzh_uncorr - ref_dbzh)[valid] # in case we want to compare to the original values without any correction
-tg_phi_bump = tg_phi_bump[valid]
+# tg_phi_bump = tg_phi_bump[valid]
 
-delta_dbzh_mlc = delta_dbzh - mlc(tg_phi_bump)
+delta_dbzh_mlc = delta_dbzh #- mlc(tg_phi_bump)
 
-# extract/build necessary variables (selected_ML_valid cases)
-if dbzh_tg_0 is not None:
-    tg_dbzh_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid[dbzh_tg_0] ])
 
-    tg_dbzh_uncorr_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid[dbzh_tg_uncorr_0] ])
-
-    ref_dbzh_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid[dbzh_ref_0] ])
-
-    tg_phi_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid[phi] ])
-
-    ref_phi_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid[phi] ])
-
-    tg_Zm_0 = np.nan_to_num(np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["Zm"] ]))
-
-    ref_Zm_0 = np.nan_to_num(np.concat([ d2.flatten() for d1,d2 in selected_ML_valid["Zm"] ]))
-
-    tg_height_ml_bot_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["height_ml_bottom_new_gia"] ])
-
-    ref_height_ml_bot_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid["height_ml_bottom_new_gia"] ])
-
-    tg_z_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["z"] ])
-
-    ref_z_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid["z"] ])
-
-    tg_TEMP_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["TEMP"] ])
-
-    ref_TEMP_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid["TEMP"] ])
-
-    tg_RHOHV_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["RHOHV"] ])
-
-    ref_RHOHV_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid["RHOHV"] ])
-
-    tg_bca_0 = np.concat([ d1.flatten() for d1,d2 in selected_ML_valid["beam_cross_angle"] ])
-
-    ref_bca_0 = np.concat([ d2.flatten() for d1,d2 in selected_ML_valid["beam_cross_angle"] ])
-
-    # interpolate and extrapolate the ML heights for each day to fill NaNs
-    tg_height_ml_bot_qvp_0 = [ pd.DataFrame(d1).ffill(axis=1).to_numpy(copy=True) for d1,d2 in selected_ML_valid["height_ml_bottom_new_gia_fromqvp"] ]
-
-    ref_height_ml_bot_qvp_0 = [ pd.DataFrame(d2).ffill(axis=1).to_numpy(copy=True) for d1,d2 in selected_ML_valid["height_ml_bottom_new_gia_fromqvp"] ]
-
-    for ts in range(len(tg_height_ml_bot_qvp_0)):
-        # fill the NaN height_ml_bot_qvp values from tg with ref and viceversa
-        tg_height_ml_bot_qvp_0[ts][np.isnan(tg_height_ml_bot_qvp_0[ts])] = ref_height_ml_bot_qvp_0[ts][np.isnan(tg_height_ml_bot_qvp_0[ts])]
-        ref_height_ml_bot_qvp_0[ts][np.isnan(ref_height_ml_bot_qvp_0[ts])] = tg_height_ml_bot_qvp_0[ts][np.isnan(ref_height_ml_bot_qvp_0[ts])]
-
-        # remove outliers (median+-std)
-        tg_m = np.nanmedian(tg_height_ml_bot_qvp_0[ts][:,0])
-        tg_std = np.nanstd(tg_height_ml_bot_qvp_0[ts][:,0])
-        tg_height_ml_bot_qvp_0[ts][tg_height_ml_bot_qvp_0[ts] < tg_m-tg_std] = np.nan
-        tg_height_ml_bot_qvp_0[ts][tg_height_ml_bot_qvp_0[ts] > tg_m+tg_std] = np.nan
-        ref_m = np.nanmedian(ref_height_ml_bot_qvp_0[ts][:,0])
-        ref_std = np.nanstd(ref_height_ml_bot_qvp_0[ts][:,0])
-        ref_height_ml_bot_qvp_0[ts][ref_height_ml_bot_qvp_0[ts] < ref_m-ref_std] = np.nan
-        ref_height_ml_bot_qvp_0[ts][ref_height_ml_bot_qvp_0[ts] > ref_m+ref_std] = np.nan
-
-        # Interpolate and extrapolate to fill NaNs
-        tg_height_ml_bot_qvp_0[ts] = pd.DataFrame(tg_height_ml_bot_qvp_0[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
-        ref_height_ml_bot_qvp_0[ts] = pd.DataFrame(ref_height_ml_bot_qvp_0[ts]).interpolate(axis=0).ffill(axis=0).bfill(axis=0).values
-
-    # finally, flatten
-    tg_height_ml_bot_qvp_0 = np.concat([ds1.flatten() for ds1 in tg_height_ml_bot_qvp_0])
-    ref_height_ml_bot_qvp_0 = np.concat([ds2.flatten() for ds2 in ref_height_ml_bot_qvp_0])
-
-    # fill remaining NaNs with an arbitrarely high value so it does no undesired filtering
-    tg_height_ml_bot_qvp_0[np.isnan(tg_height_ml_bot_qvp_0)] = 4000
-    ref_height_ml_bot_qvp_0[np.isnan(ref_height_ml_bot_qvp_0)] = 4000
-
-    # filter by valid values according to conditions
-    valid_0 = np.isfinite(tg_dbzh_0) & np.isfinite(ref_dbzh_0) & (np.isfinite(tg_phi_0))\
-            & (tg_phi_0 > varx_range[0])\
-            & (tg_z_0 < tg_height_ml_bot_qvp_0) & (ref_z_0 < ref_height_ml_bot_qvp_0)\
-            & (tg_RHOHV_0 > 0.97) & (ref_RHOHV_0 > 0.97)\
-            & (tg_TEMP_0 > 3) & (ref_TEMP_0 > 3) \
-            & (tg_bca_0 > 135) & (ref_bca_0 > 135)\
-            # & (ref_phi_0<ref_phi_max)
-            # & (ref_Zm_0<Zm_max) & (tg_Zm_0<Zm_max)\
-
-    delta_dbzh_0 = (tg_dbzh_0 - ref_dbzh_0)[valid_0]
-    delta_dbzh_uncorr_0 = (tg_dbzh_uncorr_0 - ref_dbzh_0)[valid_0] # in case we want to compare to the original values without any correction
-
-    # Join both datasets
-
-    delta_dbzh = np.concat((delta_dbzh, delta_dbzh_0))
-    delta_dbzh_uncorr = np.concat((delta_dbzh_uncorr, delta_dbzh_uncorr_0))
-
-    delta_dbzh_mlc = np.concat((delta_dbzh_mlc, delta_dbzh_0))
 
 # --- Initialize plot ---
 with mpl.rc_context({
@@ -7259,8 +7250,10 @@ with mpl.rc_context({
     delta_ref = delta_dbzh_uncorr # delta_dbzh or delta_dbzh_uncorr
 
     # --- Config ---
-    # bins = np.arange(-15.5, 16.5, 1)  # bin edges
-    bins = np.arange(-2.05, 2.15, 0.1)  # bin edges
+    if "DBZH" in dbzh_tg:
+        bins = np.arange(-15.5, 16.5, 1)  # bin edges
+    else:
+        bins = np.arange(-2.05, 2.15, 0.1)  # bin edges
     bin_centers = bins[:-1] + np.diff(bins).mean()/2
     bin_width = np.diff(bins).mean()
 
@@ -7281,10 +7274,10 @@ with mpl.rc_context({
 
     # --- Plot histograms ---
     ax.bar(bin_centers, freq1, width=bin_width,
-           color="gray", alpha=1.0, label=f"Mean={mean1:.2f} {unit}\nSt_Dev={std1:.2f} {unit}\nMedian={median1:.2f} {unit}")
+           color="gray", alpha=1.0, label=f"Mean={mean1:.2f} {unit}\nSD={std1:.2f} {unit}\nMedian={median1:.2f} {unit}")
     ax.bar(bin_centers, freq2, width=bin_width,
            color="#00000000", edgecolor="black", linewidth=0.8,
-           label=f"Mean={mean2:.2f} {unit}\nSt_Dev={std2:.2f} {unit}\nMedian={median2:.2f} {unit}")
+           label=f"Mean={mean2:.2f} {unit}\nSD={std2:.2f} {unit}\nMedian={median2:.2f} {unit}")
 
     # --- Normal distribution curve fitted to delta_dbzh_mlc ---
     x_dense = np.linspace(bins[0], bins[-1], 300)
@@ -7503,7 +7496,7 @@ def zdr_wrc(Zm):
     Zm_ = np.where(np.nan_to_num(Zm) < 32.5,
                    np.nan_to_num(Zm),
                    32.5)
-    return -0.00022*Zm_ + 0.00032*Zm_**2 # change here to adjust coefficients based on results
+    return -0.00052*Zm_ + 0.00033*Zm_**2 # change here to adjust coefficients based on results
 
 if "_WRcorr" in dbzh_tg:
     # Correct wet-radome timesteps
@@ -8170,6 +8163,207 @@ print(f"Prob (F-statistic): {results.f_pvalue}")
 # You can also print a comprehensive summary table
 print(results.summary())
 
+#%% Wet radome attenuation estimation based on ZDR above the ML (dry aggregated snow)
+#%%% Load QVPs
+path_qvps = '/automount/realpep//upload/jgiles/dmi/qvps_selected_for_calibration_attenuation/*/*/*/HTY/*/*/ML_detected.txt'
+
+X_DBZH = "DBZH_AC"
+X_RHO = "RHOHV_NC" # if RHOHV_NC is set here, it is then checked against the original RHOHV in the next cell
+X_ZDR = "ZDR_EC_OC_AC"
+X_KDP = "KDP_ML_corrected_EC"
+X_PHI = "UPHIDP_UF_OC_MASKED"
+
+if "dwd" in path_qvps:
+    country="dwd"
+    X_TH = "TH"
+if "boxpol" in path_qvps:
+    country="boxpol"
+    X_TH = "DBTH"
+    X_PHI = "PHIDP_UF_OC_MASKED"
+elif "dmi" in path_qvps:
+    country="dmi"
+    X_TH = "DBZH"
+    X_PHI = "PHIDP_UF_OC_MASKED"
+    X_ZDR = "ZDR_EC_OC_WRC_AC"
+
+ff_glob = glob.glob(path_qvps)
+
+if "dmi" in path_qvps:
+    # create a function to only select the elevation closer to 10 for each date
+    from collections import defaultdict
+    def get_closest_elevation(paths):
+        elevation_dict = defaultdict(list)
+        for path in paths:
+            parts = path.split('/')
+            date = parts[-5]
+            elevation = float(parts[-2])
+            elevation_dict[date].append((elevation, path))
+
+        result_paths = []
+        for date, elevations in elevation_dict.items():
+            closest_elevation_path = min(elevations, key=lambda x: abs(x[0] - 10.1))[1] # We use 10.1 to prefer elevation 12 instead of 8 if both available
+            result_paths.append(closest_elevation_path)
+
+        return result_paths
+
+    ff_glob = get_closest_elevation(ff_glob)
+
+try:
+    ff = [glob.glob(os.path.dirname(fp)+"/*allm*")[0] for fp in ff_glob ]
+except IndexError:
+    ff = [glob.glob(os.path.dirname(fp)+"/*12345*")[0] for fp in ff_glob ]
+
+alignz = False
+if "dwd" in path_qvps: alignz = True
+qvps = utils.load_qvps(ff, align_z=alignz, fix_TEMP=False, fillna=False)
+
+# Move TEMP to coordinate
+if "TEMP" not in qvps.coords:
+    qvps = qvps.set_coords("TEMP")
+
+#%%% Clean data
+max_change = 400 # set a maximum value of ML height change from one timestep to another (in m)
+max_std = 200 # set a maximum value of ML std from one timestep to another (in m)
+time_window = 5 # set timestep window for the std computation (centered)
+min_period = 3 # set minimum number of valid ML values in the window (centered)
+
+# min value for SNRH thresholding. This has a significant influence in the KDP calculation and also affects the QVPs computations.
+# Here is just redundant but I add it anyways
+SNRH_min = 15
+
+min_entropy_thresh = 0.85
+# Filter only stratiform events (min entropy >= min_entropy_thresh) and ML detected
+# with ProgressBar():
+#     qvps_strat = qvps.where( (qvps["min_entropy"]>=min_entropy_thresh) & (qvps.height_ml_bottom_new_gia.notnull()), drop=True).compute()
+
+riming_varnames =['riming_DR_'+"_".join([X_ZDR, X_DBZH]),
+               'riming_'+"_".join([X_ZDR, X_DBZH]),
+               ]
+
+start_time = time.time()
+print("Processing QVPs...")
+
+#### RHOHV noise correction verification
+
+# Check that RHOHV_NC is actually better (less std) than RHOHV, otherwise just use RHOHV, on a per-day basis
+std_tolerance = 0.15 # std(RHOHV_NC) must be < (std(RHOHV))*(1+std_tolerance), otherwise use RHOHV
+min_rho = 0.7 # min RHOHV value for filtering. Only do this test with the highest values to avoid wrong results
+mean_tolerance = 0.02 # 2% tolerance, for checking if RHOHV_NC is actually larger than RHOHV (overall higher values)
+
+if "_NC" in X_RHO:
+    # Check that the corrected RHOHV does not have higher STD than the original (1 + std_tolerance)
+    # if that is the case we take it that the correction did not work well so we won't use it
+    cond_rhohv1 = (
+                    qvps[X_RHO].where(qvps[X_RHO]>min_rho).resample({"time":"D"}).std(dim=("time", "z")) < \
+                    qvps["RHOHV"].where(qvps["RHOHV"]>min_rho).resample({"time":"D"}).std(dim=("time", "z"))*(1+std_tolerance)
+                    ).compute()
+
+    # Check that the corrected RHOHV have overall higher mean than the original (1 - mean_tolerance)
+    # if that is the case we take it that the correction did not work well so we won't use it
+    cond_rhohv2 = ( qvps[X_RHO].resample({"time":"D"}).mean(dim=("time", "z")) > \
+                   qvps["RHOHV"].resample({"time":"D"}).mean(dim=("time", "z"))*(1-mean_tolerance) ).compute()
+
+    cond_rhohv = cond_rhohv1 * cond_rhohv2
+
+    # create an xarray.Dataarray with the valid timesteps
+    valid_dates = cond_rhohv.where(cond_rhohv, drop=True).time.dt.date
+    valid_datetimes = [date.values in valid_dates for date in qvps.time.dt.date]
+    valid_datetimes_xr = xr.DataArray(valid_datetimes, coords={"time": qvps["time"]})
+
+    # Redefine RHOHV_NC: keep it in the valid datetimes, put RHOHV in the rest
+    qvps[X_RHO] = qvps[X_RHO].where(valid_datetimes_xr, qvps["RHOHV"])
+
+# Clean ML
+diff_bottom = qvps["height_ml_bottom_new_gia"] - qvps["height_ml_bottom_new_gia"].shift(time=1)
+cond_ML_bottom_change = abs(diff_bottom) < max_change
+
+cond_ML_bottom_std = qvps["height_ml_bottom_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute() < max_std
+# cond_ML_bottom_minlen = qvps["height_ml_bottom_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
+
+diff_top = qvps["height_ml_new_gia"] - qvps["height_ml_new_gia"].shift(time=1)
+cond_ML_top_change = abs(diff_top) < max_change
+
+cond_ML_top_std = qvps["height_ml_new_gia"].rolling(time=time_window, min_periods=min_period, center=True).std().compute() < max_std
+# cond_ML_top_minlen = qvps["height_ml_new_gia"].notnull().rolling(time=5, min_periods=3, center=True).sum().compute()>2
+
+allcond = (cond_ML_bottom_change * cond_ML_bottom_std * cond_ML_top_change * cond_ML_top_std).compute()
+
+# Filter out non relevant values
+X_SNRH = None
+if "SNRHC" in qvps: X_SNRH = "SNRHC"
+elif "SNRH" in qvps: X_SNRH = "SNRH"
+
+if X_SNRH is not None:
+    valid_conditions = (
+                        (qvps[X_TH] > -10 )&
+                        (qvps[X_KDP].fillna(0.) > -0.1)&
+                        (qvps[X_KDP].fillna(0.) < 3)&
+                        (qvps[X_RHO] > 0.7)&
+                        (qvps[X_ZDR] > -1) &
+                        (qvps[X_ZDR] < 3) &
+                        (qvps[X_SNRH] > SNRH_min)
+                        )
+else:
+    print("Could not filter out low SNR")
+    valid_conditions = (
+                        (qvps[X_TH] > -10 )&
+                        (qvps[X_KDP].fillna(0.) > -0.1)&
+                        (qvps[X_KDP].fillna(0.) < 3)&
+                        (qvps[X_RHO] > 0.7)&
+                        (qvps[X_ZDR] > -1) &
+                        (qvps[X_ZDR] < 3)
+                        )
+
+# Apply to DBZH just to remove empy z coordinates
+qvps_dbzh_fil = qvps["DBZH"].where(valid_conditions)
+
+qvps_dbzh_strat_ML_fil = qvps_dbzh_fil.where(allcond)
+
+valid_z = qvps_dbzh_strat_ML_fil.notnull().any(dim="time").compute()
+
+qvps_fil = qvps.where(valid_conditions)
+
+qvps_strat_ML_fil = qvps_fil.where(allcond)
+
+valid_times_ML = allcond.compute()
+
+qvps_strat_ML_fil = qvps_strat_ML_fil.sel(time=valid_times_ML, z=valid_z)
+
+#%%% Temporary save the datasets for quicker reload
+temp_savepath = realpep_path+"/upload/jgiles/temp_compare_calibration_attenuation_adjacent_radars_alldates_multipleneighbors_new/"
+
+
+
+#%%% Plot scatter
+# Clean data or select previosly cleaned data
+# ds = qvps.where(qvps.Zm>0).where(qvps.height_ml_new_gia.notnull()).dropna("z", how="all").dropna("time", how="all")
+#ds = qvps_strat_ML_fil
+
+# 1. Select the vertical coordinate (use 'range' if height is stored there, otherwise 'z')
+# vert_coord = ds["range"] if "range" in ds.coords else ds["z"]
+vert_coord = ds["z"]
+
+# 2. Find the index along 'z' nearest to height_ml_new_gia for each time step
+nearest_z_idx = np.abs(vert_coord - ds["height_ml_new_gia"] ).argmin(dim="z")
+
+# 3. Extract ZDR_EC_OC_AC values at these nearest indices (vectorized indexing)
+zdr_at_ml = ds["ZDR_EC_OC_AC"].isel(z=nearest_z_idx.compute())
+
+# 4. Extract Zm coordinate
+zm_values = ds["Zm"]
+
+# 5. Create scatter plot
+plt.figure(figsize=(8, 6))
+plt.scatter(zm_values, zdr_at_ml, alpha=0.5, c="tab:blue", edgecolors="none")
+
+plt.xlabel("Zm")
+plt.ylabel("ZDR_EC_OC_AC at height_ml_new_gia")
+plt.ylim((-0.3, 1.75))
+plt.title("Scatter plot of ZDR_EC_OC_AC (at height_ml_new_gia) vs Zm")
+plt.grid(True, linestyle="--", alpha=0.5)
+plt.tight_layout()
+plt.show()
+
 #%% Plot QVPs to check the corrections
 
 #%%% Load QVP
@@ -8579,12 +8773,36 @@ def plot_sbm_scatter(df, x_rain, y_rain, x_ml, y_ml, xlabel="ZDR [dB]", ylabel="
 
         # Add Observations line handle
         if hline_val is not None:
-            legend_handles.append(mlines.Line2D([], [], color='black', marker="P", linestyle='', markersize=3, label='Empirical: Rain'))
+            # 1. Create filled and hollow handles for the tuple
+            h_filled = mlines.Line2D([], [], color='black', marker="P", markerfacecolor='black', markeredgecolor='black', linestyle='', markersize=3, label='Empirical: Rain')
+            h_hollow = mlines.Line2D([], [], color='black', marker="P", markerfacecolor='none', markeredgecolor='black', linestyle='', markersize=3)
+
+            # 2. Append them as a tuple along with the label
+            legend_handles.append(((h_filled, h_hollow)))
+
+            # legend_handles.append(mlines.Line2D([], [], color='black', marker="P", linestyle='', markersize=3, label='Empirical: Rain'))
+
             legend_handles.append(mlines.Line2D([], [], color='black', linestyle='--', markersize=3, label='Empirical: ML'))
 
         # Draw the custom legend
         if plot_legend:
-            ax.legend(handles=legend_handles, loc="upper right", frameon=True, edgecolor="gray", markerscale=1.5)
+            # 3. Extract handles and labels separately
+            handles = []
+            labels = []
+            for item in legend_handles:
+                if isinstance(item, tuple):
+                    # For a tuple, grab the label from the first handle in the tuple
+                    handles.append(item)
+                    labels.append(item[0].get_label())
+                else:
+                    handles.append(item)
+                    labels.append(item.get_label())
+
+            ax.legend(handles=handles, labels=labels,
+                      loc="upper right", frameon=True,
+                      edgecolor="gray", markerscale=1.5,
+                      handler_map={tuple: mpl.legend_handler.HandlerTuple(ndivide=None, pad=0.5)}
+                      )
 
         # plt.show()
         return fig, ax
@@ -9092,7 +9310,7 @@ def plot_sbm_o_medians(df, x_var='ZDR', y_var='beta',
         legend_handles.append(mlines.Line2D([], [], color='none', label=''))
 
         # 2. Orientation (Sigma) Section (Proxy artists with black lines)
-        legend_handles.append(mlines.Line2D([], [], color='none', label='Orientation'))
+        legend_handles.append(mlines.Line2D([], [], color='none', label='Canting angle SD'))
         for s in sigmas:
             legend_handles.append(mlines.Line2D([], [], color='black', linestyle=ls_sig[s],
                                                 linewidth=1.5, label=f'  {s}°'))
@@ -9100,17 +9318,38 @@ def plot_sbm_o_medians(df, x_var='ZDR', y_var='beta',
         # 3. Empirical Legend
         if empirical_vals is not None:
             legend_handles.append(mlines.Line2D([], [], color='none', label=''))
-            legend_handles.append(mlines.Line2D([], [], color='black', marker='P',
-                                                linestyle='None', markersize=6, label='Empirical'))
+            # legend_handles.append(mlines.Line2D([], [], color='black', marker='P',
+            #                                     linestyle='None', markersize=6, label='Empirical'))
+
+            h_filled = mlines.Line2D([], [], color='black', marker="P", markerfacecolor='black', markeredgecolor='black', linestyle='', markersize=6, label='Empirical')
+            h_hollow = mlines.Line2D([], [], color='black', marker="P", markerfacecolor='none', markeredgecolor='black', linestyle='', markersize=6)
+
+            # 2. Append them as a tuple along with the label
+            legend_handles.append(((h_filled, h_hollow)))
+
 
         if plot_legend:
+            handles = []
+            labels = []
+            for item in legend_handles:
+                if isinstance(item, tuple):
+                    # For a tuple, grab the label from the first handle in the tuple
+                    handles.append(item)
+                    labels.append(item[0].get_label())
+                else:
+                    handles.append(item)
+                    labels.append(item.get_label())
+
+
             # Draw the legend. We use a slightly smaller font for the values to offset the "titles"
-            leg = ax.legend(handles=legend_handles, loc="upper left", frameon=True,
-                            edgecolor="gray", borderpad=0.5, labelspacing=0.4)
+            leg = ax.legend(handles=handles, labels=labels, loc="upper left", frameon=True,
+                            edgecolor="gray", borderpad=0.5, labelspacing=0.4,
+                            handler_map={tuple: mpl.legend_handler.HandlerTuple(ndivide=None, pad=0.5)}
+                            )
 
             # Emphasize the pseudo-titles in the legend by making them bold
             for text in leg.get_texts():
-                if text.get_text() in ['Temperature', 'Orientation']:
+                if text.get_text() in ['Temperature', 'Canting angle SD']:
                     text.set_weight('bold')
 
         return fig, ax
