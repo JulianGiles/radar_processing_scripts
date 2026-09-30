@@ -8168,6 +8168,16 @@ print(results.summary())
 path_qvps = '/automount/realpep//upload/jgiles/dmi/qvps_selected_for_calibration_attenuation/*/*/*/HTY/*/*/ML_detected.txt'
 
 selected_dates = [ # only load files for these dates
+    # ML high
+    "2016-10-18",
+    "2016-10-28",
+    "2017-04-12",
+    "2017-04-13",
+    "2017-05-22", # ?
+    "2020-03-12", #### no valid matches: 3.0-0.5
+    "2020-03-13", #### no valid matches: 3.0-0.5
+
+    # ML low
     "2016-12-14",
     # "2016-12-16",
     # "2016-12-20",
@@ -8176,7 +8186,7 @@ selected_dates = [ # only load files for these dates
     "2016-12-25", # only 21 valid value pairs after filtering
     "2016-12-29",
     "2016-12-31",
-    "2017-01-01",
+    "2017-01-01", # <- ideal results for this
     "2017-01-02",
     # "2017-01-03",
     "2019-12-28",
@@ -8258,10 +8268,6 @@ min_entropy_thresh = 0.85
 # Filter only stratiform events (min entropy >= min_entropy_thresh) and ML detected
 # with ProgressBar():
 #     qvps_strat = qvps.where( (qvps["min_entropy"]>=min_entropy_thresh) & (qvps.height_ml_bottom_new_gia.notnull()), drop=True).compute()
-
-riming_varnames =['riming_DR_'+"_".join([X_ZDR, X_DBZH]),
-               'riming_'+"_".join([X_ZDR, X_DBZH]),
-               ]
 
 start_time = time.time()
 print("Processing QVPs...")
@@ -8385,7 +8391,7 @@ save_with_icechunk(qvps_strat_ML_fil.chunk({'time': 200, 'z': -1}), temp_savepat
 #%%% Plot scatter
 # Clean data or select previosly cleaned data
 # ds = qvps.where(qvps.Zm>0).where(qvps.height_ml_new_gia.notnull()).dropna("z", how="all").dropna("time", how="all")
-ds = qvps_strat_ML_fil.where(qvps_strat_ML_fil.Zm>0).chunk(dict(z=-1)).interpolate_na("z", method="linear")
+ds = qvps_strat_ML_fil.where(qvps_strat_ML_fil.Zm>0).where(qvps_strat_ML_fil.DBZH_qvp_count>60).chunk(dict(z=-1)).interpolate_na("z", method="linear")
 
 # 1. Select the vertical coordinate (use 'range' if height is stored there, otherwise 'z')
 # vert_coord = ds["range"] if "range" in ds.coords else ds["z"]
@@ -8424,20 +8430,43 @@ wr_limits = {
 }
 wr_tags = list(wr_limits.keys())
 
-# Extract values
-zdr_vals = np.array(zdr_at_ml).flatten()
-zm_vals = np.array(zm_values).flatten()
+# Create a dataframe for easy daily grouping
+df = pd.DataFrame({
+    'time': zdr_at_ml.time.values,
+    'zdr': zdr_at_ml.values,
+    'zm': zm_values.values
+})
 
 # Filter out NaNs
-valid_mask = np.isfinite(zdr_vals) & np.isfinite(zm_vals)
-zdr_vals = zdr_vals[valid_mask]
-zm_vals = zm_vals[valid_mask]
+df = df.dropna()
 
-plot_data = []
-for tag in wr_tags:
-    low, high = wr_limits[tag]
-    idx = (zm_vals >= low) & (zm_vals < high)
-    plot_data.append(zdr_vals[idx])
+# Extract date
+df['date'] = df['time'].dt.date
+
+# Categorize zm into WR bins
+bins = [wr_limits[tag][0] for tag in wr_tags] + [wr_limits[wr_tags[-1]][1]]
+df['wr_bin'] = pd.cut(df['zm'], bins=bins, labels=wr_tags, right=False)
+
+# Group by date and bin, compute mean ZDR
+df_mean = df.groupby(['date', 'wr_bin'], observed=False)['zdr'].mean().reset_index()
+
+# Pivot to have dates as rows and bins as columns
+df_pivot = df_mean.pivot(index='date', columns='wr_bin', values='zdr').reset_index()
+
+_ = wr_tags.pop(0) # remove 'noWR'
+diff_data = {tag: [] for tag in wr_tags}
+
+for idx, row in df_pivot.iterrows():
+    baseline = row['noWR']
+    if pd.isna(baseline):
+        continue
+
+    for tag in wr_tags:
+        if not pd.isna(row[tag]):
+            diff = row[tag] - baseline
+            diff_data[tag].append(diff)
+
+plot_data = [np.array(diff_data[tag]) for tag in wr_tags]
 
 # Boxplot settings
 sc = False
@@ -8446,7 +8475,7 @@ wp = 0
 ymin = -0.3
 ymax = 1.75
 xminmax = np.arange(0,55,5)
-yax = r"$Z_{DR\_EC\_OC\_AC}$ at $height\_ml\_new\_gia$"
+yax = r"$\Delta Z_{DR\_EC\_OC\_AC}$ at $height\_ml\_new\_gia$ [dB]"
 xax = r"$\mathrm{Z_{H}^m}\ [dBZ]$"
 
 with mpl.rc_context({
