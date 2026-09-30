@@ -8167,6 +8167,24 @@ print(results.summary())
 #%%% Load QVPs
 path_qvps = '/automount/realpep//upload/jgiles/dmi/qvps_selected_for_calibration_attenuation/*/*/*/HTY/*/*/ML_detected.txt'
 
+selected_dates = [ # only load files for these dates
+    "2016-12-14",
+    # "2016-12-16",
+    # "2016-12-20",
+    "2016-12-21",
+    "2016-12-22",
+    "2016-12-25", # only 21 valid value pairs after filtering
+    "2016-12-29",
+    "2016-12-31",
+    "2017-01-01",
+    "2017-01-02",
+    # "2017-01-03",
+    "2019-12-28",
+    "2020-01-02", # only 21 valid value pairs after filtering
+    # "2020-02-07", # only 71 valid value pairs after filtering
+    # "2020-01-19", # XX
+]
+
 X_DBZH = "DBZH_AC"
 X_RHO = "RHOHV_NC" # if RHOHV_NC is set here, it is then checked against the original RHOHV in the next cell
 X_ZDR = "ZDR_EC_OC_AC"
@@ -8213,9 +8231,14 @@ try:
 except IndexError:
     ff = [glob.glob(os.path.dirname(fp)+"/*12345*")[0] for fp in ff_glob ]
 
+filtered_ff = [
+    path for path in ff
+    if any(date in path for date in selected_dates)
+]
+
 alignz = False
 if "dwd" in path_qvps: alignz = True
-qvps = utils.load_qvps(ff, align_z=alignz, fix_TEMP=False, fillna=False)
+qvps = utils.load_qvps(filtered_ff, align_z=alignz, fix_TEMP=False, fillna=False)
 
 # Move TEMP to coordinate
 if "TEMP" not in qvps.coords:
@@ -8332,12 +8355,37 @@ qvps_strat_ML_fil = qvps_strat_ML_fil.sel(time=valid_times_ML, z=valid_z)
 #%%% Temporary save the datasets for quicker reload
 temp_savepath = realpep_path+"/upload/jgiles/temp_compare_calibration_attenuation_adjacent_radars_alldates_multipleneighbors_new/"
 
+from icechunk import Repository, local_filesystem_storage
+from icechunk.xarray import to_icechunk
 
+def save_with_icechunk(ds, path):
+    # Strip encoding to avoid Dask/Zarr chunks mismatch errors
+    for var in ds.variables:
+        ds[var].encoding.pop('chunks', None)
+        ds[var].encoding.pop('preferred_chunks', None)
+
+    repo = Repository.create(local_filesystem_storage(path))
+    session = repo.writable_session("main")
+    to_icechunk(ds, session) #, safe_chunks=False
+    session.commit("Save data")
+
+def open_with_icechunk(path):
+    repo = Repository.open(local_filesystem_storage(path))
+    session = repo.readonly_session("main")
+    return xr.open_zarr(session.store, zarr_format=3, consolidated=False)
+
+# Uncomment to save
+# save_with_icechunk(qvps.chunk({'time': 200, 'z': 200}), temp_savepath+"qvps.zarr")
+save_with_icechunk(qvps_strat_ML_fil.chunk({'time': 200, 'z': -1}), temp_savepath+"qvps_strat_ML_fil.zarr")
+
+# Uncomment to reload
+# qvps = open_with_icechunk(temp_savepath+"qvps.zarr")
+# qvps_strat_ML_fil = open_with_icechunk(temp_savepath+"qvps_strat_ML_fil.zarr")
 
 #%%% Plot scatter
 # Clean data or select previosly cleaned data
 # ds = qvps.where(qvps.Zm>0).where(qvps.height_ml_new_gia.notnull()).dropna("z", how="all").dropna("time", how="all")
-#ds = qvps_strat_ML_fil
+ds = qvps_strat_ML_fil.where(qvps_strat_ML_fil.Zm>0)
 
 # 1. Select the vertical coordinate (use 'range' if height is stored there, otherwise 'z')
 # vert_coord = ds["range"] if "range" in ds.coords else ds["z"]
