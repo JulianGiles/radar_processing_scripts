@@ -303,7 +303,7 @@ def get_phase_proc_params(path):
 # Parameters for attenuation correction
 attenuation_corr_linear_coefs = {
     "dwd": {"alpha": 0.08, "beta": 0.02, "alphaml": 0.08, "betaml": 0.02},
-    "dmi": {"alpha": 0.14, "beta": 0.025, "alphaml": 0.25, "betaml": 0.027},
+    "dmi": {"alpha": 0.14, "beta": 0.025, "alphaml": 0.3, "betaml": 0.027},
     }
 
 
@@ -5751,7 +5751,29 @@ def zdr_offset_detection_qvps(ds, zdr="ZDR", dbzh="DBZH", rhohv="RHOHV", mode="m
 
 #### Wet radome correction
 
-def zdr_wr_offset_zm_cuadratic(Zm, a=-0.00052, b=0.00033, max_zm=32.5):
+def zh_wr_offset_zm_cuadratic(Zm, a=0.01789, b=-0.00197, max_zm=40):
+    r"""
+    Corrects higher ZDR values due to wet radome based on a reference cuadratic fit.
+
+    Parameters
+    ----------
+    Zm : Median reflectivity values in a 1.5 km radius around the radar (or
+         whatever other reflectivity value was used to derive the reference fit).
+        It must be free of NaNs (set them to zero before).
+    a : linear coefficient of the fit
+    b : quadratic coefficient of the fit
+    max_zm : maximum value of Zm until where the correction is valid.
+
+    Returns
+    ----------
+    value for correction: ZDR_WRcorrected = ZDR - zdr_wr_offset_zm_cuadratic(Zm)
+    """
+
+    Zm_ = Zm.fillna(0).where(Zm.fillna(0)<max_zm, other=max_zm)
+
+    return a*Zm_ + b*Zm_**2
+
+def zdr_wr_offset_zm_cuadratic(Zm, a=-0.00291, b=0.0003, max_zm=40):
     r"""
     Corrects higher ZDR values due to wet radome based on a reference cuadratic fit.
 
