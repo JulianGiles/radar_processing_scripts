@@ -53,7 +53,7 @@ if __name__ == "__main__": # set guard
     # path0 = "/automount/realpep/upload/jgiles/dwd/2017/2017-07/2017-07-25/pro/vol5minng01/07/" # For testing
     path0 = sys.argv[1] # read path from console
     overwrite = False # overwrite existing files?
-    save_processed_ppi = True # Save PPIs after processing?
+    save_processed_ppi = False # Save PPIs after processing?
     save_retrievals_ppi = False # Save PPIs of microphysical retrievals? (this is pretty slow and uses substantial storage)
     save_era5_ppi = False # Save PPIs of ERA5 data?
 
@@ -237,11 +237,11 @@ if __name__ == "__main__": # set guard
         compressor = BloscCodec(cname='zstd', clevel=5, shuffle='bitshuffle')
         for var in ds.data_vars:
             ds[var].encoding.pop('compressor', None) # Remove deprecated key
-            
+
             # Remove HDF5/NetCDF specific keys to prevent clashes with Zarr
             for key in ['zlib', 'szip', 'bzip2', 'blosc', 'complevel', 'shuffle', 'fletcher32', 'contiguous']:
                 ds[var].encoding.pop(key, None)
-                
+
             ds[var].encoding['compressors'] = [compressor]
 
         to_icechunk(ds, session)
@@ -439,6 +439,10 @@ if __name__ == "__main__": # set guard
         if country=="dmi":
 
             # correct WR
+            swp = swp.assign({X_DBZH+"_WRC": swp[X_DBZH] - utils.zh_wr_offset_zm_cuadratic(swp["Zm"]) })
+            swp[X_DBZH+"_WRC"].attrs = swp[X_DBZH].attrs
+            X_DBZH = X_DBZH+"_WRC"
+
             swp = swp.assign({X_ZDR+"_WRC": swp[X_ZDR] - utils.zdr_wr_offset_zm_cuadratic(swp["Zm"]) })
             swp[X_ZDR+"_WRC"].attrs = swp[X_ZDR].attrs
             X_ZDR = X_ZDR+"_WRC"
