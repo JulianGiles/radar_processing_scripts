@@ -5449,7 +5449,10 @@ dbzh_ref = "ZDR_EC_OC3" # ZDR_EC_OC3_AC2_rain, DBZH_AC2_rain
 TEMPm = "TEMPm"
 TEMP = "TEMP"
 
-yax = r"$Δ\mathrm{Z_{DR}}\ [dB]$" # label for the y axis
+if "ZDR" in dbzh_tg:
+    yax = r"$Δ\mathrm{Z_{DR}}\ [dB]$" # label for the y axis
+else:
+    yax = r"$Δ\mathrm{Z_{H}}\ [dBZ]$" # label for the y axis
 xax = r"$Δ\mathrm{\Phi_{DP}^{ML}}\ [°]$" # label for the x axis
 
 varx_range = (0, 19, 1) # start, stop, step # (0.7, 0.98, 0.02)
@@ -5460,15 +5463,19 @@ sc = False # show boxplots caps?
 sf = False # show boxplots outliers?
 wp = 0 # position of the whiskers as proportion of (Q3-Q1), default is 1.5
 
-ymin = -3 # min and max limits for the y axis
-ymax = 2.5
+if "ZDR" in dbzh_tg:
+    ymin = -3 # min and max limits for the y axis
+    ymax = 2.5
+else:
+    ymin = -15 # min and max limits for the y axis
+    ymax = 10
 
 # #---- Test plot wet radome (Zm) vs phi (check also below filters)
 # dbzh_tg = "ZDR_EC_OC_AC2_rain" # ZDR_EC_OC_AC2_rain, DBZH_AC2_rain
 # yax = r"$\mathrm{Z_{H}^m}\ [dBZ]$" # label for the y axis
-# xax = r"$\mathrm{\Phi_{DP}}\ [°]$" # label for the x axis
+# xax = r"$Δ\mathrm{\Phi_{DP}^{ML}}\ [°]$" # label for the x axis
 
-# ymin = 0 # min and max limits for the y axis
+# ymin = -10 # min and max limits for the y axis
 # ymax = 40
 # #----
 
@@ -5478,6 +5485,13 @@ def zdr_wrc(Zm):
                    np.nan_to_num(Zm),
                    32.5)
     return -0.00052*Zm_ + 0.00033*Zm_**2 # change here to adjust coefficients based on results
+
+# WR corr based on results NEW CORRECTION DERIVED ABOVE ML
+def zdr_wrc(Zm):
+    Zm_ = np.where(np.nan_to_num(Zm) < 40,
+                   np.nan_to_num(Zm),
+                   40)
+    return -0.0041*Zm_ + 0.00031*Zm_**2 # change here to adjust coefficients based on results
 
 if "_WRcorr" in dbzh_tg:
     # Correct wet-radome timesteps
@@ -5599,7 +5613,7 @@ valid = (tg_TEMPm > 3) & (ref_TEMPm < 0) & np.isfinite(tg_dbzh) & np.isfinite(re
         & (tg_RHOHV > 0.97) & (ref_RHOHV > 0.97)\
         & (tg_TEMPm > 3) & (ref_TEMPm < 0)\
         & (tg_bca > 135) & (ref_bca > 135)\
-        # & (tg_Zm < 15)
+        & (tg_Zm < 20)
 
 
 delta_dbzh = (tg_dbzh - ref_dbzh)[valid]
@@ -5607,7 +5621,7 @@ tg_phi_bump = tg_phi_bump[valid]
 
 # #---- Test plot wet radome (Zm) vs phi
 # delta_dbzh = tg_Zm[valid] # test plot Zm vs phi
-# tg_phi_bump = tg_phi_bump[valid]
+# tg_phi_bump = tg_phi_bump # tg_phi[valid]
 # #----
 
 # In case we need to filter out unrealistic values
@@ -5990,11 +6004,14 @@ phi = "PHIDP_OC_MASKED"
 TEMPm = "TEMPm"
 TEMP = "TEMP"
 
-yax = r"$Δ\mathrm{Z_{DR}}\ [dB]$" # label for the y axis
+if "ZDR" in dbzh_tg:
+    yax = r"$Δ\mathrm{Z_{DR}}\ [dB]$" # label for the y axis
+else:
+    yax = r"$Δ\mathrm{Z_{H}}\ [dBZ]$" # label for the y axis
 xax = r"$\mathrm{Z_{H}^m}\ [dBZ]$" # label for the x axis
 
 # we need to apply additional filters
-ref_Zm_max = 15
+ref_Zm_max = 5
 ref_phi_max = 15
 tg_phi_max = 15
 
@@ -6005,10 +6022,14 @@ sc = False # show boxplots caps?
 sf = False # show boxplots outliers?
 wp = 0 # position of the whiskers as proportion of (Q3-Q1), default is 1.5
 
-ymin = -2 # -15 min and max limits for the y axis
-ymax = 2 # 15
+if "ZDR" in dbzh_tg:
+    ymin = -2 # min and max limits for the y axis
+    ymax = 2
+else:
+    ymin = -15 # min and max limits for the y axis
+    ymax = 10
 
-new_betaML = 0.027 # 0.25
+new_betaML = 0.027 # 0.3
 def mlc(phi_bump):
     phi_bump_ = np.where(phi_bump >= 0, phi_bump, 0)
     return new_betaML * phi_bump_
@@ -8761,7 +8782,7 @@ with mpl.rc_context({
 
 #%%% Load QVP
 ff = "/automount/realpep/upload/jgiles/dmi/qvps/*/*/2020-03-13/HTY/*/10.0/*allmoms*" # final QVP files
-ds_qvp = xr.open_mfdataset(ff)
+ds_qvp = utils.load_qvps(ff)
 
 #%%% Plot QVP
 max_height = 12000 # max height for the qvp plots
@@ -8877,7 +8898,9 @@ with mpl.rc_context({
     plt.close()
 
 #%%% Generate custom variable (e.g. difference due to attenuation)
-ds_qvp["DBZH_ACd"] = ds_qvp["DBZH_AC"] - ds_qvp["DBZH"]
+ds_qvp["DBZH_WRC_ACd"] = ds_qvp["DBZH_WRC_AC"] - ds_qvp["DBZH_WRC"]
+ds_qvp["DBZH_WRCd"] = (ds_qvp["DBZH_WRC"] - ds_qvp["DBZH"]).mean("z")
+
 ds_qvp["ZDR_EC_OC_WRC_ACd"] = ds_qvp["ZDR_EC_OC_WRC_AC"] - ds_qvp["ZDR_EC_OC_WRC"]
 ds_qvp["ZDR_EC_OC_WRCd"] = (ds_qvp["ZDR_EC_OC_WRC"] - ds_qvp["ZDR_EC_OC"]).mean("z")
 
@@ -8890,7 +8913,7 @@ if tsel == "":
 else:
     datasel = ds_qvp.loc[{"time": tsel, "z": slice(0, max_height)}]
 
-mom = "ZDR_EC_OC_WRC_ACd" # "ZDR_EC_OC" "DBZH"
+mom = "DBZH_WRC_ACd" # "ZDR_EC_OC_WRC_ACd" "DBZH_WRC_ACd"
 min_entropy_thresh = 0.99
 
 datasel = datasel.assign_coords(z=datasel.z / 1000)
@@ -8919,7 +8942,10 @@ with mpl.rc_context({
 
     try:
         # ticks = radarmet.visdict14[mom.split("_")[0]]["ticks"][:-2] #[:-2] Add to reduce colorscale
-        ticks=np.arange(0,0.22,0.02)
+        if "ZDR" in mom:
+            ticks=np.arange(0,0.22,0.02)
+        else:
+            ticks=np.arange(0,2.2,0.2)
         cmap0 = mpl.colormaps.get_cmap("OrRd")
         cmap = mpl.colors.ListedColormap(cmap0(np.linspace(0, 1, len(ticks))), N=len(ticks)+1)
         cmap.set_over("#400000")
@@ -8974,11 +9000,11 @@ with mpl.rc_context({
     # Plot WR correction as lines
     zm_c = "MediumBlue"
     ax2 = ax.twinx()
-    datasel["ZDR_EC_OC_WRCd"].plot(ax=ax2, c=zm_c, lw=1)
+    datasel["DBZH_WRCd"].plot(ax=ax2, c=zm_c, lw=1)
     # ax2.spines['left'].set_position(('outward', 60))
     ax2.tick_params(axis='y', labelcolor=zm_c, direction="in")  # Add padding to the ticks
     # ax2.yaxis.labelpad = -400  # Add padding to the y-axis label
-    ax2.set_ylabel("dB",
+    ax2.set_ylabel(["dB" if "ZDR" in mom else "dBZ"][0],
                    color=zm_c,
                    rotation="horizontal",
                    ha="center",   # Horizontal alignment
@@ -8986,10 +9012,14 @@ with mpl.rc_context({
                    labelpad=10,
                    y=0)          # 0 is bottom, 1 is top, 0.5 is center
     ax2.yaxis.set_label_coords(1, -0.017)
-    ax2.set_ylim(-0.6, 0.02)
-    ax2.yaxis.set_ticks([0,-0.1, -0.2], labels=["0", "-1", "-2"])
+    if "ZDR" in mom:
+        ax2.set_ylim(-0.6, 0.02)
+        ax2.yaxis.set_ticks([0,-0.1, -0.2], labels=["0", "-1", "-2"])
+        ax2.text(datetime.datetime(2020,3,13,23, 59), -0.3, "E-1", c=zm_c)
+    else:
+        ax2.set_ylim(-7, 2.2)
+        ax2.yaxis.set_ticks([0,1, 2], labels=["0", "1", "2"])
     ax2.set_title("")
-    ax2.text(datetime.datetime(2020,3,13,23, 59), -0.3, "E-1", c=zm_c)
     # plt.xlim((datetime.datetime(2015,3,11,6), datetime.datetime(2015,3,11,12)))
 
     # # Plot zdrcal values
@@ -9210,7 +9240,7 @@ betas_emp = [[0.55, 0.9, 1.4, 1.9, 2.77], # ZDR values
               [1, 1, 1, 1, 1] # 1= stat. sigf.
               ]
 
-alphaml_emp = 0.255
+alphaml_emp = 0.3
 betaml_emp = 0.027
 
 # Plot alphas
@@ -9404,7 +9434,7 @@ def plot_sbm_kde_grid(df, val_rain='rain_alpha', val_ml='ml_alpha',
 # Execute:
 alpha_emp = 0.14
 beta_emp = 0.025
-alphaml_emp = 0.255
+alphaml_emp = 0.3
 betaml_emp = 0.027
 
 # remember mixing formulas codes
@@ -9559,7 +9589,7 @@ def plot_sbm_kde_single(df, val_rain='rain_alpha', val_ml='ml_alpha',
 # Execute:
 alpha_emp = 0.14
 beta_emp = 0.025
-alphaml_emp = 0.255
+alphaml_emp = 0.3
 betaml_emp = 0.027
 
 # remember mixing formulas codes
