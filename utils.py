@@ -9543,7 +9543,11 @@ icon_field = utils.load_icon(ff_icon, ff_icon_z)
 def calc_microphys_nocloud(icon_fields, mom=2, cmu0_r_off=-1.0, adjust=0,
                            q_thresh=None, qn_thresh=None, **kwargs):
     """
-    Same as calc_microphys but without considering qc and qnc.
+    Same as calc_microphys but excludes cloud water from the aggregate sums
+    (totliq, tot, Dm_totliq, Dm_tot). Individual cloud fields (vol_qc, vol_qnc, Dm_c)
+    are calculated and included in the output alongside the other hydrometeor categories.
+    Rain size distribution retains the in-cloud shape parameter (mu = 5.0) where
+    cloud water exists, and off-cloud mu_off(D) elsewhere.
     Calculate volumetric versions of qx and qnx and mean diameters.
 
     Parameters
@@ -9577,14 +9581,11 @@ def calc_microphys_nocloud(icon_fields, mom=2, cmu0_r_off=-1.0, adjust=0,
     if mom>1:
       q_dens, qn_dens = adjust_icon_fields(icon_nc, hymets, mom=mom,
                                            q_thresh=q_thresh, qn_thresh=qn_thresh, **kwargs)
-      if "cloud" in q_dens: del q_dens["cloud"]
-      if "cloud" in qn_dens: del qn_dens["cloud"]
+      # Retain cloud in q_dens for mgdparams so rain correctly diagnoses in-cloud vs off-cloud mu_r
       multi_params = mgdparams(q_dens, qn_dens, hymets, cmu0_r_off=cmu0_r_off, **kwargs)
     else:
       q_dens, qn_dens = adjust_icon_fields(icon_nc, hymets, mom=mom,
                                            q_thresh=q_thresh, qn_thresh=qn_thresh, **kwargs)
-      if "cloud" in q_dens: del q_dens["cloud"]
-      if "cloud" in qn_dens: del qn_dens["cloud"]
       if "hail" in q_dens.keys(): del(q_dens["hail"]) # remove hail in case it is present
       t = icon_nc['temp']
       multi_params, qn_dens = mgdparams_1mom(q_dens, hymets, t=t, qn_out=True)
@@ -9608,7 +9609,7 @@ def calc_microphys_nocloud(icon_fields, mom=2, cmu0_r_off=-1.0, adjust=0,
     except:
         warnings.warn("Calculation of Dm not possible")
 
-    for hm in ['rain', 'ice', 'snow', 'graupel', 'hail']:
+    for hm in ['cloud', 'rain', 'ice', 'snow', 'graupel', 'hail']:
         try:
             icon_nc['vol_q' + hm[0]] = (q_dens[hm] * 1000).assign_attrs(
                 dict( standard_name='volume ' +
