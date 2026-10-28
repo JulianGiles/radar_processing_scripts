@@ -8838,7 +8838,7 @@ def icon_to_radar_volume(icon_field, radar_volume,
 
 # ICON / EMVORADO specific stuff, code adapted from Jana Mendrok (DWD)
 
-def icon_hydromets(mom=2, which='all', add_emvo=False):
+def icon_hydromets(mom=2, which='all', add_emvo=False, **kwargs):
     '''
     Preparing dict with ICON 2mom or 1mom microphysics (original PSD- and m-D-parameters)
 
@@ -8851,10 +8851,12 @@ def icon_hydromets(mom=2, which='all', add_emvo=False):
         according to 1- or 2-mom scheme.
     add_emvo : bool
         If True, add EMVORADO Dmin and Dmax parameters to the 2-mom dict.
+    **kwargs :
+        Additional parameter overrides such as nu_r=1, xmax_r=6.5e-5, or <param>_<hm>.
 
     Returns
     -------
-    icon_vol : xarray.Dataset
+    hydromets : dict
         Dictionary with ICON 2-mom or 1-mom microphysical parameters.
 
     '''
@@ -8878,42 +8880,41 @@ def icon_hydromets(mom=2, which='all', add_emvo=False):
       raise TypeError("ERROR icon_hydromets: Wrong 'which' type. Needs to be either list or string.")
 
     if mom>1:
+      seifert = {
+          'cloud': {'nu': 1.0, 'mu': 1.0, 'xmax': 2.6e-10, 'xmin': 4.2e-15, 'a': 1.24e-01, 'b': 0.333333},
+          'rain.pre2023': {'nu': 0.0, 'mu': 0.333333, 'xmax': 3.0e-6, 'xmin': 2.6e-10, 'a': 1.24e-01, 'b': 0.333333},
+          'rain': {'nu': 1.0, 'mu': 0.333333, 'xmax': 6.50e-05, 'xmin': 2.6e-10, 'a': 1.24e-01, 'b': 0.333333},
+          'ice': {'nu': 0.0, 'mu': 0.333333, 'xmax': 1.0e-5, 'xmin': 1.0e-12, 'a': 0.835, 'b': 0.39},
+          'snow': {'nu': 0.0, 'mu': 0.5, 'xmax': 2.0e-5, 'xmin': 1.0e-10, 'a': 5.13, 'b': 0.5},
+          'graupel': {'nu': 1.0, 'mu': 0.333333, 'xmax': 5.3e-4, 'xmin': 4.19e-9, 'a': 1.42e-1, 'b': 0.314},
+          'hail': {'nu': 1.0, 'mu': 0.333333, 'xmax': 5.0e-3, 'xmin': 2.6e-9, 'a': 0.1366, 'b': 0.333333},
+      }
+
+      emvo_bounds = {
+          'rain.pre2023': {'Dmin': 50.0e-6, 'Dmax': 10.0e-3},
+          'rain': {'Dmin': 50.0e-6, 'Dmax': 10.0e-3},
+          'ice': {'Dmin': 5.0e-6, 'Dmax': 10.0e-3},
+          'snow': {'Dmin': 50.0e-6, 'Dmax': 50.0e-3},
+          'graupel': {'Dmin': 10.0e-6, 'Dmax': 30.0e-3},
+          'hail': {'Dmin': 50.0e-6, 'Dmax': 100.0e-3},
+      }
+
+      # Override seifert parameters from kwargs (e.g. nu_r=1, xmax_r=6.5e-5, nu_rain=1)
+      hm_letter_map = {'c': 'cloud', 'r': 'rain', 'i': 'ice', 's': 'snow', 'g': 'graupel', 'h': 'hail'}
+      for kw, val in kwargs.items():
+          if val is not None and '_' in kw:
+              param, hm = kw.rsplit('_', 1)
+              hm_full = hm_letter_map.get(hm, hm)
+              if hm_full in seifert and param in ['nu', 'mu', 'xmax', 'xmin', 'a', 'b']:
+                  seifert[hm_full][param] = val
+
       for item in whichlist:
-        if item=='cloud':
-          hydromets[item] = \
-            seifert2general({'nu': 1.0, 'mu': 1.0, 'xmax': 2.6e-10, 'xmin': 4.2e-15, 'a': 1.24e-01, 'b': 0.333333})
-        elif item=='rain.pre2023':
-          hydromets[item] = \
-            seifert2general({'nu': 0.0, 'mu': 0.333333, 'xmax': 3.0e-6, 'xmin': 2.6e-10, 'a': 1.24e-01, 'b': 0.333333})
-          if add_emvo:
-            hydromets[item].update({'Dmin': 50.0e-6, 'Dmax': 10.0e-3})
-        elif item=='rain':
-          hydromets[item] = \
-            seifert2general({'nu': 1.0, 'mu': 0.333333, 'xmax': 6.50e-05, 'xmin': 2.6e-10, 'a': 1.24e-01, 'b': 0.333333})
-          if add_emvo:
-            hydromets[item].update({'Dmin': 50.0e-6, 'Dmax': 10.0e-3})
-        elif item=='ice':
-          hydromets[item] = \
-            seifert2general({'nu': 0.0, 'mu': 0.333333, 'xmax': 1.0e-5, 'xmin': 1.0e-12, 'a': 0.835, 'b': 0.39})
-          if add_emvo:
-            hydromets[item].update({'Dmin': 5.0e-6, 'Dmax': 10.0e-3})
-        elif item=='snow':
-          hydromets[item] = \
-            seifert2general({'nu': 0.0, 'mu': 0.5, 'xmax': 2.0e-5, 'xmin': 1.0e-10, 'a': 5.13, 'b': 0.5})
-          if add_emvo:
-            hydromets[item].update({'Dmin': 50.0e-6, 'Dmax': 50.0e-3})
-        elif item=='graupel':
-          hydromets[item] = \
-            seifert2general({'nu': 1.0, 'mu': 0.333333, 'xmax': 5.3e-4, 'xmin': 4.19e-9, 'a': 1.42e-1, 'b': 0.314})
-          if add_emvo:
-            hydromets[item].update({'Dmin': 10.0e-6, 'Dmax': 30.0e-3})
-        elif item=='hail':
-          hydromets[item] = \
-            seifert2general({'nu': 1.0, 'mu': 0.333333, 'xmax': 5.0e-3, 'xmin': 2.6e-9, 'a': 0.1366, 'b': 0.333333})
-          if add_emvo:
-            hydromets[item].update({'Dmin': 50.0e-6, 'Dmax': 100.0e-3})
-        else:
-          warnings.warn("WARNING icon_hydromets: Unknown entry in 'which' (%s)." %item)
+          if item in seifert:
+              hydromets[item] = seifert2general(seifert[item])
+              if add_emvo and item in emvo_bounds:
+                  hydromets[item].update(emvo_bounds[item])
+          else:
+              warnings.warn("WARNING icon_hydromets: Unknown entry in 'which' (%s)." % item)
     else:
       for item in whichlist:
         if item=='cloud':
@@ -8951,18 +8952,22 @@ def seifert2general(hymet_seif):
     return hymet_gen
 
 
-def adjust_icon_fields(infields, hymets=icon_hydromets(), spec2dens=1, mom=2):
+def adjust_icon_fields(infields, hymets=None, spec2dens=1, mom=2,
+                       q_thresh=None, qn_thresh=None, **kwargs):
     """
     Take hydrometeor fields with qx and qnx, convert them to mass/number
     densities (from specific mass/number contents to densities) if necessary
     (spec2dens=1), and adjust qn to meet ICON min/max bounds of mean
-    hydrometeor masses.
+    hydrometeor masses. Also applies threshold filtering to q and qn.
     Required input:
         Hydrometeor qx and qnx (all 6), qv (water vapor content), temp
         (temperature), pres (pressure).
     Output:
         volume specific qx, qnx.
     """
+    if hymets is None:
+        hymets = icon_hydromets(mom=mom, **kwargs)
+
     r_d = 287.05  # dry air gas constant
     r_v = 461.51  # water vapor gas constant
     q = {}
@@ -9007,16 +9012,43 @@ def adjust_icon_fields(infields, hymets=icon_hydromets(), spec2dens=1, mom=2):
         for key in qn:
             qn[key] = qn[key] * rho
 
+    default_q_thresh = {'cloud': 1e-7, 'rain': 1e-7, 'ice': 1e-7,
+                        'snow': 1e-7, 'graupel': 1e-7, 'hail': 1e-5}
+    default_qn_thresh = {'cloud': 1.0, 'rain': 1.0, 'ice': 1.0,
+                         'snow': 1.0, 'graupel': 1.0, 'hail': 1e-3}
+
+    q_th = default_q_thresh.copy()
+    if q_thresh is not None:
+        q_th.update(q_thresh)
+    qn_th = default_qn_thresh.copy()
+    if qn_thresh is not None:
+        qn_th.update(qn_thresh)
+
+    hm_letter_map = {'c': 'cloud', 'r': 'rain', 'i': 'ice', 's': 'snow', 'g': 'graupel', 'h': 'hail'}
+    for kw, val in kwargs.items():
+        if val is not None:
+            if kw.startswith('qn_'):
+                suffix = kw[3:]
+                hm_full = hm_letter_map.get(suffix, suffix)
+                if hm_full in qn_th:
+                    qn_th[hm_full] = val
+            elif kw.startswith('q_'):
+                suffix = kw[2:]
+                hm_full = hm_letter_map.get(suffix, suffix)
+                if hm_full in q_th:
+                    q_th[hm_full] = val
+
     for key in q:
         if key in qn:
             x = q[key] / (qn[key] + 1e-38)
             x = x.where(x > hymets[key]['xmin'], other= hymets[key]['xmin'])
             x = x.where(x < hymets[key]['xmax'], other= hymets[key]['xmax'])
             qn[key] = q[key] / x.copy()
-            q[key] = q[key].where(q[key] > 1e-7, other=0.)
-            qn[key] = qn[key].where(q[key] > 1e-7, other=1.) # for numeric stability.
+            valid = (q[key] >= q_th[key]) & (qn[key] >= qn_th[key])
+            q[key] = q[key].where(valid, other=0.0)
+            qn[key] = qn[key].where(valid, other=0.0)
         else:
-            q[key] = q[key].where(q[key] > 1e-7, other=0.)
+            q[key] = q[key].where(q[key] >= q_th[key], other=0.0)
 
     return q, qn
 
@@ -9153,13 +9185,18 @@ def mgdparams_1mom(q, hymets=icon_hydromets(mom=1), t=None, qn_out=False):
     else:
         return mgd
 
-def mgdparams(q, qn, hymets=icon_hydromets()):
+def mgdparams(q, qn, hymets=None, cmu0_r_off=-1.0, **kwargs):
     """
     Derive non-constant MGD-PSD parameters N0 and lam (mu & nu set constant
-    from ICON microphysics)
+    from ICON microphysics, except rain mu which follows Seifert (2008))
     """
+    if hymets is None:
+        hymets = icon_hydromets(mom=2, **kwargs)
+
     mgd = {}
     for key in q:
+        if key == 'rain':
+            continue
         # initialize
         mgd[key] = {}
         mgd[key]['mu']  = hymets[key]['mu']
@@ -9177,20 +9214,69 @@ def mgdparams(q, qn, hymets=icon_hydromets()):
         tmp5 = mgd[key]['nu'] / gfct_tmp1
 
         # calculate for valid (q,qn)
-        mgd[key]['lam'] = mgd[key]['lam'].where( q[key].fillna(0.) <= 0., other=
+        valid = (q[key].fillna(0.) > 0.) & (qn[key].fillna(0.) > 0.)
+        mgd[key]['lam'] = mgd[key]['lam'].where(~valid, other=
                                                (
-                                                ( tmp4 * qn[key].where(q[key] > 0.) ) /
-                                                ( q[key].where(q[key] > 0.) * gfct_tmp1 )
+                                                ( tmp4 * qn[key].where(valid) ) /
+                                                ( q[key].where(valid) * gfct_tmp1 )
                                                ) ** tmp3 )
 
-        mgd[key]['n0'] = mgd[key]['n0'].where( q[key].fillna(0.) <= 0., other=
-                                               qn[key].where(q[key] > 0.) * tmp5 * \
-                                               mgd[key]['lam'].where(q[key] > 0.)** tmp1 )
+        mgd[key]['n0'] = mgd[key]['n0'].where(~valid, other=
+                                               qn[key].where(valid) * tmp5 * \
+                                               mgd[key]['lam'].where(valid) ** tmp1 )
+
+    if 'rain' in q and 'rain' in qn:
+        key = 'rain'
+        for alt_name in ['cmu0_r_off', 'rain_cmu0', 'cmu0']:
+            if alt_name in kwargs and kwargs[alt_name] is not None:
+                cmu0_r_off = kwargs[alt_name]
+
+        cmu1_r_off = 30.0
+        cmu2_r_off = 1.00e+3
+        cmu3_r_off = 1.10e-3
+        cmu4_r_off = 1.0
+
+        valid_r = (q[key].fillna(0.) > 0.) & (qn[key].fillna(0.) > 0.)
+        D = xr.where(valid_r, (q[key] / (qn[key] + 1e-38) / hymets[key]['a']) ** (1.0 / hymets[key]['b']), 0.0)
+
+        delta = cmu2_r_off * (D - cmu3_r_off)
+        mu_off = xr.where(D <= cmu3_r_off,
+                          cmu0_r_off * np.tanh((4.0 * delta) ** 2) + cmu4_r_off,
+                          cmu1_r_off * np.tanh(delta ** 2) + cmu4_r_off)
+
+        if 'cloud' in q:
+            mu_r = xr.where(q['cloud'].fillna(0.) > 1e-7, hymets[key]['mu'], mu_off)
+        else:
+            mu_r = mu_off
+
+        mgd[key] = {}
+        mgd[key]['mu']  = mu_r
+        mgd[key]['nu']  = hymets[key]['nu']
+        mgd[key]['n0']  = xr.zeros_like(q[key])
+        mgd[key]['lam'] = xr.ones_like(q[key])
+
+        tmp1 = (mu_r + 1.0) / hymets[key]['nu']
+        tmp2 = (mu_r + hymets[key]['b'] + 1.0) / hymets[key]['nu']
+        tmp3 = hymets[key]['nu'] / hymets[key]['b']
+        gfct_tmp1 = gfct(tmp1)
+        gfct_tmp2 = gfct(tmp2)
+        tmp4 = hymets[key]['a'] * gfct_tmp2
+        tmp5 = hymets[key]['nu'] / gfct_tmp1
+
+        mgd[key]['lam'] = mgd[key]['lam'].where(~valid_r, other=
+                                               (
+                                                ( tmp4 * qn[key].where(valid_r) ) /
+                                                ( q[key].where(valid_r) * gfct_tmp1 )
+                                               ) ** tmp3 )
+
+        mgd[key]['n0'] = mgd[key]['n0'].where(~valid_r, other=
+                                               qn[key].where(valid_r) * tmp5 * \
+                                               mgd[key]['lam'].where(valid_r) ** tmp1 )
 
     return mgd
 
 
-def calc_moments(mgd, k=[0, 3, 4], hymets=icon_hydromets(), adjust=0):
+def calc_moments(mgd, k=[0, 3, 4], hymets=None, adjust=0, **kwargs):
     """
     Calculate (fields of) (Dmax-based) PSD moments from given constant (mu,nu)
     and qx/qnx derived fields of variable (N0,lam) MGD-parameters.
@@ -9202,20 +9288,28 @@ def calc_moments(mgd, k=[0, 3, 4], hymets=icon_hydromets(), adjust=0):
             differently to multi-PSD statistics, zero all remaining if one of
             them has number issues.
     """
+    if hymets is None:
+        hymets = icon_hydromets(mom=2, **kwargs)
+
     Mk = {}
     for key in mgd:
         Mk[key] = {}
+        mu_val = mgd[key].get('mu', hymets[key]['mu'])
+        nu_val = mgd[key].get('nu', hymets[key]['nu'])
+
+        valid_n0 = mgd[key]['n0'].fillna(0.) > 0.
+
         for kk in k:
-            c1 = (hymets[key]['mu'] + kk + 1) / hymets[key]['nu']
-            c2 = gfct(c1) / hymets[key]['nu']
+            c1 = (mu_val + kk + 1) / nu_val
+            c2 = gfct(c1) / nu_val
 
             # initialize Mk[kk]
             Mk[key][kk] = xr.zeros_like(mgd[key]['n0'])
 
-            # calculate Mk[kk] only if q, ie n0, is non-zero
-            Mk[key][kk] = Mk[key][kk].where( mgd[key]['n0'].fillna(0.) <= 0., other=
-                                                c2 * mgd[key]['n0'].where(mgd[key]['n0'] > 0.) / \
-                                                mgd[key]['lam'].where(mgd[key]['n0'] > 0.) ** c1 )
+            # calculate Mk[kk] only if n0 is non-zero
+            Mk[key][kk] = Mk[key][kk].where(~valid_n0, other=
+                                                c2 * mgd[key]['n0'].where(valid_n0) / \
+                                                mgd[key]['lam'].where(valid_n0) ** c1 )
 
         if adjust:
             for kk in k:
@@ -9257,7 +9351,8 @@ def calc_Dmean(Mk, meantype='vol'):
 
     return Dmean
 
-def calc_microphys(icon_fields, mom=2):
+def calc_microphys(icon_fields, mom=2, cmu0_r_off=-1.0, adjust=0,
+                   q_thresh=None, qn_thresh=None, **kwargs):
     """
     Calculate volumetric versions of qx and qnx and mean diameters.
 
@@ -9268,6 +9363,17 @@ def calc_microphys(icon_fields, mom=2):
         qv (water vapor content), temp (temperature), pres (pressure).
     mom : int
         Use 1- or 2- moment scheme.
+    cmu0_r_off : float
+        Rain shape parameter offset for off-cloud conditions (default: -1.0).
+    adjust : int
+        Flag whether to zero out all k moments if one of them is 0 (default: 0).
+    q_thresh : dict, optional
+        Custom thresholds for specific mass contents.
+    qn_thresh : dict, optional
+        Custom thresholds for number concentrations.
+    **kwargs :
+        Additional parameter overrides passed down to icon_hydromets, adjust_icon_fields,
+        and mgdparams.
 
     Returns
     -------
@@ -9276,18 +9382,20 @@ def calc_microphys(icon_fields, mom=2):
     """
     icon_nc = icon_fields.copy()
 
-    hymets = icon_hydromets(mom=mom)
+    hymets = icon_hydromets(mom=mom, **kwargs)
 
     if mom>1:
-      q_dens, qn_dens = adjust_icon_fields(icon_nc, hymets, mom=mom)
-      multi_params = mgdparams(q_dens, qn_dens, hymets)
+      q_dens, qn_dens = adjust_icon_fields(icon_nc, hymets, mom=mom,
+                                           q_thresh=q_thresh, qn_thresh=qn_thresh, **kwargs)
+      multi_params = mgdparams(q_dens, qn_dens, hymets, cmu0_r_off=cmu0_r_off, **kwargs)
     else:
-      q_dens, qn_dens = adjust_icon_fields(icon_nc, hymets, mom=mom)
+      q_dens, qn_dens = adjust_icon_fields(icon_nc, hymets, mom=mom,
+                                           q_thresh=q_thresh, qn_thresh=qn_thresh, **kwargs)
       if "hail" in q_dens.keys(): del(q_dens["hail"]) # remove hail in case it is present
       t = icon_nc['temp']
       multi_params, qn_dens = mgdparams_1mom(q_dens, hymets, t=t, qn_out=True)
 
-    moments = calc_moments(multi_params, hymets=hymets, adjust=1) #!!! Julian S uses adjust=0
+    moments = calc_moments(multi_params, hymets=hymets, adjust=adjust, **kwargs)
 
     if mom>1:
         # Add totice, totliq and tot
@@ -9315,7 +9423,8 @@ def calc_microphys(icon_fields, mom=2):
         except:
             warnings.warn("Creation of vol_q"+hm[0]+" not possible")
         try:
-            icon_nc['vol_qn' + hm[0]] = np.log10(qn_dens[hm]/1000).assign_attrs(
+            valid_qn = qn_dens[hm] > 0
+            icon_nc['vol_qn' + hm[0]] = np.log10((qn_dens[hm]/1000).where(valid_qn)).assign_attrs(
                 dict( standard_name=
                          " ".join(icon_nc['qn' + hm[0]].long_name.split("_")) +
                               ' per volume',
@@ -9363,7 +9472,8 @@ def calc_microphys(icon_fields, mom=2):
             if 'vol_qn' + hm[0] in icon_nc.keys():
                 vol_qntotice += qn_dens[hm].copy()
                 comment += " + vol_qn" + hm[0]
-        icon_nc['vol_qntotice'] = np.log10(vol_qntotice/1000).assign_attrs( dict (
+        valid_totice = vol_qntotice > 0
+        icon_nc['vol_qntotice'] = np.log10((vol_qntotice/1000).where(valid_totice)).assign_attrs( dict (
             standard_name='number concentration total ice water content per volume',
             comments=comment,
             units='log10(1/L)'))
@@ -9371,7 +9481,9 @@ def calc_microphys(icon_fields, mom=2):
         warnings.warn("Creation of vol_qntotice not possible")
 
     try:
-        icon_nc['vol_qntotliq'] = np.log10((qn_dens["cloud"] + qn_dens["rain"] )/1000).assign_attrs( dict (
+        totliq_n = qn_dens["cloud"] + qn_dens["rain"]
+        valid_totliq = totliq_n > 0
+        icon_nc['vol_qntotliq'] = np.log10((totliq_n/1000).where(valid_totliq)).assign_attrs( dict (
             standard_name='number concentration total liquid water content per volume',
             comments="vol_qnc + vol_qnr",
             units='log10(1/L)'))
@@ -9379,7 +9491,9 @@ def calc_microphys(icon_fields, mom=2):
         warnings.warn("Creation of vol_qntotliq not possible")
 
     try:
-        icon_nc['vol_qntot'] = np.log10((vol_qntotice + qn_dens["cloud"] + qn_dens["rain"] )/1000).assign_attrs( dict (
+        tot_n = vol_qntotice + qn_dens["cloud"] + qn_dens["rain"]
+        valid_tot = tot_n > 0
+        icon_nc['vol_qntot'] = np.log10((tot_n/1000).where(valid_tot)).assign_attrs( dict (
             standard_name='number concentration total water content per volume',
             comments="vol_qntotice + vol_qntotliq",
             units='log10(1/L)'))
@@ -9426,7 +9540,8 @@ icon_field = utils.load_icon(ff_icon, ff_icon_z)
 
 '''
 
-def calc_microphys_nocloud(icon_fields, mom=2):
+def calc_microphys_nocloud(icon_fields, mom=2, cmu0_r_off=-1.0, adjust=0,
+                           q_thresh=None, qn_thresh=None, **kwargs):
     """
     Same as calc_microphys but without considering qc and qnc.
     Calculate volumetric versions of qx and qnx and mean diameters.
@@ -9438,6 +9553,17 @@ def calc_microphys_nocloud(icon_fields, mom=2):
         qv (water vapor content), temp (temperature), pres (pressure).
     mom : int
         Use 1- or 2- moment scheme.
+    cmu0_r_off : float
+        Rain shape parameter offset for off-cloud conditions (default: -1.0).
+    adjust : int
+        Flag whether to zero out all k moments if one of them is 0 (default: 0).
+    q_thresh : dict, optional
+        Custom thresholds for specific mass contents.
+    qn_thresh : dict, optional
+        Custom thresholds for number concentrations.
+    **kwargs :
+        Additional parameter overrides passed down to icon_hydromets, adjust_icon_fields,
+        and mgdparams.
 
     Returns
     -------
@@ -9446,18 +9572,24 @@ def calc_microphys_nocloud(icon_fields, mom=2):
     """
     icon_nc = icon_fields.copy()
 
-    hymets = icon_hydromets(mom=mom)
+    hymets = icon_hydromets(mom=mom, **kwargs)
 
     if mom>1:
-      q_dens, qn_dens = adjust_icon_fields(icon_nc, hymets, mom=mom)
-      multi_params = mgdparams(q_dens, qn_dens, hymets)
+      q_dens, qn_dens = adjust_icon_fields(icon_nc, hymets, mom=mom,
+                                           q_thresh=q_thresh, qn_thresh=qn_thresh, **kwargs)
+      if "cloud" in q_dens: del q_dens["cloud"]
+      if "cloud" in qn_dens: del qn_dens["cloud"]
+      multi_params = mgdparams(q_dens, qn_dens, hymets, cmu0_r_off=cmu0_r_off, **kwargs)
     else:
-      q_dens, qn_dens = adjust_icon_fields(icon_nc, hymets, mom=mom)
+      q_dens, qn_dens = adjust_icon_fields(icon_nc, hymets, mom=mom,
+                                           q_thresh=q_thresh, qn_thresh=qn_thresh, **kwargs)
+      if "cloud" in q_dens: del q_dens["cloud"]
+      if "cloud" in qn_dens: del qn_dens["cloud"]
       if "hail" in q_dens.keys(): del(q_dens["hail"]) # remove hail in case it is present
       t = icon_nc['temp']
       multi_params, qn_dens = mgdparams_1mom(q_dens, hymets, t=t, qn_out=True)
 
-    moments = calc_moments(multi_params, hymets=hymets, adjust=1) #!!! Julian S uses adjust=0
+    moments = calc_moments(multi_params, hymets=hymets, adjust=adjust, **kwargs)
 
     if mom>1:
         # Add totice, totliq and tot
@@ -9485,7 +9617,8 @@ def calc_microphys_nocloud(icon_fields, mom=2):
         except:
             warnings.warn("Creation of vol_q"+hm[0]+" not possible")
         try:
-            icon_nc['vol_qn' + hm[0]] = np.log10(qn_dens[hm]/1000).assign_attrs(
+            valid_qn = qn_dens[hm] > 0
+            icon_nc['vol_qn' + hm[0]] = np.log10((qn_dens[hm]/1000).where(valid_qn)).assign_attrs(
                 dict( standard_name=
                          " ".join(icon_nc['qn' + hm[0]].long_name.split("_")) +
                               ' per volume',
@@ -9533,7 +9666,8 @@ def calc_microphys_nocloud(icon_fields, mom=2):
             if 'vol_qn' + hm[0] in icon_nc.keys():
                 vol_qntotice += qn_dens[hm].copy()
                 comment += " + vol_qn" + hm[0]
-        icon_nc['vol_qntotice'] = np.log10(vol_qntotice/1000).assign_attrs( dict (
+        valid_totice = vol_qntotice > 0
+        icon_nc['vol_qntotice'] = np.log10((vol_qntotice/1000).where(valid_totice)).assign_attrs( dict (
             standard_name='number concentration total ice water content per volume',
             comments=comment,
             units='log10(1/L)'))
@@ -9541,7 +9675,8 @@ def calc_microphys_nocloud(icon_fields, mom=2):
         warnings.warn("Creation of vol_qntotice not possible")
 
     try:
-        icon_nc['vol_qntotliq'] = np.log10(( qn_dens["rain"] )/1000).assign_attrs( dict (
+        valid_totliq = qn_dens["rain"] > 0
+        icon_nc['vol_qntotliq'] = np.log10(( (qn_dens["rain"])/1000 ).where(valid_totliq)).assign_attrs( dict (
             standard_name='number concentration total liquid water content per volume',
             comments="vol_qnr",
             units='log10(1/L)'))
@@ -9549,7 +9684,9 @@ def calc_microphys_nocloud(icon_fields, mom=2):
         warnings.warn("Creation of vol_qntotliq not possible")
 
     try:
-        icon_nc['vol_qntot'] = np.log10((vol_qntotice + qn_dens["rain"] )/1000).assign_attrs( dict (
+        tot_n = vol_qntotice + qn_dens["rain"]
+        valid_tot = tot_n > 0
+        icon_nc['vol_qntot'] = np.log10((tot_n/1000).where(valid_tot)).assign_attrs( dict (
             standard_name='number concentration total water content per volume',
             comments="vol_qntotice + vol_qntotliq",
             units='log10(1/L)'))
