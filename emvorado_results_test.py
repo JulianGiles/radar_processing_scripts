@@ -552,7 +552,7 @@ ff_ML_glob = glob.glob(ff_ML)
 
 ff = [glob.glob(os.path.dirname(fp)+"/*allsim*")[0] for fp in ff_ML_glob ]
 
-ds_qvps = xr.open_mfdataset(ff)
+ds_qvps = utils.load_qvps(ff)
 
 ds_qvps = ds_qvps.set_coords("TEMP")
 
@@ -2109,7 +2109,7 @@ plt.close()
 # List of variable names
 variables = ["vol_qc", "vol_qi", "vol_qg", "vol_qs", "vol_qh", "vol_qr"]
 # variables = ["vol_qnc", "vol_qni", "vol_qng", "vol_qns", "vol_qnh", "vol_qnr"]
-# variables = ["D0_c", "D0_i", "D0_g", "D0_s", "D0_h", "D0_r"]
+# variables = ["Dm_c", "Dm_i", "Dm_g", "Dm_s", "Dm_h", "Dm_r"]
 
 # Create 3x2 subplots
 fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(15, 10), sharex=True, sharey=True)
@@ -2129,7 +2129,7 @@ plt.show()
 # List of variable names
 variables_q = ["vol_qtot", "vol_qtotice", "vol_qtotliq"]
 variables_qn = ["vol_qntot", "vol_qntotice", "vol_qntotliq"]
-variables_D0 = ["D0_tot", "D0_totice", "D0_totliq"]
+variables_D0 = ["Dm_tot", "Dm_totice", "Dm_totliq"]
 
 # Create 3x3 subplots
 fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(20, 10), sharex=True, sharey=True)
