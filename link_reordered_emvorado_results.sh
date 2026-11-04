@@ -2,10 +2,10 @@
 
 # Define the base directory and the output directory
 BASE_DIR="/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/run/"
-OUTPUT_DIR="/automount/realpep/upload/jgiles/ICON_EMVORADO_radardata/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/"
+OUTPUT_DIR="/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/radardata/"
 
 # Select which subfolder to include (cloud or no cloud variants): "icon_vol" or "icon_vol_noc"
-SUBFOLDER="icon_vol"
+SUBFOLDER="icon_vol_noc"
 
 # FIND_PATTERN now uses brace expansion to include radout + selected subfolder
 FIND_PATTERN="*iconemvorado_??????????/{radout,$SUBFOLDER}/cdfin_allsim_*"
@@ -16,7 +16,7 @@ LOC_CODES=("010392:pro" "017373:hty")
 RUN_NAME="iconemvorado" # icon or iconemvorado
 
 # Overwrite flag
-OVERWRITE=${1:-no}
+OVERWRITE=${1:-no} # this can mess up 22-24 h output from date -1 by ovewriting them with output from date 0. Only activate when no overlapping contiguous dates are present.
 
 # Create an associative array for location codes
 declare -A locs_code
@@ -27,7 +27,10 @@ for loc_code in "${LOC_CODES[@]}"; do
 done
 
 # Find all matching files (eval expands the brace pattern in FIND_PATTERN)
-eval find "$BASE_DIR" -type f \( -path "${FIND_PATTERN//,/ -o -path }" \) | while read -r file; do
+#eval find "$BASE_DIR" -type f \( -path "${FIND_PATTERN//,/ -o -path }" \) | while read -r file; do
+find "$BASE_DIR" -type f \
+  \( -path "*iconemvorado_??????????/radout/cdfin_allsim_*" \
+  -o -path "*iconemvorado_??????????/$SUBFOLDER/cdfin_allsim_*" \) -print0 | sort -z | while IFS= read -r -d '' file; do
   # Extract forecast start time, location ID, and timestamp from the file path
   #forecast_time=$(echo "$file" | grep -oP "${RUN_NAME}_\K\d{10}")
   #timestep=$(basename "$file" | grep -oP "_\K\d{12}(?=_\d{12})")
@@ -61,7 +64,7 @@ eval find "$BASE_DIR" -type f \( -path "${FIND_PATTERN//,/ -o -path }" \) | whil
       echo "Overwriting existing link: $target_link"
       ln -sf "$file" "$target_link"
     else
-      echo "Skipping existing link: $target_link"
+      echo "Skipping existing link: $file -----> $target_link"
     fi
   else
     ln -s "$file" "$target_link"
