@@ -59,7 +59,7 @@ def save_icechunk(ds, path, append=False):
     if append:
         repo = Repository.open(storage)
         session = repo.writable_session("main")
-        to_icechunk(ds, session, append_dim="time")
+        to_icechunk(ds, session, append_dim="time", align_chunks=True)
         session.commit("Append data")
     else:
         try:
@@ -67,7 +67,7 @@ def save_icechunk(ds, path, append=False):
         except Exception:
             repo = Repository.create(storage)
         session = repo.writable_session("main")
-        to_icechunk(ds, session)
+        to_icechunk(ds, session, mode="w", align_chunks=True)
         session.commit("Save data")
 
 def open_icechunk(path):
@@ -104,14 +104,14 @@ locs = ["boxpol", "pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs"]
 
 realpep_path = "/automount/realpep/"
 
-suffix_name = "" # suffix to add to folder names, for special cases (like computing only a selection of cases)
+suffix_name = "_emvorado_cases" # suffix to add to folder names, for special cases (like computing only a selection of cases)
 
 print("!!!! Future proofing: maybe adding guard is needed for multiprocessing !!!!")
 #if __name__ == "__main__": # set guard
 #%% Load QVPs for stratiform-case CFTDs
 
-calculate_retrievals = False # Calculate retrievals based on the QVPs?
-reload_zarr = True # reload directly qvp single-file from zarr archive?
+calculate_retrievals = True # Calculate retrievals based on the QVPs?
+reload_zarr = False # reload directly qvp single-file from zarr archive?
 
 # This part should be run after having the QVPs computed (compute_qvps.py)
 start_time = time.time()
@@ -122,8 +122,8 @@ path_qvps = realpep_path+"/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/*allm
 path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
 # Load only events with ML detected (pre-condition for stratiform)
 path_qvps = realpep_path+"/upload/jgiles/dwd/qvps/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
-path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_selected_for_emvorado/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
-path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/20*/*/*/HTY/*/*/ML_detected.txt"
+path_qvps = realpep_path+"/upload/jgiles/dwd/qvps"+suffix_name+"/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
+# path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/20*/*/*/HTY/*/*/ML_detected.txt"
 # path_qvps = realpep_path+"/upload/jgiles/boxpol/qvps/20*/*/2017-07-25/n_ppi_110deg/ML_detected.txt"
 # path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
 # path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/*/*/*/SVS/*/*/ML_detected.txt"
@@ -185,7 +185,7 @@ try:
 except IndexError:
     ff = [glob.glob(os.path.dirname(fp)+"/*12345*")[0] for fp in ff_glob ]
 
-path_qvpsinglefile = path_qvps.split("qvps/")[0]+"qvps_singlefile/ML_detected/"+utils.find_loc(locs,path_qvps)+"/qvps.zarr"
+path_qvpsinglefile = path_qvps.split("qvps"+suffix_name+"/")[0]+"qvps_singlefile"+suffix_name+"/ML_detected/"+utils.find_loc(locs,path_qvps)+"/qvps.zarr"
 
 if not reload_zarr:
     alignz = False
@@ -232,7 +232,7 @@ if not reload_zarr:
                     save_icechunk(qvps_year, path_qvpsinglefile, append=True)
         else:
             save_icechunk(qvps.chunk({'time': 200, 'z': 200}), path_qvpsinglefile, append=False)
-            
+
         qvps = open_icechunk(path_qvpsinglefile)
     else:
         print("Input files are already Zarr, skipping unified archive creation...")
@@ -389,9 +389,9 @@ for stratname, stratqvp in [("unfiltered", qvps.copy()),
         for ll in retrievals_qvpbased[stratname].keys():
             # with dask.config.set(scheduler='single-threaded'):
             #     retrievals_qvpbased[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname+"/"+ll+".nc", engine='h5netcdf')
-            save_icechunk(retrievals_qvpbased[stratname][ll].chunk({'time': 200, 'z': 200}), realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname+"/"+ll+".zarr", append=False)
+            save_icechunk(retrievals_qvpbased[stratname][ll].chunk({'time':200, 'z': -1}), realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname+"/"+ll+".zarr", append=False)
 
-    retrievals_qvpbased[stratname][loc] = open_icechunk(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname+"/"+loc+".zarr")
+    retrievals_qvpbased[stratname][ll] = open_icechunk(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname+"/"+ll+".zarr")
 
 # Check also if the retrievals are already in the QVP and pull them into a new dict
 try: # check if exists, if not, create it
@@ -437,9 +437,10 @@ for stratname, stratqvp in [("unfiltered", qvps.copy()),
         for ll in retrievals[stratname].keys():
             # with dask.config.set(scheduler='single-threaded'):
             #     retrievals[stratname][ll].to_netcdf(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname+"/"+ll+".nc", engine='h5netcdf')
-            save_icechunk(retrievals[stratname][ll].chunk({'time': 200, 'z': 200}), realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname+"/"+ll+".zarr", append=False)
+            save_icechunk(retrievals[stratname][ll].chunk({'time':200, 'z': -1}), realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname+"/"+ll+".zarr", append=False)
 
-    retrievals[stratname][loc] = open_icechunk(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname+"/"+loc+".zarr")
+            # reload
+    retrievals[stratname][ll] = open_icechunk(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname+"/"+ll+".zarr")
 
 partial_time = time.time() - p_time
 print(f"... took {partial_time/60:.2f} minutes.")
@@ -719,8 +720,10 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
         # Save riming to files
         for xx in riming_varnames:
             try:
+                path_riming = realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc"
+                os.makedirs(os.path.dirname(path_riming), exist_ok=True)
                 with dask.config.set(scheduler='single-threaded'):
-                    riming_classif[stratname][ll][xx].to_netcdf(realpep_path+"/upload/jgiles/radar_riming_classif"+suffix_name+"/"+stratname+"/"+ll+"_"+xx+".nc", engine='h5netcdf')
+                    riming_classif[stratname][ll][xx].to_netcdf(path_riming, engine='h5netcdf')
             except:
                 print("!! Not able to extract "+stratname+" riming classification !!")
 
@@ -738,7 +741,7 @@ p_time = time.time()
 
 # define generalized variables to subset to avoid memory crashes
 to_include = ["DBZH", "RHOHV", "ZDR_EC_OC" , "KDP_ML_corrected", "RH", "min_entropy",
-              "Dm_", "iwc_", "lwc", "Nt_", "PHIDP_UF_OC", "UPHIDP_UF_OC"]
+              "Dm_", "iwc_", "lwc_", "Nt_", "PHIDP_UF_OC", "UPHIDP_UF_OC"]
 
 z_snow_over_ML = 300 # set the height above the ML from where to consider snow. 300 m like in https://doi.org/10.1175/JAMC-D-19-0128.1
 z_rain_below_ML = 300 # set the height below the ML from where to consider rain. 300 m like in https://doi.org/10.1175/JAMC-D-19-0128.1
