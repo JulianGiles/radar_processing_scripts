@@ -65,7 +65,7 @@ path_qvps = realpep_path+"/upload/jgiles/dwd/qvps/*/*/*/pro/vol5minng01/07/*allm
 path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol5minng01/07/*allmoms*"
 # Load only events with ML detected (pre-condition for stratiform)
 path_qvps = realpep_path+"/upload/jgiles/dwd/qvps/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
-# path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_selected_for_emvorado/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
+# path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_emvorado_cases/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
 # path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/20*/*/*/ANK/*/*/ML_detected.txt"
 # path_qvps = realpep_path+"/upload/jgiles/boxpol/qvps/20*/*/2017-07-25/n_ppi_110deg/ML_detected.txt"
 
@@ -88,12 +88,12 @@ if "dwd" in path_qvps:
 if "boxpol" in path_qvps:
     country="boxpol"
     X_TH = "DBTH"
-    # X_PHI = "PHIDP_OC_MASKED"
+    # X_PHI = "PHIDP_UF_OC_MASKED"
 elif "dmi" in path_qvps:
     country="dmi"
     X_TH = "DBZH"
     X_ZDR = "ZDR_EC_OC_WRC_AC"
-    # X_PHI = "PHIDP_OC_MASKED"
+    # X_PHI = "PHIDP_UF_OC_MASKED"
 
 
 ff_glob = glob.glob(path_qvps)
