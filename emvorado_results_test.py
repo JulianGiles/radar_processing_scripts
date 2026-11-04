@@ -56,6 +56,34 @@ import utils
 import radarmet
 from classify_precip_typ import classify_precip_typ
 
+# Icechunk helper functions
+from icechunk import Repository, local_filesystem_storage
+from icechunk.xarray import to_icechunk
+
+def save_icechunk(ds, path, append=False):
+    """Helper to save or append xarray dataset to Icechunk repository."""
+    storage = local_filesystem_storage(path)
+    if append:
+        repo = Repository.open(storage)
+        session = repo.writable_session("main")
+        to_icechunk(ds, session, append_dim="time", align_chunks=True)
+        session.commit("Append data")
+    else:
+        try:
+            repo = Repository.open(storage)
+        except Exception:
+            repo = Repository.create(storage)
+        session = repo.writable_session("main")
+        to_icechunk(ds, session, mode="w", align_chunks=True)
+        session.commit("Save data")
+
+def open_icechunk(path):
+    """Helper to load xarray dataset from Icechunk repository."""
+    storage = local_filesystem_storage(path)
+    repo = Repository.open(storage)
+    session = repo.readonly_session("main")
+    return xr.open_zarr(session.store, consolidated=False)
+
 realpep_path = "/automount/realpep/"
 
 # we define a funtion to look for loc inside a path string
@@ -547,6 +575,7 @@ plt.close()
 #%% Load QVPs
 # Load only events with ML detected (pre-condition for stratiform)
 ff_ML = "/automount/realpep/upload/jgiles/ICON_EMVORADO_radardata/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/qvps/radar_data_emvorado/*/*/*/pro/vol/DONE.txt"
+ff_ML = "/automount/data02/agradar/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/radardata/qvps/*/*/*/pro/vol/DONE.txt"
 #ff_ML = "/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/qvps/radar_data_emvorado/*/*/*/pro/vol/ML_detected.txt"
 ff_ML_glob = glob.glob(ff_ML)
 
@@ -765,7 +794,7 @@ layout.save("/user/jgiles/qvps_emvorado_pro_stratiform.html", resources=INLINE, 
 
 #%% Filters (conditions for stratiform)
 
-suffix_name = "_emvorado_cases" # for saving results
+suffix_name = "_iconemvorado" # for saving results
 
 calculate_retrievals = True
 min_entropy_thresh = 0.85
@@ -909,12 +938,12 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
     microphys[stratname][loc] = stratqvp[[
         "qv", "qc", "qi", "qr", "qs", "qg", "qh",
         "qnc", "qni", "qnr", "qns", "qng", "qnh",
-        "TEMP", "vol_qc", "vol_qnc", "D0_c", "vol_qr", "vol_qnr", "D0_r",
-        "vol_qi", "vol_qni", "D0_i", "vol_qs", "vol_qns", "D0_s",
-        "vol_qg", "vol_qng", "D0_g", "vol_qh", "vol_qnh", "D0_h",
-        "vol_qtotice", "vol_qntotice", "D0_totice",
+        "TEMP", "vol_qc", "vol_qnc", "Dm_c", "vol_qr", "vol_qnr", "Dm_r",
+        "vol_qi", "vol_qni", "Dm_i", "vol_qs", "vol_qns", "Dm_s",
+        "vol_qg", "vol_qng", "Dm_g", "vol_qh", "vol_qnh", "Dm_h",
+        "vol_qtotice", "vol_qntotice", "Dm_totice",
         "vol_qtotliq", "vol_qtot", "vol_qntotliq", "vol_qntot",
-        "D0_totliq", "D0_tot"
+        "Dm_totliq", "Dm_tot"
         ]].set_coords("TEMP")
 
     # Save microphys #!!! For now this is disabled
@@ -2153,16 +2182,16 @@ plt.tight_layout()
 plt.show()
 
 #%% Reload QVPS for obs
-suffix_name = "_selected_cases"
+suffix_name = "_emvorado_cases"
 reload_qvps = True
 ll = "pro"
 
 if reload_qvps:
     print("Reloading filtered qvps")
 
-    qvps_strat_fil_obs = xr.open_dataset(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform/"+ll+".nc")
-    qvps_strat_relaxed_fil_obs = xr.open_dataset(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform_relaxed/"+ll+".nc")
-    qvps_strat_ML_fil_obs = xr.open_dataset(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform_ML/"+ll+".nc")
+    qvps_strat_fil_obs = open_icechunk(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform/"+ll+".zarr")
+    qvps_strat_relaxed_fil_obs = open_icechunk(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform_relaxed/"+ll+".zarr")
+    qvps_strat_ML_fil_obs = open_icechunk(realpep_path+"/upload/jgiles/stratiform_qvps"+suffix_name+"/stratiform_ML/"+ll+".zarr")
 
     try: # check if exists, if not, create it
         retrievals_obs
@@ -2179,8 +2208,8 @@ if reload_qvps:
         retrievals_obs[stratname] = {}
         retrievals_qvpbased_obs[stratname] = {}
 
-        retrievals_obs[stratname][ll] = xr.open_dataset(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname+"/"+ll+".nc")
-        retrievals_qvpbased_obs[stratname][ll] = xr.open_dataset(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname+"/"+ll+".nc")
+        retrievals_obs[stratname][ll] = open_icechunk(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname+"/"+ll+".zarr")
+        retrievals_qvpbased_obs[stratname][ll] = open_icechunk(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname+"/"+ll+".zarr")
 
 #%% CFTDs Plot simulations vs observations
 
