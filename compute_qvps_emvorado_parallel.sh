@@ -9,15 +9,15 @@
 ##############################################################
 
 #SBATCH --account=detectrea2
-#SBATCH --nodes=1
-#SBATCH --cpus-per-task=8
-#SBATCH --ntasks-per-node=6
+#SBATCH --nodes=2
+#SBATCH --cpus-per-task=12
+#SBATCH --ntasks-per-node=4
 #SBATCH --time=24:00:00
-#SBATCH --job-name=compute_qvps_hty
-#SBATCH --output=compute_qvps_hty.out
-#SBATCH --error=compute_qvps_hty.err
+#SBATCH --job-name=compute_qvps_pro
+#SBATCH --output=compute_qvps_pro.out
+#SBATCH --error=compute_qvps_pro.err
 #SBATCH --open-mode=truncate
-#SBATCH --partition=mem192
+#SBATCH --partition=batch
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK}
 
 # Set the directory with the code (this will be the working dir)
@@ -25,23 +25,9 @@ codedir=/p/scratch/detectrea2/giles1/radar_processing_scripts/
 cd $codedir
 
 # Define the radar site
-loc="hty"
+loc="pro"
 
 # Define your list of dates (format: YYYY-MM-DD)
-
-dates=( # PRO
-    "2017-04-12"
-    "2017-06-30"
-    "2017-07-25"
-    "2017-10-05"
-    "2018-03-12"
-    "2018-04-16"
-    "2018-07-12"
-    "2019-10-04"
-    "2020-08-30"
-    "2020-09-25"
-    "2020-10-14"
-)
 
 dates=( # HTY
     "2016-02-21"
@@ -59,16 +45,41 @@ dates=( # HTY
     "2020-01-03"
     "2020-01-06"
     "2020-01-07"
+    "2020-03-13"
+    "2020-03-17"
+    "2020-11-03"
     "2020-11-04"
     "2020-11-20"
     "2020-12-14"
+    "2020-12-15"
+)
+
+dates=( # PRO
+    "2017-04-12"
+    "2017-06-30"
+    "2017-07-25"
+    "2017-10-05"
+    "2018-03-12"
+    "2018-04-16"
+    "2018-07-12"
+    "2019-10-04"
+    "2020-02-01"
+    "2020-02-09"
+    "2020-02-16"
+    "2020-03-10"
+    "2020-06-13"
+    "2020-08-30"
+    "2020-09-25"
+    "2020-09-26"
+    "2020-10-14"
+    "2020-10-30"
 )
 
 # Set the directory to look for the files
-base_path="/p/scratch/detectrea2/giles1/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/radar_data_emvorado/"
+base_path="/p/scratch/detectrea2/giles1/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/radardata/"
 
 # set a name for the counter file (counting how many job steps running at the same time
-counterfile=$base_path/count_hty.txt
+counterfile=$base_path/count_pro.txt
 
 count=0
 echo $count > $counterfile
@@ -83,13 +94,13 @@ for date in "${dates[@]}"; do
     echo $count > $counterfile
     ((startcount++))
     # Pass the file path to the python script
-    { srun -c 8 --account=detectrea2 -n 1 --exact --threads-per-core=1 --time 200 python -u $codedir/compute_qvps_new_emvorado.py "$base_path/${date:0:4}/${date:0:7}/$date/$loc/vol/"; count=$(<$counterfile); ((count--)) ; echo $count > $counterfile; } &
+    { srun -c 12 --account=detectrea2 -n 1 --exact --threads-per-core=1 --time 200 python -u $codedir/compute_qvps_new_emvorado.py "$base_path/${date:0:4}/${date:0:7}/$date/$loc/vol/"; count=$(<$counterfile); ((count--)) ; echo $count > $counterfile; } &
 
-    if [ "$startcount" -le 6 ]; then
+    if [ "$startcount" -le 8 ]; then
         sleep 5
     fi
 
-    while [ "$(<$counterfile)" -ge 6 ]; do
+    while [ "$(<$counterfile)" -ge 8 ]; do
         sleep 5
     done
 
