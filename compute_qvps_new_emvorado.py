@@ -146,11 +146,11 @@ def save_with_icechunk(ds, path, commit_message="Save data"):
     compressor = BloscCodec(cname='zstd', clevel=5, shuffle='bitshuffle')
     for var in ds.data_vars:
         ds[var].encoding.pop('compressor', None) # Remove deprecated key
-        
+
         # Remove HDF5/NetCDF specific keys to prevent clashes with Zarr
         for key in ['zlib', 'szip', 'bzip2', 'blosc', 'complevel', 'shuffle', 'fletcher32', 'contiguous']:
             ds[var].encoding.pop(key, None)
-            
+
         ds[var].encoding['compressors'] = [compressor]
 
     to_icechunk(ds, session)
@@ -170,7 +170,7 @@ min_range = min_rngs["default"] # minimum range from which to consider data (mos
 #%% Load data
 
 # check for the file DONE.txt in the savepath before starting
-savepath = make_savedir(files_emv[0][:-25]+".nc", replace=("/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/", "/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/qvps/"))
+savepath = make_savedir(files_emv[0][:-25]+".nc", replace=(path0.split("/20")[0], path0.split("/20")[0]+"/qvps/"))
 if os.path.exists(os.path.dirname(savepath)+"/DONE.txt") and not overwrite:
     print("Files already exist, skipping: "+savepath)
     exit()
@@ -340,6 +340,7 @@ ds_qvp_ra = ds_qvp_ra.assign({"DBZH_qvp_count": ds_qvp_ra_count["DBZH"]})
 
 #%% Detect melting layer
 if X_PHI in ds.data_vars:
+    clowres0=False
     if ds.range.diff("range").median() > 750:
         clowres0=True # for the ML correction algorithm
 
@@ -524,7 +525,7 @@ save_with_icechunk(ds_qvp_ra, savepath, commit_message="Save QVP")
 
 #%% Save PPI
 if save_processed_ppi:
-    savepath_ppi = make_savedir(files_emv[0][:-25]+".nc", replace=("/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/", "/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/final_ppis/"))
+    savepath_ppi = make_savedir(files_emv[0][:-25]+".nc", replace=(path0.split("/20")[0], path0.split("/20")[0]+"/final_ppis/"))
     if os.path.exists(os.path.dirname(savepath_ppi)+"/DONE.txt") and not overwrite:
         print("Files already exist, skipping: "+savepath)
         exit()
