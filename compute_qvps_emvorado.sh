@@ -52,7 +52,7 @@ dates=( # HTY
 loc="hty"
 
 for date in "${dates[@]}"; do
-    find "$BASE_DIR" -type d -path "*$date/$loc/vol" ! -path "*/qvps/*" | while read -r path; do
+    find "$BASE_DIR" -type d -path "*$date/$loc/vol" ! -path "*/qvps/*" ! -path "*/final_ppis/*" | while read -r path; do
         echo "launching: compute_qvps_new_emvorado.py $path/"
         python -u /home/jgiles/Scripts/python/radar_processing_scripts/compute_qvps_new_emvorado.py "$path/"
     done
