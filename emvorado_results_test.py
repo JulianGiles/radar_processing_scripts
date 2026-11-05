@@ -576,6 +576,7 @@ plt.close()
 # Load only events with ML detected (pre-condition for stratiform)
 ff_ML = "/automount/realpep/upload/jgiles/ICON_EMVORADO_radardata/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/qvps/radar_data_emvorado/*/*/*/pro/vol/DONE.txt"
 ff_ML = "/automount/data02/agradar/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/radardata/qvps/*/*/*/pro/vol/DONE.txt"
+ff_ML = "/home/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/radardata/qvps/*/*/*/pro/vol/DONE.txt"
 #ff_ML = "/automount/realpep/upload/jgiles/ICON_EMVORADO_test/eur-0275_iconv2.6.4-eclm-parflowv3.12_wfe-case/qvps/radar_data_emvorado/*/*/*/pro/vol/ML_detected.txt"
 ff_ML_glob = glob.glob(ff_ML)
 
@@ -583,7 +584,7 @@ ff = [glob.glob(os.path.dirname(fp)+"/*allsim*")[0] for fp in ff_ML_glob ]
 
 ds_qvps = utils.load_qvps(ff)
 
-ds_qvps = ds_qvps.set_coords("TEMP")
+ds_qvps = ds_qvps.set_coords("TEMP").load()
 
 # 01/08/2025: Disable the ML filter since the ML detection is not so reliable in the simulations
 # # Conditions to clean ML height values
@@ -1174,12 +1175,13 @@ for stratname, stratqvp in [("stratiform", qvps_strat_fil.copy()),
 
 
 #%% CFTDs Plot
+suffix_name = "_iconemvorado" # for saving results
 
 # If auto_plot is True, then produce and save the plots automatically based on
 # default configurations (only change savepath and ds_to_plot accordingly).
 # If False, then produce the plot as given below and do not save.
 auto_plot = True
-savepath = "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform/"
+savepath = "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform/"
 plot_relhum = True # plot relative humidity with respect to ice and water in a separate plot?
 
 # Which to plot, qvps_strat_fil, qvps_strat_relaxed_fil, qvps_entropy4km_fil or qvps_strat_urML_fil
@@ -1543,6 +1545,7 @@ elif loc in ['pro', 'tur', 'umd', 'ess']:
 
 #%% CFTDs microphysics Plot (microphysics from ICON-EMVORADO)
 # We assume that everything above ML is frozen and everything below is liquid
+suffix_name = "_iconemvorado" # for saving results
 
 # ML tolerance
 ML_tolerance = 300 # add this many meters around the ML to reduce contamination
@@ -1557,18 +1560,18 @@ TEMP_ML_bottom = 4
 # savepath_list and ds_to_plot_list) and do not save.
 auto_plot = True
 savepath_list = [
-                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform/",
-                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform_QVPbased/",
-                # "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform_KDPpos/",
-                # "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform_KDPpos_QVPbased/",
-                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform_relaxed/",
-                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform_relaxed_QVPbased/",
-                # "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform_relaxed_KDPpos/",
-                # "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform_relaxed_KDPpos_QVPbased/",
-                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/entropy4km/",
-                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/entropy4km_QVPbased/",
-                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform_urML/",
-                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform_urML_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_QVPbased/",
+                # "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_KDPpos/",
+                # "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_KDPpos_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed_QVPbased/",
+                # "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed_KDPpos/",
+                # "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed_KDPpos_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/entropy4km/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/entropy4km_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_urML/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_urML_QVPbased/",
                  ]
 
 # Which to plot, retrievals or retrievals_qvpbased, stratiform or stratiform_relaxed
@@ -1614,8 +1617,8 @@ selmonths = selseas[1]
 # Select which retrievals to plot (only works if auto_plot=False)
 IWC = "vol_qtot" # vol_qtotice vol_qtot
 LWC = "vol_qtot" # vol_qtotliq vol_qtot
-Dm_ice = "D0_tot" # D0_totice D0_tot
-Dm_rain = "D0_tot" # D0_totliq D0_tot
+Dm_ice = "Dm_tot" # Dm_totice Dm_tot
+Dm_rain = "Dm_tot" # Dm_totliq Dm_tot
 Nt_ice = "vol_qntot" # vol_qntotice vol_qntot
 Nt_rain = "vol_qntot" # vol_qntotliq vol_qnr vol_qntot
 
@@ -1637,19 +1640,19 @@ for sn, savepath in enumerate(savepath_list):
             savedict.update(
                         {selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys.png": [ytlimlist[0],
                                     "vol_qtotice", "vol_qtotliq",
-                                    "D0_totice", "D0_totliq",
+                                    "Dm_totice", "Dm_totliq",
                                     "vol_qntotice", "vol_qntotliq", selseas[1]],
                         selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_extended.png": [ytlimlist[1],
                                     "vol_qtotice", "vol_qtotliq",
-                                    "D0_totice", "D0_totliq",
+                                    "Dm_totice", "Dm_totliq",
                                     "vol_qntotice", "vol_qntotliq", selseas[1]],
                         selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_tot.png": [ytlimlist[0],
                                     "vol_qtot", "vol_qtot",
-                                    "D0_tot", "D0_tot",
+                                    "Dm_tot", "Dm_tot",
                                     "vol_qntot", "vol_qntot", selseas[1]],
                         selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_tot_extended.png": [ytlimlist[1],
                                     "vol_qtot", "vol_qtot",
-                                    "D0_tot", "D0_tot",
+                                    "Dm_tot", "Dm_tot",
                                     "vol_qntot", "vol_qntot", selseas[1]],
                         }
                     )
@@ -1732,6 +1735,7 @@ for sn, savepath in enumerate(savepath_list):
 #%% CFTDs microphysics Plot (microphysics from ICON-EMVORADO)
 # SEPARATED BY HYDROMETEOR CLASS
 # We assume that everything above ML is frozen and everything below is liquid
+suffix_name = "_iconemvorado" # for saving results
 
 # ML tolerance
 ML_tolerance = 300 # add this many meters around the ML to reduce contamination
@@ -1746,18 +1750,18 @@ TEMP_ML_bottom = 0
 # savepath_list and ds_to_plot_list) and do not save.
 auto_plot = True
 savepath_list = [
-                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_stratiform/",
-                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_stratiform_QVPbased/",
-                # "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_stratiform_KDPpos/",
-                # "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_stratiform_KDPpos_QVPbased/",
-                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_stratiform_relaxed/",
-                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_stratiform_relaxed_QVPbased/",
-                # "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_stratiform_relaxed_KDPpos/",
-                # "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_stratiform_relaxed_KDPpos_QVPbased/",
-                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_entropy4km/",
-                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_entropy4km_QVPbased/",
-                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_stratiform_urML/",
-                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/by_HMC_stratiform_urML_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/by_HMC_stratiform/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/by_HMC_stratiform_QVPbased/",
+                # "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/by_HMC_stratiform_KDPpos/",
+                # "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/by_HMC_stratiform_KDPpos_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/by_HMC_stratiform_relaxed/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/by_HMC_stratiform_relaxed_QVPbased/",
+                # "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/by_HMC_stratiform_relaxed_KDPpos/",
+                # "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/by_HMC_stratiform_relaxed_KDPpos_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/by_HMC_entropy4km/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/by_HMC_entropy4km_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/by_HMC_stratiform_urML/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/by_HMC_stratiform_urML_QVPbased/",
                  ]
 
 # Which to plot, retrievals or retrievals_qvpbased, stratiform or stratiform_relaxed
@@ -1803,8 +1807,8 @@ selmonths = selseas[1]
 # Select which retrievals to plot (only works if auto_plot=False)
 IWC = "vol_qtot" # vol_qtotice vol_qtot
 LWC = "vol_qtot" # vol_qtotliq vol_qtot
-Dm_ice = "D0_tot" # D0_totice D0_tot
-Dm_rain = "D0_tot" # D0_totliq D0_tot
+Dm_ice = "Dm_tot" # Dm_totice Dm_tot
+Dm_rain = "Dm_tot" # Dm_totliq Dm_tot
 Nt_ice = "vol_qntot" # vol_qntotice vol_qntot
 Nt_rain = "vol_qntot" # vol_qntotliq vol_qnr vol_qntot
 
@@ -1827,11 +1831,11 @@ for sn, savepath in enumerate(savepath_list):
                 savedict.update(
                             {selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_"+hmc+".png": [ytlimlist[0],
                                         "vol_q"+hmc, "vol_q"+hmc,
-                                        "D0_"+hmc, "D0_"+hmc,
+                                        "Dm_"+hmc, "Dm_"+hmc,
                                         "vol_qn"+hmc, "vol_qn"+hmc, selseas[1]],
                             selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_"+hmc+"_extended.png": [ytlimlist[1],
                                         "vol_q"+hmc, "vol_q"+hmc,
-                                        "D0_"+hmc, "D0_"+hmc,
+                                        "Dm_"+hmc, "Dm_"+hmc,
                                         "vol_qn"+hmc, "vol_qn"+hmc, selseas[1]],
                             }
                         )
@@ -1913,6 +1917,7 @@ for sn, savepath in enumerate(savepath_list):
 
 #%% CFTDs retrievals Plot (retrievals from formulas)
 # We assume that everything above ML is frozen and everything below is liquid
+suffix_name = "_iconemvorado" # for saving results
 
 # ML tolerance
 ML_tolerance = 300 # add this many meters around the ML to reduce contamination
@@ -1927,15 +1932,15 @@ TEMP_ML_bottom = 4
 # savepath_list and ds_to_plot_list) and do not save.
 auto_plot = True
 savepath_list = [
-                # "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform/",
-                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform_QVPbased/",
-                # "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform_KDPpos/",
-                # "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform_KDPpos_QVPbased/",
-                # "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform_relaxed/",
-                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform_relaxed_QVPbased/",
-                # "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform_relaxed_KDPpos/",
-                # "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/stratiform_relaxed_KDPpos_QVPbased/",
-                "/automount/agradar/jgiles/images/CFTDs_emvorado_cases/entropy4km_QVPbased/",
+                # "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_QVPbased/",
+                # "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_KDPpos/",
+                # "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_KDPpos_QVPbased/",
+                # "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed_QVPbased/",
+                # "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed_KDPpos/",
+                # "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/stratiform_relaxed_KDPpos_QVPbased/",
+                "/automount/agradar/jgiles/images/CFTDs"+suffix_name+"/entropy4km_QVPbased/",
                  ]
 
 # Which to plot, retrievals or retrievals_qvpbased, stratiform or stratiform_relaxed
@@ -2158,7 +2163,7 @@ plt.show()
 # List of variable names
 variables_q = ["vol_qtot", "vol_qtotice", "vol_qtotliq"]
 variables_qn = ["vol_qntot", "vol_qntotice", "vol_qntotliq"]
-variables_D0 = ["Dm_tot", "Dm_totice", "Dm_totliq"]
+variables_Dm = ["Dm_tot", "Dm_totice", "Dm_totliq"]
 
 # Create 3x3 subplots
 fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(20, 10), sharex=True, sharey=True)
@@ -2173,7 +2178,7 @@ for i, var in enumerate(variables_qn):
     ds_qvp[var].plot(x="time", ax=axes[i+3], vmin=-4, vmax=4, ylim=(0, 10000), cmap="RdBu_r")
     axes[i+3].set_title(var)
 
-for i, var in enumerate(variables_D0):
+for i, var in enumerate(variables_Dm):
     ds_qvp[var].plot(x="time", ax=axes[i+6], vmin=0, vmax=5, ylim=(0, 10000), cmap="viridis")
     axes[i+6].set_title(var)
 
@@ -2222,7 +2227,14 @@ plot_relhum = True # plot relative humidity with respect to ice and water in a s
 
 # Which to plot, qvps_strat_fil, qvps_strat_relaxed_fil, qvps_entropy4km_fil or qvps_strat_urML_fil
 ds_to_plot_sim = qvps_strat_fil.copy()
-ds_to_plot_obs = qvps_strat_fil_obs.copy()
+ds_to_plot_obs_ = qvps_strat_fil_obs.copy()
+
+# Extract unique dates (normalized to midnight) from the simulation dataset
+sim_dates = np.unique(ds_to_plot_sim.time.dt.date)
+
+# Select observation timesteps whose dates are in sim_dates
+obs_dates = ds_to_plot_obs_.time.dt.date
+ds_to_plot_obs = ds_to_plot_obs_.sel(time=np.isin(obs_dates, sim_dates))
 
 X_DBZH_obs = "DBZH_AC"
 X_ZDR_obs = "ZDR_EC_OC_AC"
@@ -2817,10 +2829,10 @@ ds_to_plot_list_obs = [
                     retrievals_qvpbased_obs["stratiform_relaxed"][loc].copy(),
                     # retrievals_obs["stratiform_relaxed"][loc].copy().where(qvps_strat_relaxed_fil.KDP_ML_corrected>0.01),
                     # retrievals_qvpbased_obs["stratiform_relaxed"][loc].copy().where(qvps_strat_relaxed_fil.KDP>0.01),
-                    retrievals_obs["stratiform_ML"][loc].copy(),
-                    retrievals_qvpbased_obs["stratiform_ML"][loc].copy(),
                     retrievals_obs["stratiform"][loc].copy(),
                     retrievals_qvpbased_obs["stratiform"][loc].copy(),
+                    retrievals_obs["stratiform_ML"][loc].copy(),
+                    retrievals_qvpbased_obs["stratiform_ML"][loc].copy(),
                     ]
 
 
@@ -2849,8 +2861,8 @@ selmonths = selseas[1]
 # Select which retrievals to plot (only works if auto_plot=False)
 IWC = "vol_qtot" # vol_qtotice vol_qtot
 LWC = "vol_qtot" # vol_qtotliq vol_qtot
-Dm_ice = "D0_tot" # D0_totice D0_tot
-Dm_rain = "D0_tot" # D0_totliq D0_tot
+Dm_ice = "Dm_tot" # Dm_totice Dm_tot
+Dm_rain = "Dm_tot" # Dm_totliq Dm_tot
 Nt_ice = "vol_qntot" # vol_qntotice vol_qntot
 Nt_rain = "vol_qntot" # vol_qntotliq vol_qnr vol_qntot
 
@@ -2880,19 +2892,19 @@ for sn, savepath in enumerate(savepath_list):
             savedict.update(
                         {selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys.png": [ytlimlist[0],
                                     "vol_qtotice", "vol_qtotliq",
-                                    "D0_totice", "D0_totliq",
+                                    "Dm_totice", "Dm_totliq",
                                     "vol_qntotice", "vol_qntotliq", selseas[1]],
                         selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_extended.png": [ytlimlist[1],
                                     "vol_qtotice", "vol_qtotliq",
-                                    "D0_totice", "D0_totliq",
+                                    "Dm_totice", "Dm_totliq",
                                     "vol_qntotice", "vol_qntotliq", selseas[1]],
                         selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_tot.png": [ytlimlist[0],
                                     "vol_qtot", "vol_qtot",
-                                    "D0_tot", "D0_tot",
+                                    "Dm_tot", "Dm_tot",
                                     "vol_qntot", "vol_qntot", selseas[1]],
                         selseas[0]+"/"+loc+"_cftd_"+cond_name+"_microphys_tot_extended.png": [ytlimlist[1],
                                     "vol_qtot", "vol_qtot",
-                                    "D0_tot", "D0_tot",
+                                    "Dm_tot", "Dm_tot",
                                     "vol_qntot", "vol_qntot", selseas[1]],
                         }
                     )
@@ -2934,7 +2946,7 @@ for sn, savepath in enumerate(savepath_list):
             continue
 
         try:
-            retreivals_merged_obs = xr.Dataset({
+            retreivals_merged_obs_ = xr.Dataset({
                                             "IWC/LWC [g/m^{3}]": ds_to_plot_obs[IWC_obs].where(ds_to_plot_obs[IWC_obs].z > ds_to_plot_obs.height_ml_new_gia+ML_tolerance,
                                                                               ds_to_plot_obs[LWC_obs].where(ds_to_plot_obs[LWC_obs].z < ds_to_plot_obs.height_ml_bottom_new_gia-ML_tolerance ) ),
                                             "Dm [mm]": ds_to_plot_obs[Dm_ice_obs].where(ds_to_plot_obs[Dm_ice_obs].z > ds_to_plot_obs.height_ml_new_gia+ML_tolerance,
@@ -2964,6 +2976,13 @@ for sn, savepath in enumerate(savepath_list):
                 binsx2 = [0.9, 1.005, 0.005]
             if "KDP" in vv:
                 adj=1
+
+            # Extract unique dates (normalized to midnight) from the simulation dataset
+            sim_dates = np.unique(retreivals_merged.time.dt.date)
+
+            # Select observation timesteps whose dates are in sim_dates
+            obs_dates = retreivals_merged_obs_.time.dt.date
+            retreivals_merged_obs = retreivals_merged_obs_.sel(time=np.isin(obs_dates, sim_dates))
 
             # plot simulations
 
@@ -3018,7 +3037,7 @@ for sn, savepath in enumerate(savepath_list):
 
 
 #%% Statistics histograms and ridgeplots
-suffix_name = "_emvorado_cases"
+suffix_name = "_iconemvorado"
 
 #### Set variable names
 X_DBZH = "DBZH_AC"
@@ -3064,7 +3083,7 @@ for stratname in ["stratiform", "stratiform_relaxed", "entropy4km", "stratiform_
             del stats[stratname][ll]
 
 #%%% ridgeplots
-folder_name_suffix = "_emvorado_cases"
+folder_name_suffix = "_iconemvorado"
 
 savepath = "/automount/agradar/jgiles/images/stats_ridgeplots"+folder_name_suffix+"/"
 
@@ -3250,9 +3269,9 @@ for selseas in selseaslist:
                     fig = ridgeplot.ridgeplot(samples=samples.values(),
                                             colorscale="viridis",
                                             colormode="row-index",
-                                            coloralpha=0.65,
+                                            opacity=0.65,
                                             labels=samples.keys(),
-                                            linewidth=2,
+                                            line_width=2,
                                             spacing=5 / 9,
                                             # kde_points=bins[ss],
                                             bandwidth=bandwidths[ss][vv],
@@ -3316,9 +3335,9 @@ for selseas in selseaslist:
                     fig = ridgeplot.ridgeplot(samples=samples.values(),
                                             colorscale="viridis",
                                             colormode="row-index",
-                                            coloralpha=0.65,
+                                            opacity=0.65,
                                             labels=samples.keys(),
-                                            linewidth=2,
+                                            line_width=2,
                                             spacing=5 / 9,
                                             # kde_points=bins[ss],
                                             bandwidth=bandwidths[ss],
