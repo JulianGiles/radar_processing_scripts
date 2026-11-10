@@ -104,7 +104,7 @@ locs = ["boxpol", "pro", "tur", "umd", "afy", "ank", "gzt", "hty", "svs"]
 
 realpep_path = "/automount/realpep/"
 
-suffix_name = "_emvorado_cases" # suffix to add to folder names, for special cases (like computing only a selection of cases)
+suffix_name = "" # suffix to add to folder names, for special cases (like computing only a selection of cases)
 
 print("!!!! Future proofing: maybe adding guard is needed for multiprocessing !!!!")
 #if __name__ == "__main__": # set guard
