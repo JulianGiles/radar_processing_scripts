@@ -584,7 +584,7 @@ ff = [glob.glob(os.path.dirname(fp)+"/*allsim*")[0] for fp in ff_ML_glob ]
 
 ds_qvps = utils.load_qvps(ff)
 
-ds_qvps = ds_qvps.set_coords("TEMP").load()
+ds_qvps = ds_qvps.load().set_coords("TEMP")
 
 # 01/08/2025: Disable the ML filter since the ML detection is not so reliable in the simulations
 # # Conditions to clean ML height values
