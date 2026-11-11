@@ -1128,13 +1128,13 @@ def load_volume(filelists, func=load_dwd_preprocessed, align_time=True, toleranc
             try:
                 for dsn in range(len(sweeps)):
                     sweeps[dsn]["time"] = sweeps[0]["time"].dt.round(tolerance) # align all datasets to the time dim of the first one
-                vol = xr.concat(sweeps, dim="sweep_fixed_angle", join="outer", coords="different", compat='equals')    # try to unify time
+                vol = xr.concat(sweeps, dim="sweep_fixed_angle", join="outer", coords="all", compat='no_conflicts')    # try to unify time
             except:
                 warnings.warn("Not possible to align time dimension. May result in increased memory usage.")
-                vol = xr.concat(sweeps, dim="sweep_fixed_angle", join="outer", coords="different", compat='equals')
+                vol = xr.concat(sweeps, dim="sweep_fixed_angle", join="outer", coords="all", compat='no_conflicts')
     else:
         if verbose:  print("Concatenating datasets ...")
-        vol = xr.concat(sweeps, dim="sweep_fixed_angle", join="outer", coords="different", compat='equals')
+        vol = xr.concat(sweeps, dim="sweep_fixed_angle", join="outer", coords="all", compat='no_conflicts')
 
     # Pass meta variables to coords to avoid some issues
     vol = vol.set_coords(("sweep_mode", "sweep_number", "prt_mode", "follow_mode"))
@@ -1207,7 +1207,7 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
                 continue
 
             session = repo.readonly_session("main")
-            ds = xr.open_zarr(session.store, consolidated=False)
+            ds = xr.open_zarr(session.store, consolidated=False).load()
             datasets.append(ds)
 
         if len(datasets) == 0:
@@ -1219,20 +1219,22 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
             def fix_coords(ds, align_z=True, fix_TEMP=True):
                 if align_z:
                     ds.coords["z"] = first_file_z
-                ds = ds.where(ds["time"].notnull(), drop=True)
+                valid_times = ds["time"].notnull().values # remove missing timesteps
+                if not valid_times.all():
+                    ds = ds.isel(time=valid_times)
                 if "TEMP" not in ds.coords and fix_TEMP:
                     ds.coords["TEMP"] = xr.full_like( ds["DBZH"], np.nan ).compute()
                 return ds
 
             datasets = [fix_coords(ds, align_z=align_z, fix_TEMP=fix_TEMP) for ds in datasets]
             try:
-                qvps = xr.concat(datasets, dim="time", join="outer", coords="different", compat='equals')
+                qvps = xr.concat(datasets, dim="time", join="outer", coords="all", compat='no_conflicts')
             except Exception:
                 if align_z:
                     print("Aligning z coord may have failed, attempting to load without alignment...")
                 try:
                     datasets = [fix_coords(ds, align_z=False, fix_TEMP=fix_TEMP) for ds in datasets]
-                    qvps = xr.concat(datasets, dim="time", join="outer", coords="different", compat='equals')
+                    qvps = xr.concat(datasets, dim="time", join="outer", coords="all", compat='no_conflicts')
                 except Exception:
                     qvps = xr.concat(datasets, dim="time", join="outer", compat='no_conflicts')
     else:
@@ -1249,7 +1251,9 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
             def fix_coords(ds, align_z=True, fix_TEMP=True):
                 if align_z:
                     ds.coords["z"] = first_file_z
-                ds = ds.where(ds["time"].notnull(), drop=True)
+                valid_times = ds["time"].notnull().values # remove missing timesteps
+                if not valid_times.all():
+                    ds = ds.isel(time=valid_times)
                 if "TEMP" not in ds.coords and fix_TEMP:
                     ds.coords["TEMP"] = xr.full_like( ds["DBZH"], np.nan ).compute()
 
