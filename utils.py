@@ -1232,15 +1232,20 @@ def load_qvps(filepath, load=False, fix_TEMP=False, fillna=False,
             if not sub_datasets:
                 continue
 
-            # Establish the canonical z grid for this elevation if not seen yet
-            if elev not in ref_z_by_elev:
-                ref_z_by_elev[elev] = sub_datasets[0].z.copy()
+            # Establish the canonical z grid for this elevation (or update to the longest one seen)
+            max_len_ds = max(sub_datasets, key=lambda d: len(d.z))
+            if elev not in ref_z_by_elev or len(max_len_ds.z) > len(ref_z_by_elev[elev]):
+                ref_z_by_elev[elev] = max_len_ds.z.copy()
 
             target_z = ref_z_by_elev[elev]
 
             def fix_and_align(ds, ref_z):
-                # Snap z to the canonical z for this elevation to kill jitter
-                ds.coords["z"] = ref_z
+                # If z lengths match exactly, directly assign to remove jitter instantly
+                if len(ds.z) == len(ref_z):
+                    ds.coords["z"] = ref_z
+                else:
+                    # If ranges differ (shorter scan), reindex onto the reference ladder
+                    ds = ds.reindex(z=ref_z, method="nearest", tolerance=25.0)
 
                 # Fast drop of NaT timestamps
                 valid_times = ds["time"].notnull().values
