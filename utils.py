@@ -1147,7 +1147,8 @@ def load_volume(filelists, func=load_dwd_preprocessed, align_time=True, toleranc
     return vol.sortby("sweep_fixed_angle")
 
 def load_qvps(filepath, load=False, fix_TEMP=False, fillna=False,
-              fillna_vars={"ZDR_OC": "ZDR", "RHOHV_NC": "RHOHV", "UPHIDP_OC": "UPHIDP", "PHIDP_OC": "PHIDP"}):
+              fillna_vars={"ZDR_OC": "ZDR", "RHOHV_NC": "RHOHV", "UPHIDP_OC": "UPHIDP", "PHIDP_OC": "PHIDP"},
+              variables=None):
     """
     Load DWD or DMI QVP data. Profiles from the same elevation (based on folder name)
     are aligned to the z coords of the first file for that elevation.
@@ -1171,6 +1172,9 @@ def load_qvps(filepath, load=False, fix_TEMP=False, fillna=False,
     fillna_vars : dict
         Dictionary of variables to attempt to fill in case they are empty. The keys indicate the
         variable to attempt to fill and the value indicate the filler variable.
+    variables : list of str, optional
+        List of data variables to load. If provided, all other data variables are dropped
+        immediately upon opening to save memory. Default is None (keeps all variables).
 
     Return
     ------
@@ -1213,6 +1217,7 @@ def load_qvps(filepath, load=False, fix_TEMP=False, fillna=False,
         block_datasets = []
 
         for elev, block_files in consecutive_blocks:
+            print(f"... loading block {elev}: "+str(len(block_files))+" files ..." )
             sub_datasets = []
             for ff in block_files:
                 storage = local_filesystem_storage(ff)
@@ -1226,7 +1231,19 @@ def load_qvps(filepath, load=False, fix_TEMP=False, fillna=False,
                 if load:
                     ds = xr.open_zarr(session.store, consolidated=False).load()
                 else:
-                    ds = xr.open_zarr(session.store, consolidated=False)
+                    # Single contiguous chunk per daily file prevents Dask graph explosion
+                    ds = xr.open_zarr(session.store, consolidated=False, chunks={'time': -1, 'z': -1})
+
+                # Filter variables immediately if requested to save memory
+                if variables is not None:
+                    vars_to_keep = [v for v in variables if v in ds.data_vars]
+                    ds = ds[vars_to_keep]
+
+                # Downcast float64 to float32 to halve memory usage
+                for v in ds.variables:
+                    if ds[v].dtype == "float64":
+                        ds[v] = ds[v].astype("float32")
+
                 sub_datasets.append(ds)
 
             if not sub_datasets:
@@ -1247,13 +1264,15 @@ def load_qvps(filepath, load=False, fix_TEMP=False, fillna=False,
                     # If ranges differ (shorter scan), reindex onto the reference ladder
                     ds = ds.reindex(z=ref_z, method="nearest", tolerance=25.0)
 
-                # Fast drop of NaT timestamps
-                valid_times = ds["time"].notnull().values
-                if not valid_times.all():
-                    ds = ds.isel(time=valid_times)
+                # Fast drop of NaT timestamps (only when loaded in RAM to avoid triggering lazy compute)
+                if load:
+                    valid_times = ds["time"].notnull().values
+                    if not valid_times.all():
+                        ds = ds.isel(time=valid_times)
 
                 if "TEMP" not in ds.coords and fix_TEMP:
-                    ds.coords["TEMP"] = xr.full_like(ds["DBZH"], np.nan)
+                    first_var = next(iter(ds.data_vars))
+                    ds.coords["TEMP"] = xr.full_like(ds[first_var], np.nan, dtype="float32")
                 return ds
 
             # Preprocess files in this block
@@ -1275,6 +1294,7 @@ def load_qvps(filepath, load=False, fix_TEMP=False, fillna=False,
         elif len(block_datasets) == 1:
             qvps = block_datasets[0]
         else:
+            print("... concatenating all blocks ...")
             qvps = xr.concat(block_datasets, dim="time", join="outer", coords="minimal", compat="override")
             # safe alternative (memory intensive)
             # qvps = xr.concat(block_datasets, dim="time", join="outer", coords="all", compat="no_conflicts")
