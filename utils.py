@@ -1146,10 +1146,11 @@ def load_volume(filelists, func=load_dwd_preprocessed, align_time=True, toleranc
 
     return vol.sortby("sweep_fixed_angle")
 
-def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
+def load_qvps(filepath, load=False, fix_TEMP=False, fillna=False,
               fillna_vars={"ZDR_OC": "ZDR", "RHOHV_NC": "RHOHV", "UPHIDP_OC": "UPHIDP", "PHIDP_OC": "PHIDP"}):
     """
-    Load DWD or DMI QVP data.
+    Load DWD or DMI QVP data. Profiles from the same elevation (based on folder name)
+    are aligned to the z coords of the first file for that elevation.
 
     Parameter
     ---------
@@ -1158,11 +1159,8 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
 
     Keyword Arguments
     -----------------
-    align_z : bool
-        If True and loading multiple files, align the z coord to the values of the first
-        file. This is meant to avoid broadcasting due to random fluctuations (noise)
-        in the z coordinate. If loading QVPs from multiple elevation angles, align_z should
-        be False to avoid erroneous alignment.
+    load : bool
+        If True, load the data into memory. Otherwise keep it lazy.
     fix_TEMP : bool
         If True and loading multiple files, add empty (nan) TEMP coordinate in case it
         is not present in the file.
@@ -1197,46 +1195,84 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
 
     if use_zarr:
         from icechunk import Repository, local_filesystem_storage
-        datasets = []
-        for ff in files:
-            storage = local_filesystem_storage(ff)
-            try:
-                repo = Repository.open(storage)
-            except Exception as e:
-                print(f"Failed to open repository at {ff}: {e}")
+        from itertools import groupby
+
+        def get_elev(p):
+            parts = os.path.abspath(p).rstrip(os.sep).split(os.sep)
+            if parts[-1].endswith(('.zarr', '.nc')):
+                return parts[-2]
+            return parts[-1]
+
+        # 1. Identify consecutive runs of the same elevation
+        consecutive_blocks = [(elev, list(group)) for elev, group in groupby(files, key=get_elev)]
+
+        # 2. Extract reference z coordinates for each unique elevation
+        ref_z_by_elev = {}
+
+        # 3. Process each consecutive period block
+        block_datasets = []
+
+        for elev, block_files in consecutive_blocks:
+            sub_datasets = []
+            for ff in block_files:
+                storage = local_filesystem_storage(ff)
+                try:
+                    repo = Repository.open(storage)
+                except Exception as e:
+                    print(f"Failed to open repository at {ff}: {e}")
+                    continue
+
+                session = repo.readonly_session("main")
+                if load:
+                    ds = xr.open_zarr(session.store, consolidated=False).load()
+                else:
+                    ds = xr.open_zarr(session.store, consolidated=False)
+                sub_datasets.append(ds)
+
+            if not sub_datasets:
                 continue
 
-            session = repo.readonly_session("main")
-            ds = xr.open_zarr(session.store, consolidated=False).load()
-            datasets.append(ds)
+            # Establish the canonical z grid for this elevation if not seen yet
+            if elev not in ref_z_by_elev:
+                ref_z_by_elev[elev] = sub_datasets[0].z.copy()
 
-        if len(datasets) == 0:
-            raise ValueError("No valid Icechunk Zarr datasets found.")
-        elif len(datasets) == 1:
-            qvps = datasets[0]
-        else:
-            first_file_z = datasets[0].z.copy()
-            def fix_coords(ds, align_z=True, fix_TEMP=True):
-                if align_z:
-                    ds.coords["z"] = first_file_z
-                valid_times = ds["time"].notnull().values # remove missing timesteps
+            target_z = ref_z_by_elev[elev]
+
+            def fix_and_align(ds, ref_z):
+                # Snap z to the canonical z for this elevation to kill jitter
+                ds.coords["z"] = ref_z
+
+                # Fast drop of NaT timestamps
+                valid_times = ds["time"].notnull().values
                 if not valid_times.all():
                     ds = ds.isel(time=valid_times)
+
                 if "TEMP" not in ds.coords and fix_TEMP:
-                    ds.coords["TEMP"] = xr.full_like( ds["DBZH"], np.nan ).compute()
+                    ds.coords["TEMP"] = xr.full_like(ds["DBZH"], np.nan)
                 return ds
 
-            datasets = [fix_coords(ds, align_z=align_z, fix_TEMP=fix_TEMP) for ds in datasets]
-            try:
-                qvps = xr.concat(datasets, dim="time", join="outer", coords="all", compat='no_conflicts')
-            except Exception:
-                if align_z:
-                    print("Aligning z coord may have failed, attempting to load without alignment...")
-                try:
-                    datasets = [fix_coords(ds, align_z=False, fix_TEMP=fix_TEMP) for ds in datasets]
-                    qvps = xr.concat(datasets, dim="time", join="outer", coords="all", compat='no_conflicts')
-                except Exception:
-                    qvps = xr.concat(datasets, dim="time", join="outer", compat='no_conflicts')
+            # Preprocess files in this block
+            sub_datasets = [fix_and_align(ds, target_z) for ds in sub_datasets]
+
+            # Concatenate this block along time (z is identical, so join="override" or "exact")
+            if len(sub_datasets) == 1:
+                block_ds = sub_datasets[0]
+            else:
+                block_ds = xr.concat(sub_datasets, dim="time", join="override", coords="minimal", compat="override")
+                # safe alternative (memory intensive)
+                # block_ds = xr.concat(sub_datasets, dim="time", join="outer", coords="all", compat="no_conflicts")
+
+            block_datasets.append(block_ds)
+
+        # 4. Concatenate across all periods/elevations with join="outer" along z
+        if len(block_datasets) == 0:
+            raise ValueError("No valid Icechunk Zarr datasets found.")
+        elif len(block_datasets) == 1:
+            qvps = block_datasets[0]
+        else:
+            qvps = xr.concat(block_datasets, dim="time", join="outer", coords="minimal", compat="override")
+            # safe alternative (memory intensive)
+            # qvps = xr.concat(block_datasets, dim="time", join="outer", coords="all", compat="no_conflicts")
     else:
         if len(files)==1:
             qvps = xr.open_mfdataset(files, compat='no_conflicts')
@@ -1260,10 +1296,9 @@ def load_qvps(filepath, align_z=False, fix_TEMP=False, fillna=False,
                 return ds
 
             try:
-                qvps = xr.open_mfdataset(files, preprocess=partial(fix_coords, align_z=align_z, fix_TEMP=fix_TEMP), compat='no_conflicts', join='outer', engine='h5netcdf')
+                qvps = xr.open_mfdataset(files, preprocess=partial(fix_coords, align_z=True, fix_TEMP=fix_TEMP), compat='no_conflicts', join='outer', engine='h5netcdf')
             except:
-                if align_z:
-                    print("Aligning z coord may have failed, attempting to load without alignment...")
+                print("Aligning z coord may have failed, attempting to load without alignment...")
                 try:
                     qvps = xr.open_mfdataset(files, combine="nested", concat_dim="time", compat='no_conflicts', join='outer', engine='h5netcdf')
                 except:
