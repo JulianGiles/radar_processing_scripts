@@ -1623,12 +1623,20 @@ if __name__ == "__main__": # set guard
 
         ff_ML_glob = get_closest_elevation(ff_ML_glob)
 
-    ff = [glob.glob(os.path.dirname(fp)+"/*allmoms*")[0] for fp in ff_ML_glob ]
+    try:
+        ff = [glob.glob(os.path.dirname(fp)+"/*allm*")[0] for fp in ff_ML_glob ]
+    except IndexError:
+        ff = [glob.glob(os.path.dirname(fp)+"/*12345*")[0] for fp in ff_ML_glob ]
 
-    alignz = False
-    if "dwd" in ff_ML: alignz = True
-    ds_qvps = utils.load_qvps(ff, align_z=alignz, fix_TEMP=False, fillna=False)
+    if "HTY" in ff_ML:
+        variables = utils.selected_variables['hty']
+    else: variables=None
 
+    ds_qvps = utils.load_qvps(ff, load=True, fix_TEMP=False, fillna=False, variables=variables)
+
+    # Move TEMP to coordinate
+    if "TEMP" not in ds_qvps.coords:
+        ds_qvps = ds_qvps.set_coords("TEMP")
 
     # Conditions to clean ML height values
     max_change = 400 # set a maximum value of ML height change from one timestep to another (in m)
