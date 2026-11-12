@@ -66,7 +66,7 @@ path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_singlefile/ML_detected/pro/vol
 # Load only events with ML detected (pre-condition for stratiform)
 path_qvps = realpep_path+"/upload/jgiles/dwd/qvps/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
 # path_qvps = realpep_path+"/upload/jgiles/dwd/qvps_emvorado_cases/20*/*/*/pro/vol5minng01/07/ML_detected.txt"
-# path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/20*/*/*/ANK/*/*/ML_detected.txt"
+path_qvps = realpep_path+"/upload/jgiles/dmi/qvps/20*/*/*/HTY/*/*/ML_detected.txt"
 # path_qvps = realpep_path+"/upload/jgiles/boxpol/qvps/20*/*/2017-07-25/n_ppi_110deg/ML_detected.txt"
 
 #!!! IMPORTANT !!!!
@@ -94,7 +94,9 @@ elif "dmi" in path_qvps:
     X_TH = "DBZH"
     X_ZDR = "ZDR_EC_OC_WRC_AC"
     # X_PHI = "PHIDP_UF_OC_MASKED"
-
+if "HTY" in path_qvps:
+    variables = utils.selected_variables['hty']
+else: variables=None
 
 ff_glob = glob.glob(path_qvps)
 
@@ -123,9 +125,7 @@ try:
 except IndexError:
     ff = [glob.glob(os.path.dirname(fp)+"/*12345*")[0] for fp in ff_glob ]
 
-alignz = False
-if "dwd" in path_qvps: alignz = True
-qvps = utils.load_qvps(ff, align_z=alignz, fix_TEMP=False, fillna=False)
+qvps = utils.load_qvps(ff, load=True, fix_TEMP=False, fillna=False, variables=variables)
 
 # Move TEMP to coordinate
 if "TEMP" not in qvps.coords:
