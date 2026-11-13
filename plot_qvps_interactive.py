@@ -127,51 +127,84 @@ REV_STYLE_MAP = {v: k for k, v in LINE_STYLES}
 def find_files_from_input(paths_input):
     """
     Given a string path, list of paths, glob pattern, or directory,
-    return a sorted list of QVP files matching CFTDs.py conventions.
+    return a sorted list of QVP files matching CFTDs.py conventions or simulation files.
     """
     if isinstance(paths_input, str):
         paths_input = [paths_input]
 
     files_found = []
-    for item in paths_input:
+    for raw_item in paths_input:
+        if not raw_item:
+            continue
+        item = raw_item.strip()
+        clean_item = item.rstrip('/')
+
+        # 1. Glob patterns
         if any(c in item for c in ['*', '?', '[']):
             matched = glob.glob(item)
-            files_found.extend(matched)
+            files_found.extend([m.rstrip('/') for m in matched])
+        # 2. Directly specified .zarr store (which is a directory on disk, not a file)
+        elif clean_item.endswith('.zarr'):
+            files_found.append(clean_item)
+        # 3. Directory containing files (and not a .zarr store itself)
         elif os.path.isdir(item):
-            # Search inside directory
             patterns = [
+                os.path.join(item, "*allsim*"),
                 os.path.join(item, "*allmoms*"),
+                os.path.join(item, "*allmom*"),
                 os.path.join(item, "*allm*"),
+                os.path.join(item, "*.zarr"),
                 os.path.join(item, "*.nc"),
-                os.path.join(item, "*.zarr")
+                os.path.join(item, "*.h5"),
+                os.path.join(item, "*.hdf5"),
             ]
+            dir_matched = []
             for pat in patterns:
                 m = glob.glob(pat)
                 if m:
-                    files_found.extend(m)
-                    break
+                    dir_matched.extend([x.rstrip('/') for x in m])
+            if dir_matched:
+                files_found.extend(dir_matched)
+            else:
+                # If no pattern matched inside directory, check all entries
+                entries = glob.glob(os.path.join(item, "*"))
+                for entry in entries:
+                    c_entry = entry.rstrip('/')
+                    if c_entry.endswith('.zarr') or c_entry.endswith('.nc') or any(k in c_entry for k in ['allm', 'allsim']):
+                        files_found.append(c_entry)
+        # 4. Directly specified file
         elif os.path.isfile(item):
-            # If path ends in ML_detected.txt, look for allmoms in same directory
+            # If path ends in ML_detected.txt, look for allmoms/allsim in same directory
             if os.path.basename(item) == "ML_detected.txt":
-                m = glob.glob(os.path.join(os.path.dirname(item), "*allm*"))
+                m = glob.glob(os.path.join(os.path.dirname(item), "*allm*")) + glob.glob(os.path.join(os.path.dirname(item), "*allsim*"))
                 if m:
-                    files_found.extend(m)
+                    files_found.extend([x.rstrip('/') for x in m])
                 else:
                     files_found.append(item)
             else:
                 files_found.append(item)
+        # 5. Direct fallback: path passed directly (e.g. automount path or file not yet mounted)
+        else:
+            files_found.append(clean_item)
 
     # Filter ML_detected.txt if resolved to actual data files
     filtered = []
     for f in sorted(list(set(files_found))):
-        if os.path.basename(f) == "ML_detected.txt":
-            m = glob.glob(os.path.join(os.path.dirname(f), "*allm*"))
+        c_f = f.rstrip('/')
+        if os.path.basename(c_f) == "ML_detected.txt":
+            m = glob.glob(os.path.join(os.path.dirname(c_f), "*allm*")) + glob.glob(os.path.join(os.path.dirname(c_f), "*allsim*"))
             if m:
-                filtered.extend(m)
+                filtered.extend([x.rstrip('/') for x in m])
             else:
-                filtered.append(f)
+                filtered.append(c_f)
         else:
-            filtered.append(f)
+            filtered.append(c_f)
+
+    # Direct fallback: if still nothing found, use the raw paths provided directly
+    if not filtered:
+        for raw_item in paths_input:
+            if raw_item and raw_item.strip():
+                filtered.append(raw_item.strip().rstrip('/'))
 
     return sorted(list(set(filtered)))
 
@@ -180,12 +213,16 @@ def extract_date_from_file(file_path):
     """
     Extract YYYY-MM-DD string from filename or parent folder path.
     """
-    # Look for standard YYYY-MM-DD
+    # Look for standard YYYY-MM-DD anywhere in the full path
     match = re.search(r"(\d{4}-\d{2}-\d{2})", file_path)
     if match:
         return match.group(1)
-    # Look for YYYYMMDD
+    # Look for YYYYMMDD in basename
     match = re.search(r"(\d{4})(\d{2})(\d{2})", os.path.basename(file_path))
+    if match:
+        return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
+    # Look for YYYYMMDD anywhere in path
+    match = re.search(r"(\d{4})(\d{2})(\d{2})", file_path)
     if match:
         return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
     return None
@@ -219,20 +256,23 @@ class QVPDatasetManager:
           3. Standard Zarr store (via xr.open_zarr)
           4. NetCDF / HDF5 files (via xr.open_dataset)
         """
+        clean_path = fpath.rstrip('/')
+
         # 1. Try utils.load_qvps if available (as used in CFTDs.py)
         if utils is not None and hasattr(utils, 'load_qvps'):
             try:
-                ds = utils.load_qvps([fpath], load=True)
-                return ds
+                ds = utils.load_qvps([clean_path], load=True)
+                if ds is not None:
+                    return ds
             except Exception:
                 pass
 
         # 2. Check for .zarr (could be Icechunk or standard Zarr)
-        if fpath.endswith('.zarr') or fpath.endswith('.zarr/'):
+        if clean_path.endswith('.zarr'):
             # Try Icechunk first (standard storage for DWD/DMI radar QVP processing)
             if HAS_ICECHUNK:
                 try:
-                    storage = local_filesystem_storage(fpath)
+                    storage = local_filesystem_storage(clean_path)
                     repo = Repository.open(storage)
                     session = repo.readonly_session("main")
                     ds = xr.open_zarr(session.store, consolidated=False)
@@ -240,35 +280,51 @@ class QVPDatasetManager:
                 except Exception:
                     pass
 
-            # Try standard Zarr
-            try:
-                ds = xr.open_zarr(fpath, consolidated=False)
-                return ds.load()
-            except Exception:
+            # Try standard Zarr (consolidated=False, consolidated=True, default)
+            for cons in [False, True, None]:
                 try:
-                    ds = xr.open_zarr(fpath)
+                    if cons is None:
+                        ds = xr.open_zarr(clean_path)
+                    else:
+                        ds = xr.open_zarr(clean_path, consolidated=cons)
                     return ds.load()
                 except Exception:
                     pass
 
         # 3. NetCDF / HDF5 files
-        try:
-            ds = xr.open_dataset(fpath, engine='h5netcdf')
-            return ds.load()
-        except Exception:
+        for eng in ['h5netcdf', 'netcdf4', None]:
             try:
-                ds = xr.open_dataset(fpath, engine='netcdf4')
+                if eng is None:
+                    ds = xr.open_dataset(clean_path)
+                else:
+                    ds = xr.open_dataset(clean_path, engine=eng)
                 return ds.load()
             except Exception:
-                ds = xr.open_dataset(fpath)
-                return ds.load()
+                pass
+
+        # 4. Final attempt with generic open_zarr and open_dataset
+        try:
+            return xr.open_zarr(clean_path).load()
+        except Exception:
+            pass
+        return xr.open_dataset(clean_path).load()
 
     def _standardize_ds(self, ds):
-        # Standardize vertical dimension / coordinate to 'z'
-        if 'z' not in ds.dims and 'range' in ds.dims:
-            ds = ds.rename({'range': 'z'})
-        if 'z' not in ds.coords and 'range' in ds.coords:
-            ds = ds.assign_coords(z=ds['range'])
+        # Standardize vertical dimension to 'z'
+        vert_candidates = ['height', 'range', 'altitude', 'alt', 'height_above_ground', 'height_above_sea_level', 'nheight', 'z_levels', 'level']
+        for vert_name in vert_candidates:
+            if 'z' not in ds.dims and vert_name in ds.dims:
+                ds = ds.rename({vert_name: 'z'})
+            if 'z' not in ds.coords and vert_name in ds.coords:
+                ds = ds.assign_coords(z=ds[vert_name])
+
+        # Standardize time dimension to 'time'
+        time_candidates = ['Time', 'datetime', 'valid_time', 'Times', 't']
+        for t_name in time_candidates:
+            if 'time' not in ds.dims and t_name in ds.dims:
+                ds = ds.rename({t_name: 'time'})
+            if 'time' not in ds.coords and t_name in ds.coords:
+                ds = ds.assign_coords(time=ds[t_name])
 
         # Drop NaT timestamps if any
         if 'time' in ds.coords:
@@ -350,17 +406,24 @@ class QVPDatasetManager:
         valid_vars = []
         for v in ds.data_vars:
             dims = ds[v].dims
-            if 'time' in dims and 'z' in dims and len(dims) == 2:
+            if 'time' in dims and 'z' in dims and (len(dims) == 2 or (len(dims) == 3 and ds[v].size == ds.dims['time'] * ds.dims['z'])):
                 valid_vars.append(v)
+        if not valid_vars:
+            for v in ds.data_vars:
+                if len(ds[v].dims) == 2:
+                    valid_vars.append(v)
         return sorted(valid_vars)
 
     def get_z_coords(self, ds):
-        if 'z' in ds.coords:
-            z_vals = ds['z'].values
-        elif 'range' in ds.coords:
-            z_vals = ds['range'].values
+        for k in ['z', 'height', 'range', 'altitude', 'alt', 'height_above_ground', 'height_above_sea_level']:
+            if k in ds.coords:
+                z_vals = ds[k].values
+                break
         else:
-            z_vals = np.arange(ds.dims['z'])
+            if 'z' in ds.dims:
+                z_vals = np.arange(ds.dims['z'])
+            else:
+                z_vals = np.arange(100)
         # If z is in kilometers (max < 50), convert to meters
         if np.nanmax(z_vals) < 50.0:
             z_vals = z_vals * 1000.0
