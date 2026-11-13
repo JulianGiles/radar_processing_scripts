@@ -62,17 +62,22 @@ from icechunk.xarray import to_icechunk
 
 def save_icechunk(ds, path, append=False):
     """Helper to save or append xarray dataset to Icechunk repository."""
-    storage = local_filesystem_storage(path)
+    import os
+    import shutil
+
     if append:
+        storage = local_filesystem_storage(path)
         repo = Repository.open(storage)
         session = repo.writable_session("main")
         to_icechunk(ds, session, append_dim="time", align_chunks=True)
         session.commit("Append data")
     else:
-        try:
-            repo = Repository.open(storage)
-        except Exception:
-            repo = Repository.create(storage)
+        # If writing fresh (not appending), remove any existing/corrupted folder
+        if os.path.exists(path):
+            shutil.rmtree(path, ignore_errors=True)
+
+        storage = local_filesystem_storage(path)
+        repo = Repository.create(storage)
         session = repo.writable_session("main")
         to_icechunk(ds, session, mode="w", align_chunks=True)
         session.commit("Save data")
