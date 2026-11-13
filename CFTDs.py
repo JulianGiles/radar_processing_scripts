@@ -55,17 +55,22 @@ from icechunk.xarray import to_icechunk
 
 def save_icechunk(ds, path, append=False):
     """Helper to save or append xarray dataset to Icechunk repository."""
-    storage = local_filesystem_storage(path)
+    import os
+    import shutil
+
     if append:
+        storage = local_filesystem_storage(path)
         repo = Repository.open(storage)
         session = repo.writable_session("main")
         to_icechunk(ds, session, append_dim="time", align_chunks=True)
         session.commit("Append data")
     else:
-        try:
-            repo = Repository.open(storage)
-        except Exception:
-            repo = Repository.create(storage)
+        # If writing fresh (not appending), remove any existing/corrupted folder
+        if os.path.exists(path):
+            shutil.rmtree(path, ignore_errors=True)
+
+        storage = local_filesystem_storage(path)
+        repo = Repository.create(storage)
         session = repo.writable_session("main")
         to_icechunk(ds, session, mode="w", align_chunks=True)
         session.commit("Save data")
@@ -188,9 +193,11 @@ except IndexError:
 path_qvpsinglefile = path_qvps.split("qvps"+suffix_name+"/")[0]+"qvps_singlefile"+suffix_name+"/ML_detected/"+utils.find_loc(locs,path_qvps)+"/qvps.zarr"
 
 if not reload_zarr:
-    alignz = False
-    if "dwd" in path_qvps: alignz = True
-    qvps = utils.load_qvps(ff, align_z=alignz, fix_TEMP=False, fillna=False)
+    if "HTY" in path_qvps:
+        variables = utils.selected_variables['hty']
+    else: variables=None
+
+    qvps = utils.load_qvps(ff, load=True, fix_TEMP=False, fillna=False, variables=variables)
 
     # Move TEMP to coordinate
     if "TEMP" not in qvps.coords:
@@ -2285,7 +2292,7 @@ for sn, savepath in enumerate(savepath_list):
 auto_plot = True
 savepath = "/automount/agradar/jgiles/images/CFTDs_riming"+suffix_name+"/stratiform/" # stratiform_relaxed stratiform_ML
 plot_relhum = True # plot relative humidity with respect to ice and water in a separate plot?
-riming_class = "riming_ZDR_EC_OC_WRC_AC_DBZH_AC"
+riming_class = "riming_DR_ZDR_EC_OC_AC_DBZH_AC" # riming_ZDR_EC_OC_WRC_AC_DBZH_AC
 
 # Which to plot, qvps_strat_fil, qvps_strat_relaxed_fil or qvps_strat_ML_fil
 ds_to_plot = qvps_strat_fil.copy()
@@ -2887,7 +2894,7 @@ ML_tolerance = 300 # add this many meters around the ML to reduce contamination
 # If False, then produce the plot as given below (selecting the first option of
 # savepath_list and ds_to_plot_list) and do not save.
 auto_plot = True
-riming_class = "riming_ZDR_EC_OC_WRC_AC_DBZH_AC"
+riming_class = "riming_DR_ZDR_EC_OC_AC_DBZH_AC" # riming_ZDR_EC_OC_WRC_AC_DBZH_AC
 savepath_list = [
                 "/automount/agradar/jgiles/images/CFTDs_riming"+suffix_name+"/stratiform/",
                 "/automount/agradar/jgiles/images/CFTDs_riming"+suffix_name+"/stratiform_QVPbased/",
