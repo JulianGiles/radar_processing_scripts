@@ -3443,7 +3443,7 @@ for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
     print("Loading "+stratname+" retrievals ...")
     for ll in locs:
         try:
-            retrievals[stratname][ll] = xr.open_dataset(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname+"/"+ll+".nc")
+            retrievals[stratname][ll] = open_icechunk(realpep_path+"/upload/jgiles/radar_retrievals"+suffix_name+"/"+stratname+"/"+ll+".zarr")
             print(ll+" retrievals loaded")
         except:
             pass
@@ -3456,7 +3456,7 @@ for stratname in ["stratiform", "stratiform_relaxed", "stratiform_ML"]:
     print("Loading "+stratname+" retrievals_qvpbased ...")
     for ll in locs:
         try:
-            retrievals_qvpbased[stratname][ll] = xr.open_dataset(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname+"/"+ll+".nc")
+            retrievals_qvpbased[stratname][ll] = open_icechunk(realpep_path+"/upload/jgiles/radar_retrievals_QVPbased"+suffix_name+"/"+stratname+"/"+ll+".zarr")
             print(ll+" retrievals_qvpbased loaded")
         except:
             pass
