@@ -720,10 +720,21 @@ class QVPBokehApp:
         self.col1_colorbars = []
         self.col1_vlines = []
         self.col1_ml_renderers = []
+        self.col1_entropy_renderers = []
 
         self.show_ml = True
         self.source_ml = ColumnDataSource(data=dict(time=[], ml_top=[], ml_bot=[]))
         self.update_ml_source()
+
+        self.show_entropy = True
+        self.source_entropy = ColumnDataSource(data=dict(image=[np.zeros((10, 10))], x=[0], y=[0], dw=[1], dh=[1]))
+        self.entropy_mapper = LinearColorMapper(
+            palette=['#505050'],
+            low=0.0,
+            high=1.0,
+            nan_color='rgba(0,0,0,0)'
+        )
+        self.update_entropy_source()
 
         self.source_1d = ColumnDataSource(data=dict(z=[]))
         self.p_prof = None
@@ -780,6 +791,83 @@ class QVPBokehApp:
 
         self._build_column2_plot()
 
+    def _extract_entropy_mask(self, ds):
+        """
+        Extract 2D boolean mask where min_entropy > 0.85 and compute its spatial bounds.
+        Returns (mask, x0, y0, dw, dh) where mask is (z, time) with 1.0 for min_entropy > 0.85 and nan elsewhere.
+        """
+        ent_var = None
+        for cand in ['min_entropy', 'MIN_ENTROPY', 'min_Entropy', 'entropy_min']:
+            if cand in ds:
+                ent_var = cand
+                break
+        if ent_var is None:
+            for v in ds.data_vars:
+                if 'entropy' in v.lower():
+                    ent_var = v
+                    break
+
+        z_coords = self.mgr.get_z_coords(ds)
+        time_vals = pd.to_datetime(ds.time.values)
+        t_ms = (time_vals.astype('int64') // 10**6).values
+
+        if len(t_ms) > 1:
+            dt = float(t_ms[1] - t_ms[0])
+            x0 = float(t_ms[0]) - dt / 2.0
+            dw = float(t_ms[-1] - t_ms[0]) + dt
+        elif len(t_ms) == 1:
+            dw = 300000.0
+            x0 = float(t_ms[0]) - dw / 2.0
+        else:
+            x0, dw = 0.0, 1.0
+
+        y0 = float(np.nanmin(z_coords))
+        dh = float(np.nanmax(z_coords) - y0)
+
+        if ent_var is None:
+            mask = np.full((len(z_coords), max(1, len(t_ms))), np.nan)
+            return mask, x0, y0, dw, dh
+
+        da = ds[ent_var]
+        if 'time' in da.dims and 'z' in da.dims:
+            if da.dims != ('time', 'z'):
+                da = da.transpose('time', 'z')
+            try:
+                da = da.interpolate_na(dim='z', method='linear', limit=2)
+            except Exception:
+                pass
+            vals = da.values  # (time, z)
+            mask = np.where(vals.T > 0.85, 1.0, np.nan)
+        else:
+            raw = np.asarray(da.values).squeeze()
+            if raw.ndim == 2:
+                if raw.shape == (len(t_ms), len(z_coords)):
+                    mask = np.where(raw.T > 0.85, 1.0, np.nan)
+                elif raw.shape == (len(z_coords), len(t_ms)):
+                    mask = np.where(raw > 0.85, 1.0, np.nan)
+                else:
+                    mask = np.full((len(z_coords), max(1, len(t_ms))), np.nan)
+            else:
+                mask = np.full((len(z_coords), max(1, len(t_ms))), np.nan)
+
+        return mask, x0, y0, dw, dh
+
+    def update_entropy_source(self):
+        mask, x0, y0, dw, dh = self._extract_entropy_mask(self.current_ds)
+        self.source_entropy.data = dict(image=[mask], x=[x0], y=[y0], dw=[dw], dh=[dh])
+
+    def toggle_entropy(self):
+        self.show_entropy = not self.show_entropy
+        if self.show_entropy:
+            self.btn_toggle_entropy.label = "Entropy: ON"
+            self.btn_toggle_entropy.button_type = "primary"
+        else:
+            self.btn_toggle_entropy.label = "Entropy: OFF"
+            self.btn_toggle_entropy.button_type = "default"
+
+        for r_ent in self.col1_entropy_renderers:
+            r_ent.visible = self.show_entropy
+
     def _build_ui(self):
         # 1. Top Bar Controls: Date Selector, Height Range, ML Toggle
         self.sel_date = Select(title="Date:", value=self.current_date, options=self.dates, width=115)
@@ -800,8 +888,15 @@ class QVPBokehApp:
         self.btn_apply_h = Button(label="Apply", button_type="primary", width=75, margin=(20, 2, 0, 2))
         self.btn_apply_h.on_click(self.apply_height_range)
 
-        self.btn_toggle_ml = Button(label="Melting Layer: ON", button_type="primary", width=235, margin=(4, 2, 4, 2))
+        self.btn_toggle_ml = Button(label="Melting Layer: ON", button_type="primary", width=235, margin=(4, 2, 2, 2))
         self.btn_toggle_ml.on_click(self.toggle_melting_layer)
+
+        self.btn_toggle_entropy = Button(
+            label="Entropy: ON" if self.show_entropy else "Entropy: OFF",
+            button_type="primary" if self.show_entropy else "default",
+            width=235, margin=(2, 2, 4, 2)
+        )
+        self.btn_toggle_entropy.on_click(self.toggle_entropy)
 
         date_controls = row(self.btn_prev_date, self.sel_date, self.btn_next_date)
         height_controls = row(self.inp_min_h, self.inp_max_h, self.btn_apply_h)
@@ -871,6 +966,7 @@ class QVPBokehApp:
             date_controls,
             height_controls,
             self.btn_toggle_ml,
+            self.btn_toggle_entropy,
             Div(text="<hr style='margin:6px 0;'>"),
             tabs_sidebar,
             width=255
@@ -905,6 +1001,7 @@ class QVPBokehApp:
         self.col1_colorbars.clear()
         self.col1_vlines.clear()
         self.col1_ml_renderers.clear()
+        self.col1_entropy_renderers.clear()
 
         shared_x = None
         shared_y = None
@@ -974,6 +1071,17 @@ class QVPBokehApp:
                 mode="mouse"
             )
             p.add_tools(hover)
+
+            # Gray shading overlay for min_entropy > 0.85
+            r_ent = p.image(
+                image='image', x='x', y='y', dw='dw', dh='dh',
+                color_mapper=self.entropy_mapper,
+                source=self.source_entropy,
+                global_alpha=0.45,
+                name="Entropy Shading"
+            )
+            r_ent.visible = self.show_entropy
+            self.col1_entropy_renderers.append(r_ent)
 
             # ColorBar on the right
             ticker = FixedTicker(ticks=list(bar_ticks)) if bar_ticks else BasicTicker()
@@ -1237,6 +1345,7 @@ class QVPBokehApp:
             self.doc.title = f"Interactive QVP Visualizer - {self.current_date}"
             self.current_ds = self.mgr.load_day(self.current_date)
             self.update_ml_source()
+            self.update_entropy_source()
             self.all_vars = self.mgr.get_available_variables(self.current_ds)
             if self.current_time_idx >= len(self.current_ds.time):
                 self.current_time_idx = max(0, len(self.current_ds.time) - 1)

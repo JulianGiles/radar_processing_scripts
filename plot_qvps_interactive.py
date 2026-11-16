@@ -632,6 +632,10 @@ class QVPInteractiveAppTk:
         self.col1_caxes = []
         self.cbars = [None] * 4
         self.twin_axes = []
+        self.show_entropy = True
+        self.show_ml = True
+        self.col1_entropy_artists = [None] * 4
+        self.col1_ml_artists = [None] * 4
 
         self._build_widgets()
         self.plot_all()
@@ -697,6 +701,12 @@ class QVPInteractiveAppTk:
 
         self.btn_apply_h = self.ttk.Button(h_bar, text="Apply", command=self.apply_height_range)
         self.btn_apply_h.pack(side=self.tk.LEFT, padx=4)
+
+        self.btn_entropy = self.ttk.Button(h_bar, text="Entropy: ON", command=self.toggle_entropy)
+        self.btn_entropy.pack(side=self.tk.LEFT, padx=3)
+
+        self.btn_ml = self.ttk.Button(h_bar, text="ML: ON", command=self.toggle_ml)
+        self.btn_ml.pack(side=self.tk.LEFT, padx=3)
 
         self.ent_min_h.bind("<Return>", lambda e: self.apply_height_range())
         self.ent_max_h.bind("<Return>", lambda e: self.apply_height_range())
@@ -814,6 +824,13 @@ class QVPInteractiveAppTk:
             command=lambda: self.apply_height_range(0.0, 12000.0)
         )
         btn_reset_h.pack(side=self.tk.LEFT, padx=4)
+
+        row_h3 = self.ttk.Frame(card_h)
+        row_h3.pack(fill=self.tk.X, pady=(4, 2))
+        self.btn_entropy_tab = self.ttk.Button(row_h3, text="Entropy: ON", command=self.toggle_entropy)
+        self.btn_entropy_tab.pack(side=self.tk.LEFT, padx=2)
+        self.btn_ml_tab = self.ttk.Button(row_h3, text="ML: ON", command=self.toggle_ml)
+        self.btn_ml_tab.pack(side=self.tk.LEFT, padx=4)
 
         for i in range(4):
             card = self.ttk.LabelFrame(subframe, text=f"Panel {i+1} Settings (Row {i+1})", padding=6)
@@ -1301,24 +1318,120 @@ class QVPInteractiveAppTk:
         self.cbars[i].ax.tick_params(labelsize=8)
 
         # Overlay Melting layer lines if available
-        self._overlay_ml_on_2d(ax)
+        self._overlay_ml_on_2d(ax, i)
+        self._overlay_entropy_on_2d(ax, i)
 
         self.canvas.draw_idle()
 
-    def _overlay_ml_on_2d(self, ax):
+    def _overlay_ml_on_2d(self, ax, panel_idx=None):
         time_nums = mdates.date2num(pd.to_datetime(self.current_ds.time.values))
+        line_top, line_bot = None, None
         for ml_var in ['height_ml_new_gia_clean', 'height_ml_new_gia', 'height_ml']:
             if ml_var in self.current_ds:
                 y = self.current_ds[ml_var].values
                 if np.any(np.isfinite(y)):
-                    ax.plot(time_nums, y, color='black', linestyle='--', linewidth=1.2, alpha=0.7)
+                    line_top = ax.plot(time_nums, y, color='black', linestyle='--', linewidth=1.2, alpha=0.7, zorder=5)[0]
+                    line_top.set_visible(self.show_ml)
                     break
         for ml_bot_var in ['height_ml_bottom_new_gia_clean', 'height_ml_bottom_new_gia', 'height_ml_bottom']:
             if ml_bot_var in self.current_ds:
                 y = self.current_ds[ml_bot_var].values
                 if np.any(np.isfinite(y)):
-                    ax.plot(time_nums, y, color='black', linestyle=':', linewidth=1.2, alpha=0.7)
+                    line_bot = ax.plot(time_nums, y, color='black', linestyle=':', linewidth=1.2, alpha=0.7, zorder=5)[0]
+                    line_bot.set_visible(self.show_ml)
                     break
+        if panel_idx is not None and panel_idx < len(self.col1_ml_artists):
+            self.col1_ml_artists[panel_idx] = (line_top, line_bot)
+
+    def _overlay_entropy_on_2d(self, ax, panel_idx=None):
+        ent_var = None
+        for cand in ['min_entropy', 'MIN_ENTROPY', 'min_Entropy', 'entropy_min']:
+            if cand in self.current_ds:
+                ent_var = cand
+                break
+        if ent_var is None:
+            for v in self.current_ds.data_vars:
+                if 'entropy' in v.lower():
+                    ent_var = v
+                    break
+        if ent_var is None:
+            if panel_idx is not None and panel_idx < len(self.col1_entropy_artists):
+                self.col1_entropy_artists[panel_idx] = None
+            return
+
+        time_nums = mdates.date2num(pd.to_datetime(self.current_ds.time.values))
+        z_coords = self.mgr.get_z_coords(self.current_ds)
+        da = self.current_ds[ent_var]
+        if 'time' in da.dims and 'z' in da.dims:
+            if da.dims != ('time', 'z'):
+                da = da.transpose('time', 'z')
+            try:
+                da = da.interpolate_na(dim='z', method='linear', limit=2)
+            except Exception:
+                pass
+            ent_vals = da.values.T
+        else:
+            raw = np.asarray(da.values).squeeze()
+            if raw.ndim == 2:
+                if raw.shape == (len(time_nums), len(z_coords)):
+                    ent_vals = raw.T
+                elif raw.shape == (len(z_coords), len(time_nums)):
+                    ent_vals = raw
+                else:
+                    if panel_idx is not None and panel_idx < len(self.col1_entropy_artists):
+                        self.col1_entropy_artists[panel_idx] = None
+                    return
+            else:
+                if panel_idx is not None and panel_idx < len(self.col1_entropy_artists):
+                    self.col1_entropy_artists[panel_idx] = None
+                return
+
+        mask = np.where(ent_vals > 0.85, 1.0, np.nan)
+        if np.any(np.isfinite(mask)):
+            cmap_gray = mcolors.ListedColormap(['#666666'])
+            mesh_ent = ax.pcolormesh(
+                time_nums, z_coords, mask,
+                cmap=cmap_gray, vmin=0, vmax=2, alpha=0.45,
+                shading='auto', rasterized=True, zorder=3
+            )
+            mesh_ent.set_visible(self.show_entropy)
+            if panel_idx is not None and panel_idx < len(self.col1_entropy_artists):
+                self.col1_entropy_artists[panel_idx] = mesh_ent
+        else:
+            if panel_idx is not None and panel_idx < len(self.col1_entropy_artists):
+                self.col1_entropy_artists[panel_idx] = None
+
+    def toggle_entropy(self):
+        self.show_entropy = not self.show_entropy
+        text = "Entropy: ON" if self.show_entropy else "Entropy: OFF"
+        if hasattr(self, 'btn_entropy'):
+            self.btn_entropy.configure(text=text)
+        if hasattr(self, 'btn_entropy_tab'):
+            self.btn_entropy_tab.configure(text=text)
+
+        for mesh in self.col1_entropy_artists:
+            if mesh is not None:
+                mesh.set_visible(self.show_entropy)
+        self.canvas.draw_idle()
+
+    def toggle_ml(self):
+        self.show_ml = not self.show_ml
+        text = "ML: ON" if self.show_ml else "ML: OFF"
+        if hasattr(self, 'btn_ml'):
+            self.btn_ml.configure(text=text)
+        if hasattr(self, 'btn_ml_tab'):
+            self.btn_ml_tab.configure(text=text)
+
+        for pair in self.col1_ml_artists:
+            if pair is not None:
+                l_top, l_bot = pair
+                if l_top is not None:
+                    l_top.set_visible(self.show_ml)
+                if l_bot is not None:
+                    l_bot.set_visible(self.show_ml)
+
+        self.update_column2_profile()
+        self.canvas.draw_idle()
 
     def _update_profile_indicator_lines(self):
         for line in self.vlines:
@@ -1470,6 +1583,8 @@ class QVPInteractiveAppTk:
             ax_target.set_xlabel(f"{var_name}{unit_str}", color=color, fontweight='bold', fontsize=8, labelpad=2)
 
     def _overlay_ml_on_1d(self, ax, ds_prof):
+        if not getattr(self, 'show_ml', True):
+            return
         ml_top = None
         ml_bot = None
         for k in ['height_ml_new_gia_clean', 'height_ml_new_gia', 'height_ml']:
@@ -1553,6 +1668,10 @@ class QVPInteractiveAppMpl:
         self.vlines = []
         self.cbars = [None] * 4
         self.twin_axes = []
+        self.show_entropy = True
+        self.show_ml = True
+        self.col1_entropy_artists = [None] * 4
+        self.col1_ml_artists = [None] * 4
 
         self._build_figure()
         self.plot_all()
@@ -1656,6 +1775,14 @@ class QVPInteractiveAppMpl:
         self.btn_apply_h.on_clicked(lambda e: self.apply_height_range())
         self.txt_min_h.on_submit(lambda text: self.apply_height_range())
         self.txt_max_h.on_submit(lambda text: self.apply_height_range())
+
+        ax_entropy = self.fig.add_axes([0.84, 0.045, 0.065, 0.035])
+        self.btn_entropy = Button(ax_entropy, 'Entropy: ON')
+        self.btn_entropy.on_clicked(lambda e: self.toggle_entropy())
+
+        ax_ml = self.fig.add_axes([0.915, 0.045, 0.065, 0.035])
+        self.btn_ml = Button(ax_ml, 'ML: ON')
+        self.btn_ml.on_clicked(lambda e: self.toggle_ml())
 
         # Click handler on 2D plots
         self.fig.canvas.mpl_connect('button_press_event', self.on_canvas_click)
@@ -1804,19 +1931,90 @@ class QVPInteractiveAppMpl:
 
         # ML lines
         time_nums = mdates.date2num(time_vals)
+        line_top, line_bot = None, None
         for ml_var in ['height_ml_new_gia_clean', 'height_ml_new_gia', 'height_ml']:
             if ml_var in self.current_ds:
                 y = self.current_ds[ml_var].values
                 if np.any(np.isfinite(y)):
-                    ax.plot(time_nums, y, color='black', linestyle='--', linewidth=1.2, alpha=0.7)
+                    line_top = ax.plot(time_nums, y, color='black', linestyle='--', linewidth=1.2, alpha=0.7, zorder=5)[0]
+                    line_top.set_visible(self.show_ml)
                     break
         for ml_bot_var in ['height_ml_bottom_new_gia_clean', 'height_ml_bottom_new_gia', 'height_ml_bottom']:
             if ml_bot_var in self.current_ds:
                 y = self.current_ds[ml_bot_var].values
                 if np.any(np.isfinite(y)):
-                    ax.plot(time_nums, y, color='black', linestyle=':', linewidth=1.2, alpha=0.7)
+                    line_bot = ax.plot(time_nums, y, color='black', linestyle=':', linewidth=1.2, alpha=0.7, zorder=5)[0]
+                    line_bot.set_visible(self.show_ml)
                     break
+        self.col1_ml_artists[i] = (line_top, line_bot)
 
+        # Shading for min_entropy > 0.85
+        ent_var = None
+        for cand in ['min_entropy', 'MIN_ENTROPY', 'min_Entropy', 'entropy_min']:
+            if cand in self.current_ds:
+                ent_var = cand
+                break
+        if ent_var is None:
+            for v in self.current_ds.data_vars:
+                if 'entropy' in v.lower():
+                    ent_var = v
+                    break
+        mesh_ent = None
+        if ent_var is not None:
+            da_ent = self.current_ds[ent_var]
+            if 'time' in da_ent.dims and 'z' in da_ent.dims:
+                if da_ent.dims != ('time', 'z'):
+                    da_ent = da_ent.transpose('time', 'z')
+                try:
+                    da_ent = da_ent.interpolate_na(dim='z', method='linear', limit=2)
+                except Exception:
+                    pass
+                ent_vals = da_ent.values.T
+            else:
+                raw = np.asarray(da_ent.values).squeeze()
+                if raw.ndim == 2 and raw.shape == (len(time_nums), len(z_coords)):
+                    ent_vals = raw.T
+                elif raw.ndim == 2 and raw.shape == (len(z_coords), len(time_nums)):
+                    ent_vals = raw
+                else:
+                    ent_vals = None
+            if ent_vals is not None:
+                mask = np.where(ent_vals > 0.85, 1.0, np.nan)
+                if np.any(np.isfinite(mask)):
+                    cmap_gray = mcolors.ListedColormap(['#666666'])
+                    mesh_ent = ax.pcolormesh(
+                        time_nums, z_coords, mask,
+                        cmap=cmap_gray, vmin=0, vmax=2, alpha=0.45,
+                        shading='auto', rasterized=True, zorder=3
+                    )
+                    mesh_ent.set_visible(self.show_entropy)
+        self.col1_entropy_artists[i] = mesh_ent
+
+        self.fig.canvas.draw_idle()
+
+    def toggle_entropy(self):
+        self.show_entropy = not self.show_entropy
+        text = "Entropy: ON" if self.show_entropy else "Entropy: OFF"
+        if hasattr(self, 'btn_entropy') and hasattr(self.btn_entropy, 'label'):
+            self.btn_entropy.label.set_text(text)
+        for mesh in self.col1_entropy_artists:
+            if mesh is not None:
+                mesh.set_visible(self.show_entropy)
+        self.fig.canvas.draw_idle()
+
+    def toggle_ml(self):
+        self.show_ml = not self.show_ml
+        text = "ML: ON" if self.show_ml else "ML: OFF"
+        if hasattr(self, 'btn_ml') and hasattr(self.btn_ml, 'label'):
+            self.btn_ml.label.set_text(text)
+        for pair in self.col1_ml_artists:
+            if pair is not None:
+                l_top, l_bot = pair
+                if l_top is not None:
+                    l_top.set_visible(self.show_ml)
+                if l_bot is not None:
+                    l_bot.set_visible(self.show_ml)
+        self.update_column2_profile()
         self.fig.canvas.draw_idle()
 
     def _update_profile_indicator_lines(self):
@@ -1899,22 +2097,23 @@ class QVPInteractiveAppMpl:
             self._plot_1d_curve(tw, ds_prof, v, z_coords, z_mask, is_twin=True, twin_idx=i, pts_spacing=pts_per_axis)
 
         # ML lines
-        ml_top, ml_bot = None, None
-        for k in ['height_ml_new_gia_clean', 'height_ml_new_gia', 'height_ml']:
-            if k in ds_prof and np.isfinite(ds_prof[k].values):
-                ml_top = float(ds_prof[k].values)
-                break
-        for k in ['height_ml_bottom_new_gia_clean', 'height_ml_bottom_new_gia', 'height_ml_bottom']:
-            if k in ds_prof and np.isfinite(ds_prof[k].values):
-                ml_bot = float(ds_prof[k].values)
-                break
+        if getattr(self, 'show_ml', True):
+            ml_top, ml_bot = None, None
+            for k in ['height_ml_new_gia_clean', 'height_ml_new_gia', 'height_ml']:
+                if k in ds_prof and np.isfinite(ds_prof[k].values):
+                    ml_top = float(ds_prof[k].values)
+                    break
+            for k in ['height_ml_bottom_new_gia_clean', 'height_ml_bottom_new_gia', 'height_ml_bottom']:
+                if k in ds_prof and np.isfinite(ds_prof[k].values):
+                    ml_bot = float(ds_prof[k].values)
+                    break
 
-        if ml_top is not None and self.min_height <= ml_top <= self.max_height:
-            self.ax_prof.axhline(ml_top, color='black', linestyle='--', linewidth=1.4, alpha=0.7)
-            self.ax_prof.text(0.02, ml_top, f" ML Top ({int(ml_top)}m)", transform=self.ax_prof.get_yaxis_transform(), va='bottom', fontsize=8, fontweight='bold')
-        if ml_bot is not None and self.min_height <= ml_bot <= self.max_height:
-            self.ax_prof.axhline(ml_bot, color='black', linestyle=':', linewidth=1.4, alpha=0.7)
-            self.ax_prof.text(0.02, ml_bot, f" ML Bot ({int(ml_bot)}m)", transform=self.ax_prof.get_yaxis_transform(), va='bottom', fontsize=8, fontweight='bold')
+            if ml_top is not None and self.min_height <= ml_top <= self.max_height:
+                self.ax_prof.axhline(ml_top, color='black', linestyle='--', linewidth=1.4, alpha=0.7)
+                self.ax_prof.text(0.02, ml_top, f" ML Top ({int(ml_top)}m)", transform=self.ax_prof.get_yaxis_transform(), va='bottom', fontsize=8, fontweight='bold')
+            if ml_bot is not None and self.min_height <= ml_bot <= self.max_height:
+                self.ax_prof.axhline(ml_bot, color='black', linestyle=':', linewidth=1.4, alpha=0.7)
+                self.ax_prof.text(0.02, ml_bot, f" ML Bot ({int(ml_bot)}m)", transform=self.ax_prof.get_yaxis_transform(), va='bottom', fontsize=8, fontweight='bold')
 
         t_val = self.current_ds.time.values[self.current_time_idx]
         t_str = pd.to_datetime(t_val).strftime('%Y-%m-%d %H:%M:%S')
