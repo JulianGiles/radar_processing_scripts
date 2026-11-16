@@ -76,9 +76,16 @@ try:
 except ImportError:
     radarmet = None
 
+try:
+    from scipy.ndimage import binary_opening
+    HAS_SCIPY = True
+except ImportError:
+    HAS_SCIPY = False
+
 # Default path config
 DEFAULT_REALPEP_PATH = "/automount/realpep"
 DEFAULT_PATH_QVPS = f"{DEFAULT_REALPEP_PATH}/upload/jgiles/dwd/qvps/*/*/2017-07-25/pro/vol5minng01/07/*allmoms*"
+DEFAULT_RIMING_DIR = f"{DEFAULT_REALPEP_PATH}/upload/jgiles/radar_riming_classif/unfiltered"
 
 # Available colormap names (miub2 as top default)
 CMAP_OPTIONS = [
@@ -394,6 +401,95 @@ def extract_date_from_file(file_path):
     if match:
         return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
     return None
+
+
+KNOWN_LOCATIONS = ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']
+DWD_STATION_IDS = {
+    '10392': 'pro',
+    '010392': 'pro',
+    '10780': 'tur',
+    '010780': 'tur',
+    '10629': 'umd',
+    '010629': 'umd',
+}
+
+
+def extract_radar_location(fpath_or_ds):
+    """
+    Extract 3-letter radar site location (e.g. 'pro', 'gzt', 'hty', 'ank', 'afy', 'svs', 'tur', 'umd')
+    from a QVP file path, dataset, or filename.
+    """
+    if isinstance(fpath_or_ds, str):
+        clean = fpath_or_ds.lower()
+        # Check DWD station IDs
+        for sid, loc_name in DWD_STATION_IDS.items():
+            if sid in clean:
+                return loc_name
+        # Check path tokens
+        parts = re.split(r'[/\\_\-]', clean)
+        for loc in KNOWN_LOCATIONS:
+            if loc in parts:
+                return loc
+        for loc in KNOWN_LOCATIONS:
+            if re.search(r'[/_\-\.]' + loc + r'[/_\-\.]', clean):
+                return loc
+        for loc in KNOWN_LOCATIONS:
+            if loc in clean:
+                return loc
+
+    if hasattr(fpath_or_ds, 'attrs'):
+        for attr_k in ['radar', 'radar_id', 'location', 'site', 'station_id']:
+            if attr_k in fpath_or_ds.attrs:
+                val = str(fpath_or_ds.attrs[attr_k]).lower()
+                for sid, loc_name in DWD_STATION_IDS.items():
+                    if sid in val:
+                        return loc_name
+                for loc in KNOWN_LOCATIONS:
+                    if loc in val:
+                        return loc
+
+    return None
+
+
+def find_riming_file(loc, is_dmi=False, riming_dir=DEFAULT_RIMING_DIR):
+    """
+    Locate the appropriate riming NetCDF file and variable name for a given location and radar network,
+    matching the decision logic in plot_ppis_qvps_etc.py.
+    """
+    if not loc or not os.path.isdir(riming_dir):
+        return None, None
+
+    if is_dmi or loc in ['afy', 'ank', 'gzt', 'hty', 'svs']:
+        candidates = [
+            'riming_ZDR_EC_OC_WRC_AC_DBZH_AC',
+            'riming_DR_ZDR_EC_OC_WRC_AC_DBZH_AC',
+            'riming_DR_ZDR_EC_OC_AC_DBZH_AC',
+            'riming_ZDR_EC_OC_AC_DBZH_AC',
+            'riming_DR',
+            'riming_ZDR_DBZH',
+            'riming_UDR'
+        ]
+    else:
+        candidates = [
+            'riming_DR_ZDR_EC_OC_AC_DBZH_AC',
+            'riming_ZDR_EC_OC_AC_DBZH_AC',
+            'riming_DR_ZDR_EC_OC_WRC_AC_DBZH_AC',
+            'riming_ZDR_EC_OC_WRC_AC_DBZH_AC',
+            'riming_DR',
+            'riming_ZDR_DBZH',
+            'riming_UDR'
+        ]
+
+    for c in candidates:
+        fp = os.path.join(riming_dir, f"{loc}_{c}.nc")
+        if os.path.exists(fp):
+            return fp, c
+
+    matches = glob.glob(os.path.join(riming_dir, f"{loc}_*.nc"))
+    if matches:
+        return matches[0], None
+
+    return None, None
 
 
 class QVPDatasetManager:
@@ -721,6 +817,7 @@ class QVPBokehApp:
         self.col1_vlines = []
         self.col1_ml_renderers = []
         self.col1_entropy_renderers = []
+        self.col1_riming_renderers = []
 
         self.show_ml = True
         self.source_ml = ColumnDataSource(data=dict(time=[], ml_top=[], ml_bot=[]))
@@ -735,6 +832,18 @@ class QVPBokehApp:
             nan_color='rgba(0,0,0,0)'
         )
         self.update_entropy_source()
+
+        self.show_riming = True
+        self.source_riming = ColumnDataSource(data=dict(image=[np.zeros((10, 10))], x=[0], y=[0], dw=[1], dh=[1]))
+        self.riming_mapper = LinearColorMapper(
+            palette=['#4a5568'],
+            low=0.0,
+            high=1.0,
+            nan_color='rgba(0,0,0,0)'
+        )
+        self.riming_ds_cache = {}
+        self.radar_location = None
+        self.update_riming_source()
 
         self.source_1d = ColumnDataSource(data=dict(z=[]))
         self.p_prof = None
@@ -868,6 +977,136 @@ class QVPBokehApp:
         for r_ent in self.col1_entropy_renderers:
             r_ent.visible = self.show_entropy
 
+    def _get_riming_dataset(self, loc):
+        if not loc:
+            return None, None
+        if loc in self.riming_ds_cache:
+            return self.riming_ds_cache[loc]
+
+        fpath = self.mgr.date_to_file.get(self.current_date, '')
+        if not fpath and self.mgr.file_list:
+            fpath = self.mgr.file_list[0]
+        is_dmi = 'dmi' in fpath.lower() or loc in ['afy', 'ank', 'gzt', 'hty', 'svs']
+
+        rim_fp, rim_var = find_riming_file(loc, is_dmi=is_dmi, riming_dir=DEFAULT_RIMING_DIR)
+        if not rim_fp or not os.path.exists(rim_fp):
+            self.riming_ds_cache[loc] = (None, None)
+            return None, None
+
+        try:
+            ds_rim = xr.open_dataset(rim_fp)
+            if not rim_var or rim_var not in ds_rim:
+                rim_candidates = [v for v in ds_rim.data_vars if 'riming' in v.lower()]
+                rim_var = rim_candidates[0] if rim_candidates else list(ds_rim.data_vars.keys())[0]
+            self.riming_ds_cache[loc] = (ds_rim, rim_var)
+            return ds_rim, rim_var
+        except Exception:
+            self.riming_ds_cache[loc] = (None, None)
+            return None, None
+
+    def _extract_riming_mask(self, ds):
+        """
+        Extract 2D boolean mask for riming classification and compute spatial bounds (x0, y0, dw, dh).
+        Returns (mask, x0, y0, dw, dh) where mask has shape (len(z), len(time))
+        with 1.0 where riming is detected and np.nan elsewhere.
+        """
+        z_coords = self.mgr.get_z_coords(ds)
+        time_vals = pd.to_datetime(ds.time.values)
+        t_ms = (time_vals.astype('int64') // 10**6).values
+
+        if len(t_ms) > 1:
+            dt = float(t_ms[1] - t_ms[0])
+            x0 = float(t_ms[0]) - dt / 2.0
+            dw = float(t_ms[-1] - t_ms[0]) + dt
+        elif len(t_ms) == 1:
+            dw = 300000.0
+            x0 = float(t_ms[0]) - dw / 2.0
+        else:
+            x0, dw = 0.0, 1.0
+
+        y0 = float(np.nanmin(z_coords))
+        dh = float(np.nanmax(z_coords) - y0)
+
+        empty_mask = np.full((len(z_coords), max(1, len(t_ms))), np.nan)
+
+        # 1. Identify location from QVP filepath or dataset
+        loc = getattr(self, 'radar_location', None)
+        if not loc:
+            fpath = self.mgr.date_to_file.get(self.current_date, '')
+            if not fpath and self.mgr.file_list:
+                fpath = self.mgr.file_list[0]
+            loc = extract_radar_location(fpath)
+            if not loc:
+                loc = extract_radar_location(ds)
+            self.radar_location = loc
+
+        if not loc:
+            return empty_mask, x0, y0, dw, dh
+
+        # 2. Load riming dataset for location
+        ds_rim, rim_var = self._get_riming_dataset(loc)
+        if ds_rim is None or rim_var is None or rim_var not in ds_rim:
+            return empty_mask, x0, y0, dw, dh
+
+        # 3. Select current date
+        try:
+            da_rim = ds_rim[rim_var].sel(time=self.current_date)
+        except Exception:
+            return empty_mask, x0, y0, dw, dh
+
+        if da_rim.size == 0 or len(da_rim.time) == 0:
+            return empty_mask, x0, y0, dw, dh
+
+        # 4. Standardize dimensions
+        if 'z' in da_rim.dims and 'time' in da_rim.dims:
+            if da_rim.dims != ('time', 'z'):
+                da_rim = da_rim.transpose('time', 'z')
+
+        # 5. Clean mask using binary_opening if available (like in plot_ppis_qvps_etc.py)
+        raw_vals = da_rim.fillna(0).values
+        if HAS_SCIPY:
+            try:
+                cleaned = binary_opening(raw_vals, structure=np.ones((3, 3))).astype(float)
+            except Exception:
+                cleaned = np.where(raw_vals > 0.5, 1.0, 0.0)
+        else:
+            cleaned = np.where(raw_vals > 0.5, 1.0, 0.0)
+
+        # 6. Align with ds (time, z) coordinates
+        if cleaned.shape == (len(t_ms), len(z_coords)):
+            mask = np.where(cleaned.T > 0.5, 1.0, np.nan)
+        else:
+            try:
+                da_cleaned = da_rim.copy(data=cleaned)
+                da_aligned = da_cleaned.reindex(time=ds.time, method='nearest', tolerance=np.timedelta64(15, 'm'))
+                if 'z' in ds.dims and 'z' in da_aligned.dims:
+                    da_aligned = da_aligned.reindex(z=ds.z, method='nearest', tolerance=250.0)
+                vals_aligned = da_aligned.values
+                mask = np.where(vals_aligned.T > 0.5, 1.0, np.nan)
+            except Exception:
+                mask = np.full((len(z_coords), len(t_ms)), np.nan)
+                min_t = min(cleaned.shape[0], len(t_ms))
+                min_z = min(cleaned.shape[1], len(z_coords))
+                mask[:min_z, :min_t] = np.where(cleaned[:min_t, :min_z].T > 0.5, 1.0, np.nan)
+
+        return mask, x0, y0, dw, dh
+
+    def update_riming_source(self):
+        mask, x0, y0, dw, dh = self._extract_riming_mask(self.current_ds)
+        self.source_riming.data = dict(image=[mask], x=[x0], y=[y0], dw=[dw], dh=[dh])
+
+    def toggle_riming(self):
+        self.show_riming = not self.show_riming
+        if self.show_riming:
+            self.btn_toggle_riming.label = "Riming: ON"
+            self.btn_toggle_riming.button_type = "primary"
+        else:
+            self.btn_toggle_riming.label = "Riming: OFF"
+            self.btn_toggle_riming.button_type = "default"
+
+        for r_rim in self.col1_riming_renderers:
+            r_rim.visible = self.show_riming
+
     def _build_ui(self):
         # 1. Top Bar Controls: Date Selector, Height Range, ML Toggle
         self.sel_date = Select(title="Date:", value=self.current_date, options=self.dates, width=115)
@@ -894,9 +1133,16 @@ class QVPBokehApp:
         self.btn_toggle_entropy = Button(
             label="Entropy: ON" if self.show_entropy else "Entropy: OFF",
             button_type="primary" if self.show_entropy else "default",
-            width=235, margin=(2, 2, 4, 2)
+            width=115, margin=(2, 2, 4, 2)
         )
         self.btn_toggle_entropy.on_click(self.toggle_entropy)
+
+        self.btn_toggle_riming = Button(
+            label="Riming: ON" if self.show_riming else "Riming: OFF",
+            button_type="primary" if self.show_riming else "default",
+            width=115, margin=(2, 2, 4, 2)
+        )
+        self.btn_toggle_riming.on_click(self.toggle_riming)
 
         date_controls = row(self.btn_prev_date, self.sel_date, self.btn_next_date)
         height_controls = row(self.inp_min_h, self.inp_max_h, self.btn_apply_h)
@@ -966,7 +1212,7 @@ class QVPBokehApp:
             date_controls,
             height_controls,
             self.btn_toggle_ml,
-            self.btn_toggle_entropy,
+            row(self.btn_toggle_entropy, self.btn_toggle_riming),
             Div(text="<hr style='margin:6px 0;'>"),
             tabs_sidebar,
             width=255
@@ -1002,6 +1248,7 @@ class QVPBokehApp:
         self.col1_vlines.clear()
         self.col1_ml_renderers.clear()
         self.col1_entropy_renderers.clear()
+        self.col1_riming_renderers.clear()
 
         shared_x = None
         shared_y = None
@@ -1082,6 +1329,17 @@ class QVPBokehApp:
             )
             r_ent.visible = self.show_entropy
             self.col1_entropy_renderers.append(r_ent)
+
+            # Gray shading overlay for riming classification
+            r_rim = p.image(
+                image='image', x='x', y='y', dw='dw', dh='dh',
+                color_mapper=self.riming_mapper,
+                source=self.source_riming,
+                global_alpha=0.45,
+                name="Riming Shading"
+            )
+            r_rim.visible = self.show_riming
+            self.col1_riming_renderers.append(r_rim)
 
             # ColorBar on the right
             ticker = FixedTicker(ticks=list(bar_ticks)) if bar_ticks else BasicTicker()
@@ -1346,6 +1604,7 @@ class QVPBokehApp:
             self.current_ds = self.mgr.load_day(self.current_date)
             self.update_ml_source()
             self.update_entropy_source()
+            self.update_riming_source()
             self.all_vars = self.mgr.get_available_variables(self.current_ds)
             if self.current_time_idx >= len(self.current_ds.time):
                 self.current_time_idx = max(0, len(self.current_ds.time) - 1)
