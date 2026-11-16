@@ -486,8 +486,15 @@ for stratname in ["unfiltered"]:
         if not riming_classif[stratname][ll]:
             del riming_classif[stratname][ll]
 
+r_ds = riming_classif['unfiltered'][loc]
+# If z differs slightly due to float precision, snap riming z to qvps z:
+if not np.array_equal(r_ds.z.values, qvps.z.values):
+    r_ds = r_ds.reindex(z=qvps.z, method="nearest", tolerance=25.0)
+# If time differs by sub-second noise, snap time to qvps time:
+if not np.array_equal(r_ds.time.values, qvps.time.values):
+    r_ds = r_ds.reindex(time=qvps.time, method="nearest", tolerance=np.timedelta64(1, "m"))
 # Assign
-qvps = qvps.assign( riming_classif['unfiltered'][loc] )
+qvps = qvps.assign(r_ds)
 
 partial_time = time.time() - p_time
 print(f"... took {partial_time/60:.2f} minutes.")
@@ -775,6 +782,11 @@ for stratname, stratqvp0 in [("stratiform", qvps_strat_fil.copy()),
     # Subset the dataset (xarray will automatically keep all coordinates like time, z)
     stratqvp0 = stratqvp0[vars_to_keep]
 
+    # Drop range and z_idx from stratqvp0 so they never cause coordinate mismatches across chunks
+    drop_c = [c for c in ["range", "z_idx"] if c in stratqvp0.coords]
+    if drop_c:
+        stratqvp0 = stratqvp0.drop_vars(drop_c)
+
     stats[stratname] = {}
 
     chunk_size = 1000
@@ -815,14 +827,12 @@ for stratname, stratqvp0 in [("stratiform", qvps_strat_fil.copy()),
         ML_thickness_TEMP = ML_bottom_TEMP - stratqvp["TEMP"].sel(z=stratqvp["height_ml_new_gia"], method="nearest")
 
         #!!! Temporary solution with xr.ufuncs.isfinite because there are -inf and inf values in ANK data
-        try:
-            height_ML_max = qvps_ML.where(xr.ufuncs.isfinite(qvps_ML)).idxmax("z", skipna=True)
-            height_ML_min = qvps_ML.where(xr.ufuncs.isfinite(qvps_ML)).idxmin("z", skipna=True)
-        except xr.core.merge.MergeError:
-            # this might fail for some unkwon reason with the range and z_idx coordinate (TUR)
-            # remove those and try again
-            height_ML_max = qvps_ML.where(xr.ufuncs.isfinite(qvps_ML)).drop_vars(["range", "z_idx"]).idxmax("z", skipna=True)
-            height_ML_min = qvps_ML.where(xr.ufuncs.isfinite(qvps_ML)).drop_vars(["range", "z_idx"]).idxmin("z", skipna=True)
+        # Always drop z-dependent coordinates ("range", "z_idx") to avoid merge errors and chunk-to-chunk coordinate mismatches
+        drop_coords = [c for c in ["range", "z_idx"] if c in qvps_ML.coords]
+        qvps_ML_clean = qvps_ML.drop_vars(drop_coords) if drop_coords else qvps_ML
+
+        height_ML_max = qvps_ML_clean.where(xr.ufuncs.isfinite(qvps_ML_clean)).idxmax("z", skipna=True)
+        height_ML_min = qvps_ML_clean.where(xr.ufuncs.isfinite(qvps_ML_clean)).idxmin("z", skipna=True)
 
         # Silke style
         # select timesteps with detected ML
@@ -962,8 +972,13 @@ for stratname, stratqvp0 in [("stratiform", qvps_strat_fil.copy()),
     stat_keys = chunk_results_list[0].keys()
 
     for key in stat_keys:
+        # Ensure range and z_idx are stripped from all chunks before concatenating
+        cleaned_chunks = [
+            chunk[key].drop_vars([c for c in ["range", "z_idx"] if c in chunk[key].coords])
+            for chunk in chunk_results_list
+        ]
         # Concatenate the individual datasets for each specific stat
-        stats[stratname][loc][key] = xr.concat([chunk[key] for chunk in chunk_results_list], dim="time")
+        stats[stratname][loc][key] = xr.concat(cleaned_chunks, dim="time", coords="minimal", compat="override")
 
     # Free the chunk list memory
     del chunk_results_list
