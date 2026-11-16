@@ -719,6 +719,11 @@ class QVPBokehApp:
         self.col1_mappers = []
         self.col1_colorbars = []
         self.col1_vlines = []
+        self.col1_ml_renderers = []
+
+        self.show_ml = True
+        self.source_ml = ColumnDataSource(data=dict(time=[], ml_top=[], ml_bot=[]))
+        self.update_ml_source()
 
         self.source_1d = ColumnDataSource(data=dict(z=[]))
         self.p_prof = None
@@ -728,8 +733,55 @@ class QVPBokehApp:
         self._build_ui()
         self.update_all()
 
+    def _extract_ml_series(self, ds):
+        time_vals = pd.to_datetime(ds.time.values)
+        t_ms = (time_vals.astype('int64') // 10**6).values
+
+        y_top = np.full(len(t_ms), np.nan)
+        for ml_var in ['height_ml_new_gia_clean', 'height_ml_new_gia', 'height_ml']:
+            if ml_var in ds:
+                vals = np.asarray(ds[ml_var].values, dtype=float).squeeze()
+                if vals.ndim == 0 and np.isfinite(vals):
+                    y_top = np.full(len(t_ms), float(vals))
+                    break
+                elif vals.ndim == 1 and np.any(np.isfinite(vals)):
+                    y_top = vals
+                    break
+
+        y_bot = np.full(len(t_ms), np.nan)
+        for ml_bot_var in ['height_ml_bottom_new_gia_clean', 'height_ml_bottom_new_gia', 'height_ml_bottom']:
+            if ml_bot_var in ds:
+                vals = np.asarray(ds[ml_bot_var].values, dtype=float).squeeze()
+                if vals.ndim == 0 and np.isfinite(vals):
+                    y_bot = np.full(len(t_ms), float(vals))
+                    break
+                elif vals.ndim == 1 and np.any(np.isfinite(vals)):
+                    y_bot = vals
+                    break
+
+        return t_ms, y_top, y_bot
+
+    def update_ml_source(self):
+        t_ms, y_top, y_bot = self._extract_ml_series(self.current_ds)
+        self.source_ml.data = dict(time=t_ms, ml_top=y_top, ml_bot=y_bot)
+
+    def toggle_melting_layer(self):
+        self.show_ml = not self.show_ml
+        if self.show_ml:
+            self.btn_toggle_ml.label = "Melting Layer: ON"
+            self.btn_toggle_ml.button_type = "primary"
+        else:
+            self.btn_toggle_ml.label = "Melting Layer: OFF"
+            self.btn_toggle_ml.button_type = "default"
+
+        for r_top, r_bot in self.col1_ml_renderers:
+            r_top.visible = self.show_ml
+            r_bot.visible = self.show_ml
+
+        self._build_column2_plot()
+
     def _build_ui(self):
-        # 1. Top Bar Controls: Date Selector, Height Range
+        # 1. Top Bar Controls: Date Selector, Height Range, ML Toggle
         self.sel_date = Select(title="Date:", value=self.current_date, options=self.dates, width=115)
         self.sel_date.on_change('value', lambda attr, old, new: self.on_date_changed(new))
 
@@ -747,6 +799,9 @@ class QVPBokehApp:
         self.inp_max_h = NumericInput(title="Max H:", value=self.max_height, width=75)
         self.btn_apply_h = Button(label="Apply", button_type="primary", width=75, margin=(20, 2, 0, 2))
         self.btn_apply_h.on_click(self.apply_height_range)
+
+        self.btn_toggle_ml = Button(label="Melting Layer: ON", button_type="primary", width=235, margin=(4, 2, 4, 2))
+        self.btn_toggle_ml.on_click(self.toggle_melting_layer)
 
         date_controls = row(self.btn_prev_date, self.sel_date, self.btn_next_date)
         height_controls = row(self.inp_min_h, self.inp_max_h, self.btn_apply_h)
@@ -815,7 +870,8 @@ class QVPBokehApp:
             Div(text="<h4 style='margin:0 0 6px 0; color:#1a365d;'>QVP Navigation & Settings</h4>"),
             date_controls,
             height_controls,
-            Div(text="<hr style='margin:8px 0;'>"),
+            self.btn_toggle_ml,
+            Div(text="<hr style='margin:6px 0;'>"),
             tabs_sidebar,
             width=255
         )
@@ -848,6 +904,7 @@ class QVPBokehApp:
         self.col1_mappers.clear()
         self.col1_colorbars.clear()
         self.col1_vlines.clear()
+        self.col1_ml_renderers.clear()
 
         shared_x = None
         shared_y = None
@@ -934,6 +991,21 @@ class QVPBokehApp:
 
             # Tap listener on 2D plot to select profile timestamp
             p.on_event(Tap, self.on_tap_col1)
+
+            # Melting Layer Lines (Top: dashed, Bottom: dotted)
+            r_top = p.line(
+                x='time', y='ml_top', source=self.source_ml,
+                line_color='black', line_dash='dashed', line_width=1.8,
+                line_alpha=0.85, name="ML Top"
+            )
+            r_bot = p.line(
+                x='time', y='ml_bot', source=self.source_ml,
+                line_color='black', line_dash='dotted', line_width=1.8,
+                line_alpha=0.85, name="ML Bottom"
+            )
+            r_top.visible = self.show_ml
+            r_bot.visible = self.show_ml
+            self.col1_ml_renderers.append((r_top, r_bot))
 
             self.col1_plots.append(p)
             self.col1_sources.append(src)
@@ -1033,25 +1105,26 @@ class QVPBokehApp:
             hover.mode = "mouse"
 
         # Melting Layer (ML) lines on 1D profile
-        ml_top, ml_bot = None, None
-        for k in ['height_ml_new_gia_clean', 'height_ml_new_gia', 'height_ml']:
-            if k in ds_prof and np.isfinite(ds_prof[k].values):
-                ml_top = float(ds_prof[k].values)
-                break
-        for k in ['height_ml_bottom_new_gia_clean', 'height_ml_bottom_new_gia', 'height_ml_bottom']:
-            if k in ds_prof and np.isfinite(ds_prof[k].values):
-                ml_bot = float(ds_prof[k].values)
-                break
+        if self.show_ml:
+            ml_top, ml_bot = None, None
+            for k in ['height_ml_new_gia_clean', 'height_ml_new_gia', 'height_ml']:
+                if k in ds_prof and np.isfinite(ds_prof[k].values):
+                    ml_top = float(ds_prof[k].values)
+                    break
+            for k in ['height_ml_bottom_new_gia_clean', 'height_ml_bottom_new_gia', 'height_ml_bottom']:
+                if k in ds_prof and np.isfinite(ds_prof[k].values):
+                    ml_bot = float(ds_prof[k].values)
+                    break
 
-        if ml_top is not None and self.min_height <= ml_top <= self.max_height:
-            p.add_layout(Span(location=ml_top, dimension='width', line_color='black', line_dash='dashed', line_width=1.5))
-            p.add_layout(Label(x=10, y=ml_top, x_units='screen', text=f"ML Top ({int(ml_top)}m)",
-                               text_font_size="8pt", text_font_style="bold", text_color="black"))
+            if ml_top is not None and self.min_height <= ml_top <= self.max_height:
+                p.add_layout(Span(location=ml_top, dimension='width', line_color='black', line_dash='dashed', line_width=1.5))
+                p.add_layout(Label(x=10, y=ml_top, x_units='screen', text=f"ML Top ({int(ml_top)}m)",
+                                   text_font_size="8pt", text_font_style="bold", text_color="black"))
 
-        if ml_bot is not None and self.min_height <= ml_bot <= self.max_height:
-            p.add_layout(Span(location=ml_bot, dimension='width', line_color='black', line_dash='dotted', line_width=1.5))
-            p.add_layout(Label(x=10, y=ml_bot, x_units='screen', text=f"ML Bot ({int(ml_bot)}m)",
-                               text_font_size="8pt", text_font_style="bold", text_color="black"))
+            if ml_bot is not None and self.min_height <= ml_bot <= self.max_height:
+                p.add_layout(Span(location=ml_bot, dimension='width', line_color='black', line_dash='dotted', line_width=1.5))
+                p.add_layout(Label(x=10, y=ml_bot, x_units='screen', text=f"ML Bot ({int(ml_bot)}m)",
+                                   text_font_size="8pt", text_font_style="bold", text_color="black"))
 
         self.p_prof = p
         self.prof_layout.children = [p]
@@ -1163,6 +1236,7 @@ class QVPBokehApp:
             self.current_date = new_date
             self.doc.title = f"Interactive QVP Visualizer - {self.current_date}"
             self.current_ds = self.mgr.load_day(self.current_date)
+            self.update_ml_source()
             self.all_vars = self.mgr.get_available_variables(self.current_ds)
             if self.current_time_idx >= len(self.current_ds.time):
                 self.current_time_idx = max(0, len(self.current_ds.time) - 1)
