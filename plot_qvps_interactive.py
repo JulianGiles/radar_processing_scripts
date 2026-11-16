@@ -71,9 +71,16 @@ try:
 except ImportError:
     radarmet = None
 
+try:
+    from scipy.ndimage import binary_opening
+    HAS_SCIPY = True
+except ImportError:
+    HAS_SCIPY = False
+
 # Default path pattern following CFTDs.py
 DEFAULT_REALPEP_PATH = "/automount/realpep"
 DEFAULT_PATH_QVPS = f"{DEFAULT_REALPEP_PATH}/upload/jgiles/dwd/qvps/*/*/2017-07-25/pro/vol5minng01/07/*allmoms*"
+DEFAULT_RIMING_DIR = f"{DEFAULT_REALPEP_PATH}/upload/jgiles/radar_riming_classif/unfiltered"
 
 # Common colormap choices
 COLORMAP_CHOICES = [
@@ -226,6 +233,95 @@ def extract_date_from_file(file_path):
     if match:
         return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
     return None
+
+
+KNOWN_LOCATIONS = ['pro', 'umd', 'tur', 'afy', 'ank', 'gzt', 'hty', 'svs']
+DWD_STATION_IDS = {
+    '10392': 'pro',
+    '010392': 'pro',
+    '10780': 'tur',
+    '010780': 'tur',
+    '10629': 'umd',
+    '010629': 'umd',
+}
+
+
+def extract_radar_location(fpath_or_ds):
+    """
+    Extract 3-letter radar site location (e.g. 'pro', 'gzt', 'hty', 'ank', 'afy', 'svs', 'tur', 'umd')
+    from a QVP file path, dataset, or filename.
+    """
+    if isinstance(fpath_or_ds, str):
+        clean = fpath_or_ds.lower()
+        # Check DWD station IDs
+        for sid, loc_name in DWD_STATION_IDS.items():
+            if sid in clean:
+                return loc_name
+        # Check path tokens
+        parts = re.split(r'[/\\_\-]', clean)
+        for loc in KNOWN_LOCATIONS:
+            if loc in parts:
+                return loc
+        for loc in KNOWN_LOCATIONS:
+            if re.search(r'[/_\-\.]' + loc + r'[/_\-\.]', clean):
+                return loc
+        for loc in KNOWN_LOCATIONS:
+            if loc in clean:
+                return loc
+
+    if hasattr(fpath_or_ds, 'attrs'):
+        for attr_k in ['radar', 'radar_id', 'location', 'site', 'station_id']:
+            if attr_k in fpath_or_ds.attrs:
+                val = str(fpath_or_ds.attrs[attr_k]).lower()
+                for sid, loc_name in DWD_STATION_IDS.items():
+                    if sid in val:
+                        return loc_name
+                for loc in KNOWN_LOCATIONS:
+                    if loc in val:
+                        return loc
+
+    return None
+
+
+def find_riming_file(loc, is_dmi=False, riming_dir=DEFAULT_RIMING_DIR):
+    """
+    Locate the appropriate riming NetCDF file and variable name for a given location and radar network,
+    matching the decision logic in plot_ppis_qvps_etc.py.
+    """
+    if not loc or not os.path.isdir(riming_dir):
+        return None, None
+
+    if is_dmi or loc in ['afy', 'ank', 'gzt', 'hty', 'svs']:
+        candidates = [
+            'riming_ZDR_EC_OC_WRC_AC_DBZH_AC',
+            'riming_DR_ZDR_EC_OC_WRC_AC_DBZH_AC',
+            'riming_DR_ZDR_EC_OC_AC_DBZH_AC',
+            'riming_ZDR_EC_OC_AC_DBZH_AC',
+            'riming_DR',
+            'riming_ZDR_DBZH',
+            'riming_UDR'
+        ]
+    else:
+        candidates = [
+            'riming_DR_ZDR_EC_OC_AC_DBZH_AC',
+            'riming_ZDR_EC_OC_AC_DBZH_AC',
+            'riming_DR_ZDR_EC_OC_WRC_AC_DBZH_AC',
+            'riming_ZDR_EC_OC_WRC_AC_DBZH_AC',
+            'riming_DR',
+            'riming_ZDR_DBZH',
+            'riming_UDR'
+        ]
+
+    for c in candidates:
+        fp = os.path.join(riming_dir, f"{loc}_{c}.nc")
+        if os.path.exists(fp):
+            return fp, c
+
+    matches = glob.glob(os.path.join(riming_dir, f"{loc}_*.nc"))
+    if matches:
+        return matches[0], None
+
+    return None, None
 
 
 class QVPDatasetManager:
@@ -633,9 +729,13 @@ class QVPInteractiveAppTk:
         self.cbars = [None] * 4
         self.twin_axes = []
         self.show_entropy = True
+        self.show_riming = True
         self.show_ml = True
         self.col1_entropy_artists = [None] * 4
+        self.col1_riming_artists = [None] * 4
         self.col1_ml_artists = [None] * 4
+        self.riming_ds_cache = {}
+        self.radar_location = None
 
         self._build_widgets()
         self.plot_all()
@@ -704,6 +804,9 @@ class QVPInteractiveAppTk:
 
         self.btn_entropy = self.ttk.Button(h_bar, text="Entropy: ON", command=self.toggle_entropy)
         self.btn_entropy.pack(side=self.tk.LEFT, padx=3)
+
+        self.btn_riming = self.ttk.Button(h_bar, text="Riming: ON", command=self.toggle_riming)
+        self.btn_riming.pack(side=self.tk.LEFT, padx=3)
 
         self.btn_ml = self.ttk.Button(h_bar, text="ML: ON", command=self.toggle_ml)
         self.btn_ml.pack(side=self.tk.LEFT, padx=3)
@@ -829,8 +932,10 @@ class QVPInteractiveAppTk:
         row_h3.pack(fill=self.tk.X, pady=(4, 2))
         self.btn_entropy_tab = self.ttk.Button(row_h3, text="Entropy: ON", command=self.toggle_entropy)
         self.btn_entropy_tab.pack(side=self.tk.LEFT, padx=2)
+        self.btn_riming_tab = self.ttk.Button(row_h3, text="Riming: ON", command=self.toggle_riming)
+        self.btn_riming_tab.pack(side=self.tk.LEFT, padx=2)
         self.btn_ml_tab = self.ttk.Button(row_h3, text="ML: ON", command=self.toggle_ml)
-        self.btn_ml_tab.pack(side=self.tk.LEFT, padx=4)
+        self.btn_ml_tab.pack(side=self.tk.LEFT, padx=2)
 
         for i in range(4):
             card = self.ttk.LabelFrame(subframe, text=f"Panel {i+1} Settings (Row {i+1})", padding=6)
@@ -1320,6 +1425,7 @@ class QVPInteractiveAppTk:
         # Overlay Melting layer lines if available
         self._overlay_ml_on_2d(ax, i)
         self._overlay_entropy_on_2d(ax, i)
+        self._overlay_riming_on_2d(ax, i)
 
         self.canvas.draw_idle()
 
@@ -1412,6 +1518,125 @@ class QVPInteractiveAppTk:
         for mesh in self.col1_entropy_artists:
             if mesh is not None:
                 mesh.set_visible(self.show_entropy)
+        self.canvas.draw_idle()
+
+    def _get_riming_dataset(self, loc):
+        if not loc:
+            return None, None
+        if loc in self.riming_ds_cache:
+            return self.riming_ds_cache[loc]
+
+        fpath = self.mgr.date_to_file.get(self.current_date, '')
+        if not fpath and self.mgr.file_list:
+            fpath = self.mgr.file_list[0]
+        is_dmi = 'dmi' in fpath.lower() or loc in ['afy', 'ank', 'gzt', 'hty', 'svs']
+
+        rim_fp, rim_var = find_riming_file(loc, is_dmi=is_dmi, riming_dir=DEFAULT_RIMING_DIR)
+        if not rim_fp or not os.path.exists(rim_fp):
+            self.riming_ds_cache[loc] = (None, None)
+            return None, None
+
+        try:
+            ds_rim = xr.open_dataset(rim_fp)
+            if not rim_var or rim_var not in ds_rim:
+                rim_candidates = [v for v in ds_rim.data_vars if 'riming' in v.lower()]
+                rim_var = rim_candidates[0] if rim_candidates else list(ds_rim.data_vars.keys())[0]
+            self.riming_ds_cache[loc] = (ds_rim, rim_var)
+            return ds_rim, rim_var
+        except Exception:
+            self.riming_ds_cache[loc] = (None, None)
+            return None, None
+
+    def _overlay_riming_on_2d(self, ax, panel_idx=None):
+        loc = getattr(self, 'radar_location', None)
+        if not loc:
+            fpath = self.mgr.date_to_file.get(self.current_date, '')
+            if not fpath and self.mgr.file_list:
+                fpath = self.mgr.file_list[0]
+            loc = extract_radar_location(fpath)
+            if not loc:
+                loc = extract_radar_location(self.current_ds)
+            self.radar_location = loc
+
+        if not loc:
+            if panel_idx is not None and panel_idx < len(self.col1_riming_artists):
+                self.col1_riming_artists[panel_idx] = None
+            return
+
+        ds_rim, rim_var = self._get_riming_dataset(loc)
+        if ds_rim is None or rim_var is None or rim_var not in ds_rim:
+            if panel_idx is not None and panel_idx < len(self.col1_riming_artists):
+                self.col1_riming_artists[panel_idx] = None
+            return
+
+        try:
+            da_rim = ds_rim[rim_var].sel(time=self.current_date)
+        except Exception:
+            if panel_idx is not None and panel_idx < len(self.col1_riming_artists):
+                self.col1_riming_artists[panel_idx] = None
+            return
+
+        if da_rim.size == 0 or len(da_rim.time) == 0:
+            if panel_idx is not None and panel_idx < len(self.col1_riming_artists):
+                self.col1_riming_artists[panel_idx] = None
+            return
+
+        if 'z' in da_rim.dims and 'time' in da_rim.dims:
+            if da_rim.dims != ('time', 'z'):
+                da_rim = da_rim.transpose('time', 'z')
+
+        raw_vals = da_rim.fillna(0).values
+        if HAS_SCIPY:
+            try:
+                cleaned = binary_opening(raw_vals, structure=np.ones((3, 3))).astype(float)
+            except Exception:
+                cleaned = np.where(raw_vals > 0.5, 1.0, 0.0)
+        else:
+            cleaned = np.where(raw_vals > 0.5, 1.0, 0.0)
+
+        time_nums = mdates.date2num(pd.to_datetime(self.current_ds.time.values))
+        z_coords = self.mgr.get_z_coords(self.current_ds)
+
+        if cleaned.shape == (len(time_nums), len(z_coords)):
+            mask = np.where(cleaned.T > 0.5, 1.0, np.nan)
+        else:
+            try:
+                da_cleaned = da_rim.copy(data=cleaned)
+                da_aligned = da_cleaned.reindex(time=self.current_ds.time, method='nearest', tolerance=np.timedelta64(15, 'm'))
+                if 'z' in self.current_ds.dims and 'z' in da_aligned.dims:
+                    da_aligned = da_aligned.reindex(z=self.current_ds.z, method='nearest', tolerance=250.0)
+                vals_aligned = da_aligned.values
+                mask = np.where(vals_aligned.T > 0.5, 1.0, np.nan)
+            except Exception:
+                mask = np.full((len(z_coords), len(time_nums)), np.nan)
+                min_t = min(cleaned.shape[0], len(time_nums))
+                min_z = min(cleaned.shape[1], len(z_coords))
+                mask[:min_z, :min_t] = np.where(cleaned[:min_t, :min_z].T > 0.5, 1.0, np.nan)
+
+        mesh_rim = None
+        if np.any(np.isfinite(mask)):
+            cmap_gray = mcolors.ListedColormap(['#666666'])
+            mesh_rim = ax.pcolormesh(
+                time_nums, z_coords, mask,
+                cmap=cmap_gray, vmin=0, vmax=2, alpha=0.45,
+                shading='auto', rasterized=True, zorder=3
+            )
+            mesh_rim.set_visible(self.show_riming)
+
+        if panel_idx is not None and panel_idx < len(self.col1_riming_artists):
+            self.col1_riming_artists[panel_idx] = mesh_rim
+
+    def toggle_riming(self):
+        self.show_riming = not self.show_riming
+        text = "Riming: ON" if self.show_riming else "Riming: OFF"
+        if hasattr(self, 'btn_riming'):
+            self.btn_riming.configure(text=text)
+        if hasattr(self, 'btn_riming_tab'):
+            self.btn_riming_tab.configure(text=text)
+
+        for mesh in self.col1_riming_artists:
+            if mesh is not None:
+                mesh.set_visible(self.show_riming)
         self.canvas.draw_idle()
 
     def toggle_ml(self):
@@ -1669,9 +1894,13 @@ class QVPInteractiveAppMpl:
         self.cbars = [None] * 4
         self.twin_axes = []
         self.show_entropy = True
+        self.show_riming = True
         self.show_ml = True
         self.col1_entropy_artists = [None] * 4
+        self.col1_riming_artists = [None] * 4
         self.col1_ml_artists = [None] * 4
+        self.riming_ds_cache = {}
+        self.radar_location = None
 
         self._build_figure()
         self.plot_all()
@@ -1776,11 +2005,15 @@ class QVPInteractiveAppMpl:
         self.txt_min_h.on_submit(lambda text: self.apply_height_range())
         self.txt_max_h.on_submit(lambda text: self.apply_height_range())
 
-        ax_entropy = self.fig.add_axes([0.84, 0.045, 0.065, 0.035])
+        ax_entropy = self.fig.add_axes([0.84, 0.052, 0.065, 0.032])
         self.btn_entropy = Button(ax_entropy, 'Entropy: ON')
         self.btn_entropy.on_clicked(lambda e: self.toggle_entropy())
 
-        ax_ml = self.fig.add_axes([0.915, 0.045, 0.065, 0.035])
+        ax_riming = self.fig.add_axes([0.915, 0.052, 0.065, 0.032])
+        self.btn_riming = Button(ax_riming, 'Riming: ON')
+        self.btn_riming.on_clicked(lambda e: self.toggle_riming())
+
+        ax_ml = self.fig.add_axes([0.84, 0.012, 0.14, 0.032])
         self.btn_ml = Button(ax_ml, 'ML: ON')
         self.btn_ml.on_clicked(lambda e: self.toggle_ml())
 
@@ -1990,6 +2223,125 @@ class QVPInteractiveAppMpl:
                     mesh_ent.set_visible(self.show_entropy)
         self.col1_entropy_artists[i] = mesh_ent
 
+        # Riming classification overlay
+        self._overlay_riming_on_2d(ax, i)
+
+        self.fig.canvas.draw_idle()
+
+    def _get_riming_dataset(self, loc):
+        if not loc:
+            return None, None
+        if loc in self.riming_ds_cache:
+            return self.riming_ds_cache[loc]
+
+        fpath = self.mgr.date_to_file.get(self.current_date, '')
+        if not fpath and self.mgr.file_list:
+            fpath = self.mgr.file_list[0]
+        is_dmi = 'dmi' in fpath.lower() or loc in ['afy', 'ank', 'gzt', 'hty', 'svs']
+
+        rim_fp, rim_var = find_riming_file(loc, is_dmi=is_dmi, riming_dir=DEFAULT_RIMING_DIR)
+        if not rim_fp or not os.path.exists(rim_fp):
+            self.riming_ds_cache[loc] = (None, None)
+            return None, None
+
+        try:
+            ds_rim = xr.open_dataset(rim_fp)
+            if not rim_var or rim_var not in ds_rim:
+                rim_candidates = [v for v in ds_rim.data_vars if 'riming' in v.lower()]
+                rim_var = rim_candidates[0] if rim_candidates else list(ds_rim.data_vars.keys())[0]
+            self.riming_ds_cache[loc] = (ds_rim, rim_var)
+            return ds_rim, rim_var
+        except Exception:
+            self.riming_ds_cache[loc] = (None, None)
+            return None, None
+
+    def _overlay_riming_on_2d(self, ax, panel_idx=None):
+        loc = getattr(self, 'radar_location', None)
+        if not loc:
+            fpath = self.mgr.date_to_file.get(self.current_date, '')
+            if not fpath and self.mgr.file_list:
+                fpath = self.mgr.file_list[0]
+            loc = extract_radar_location(fpath)
+            if not loc:
+                loc = extract_radar_location(self.current_ds)
+            self.radar_location = loc
+
+        if not loc:
+            if panel_idx is not None and panel_idx < len(self.col1_riming_artists):
+                self.col1_riming_artists[panel_idx] = None
+            return
+
+        ds_rim, rim_var = self._get_riming_dataset(loc)
+        if ds_rim is None or rim_var is None or rim_var not in ds_rim:
+            if panel_idx is not None and panel_idx < len(self.col1_riming_artists):
+                self.col1_riming_artists[panel_idx] = None
+            return
+
+        try:
+            da_rim = ds_rim[rim_var].sel(time=self.current_date)
+        except Exception:
+            if panel_idx is not None and panel_idx < len(self.col1_riming_artists):
+                self.col1_riming_artists[panel_idx] = None
+            return
+
+        if da_rim.size == 0 or len(da_rim.time) == 0:
+            if panel_idx is not None and panel_idx < len(self.col1_riming_artists):
+                self.col1_riming_artists[panel_idx] = None
+            return
+
+        if 'z' in da_rim.dims and 'time' in da_rim.dims:
+            if da_rim.dims != ('time', 'z'):
+                da_rim = da_rim.transpose('time', 'z')
+
+        raw_vals = da_rim.fillna(0).values
+        if HAS_SCIPY:
+            try:
+                cleaned = binary_opening(raw_vals, structure=np.ones((3, 3))).astype(float)
+            except Exception:
+                cleaned = np.where(raw_vals > 0.5, 1.0, 0.0)
+        else:
+            cleaned = np.where(raw_vals > 0.5, 1.0, 0.0)
+
+        time_nums = mdates.date2num(pd.to_datetime(self.current_ds.time.values))
+        z_coords = self.mgr.get_z_coords(self.current_ds)
+
+        if cleaned.shape == (len(time_nums), len(z_coords)):
+            mask = np.where(cleaned.T > 0.5, 1.0, np.nan)
+        else:
+            try:
+                da_cleaned = da_rim.copy(data=cleaned)
+                da_aligned = da_cleaned.reindex(time=self.current_ds.time, method='nearest', tolerance=np.timedelta64(15, 'm'))
+                if 'z' in self.current_ds.dims and 'z' in da_aligned.dims:
+                    da_aligned = da_aligned.reindex(z=self.current_ds.z, method='nearest', tolerance=250.0)
+                vals_aligned = da_aligned.values
+                mask = np.where(vals_aligned.T > 0.5, 1.0, np.nan)
+            except Exception:
+                mask = np.full((len(z_coords), len(time_nums)), np.nan)
+                min_t = min(cleaned.shape[0], len(time_nums))
+                min_z = min(cleaned.shape[1], len(z_coords))
+                mask[:min_z, :min_t] = np.where(cleaned[:min_t, :min_z].T > 0.5, 1.0, np.nan)
+
+        mesh_rim = None
+        if np.any(np.isfinite(mask)):
+            cmap_gray = mcolors.ListedColormap(['#666666'])
+            mesh_rim = ax.pcolormesh(
+                time_nums, z_coords, mask,
+                cmap=cmap_gray, vmin=0, vmax=2, alpha=0.45,
+                shading='auto', rasterized=True, zorder=3
+            )
+            mesh_rim.set_visible(self.show_riming)
+
+        if panel_idx is not None and panel_idx < len(self.col1_riming_artists):
+            self.col1_riming_artists[panel_idx] = mesh_rim
+
+    def toggle_riming(self):
+        self.show_riming = not self.show_riming
+        text = "Riming: ON" if self.show_riming else "Riming: OFF"
+        if hasattr(self, 'btn_riming') and hasattr(self.btn_riming, 'label'):
+            self.btn_riming.label.set_text(text)
+        for mesh in self.col1_riming_artists:
+            if mesh is not None:
+                mesh.set_visible(self.show_riming)
         self.fig.canvas.draw_idle()
 
     def toggle_entropy(self):
