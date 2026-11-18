@@ -4544,6 +4544,9 @@ stratname = "stratiform"
 
 valid_perc_thresh = 0.8 # minimum fraction of valid values to filter out gradients
 
+order = ['tur', 'umd', 'pro', 'afy', 'ank', 'gzt', 'hty', 'svs']
+order_fil = [ll for ll in order if ll in locs_loaded]
+
 colors = ["#4c72b0",  # Deep Blue
             "#D73027",  # Bright Red
               "#E66101",  # Reddish Orange
@@ -4571,7 +4574,7 @@ line_styles = ["--",  # Dashed
                "--",  # Dashed
                (0, (3, 5, 1, 5))]  # Custom: long dash, short gap, dot, short gap
 
-for il, loc in enumerate(locs_loaded):
+for il, loc in enumerate(order_fil):
     count = stats[stratname][loc]['beta_belowDGL'][X_DBZH]\
                 .where(stats[stratname][loc]['beta_belowDGL']["valid_perc"]>=valid_perc_thresh)\
                     .groupby("time.month").count()
@@ -4584,10 +4587,13 @@ plt.xticks([1,2,3,4,5,6,7,8,9,10,11,12], labels=['J', 'F', 'M', 'A', 'M', 'J', '
 plt.grid(visible=True)
 plt.legend()
 plt.title(r'$\beta$_DGL seasonality')
+plt.tight_layout()
 
 #%%%% Plot riming frequency all radars in same plot
 
-locs_to_plot = locs_loaded #[find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
+order = ['tur', 'umd', 'pro', 'afy', 'ank', 'gzt', 'hty', 'svs']
+order_fil = [ll for ll in order if ll in locs_loaded]
+locs_to_plot = order_fil #[find_loc(locs, ff[0])] # by default, plot only the histograms of the currently loaded QVPs.
 savepath = "/automount/agradar/jgiles/images/riming_frequency"+suffix_name+"/"
 
 selseaslist = [
