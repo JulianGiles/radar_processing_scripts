@@ -1203,7 +1203,7 @@ class PPIBokehApp:
         self.source_ml_bot = ColumnDataSource(data=dict(x=[], y=[]))
         self.source_entropy_rings = ColumnDataSource(data=dict(x=[], y=[], inner_radius=[], outer_radius=[]))
         self.source_riming_rings = ColumnDataSource(data=dict(x=[], y=[], inner_radius=[], outer_radius=[]))
-        self.source_grid_rings = ColumnDataSource(data=dict(x=[], y=[], r=[]))
+        self.source_grid_rings = ColumnDataSource(data=dict(xs=[], ys=[]))
         self.source_grid_spokes = ColumnDataSource(data=dict(x0=[], y0=[], x1=[], y1=[]))
         self.source_grid_labels = ColumnDataSource(data=dict(x=[], y=[], text=[]))
         self.source_1d = ColumnDataSource(data=dict(x=[]))
@@ -1375,10 +1375,12 @@ class PPIBokehApp:
             ring_step = max(1.0, round(max_r / 4.0))
 
         radii = [float(r) for r in np.arange(ring_step, max_r + 1e-6, ring_step) if r <= max_r]
+        theta = np.linspace(0.0, 2.0 * np.pi, 181)
+        sin_t = np.sin(theta)
+        cos_t = np.cos(theta)
         self.source_grid_rings.data = dict(
-            x=[0.0] * len(radii),
-            y=[0.0] * len(radii),
-            r=radii
+            xs=[(r * sin_t).tolist() for r in radii],
+            ys=[(r * cos_t).tolist() for r in radii],
         )
 
         outer_r = radii[-1] if radii else max_r
@@ -1986,7 +1988,7 @@ class PPIBokehApp:
             self.ppi_mappers.append(mapper)
 
             unit_str = f" [{vis['units']}]" if vis['units'] else ""
-            tools = "pan,box_zoom,wheel_zoom,reset,tap"
+            tools = "pan,box_zoom,wheel_zoom,reset"
 
             p = figure(
                 title=f"PPI {i+1}: {vname}{unit_str}",
@@ -2038,31 +2040,35 @@ class PPIBokehApp:
             p.add_tools(hover)
             self.ppi_hovers.append(hover)
 
-            # Polar coordinate grid overlay: range rings, azimuth spokes, and labels
-            p.circle(
-                x='x', y='y', radius='r', radius_units='data',
+            # Polar coordinate grid overlay: range rings (multi_line, zero fill), azimuth spokes, and labels
+            p.multi_line(
+                xs='xs', ys='ys',
                 source=self.source_grid_rings,
-                fill_alpha=0.0, line_color='#444444', line_alpha=0.35,
+                line_color='#444444', line_alpha=0.35,
+                nonselection_line_alpha=0.35,
                 line_dash='dotted', line_width=1.0
             )
             p.segment(
                 x0='x0', y0='y0', x1='x1', y1='y1',
                 source=self.source_grid_spokes,
                 line_color='#444444', line_alpha=0.30,
+                nonselection_line_alpha=0.30,
                 line_dash='dotted', line_width=1.0
             )
             p.text(
                 x='x', y='y', text='text',
                 source=self.source_grid_labels,
                 text_font_size="7.5pt", text_color="#333333",
-                text_alpha=0.75, text_align="center", text_baseline="middle"
+                text_alpha=0.75, nonselection_text_alpha=0.75,
+                text_align="center", text_baseline="middle"
             )
 
             # Gray shading overlay for min_entropy > 0.85
             r_ent = p.annulus(
                 x='x', y='y', inner_radius='inner_radius', outer_radius='outer_radius',
                 source=self.source_entropy_rings,
-                fill_color='#666666', fill_alpha=0.45, line_alpha=0.0,
+                fill_color='#666666', fill_alpha=0.45,
+                nonselection_fill_alpha=0.45, line_alpha=0.0,
                 name="Entropy Shading"
             )
             r_ent.visible = (self.has_entropy and self.show_entropy)
@@ -2072,7 +2078,8 @@ class PPIBokehApp:
             r_rim = p.annulus(
                 x='x', y='y', inner_radius='inner_radius', outer_radius='outer_radius',
                 source=self.source_riming_rings,
-                fill_color='#666666', fill_alpha=0.45, line_alpha=0.0,
+                fill_color='#666666', fill_alpha=0.45,
+                nonselection_fill_alpha=0.45, line_alpha=0.0,
                 name="Riming Shading"
             )
             r_rim.visible = (self.has_riming and self.show_riming)
